@@ -7,6 +7,7 @@ export function normalizeAlias(input: string): string {
   return input
     .normalize("NFKD")
     .replace(/\p{Diacritic}/gu, "")
+    .normalize("NFC") // recompose Hangul so SQL literals like '정지훈' match
     .toLowerCase()
     .replace(/\s*\(.*?\)\s*/g, "")
     .replace(/[^\p{L}\p{N}]/gu, "");
