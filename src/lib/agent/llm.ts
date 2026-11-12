@@ -20,8 +20,10 @@ let cached: Llm | null | undefined;
 export function getLlm(): Llm | null {
   if (cached !== undefined) return cached;
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+
   if (!apiKey) return (cached = null);
   const id = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
   const openrouter = createOpenRouter({ apiKey });
+
   return (cached = { model: openrouter(id), id });
 }

@@ -1,10 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
-import { tool } from "ai";
+import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
+import { selectAll, selectOne, type SqlRow } from "../db";
 import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
-import type { ChampionPlay, Entities, ResultRow, Source, ToolName } from "./types";
-import { LEAGUE_NAMES, resolveChampion, resolvePlayer, resolveTeam } from "./understand";
+import { type Entities, LEAGUE_NAMES, type ResultRow, type Source, type TableCell, type ToolName } from "./types";
+import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
 
 /**
  * Typed tools: one parameterized query per frequent intent, each with a zod
@@ -19,6 +20,7 @@ import { LEAGUE_NAMES, resolveChampion, resolvePlayer, resolveTeam } from "./und
  * Leaguepedia, and `event` pages only hold standings, so both are excluded.
  */
 const COMPETITION_STAGES = "'main_event', 'play_in', 'season', 'playoffs'";
+
 /** Pages that carry final standings. */
 const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
 
@@ -31,11 +33,13 @@ export const PlayerHistoryInput = z.object({
   league: League,
   ...Period,
 });
+
 export const TeamHistoryInput = z.object({
   team: z.string().min(1).describe("Team name or shorthand (T1, Gen.G, G2...)"),
   league: League.nullable().describe("Restrict to one competition, null for all"),
   ...Period,
 });
+
 export const HeadToHeadInput = z.object({
   kind: z.enum(["team", "player"]),
   sideA: z.string().min(1),
@@ -43,11 +47,13 @@ export const HeadToHeadInput = z.object({
   league: League.nullable(),
   ...Period,
 });
+
 export const ChampionStatsInput = z.object({
   champion: z.string().min(1).describe("Champion name (Ahri, Lee Sin, Kai'Sa...)"),
   league: League,
   ...Period,
 });
+
 export const StandingsInput = z.object({
   league: League,
   ...Period,
@@ -55,32 +61,63 @@ export const StandingsInput = z.object({
   full: z.boolean().describe("true: every placement of the event(s); false: champion and finalist of each event"),
 });
 
+export type PlayerHistoryInput = z.infer<typeof PlayerHistoryInput>;
+
+export type TeamHistoryInput = z.infer<typeof TeamHistoryInput>;
+
+export type HeadToHeadInput = z.infer<typeof HeadToHeadInput>;
+
+export type ChampionStatsInput = z.infer<typeof ChampionStatsInput>;
+
+export type StandingsInput = z.infer<typeof StandingsInput>;
+
+/** A typed tool with its input, as decided by the router (rules or LLM). */
+export type ToolCall =
+  | { tool: "player_event_history"; input: PlayerHistoryInput }
+  | { tool: "team_history"; input: TeamHistoryInput }
+  | { tool: "head_to_head"; input: HeadToHeadInput }
+  | { tool: "champion_event_stats"; input: ChampionStatsInput }
+  | { tool: "tournament_standings"; input: StandingsInput };
+
+export type ToolInput = ToolCall["input"];
+
 type Params = Record<string, string | number>;
+
 type Plan = { sql: string; params: Params };
+
 type Relaxation<I> = { key: string; input: I; note: string; reason: string };
 
 export type ToolOutput = {
   title: string;
   rows?: ResultRow[];
-  table?: { columns: string[]; rows: unknown[][] };
+  table?: { columns: string[]; rows: TableCell[][] };
   facts: string;
   sources: Source[];
   followUps: string[];
   totals: Record<string, string | number>;
 };
 
-export type ToolDef<S extends z.ZodType = z.ZodType> = {
+type ToolDef<I extends ToolInput> = {
   name: ToolName;
   /** French label, shown in the trace. */
   label: string;
   description: string;
-  inputSchema: S;
-  plan: (db: DatabaseSync, input: z.infer<S>) => Plan;
+  plan: (db: DatabaseSync, input: I) => Plan;
   /** Deterministic corrections when the result is empty, most conservative first. */
-  relaxations: (input: z.infer<S>, entities: Entities) => Relaxation<z.infer<S>>[];
-  format: (db: DatabaseSync, input: z.infer<S>, rows: Record<string, unknown>[]) => ToolOutput;
+  relaxations: (input: I, entities: Entities) => Relaxation<I>[];
+  format: (db: DatabaseSync, input: I, rows: SqlRow[]) => ToolOutput;
   /** Maps names written by the LLM onto database names. */
-  normalize: (db: DatabaseSync, input: z.infer<S>) => z.infer<S> | null;
+  normalize: (db: DatabaseSync, input: I) => I | null;
+};
+
+/** A tool bound to its input: the plan to run, its corrections and its formatting. */
+export type BoundTool = {
+  call: ToolCall;
+  label: string;
+  sql: string;
+  params: Params;
+  relaxations: (entities: Entities) => { key: string; note: string; reason: string; next: () => BoundTool }[];
+  format: (db: DatabaseSync, rows: SqlRow[]) => ToolOutput;
 };
 
 // Helpers -------------------------------------------------------------------------
@@ -89,27 +126,42 @@ function inList(prefix: string, values: string[], params: Params): string {
   return values
     .map((v, i) => {
       params[`${prefix}${i}`] = v;
+
       return `:${prefix}${i}`;
     })
     .join(", ");
 }
 
-function periodFilter(col: string, input: { yearFrom: number | null; yearTo: number | null }, params: Params): string {
+type Period = { yearFrom: number | null; yearTo: number | null };
+
+function periodFilter(col: string, input: Period, params: Params): string {
   const parts: string[] = [];
+
   if (input.yearFrom != null) {
     parts.push(`AND ${col} >= :yearFrom`);
     params.yearFrom = input.yearFrom;
   }
+
   if (input.yearTo != null) {
     parts.push(`AND ${col} <= :yearTo`);
     params.yearTo = input.yearTo;
   }
+
   return parts.join(" ");
 }
 
+/** A JSON text column (json_group_array...) parsed with its own schema. */
+const jsonColumn = <S extends z.ZodType>(schema: S) => z.string().transform((text) => schema.parse(JSON.parse(text)));
+
+/** SQLite integers come back as numbers; a missing year sorts first. */
+const YearColumn = z.number().catch(0);
+
+const PlayerCounts = z.array(z.object({ player: z.string(), games: z.number() }));
+
 const tidy = (sql: string) => sql.replace(/\n\s*\n/g, "\n");
-const hasPeriod = (i: { yearFrom: number | null; yearTo: number | null }) => i.yearFrom != null || i.yearTo != null;
-const noPeriod = <I extends { yearFrom: number | null; yearTo: number | null }>(input: I, what: string): Relaxation<I> => ({
+const hasPeriod = (i: Period) => i.yearFrom != null || i.yearTo != null;
+
+const noPeriod = <I extends Period>(input: I, what: string): Relaxation<I> => ({
   key: "period",
   input: { ...input, yearFrom: null, yearTo: null },
   note: `Rien entre ${input.yearFrom ?? "…"} et ${input.yearTo ?? "…"} : affichage de ${what}.`,
@@ -120,44 +172,121 @@ export const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 const pct = (w: number, n: number) => Math.round((100 * w) / Math.max(1, n));
 const span = (years: number[]) => (years.length ? `${Math.min(...years)}–${Math.max(...years)}` : "");
 
-export function placeLabel(place: string | null, stage?: unknown): string {
+export function placeLabel(place: string | null, stage?: string | null): string {
   if (!place) return "Classement non publié";
+
   // Regular-season standings are not a title.
   if (stage === "season") return place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`;
+
   if (place === "1") return "Champion";
+
   if (place === "2") return "Finaliste";
+
   if (place === "3-4") return "Demi-finale";
+
   if (place === "5-8") return "Quart de finale";
+
   return `Éliminé (${place}e)`;
 }
 
 function leagueShortName(db: DatabaseSync, league: string | null): string {
   if (!league) return "toutes compétitions";
-  return (db.prepare("SELECT short_name FROM leagues WHERE name = ?").get(league) as { short_name: string } | undefined)?.short_name ?? league;
+
+  return selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league])?.short_name ?? league;
 }
+
 const inLeague = (short: string) => (short === "Worlds" ? "aux Worlds" : short === "toutes compétitions" ? "" : `en ${short}`);
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
+
   return unique.slice(-max).map((page) => ({ label: `Leaguepedia — ${page}`, url: wikiUrl(page) }));
 }
 
 function teamMembers(db: DatabaseSync, team: string): { team: string; members: string[] } {
   const t = resolveTeam(db, team);
+
   return t ? { team: t.team, members: t.members } : { team, members: [team] };
 }
 
+// Result rows, as each tool's query returns them ----------------------------------------
+
+const Text = z.string();
+const NullableText = z.string().nullable();
+
+const PlayerHistoryRow = z.object({
+  year: YearColumn,
+  event_page: Text,
+  team: Text,
+  stage: NullableText,
+  wins: z.number(),
+  losses: z.number(),
+  place: NullableText,
+  place_number: z.number().nullable(),
+  champions: jsonColumn(
+    z.array(z.object({ name: z.string(), games: z.number(), wins: z.number(), icon: z.string().nullable() })),
+  ),
+});
+
+const TeamHistoryRow = z.object({
+  year: YearColumn,
+  league_short: Text,
+  event_page: Text,
+  stage: NullableText,
+  tournament: NullableText,
+  team: Text,
+  wins: z.number(),
+  losses: z.number(),
+  place: NullableText,
+  place_number: z.number().nullable(),
+});
+
+const HeadToHeadRow = z.object({
+  year: YearColumn,
+  league_short: Text,
+  event_page: Text,
+  tournament: NullableText,
+  wins_a: z.number(),
+  wins_b: z.number(),
+});
+
+const ChampionStatsRow = z.object({
+  year: YearColumn,
+  league_short: Text,
+  event_page: Text,
+  tournament: NullableText,
+  games: z.number(),
+  picks: z.number(),
+  wins: z.number(),
+  bans: z.number(),
+  players: jsonColumn(PlayerCounts),
+});
+
+const StandingsRow = z.object({
+  year: YearColumn,
+  event_page: Text,
+  tournament: NullableText,
+  stage: NullableText,
+  place: NullableText,
+  place_number: z.number().nullable(),
+  team: Text,
+  prize_usd: z.number().nullable(),
+});
+
 // 1. Player history in a competition ------------------------------------------------
 
-const playerEventHistory: ToolDef<typeof PlayerHistoryInput> = {
+const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   name: "player_event_history",
   label: "historique joueur × compétition",
   description:
     "A player's results in one competition, edition by edition: team, final place, game record (W-L) and champions played.",
-  inputSchema: PlayerHistoryInput,
   plan: (_db, input) => {
-    const params: Params = { player: input.player, league: input.league };
+    const params: Params = {};
+
+    Object.assign(params, { player: input.player, league: input.league });
+
     const period = periodFilter("gp.year", input, params);
+
     return {
       params,
       sql: tidy(`WITH player_games AS (
@@ -191,8 +320,10 @@ ORDER BY pg.year, MIN(pg.event_page)`),
   },
   relaxations: (input, entities) => {
     const out: Relaxation<typeof input>[] = [];
+
     if (hasPeriod(input)) out.push(noPeriod(input, "toutes les éditions"));
     const resolved = entities.players.find((p) => p.player === input.player || p.otherCandidates.includes(input.player));
+
     for (const other of resolved ? [resolved.player, ...resolved.otherCandidates] : [])
       if (other !== input.player)
         out.push({
@@ -201,28 +332,25 @@ ORDER BY pg.year, MIN(pg.event_page)`),
           note: `« ${resolved!.mention} » désigne aussi ${other} : résultats de ${other}.`,
           reason: `alias homonyme essayé : ${other}`,
         });
+
     return out;
   },
   format: (db, input, raw): ToolOutput => {
     const league = leagueShortName(db, input.league);
-    const rows: ResultRow[] = raw.map((r) => {
-      const champions = (JSON.parse(String(r.champions)) as (Omit<ChampionPlay, "imageUrl"> & { icon: string | null })[]).map(
-        ({ icon, ...c }) => ({ ...c, imageUrl: icon }),
-      );
-      const place = r.place == null ? null : String(r.place);
-      return {
-        year: Number(r.year),
-        event: String(r.event_page),
-        team: String(r.team),
-        place,
-        placeLabel: placeLabel(place, r.stage),
-        // Regular-season ranks do not compete with final placements.
-        placeNumber: r.place_number == null || r.stage === "season" ? null : Number(r.place_number),
-        wins: Number(r.wins),
-        losses: Number(r.losses),
-        champions,
-      };
-    });
+
+    const rows: ResultRow[] = z.array(PlayerHistoryRow).parse(raw).map((r) => ({
+      year: r.year,
+      event: r.event_page,
+      team: r.team,
+      place: r.place,
+      placeLabel: placeLabel(r.place, r.stage),
+      // Regular-season ranks do not compete with final placements.
+      placeNumber: r.stage === "season" ? null : r.place_number,
+      wins: r.wins,
+      losses: r.losses,
+      champions: r.champions.map(({ icon, ...c }) => ({ ...c, imageUrl: icon })),
+    }));
+
     const wins = rows.reduce((n, r) => n + r.wins, 0);
     const losses = rows.reduce((n, r) => n + r.losses, 0);
     const teams = [...new Set(rows.map((r) => displayTeam(r.team)))];
@@ -237,22 +365,24 @@ ORDER BY pg.year, MIN(pg.event_page)`),
       `${input.player} a disputé ${events} éditions ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) ` +
       `avec ${teams.length} équipe${teams.length > 1 ? "s" : ""} (${teams.join(", ")}), ` +
       `pour un bilan de ${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %).`;
+
     if (bestRows.length)
       facts += ` Meilleur résultat : ${placeLabel(bestRows[0].place).toLowerCase()} en ${bestRows
         .map((r) => `${r.year} (${displayTeam(r.team)})`)
         .join(", ")}.`;
+
     if (unranked.length) facts += ` Classement final ${unranked.map((r) => r.year).join(", ")} pas encore publié sur Leaguepedia.`;
 
     // Follow-ups stay within what the agent supports: teammates of the latest run.
     const latest = rows[rows.length - 1];
-    const teammates = (
-      db
-        .prepare(
-          `SELECT player, COUNT(*) AS n FROM v_game_players
-           WHERE event_page = ? AND team = ? AND player <> ? AND stage <> 'qualifier'
-           GROUP BY player ORDER BY n DESC LIMIT 2`,
-        )
-        .all(latest.event, latest.team, input.player) as { player: string }[]
+
+    const teammates = selectAll(
+      db,
+      z.object({ player: z.string() }),
+      `SELECT player, COUNT(*) AS n FROM v_game_players
+       WHERE event_page = ? AND team = ? AND player <> ? AND stage <> 'qualifier'
+       GROUP BY player ORDER BY n DESC LIMIT 2`,
+      [latest.event, latest.team, input.player],
     ).map((r) => r.player);
 
     return {
@@ -273,27 +403,29 @@ ORDER BY pg.year, MIN(pg.event_page)`),
   },
   normalize: (db, input) => {
     const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+
     return p ? { ...input, player: p.player } : null;
   },
 };
 
 // 2. Team history -------------------------------------------------------------------
 
-const teamHistory: ToolDef<typeof TeamHistoryInput> = {
+const teamHistory: ToolDef<TeamHistoryInput> = {
   name: "team_history",
   label: "historique d'équipe",
   description:
     "A team's history tournament by tournament (all competitions or one): final place and game record. Renamed teams are merged (SK Telecom T1 → T1).",
-  inputSchema: TeamHistoryInput,
   plan: (db, input) => {
     const { members } = teamMembers(db, input.team);
     const params: Params = {};
     const t = inList("t", members, params);
     let league = "";
+
     if (input.league) {
       league = "AND g.league = :league";
       params.league = input.league;
     }
+
     return {
       params,
       sql: tidy(`WITH team_games AS (
@@ -318,7 +450,9 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
   },
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
+
     if (hasPeriod(input)) out.push(noPeriod(input, "toute son histoire"));
+
     if (input.league)
       out.push({
         key: "league",
@@ -326,9 +460,11 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
         note: `Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`,
         reason: "filtre de compétition retiré",
       });
+
     return out;
   },
-  format: (db, input, raw): ToolOutput => {
+  format: (db, input, sqlRows): ToolOutput => {
+    const raw = z.array(TeamHistoryRow).parse(sqlRows);
     const { team, members } = teamMembers(db, input.team);
     const league = leagueShortName(db, input.league);
     const wins = raw.reduce((n, r) => n + Number(r.wins), 0);
@@ -337,25 +473,29 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     const leagues = [...new Set(raw.map((r) => String(r.league_short)))];
     const names = [...new Set(raw.map((r) => String(r.team)))];
     const intl = titles.filter((r) => r.league_short === "Worlds" || r.league_short === "MSI");
+
     let facts =
       `${team} : ${raw.length} tournois ${inLeague(league) || `(${leagues.join(", ")})`} entre ${span(raw.map((r) => Number(r.year))).replace("–", " et ")}, ` +
       `${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %). ` +
       `${titles.length} titre${titles.length > 1 ? "s" : ""}`;
-    if (intl.length) facts += `, dont ${intl.map((r) => r.tournament).join(", ")}`;
+
+    if (intl.length) facts += `, dont ${intl.map((r) => r.tournament ?? r.event_page).join(", ")}`;
     facts += ".";
+
     if (names.length > 1) facts += ` Noms pris en compte : ${names.map(displayTeam).join(", ")}.`;
+
     return {
       title: `${team} — ${league === "toutes compétitions" ? "historique" : league}`,
       table: {
         columns: ["Année", "Compétition", "Tournoi", ...(names.length > 1 ? ["Équipe"] : []), "Place", "V-D", "%"],
         rows: raw.map((r) => [
-          Number(r.year),
+          r.year,
           r.league_short,
-          r.tournament,
-          ...(names.length > 1 ? [displayTeam(String(r.team))] : []),
-          r.place ? `${placeLabel(String(r.place), r.stage)} (${r.place})` : placeLabel(null),
+          r.tournament ?? r.event_page,
+          ...(names.length > 1 ? [displayTeam(r.team)] : []),
+          r.place ? `${placeLabel(r.place, r.stage)} (${r.place})` : placeLabel(null),
           `${r.wins}-${r.losses}`,
-          pct(Number(r.wins), Number(r.wins) + Number(r.losses)),
+          pct(r.wins, r.wins + r.losses),
         ]),
       },
       facts,
@@ -375,22 +515,24 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
 
 // 3. Head-to-head -------------------------------------------------------------------
 
-const headToHead: ToolDef<typeof HeadToHeadInput> = {
+const headToHead: ToolDef<HeadToHeadInput> = {
   name: "head_to_head",
   label: "confrontations",
   description:
     "Games between two teams, or between two players on opposing teams, tournament by tournament (wins of each side).",
-  inputSchema: HeadToHeadInput,
   plan: (db, input) => {
     const params: Params = {};
     const filters: string[] = [];
+
     if (input.kind === "player") {
       params.a = input.sideA;
       params.b = input.sideB;
+
       if (input.league) {
         filters.push("AND a.league = :league");
         params.league = input.league;
       }
+
       return {
         params,
         sql: tidy(`SELECT a.year, a.league_short, a.event_page, MIN(a.tournament) AS tournament,
@@ -405,12 +547,15 @@ GROUP BY a.year, a.event_page
 ORDER BY a.year, MIN(a.played_at), a.event_page`),
       };
     }
+
     const A = inList("a", teamMembers(db, input.sideA).members, params);
     const B = inList("b", teamMembers(db, input.sideB).members, params);
+
     if (input.league) {
       filters.push("AND g.league = :league");
       params.league = input.league;
     }
+
     return {
       params,
       sql: tidy(`SELECT g.year, g.league_short, g.event_page, MIN(g.tournament) AS tournament,
@@ -427,7 +572,9 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
   },
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
+
     if (hasPeriod(input)) out.push(noPeriod(input, "toutes les années"));
+
     if (input.league)
       out.push({
         key: "league",
@@ -435,9 +582,11 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
         note: "Aucune confrontation dans cette compétition : affichage de toutes les compétitions.",
         reason: "filtre de compétition retiré",
       });
+
     return out;
   },
-  format: (db, input, raw): ToolOutput => {
+  format: (db, input, sqlRows): ToolOutput => {
+    const raw = z.array(HeadToHeadRow).parse(sqlRows);
     const a = input.kind === "team" ? teamMembers(db, input.sideA) : { team: input.sideA, members: [input.sideA] };
     const b = input.kind === "team" ? teamMembers(db, input.sideB) : { team: input.sideB, members: [input.sideB] };
     const winsA = raw.reduce((n, r) => n + Number(r.wins_a), 0);
@@ -445,15 +594,17 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     const league = leagueShortName(db, input.league);
     const last = raw[raw.length - 1];
     const leader = winsA === winsB ? "à égalité" : `avantage ${winsA > winsB ? a.team : b.team}`;
+
     const facts =
       `${[`${a.team} – ${b.team}${input.kind === "player" ? " (équipes adverses)" : ""}`, inLeague(league)].filter(Boolean).join(" ")} : ` +
       `${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois (${span(raw.map((r) => Number(r.year)))}), ${leader}. ` +
-      `Dernière confrontation : ${last.tournament} (${last.wins_a}-${last.wins_b}).`;
+      `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`;
+
     return {
       title: `${a.team} vs ${b.team}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
       table: {
         columns: ["Année", "Compétition", "Tournoi", a.team, b.team],
-        rows: raw.map((r) => [Number(r.year), r.league_short, r.tournament, Number(r.wins_a), Number(r.wins_b)]),
+        rows: raw.map((r) => [r.year, r.league_short, r.tournament ?? r.event_page, r.wins_a, r.wins_b]),
       },
       facts,
       sources: [
@@ -471,20 +622,23 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     if (input.kind === "team") return resolveTeam(db, input.sideA) && resolveTeam(db, input.sideB) ? input : null;
     const a = resolvePlayer(db, input.sideA);
     const b = resolvePlayer(db, input.sideB);
+
     return a && b ? { ...input, sideA: a.player, sideB: b.player } : null;
   },
 };
 
 // 4. Champion in an event -----------------------------------------------------------
 
-const championEventStats: ToolDef<typeof ChampionStatsInput> = {
+const championEventStats: ToolDef<ChampionStatsInput> = {
   name: "champion_event_stats",
   label: "stats d'un champion × compétition",
   description:
     "A champion's picks, bans, presence and win rate in one competition, edition by edition, with the players who picked it most.",
-  inputSchema: ChampionStatsInput,
   plan: (_db, input) => {
-    const params: Params = { champion: input.champion, league: input.league };
+    const params: Params = {};
+
+    Object.assign(params, { champion: input.champion, league: input.league });
+
     return {
       params,
       sql: tidy(`WITH ev AS (
@@ -519,42 +673,44 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
     };
   },
   relaxations: (input) => (hasPeriod(input) ? [noPeriod(input, "toutes les éditions")] : []),
-  format: (db, input, raw): ToolOutput => {
+  format: (db, input, sqlRows): ToolOutput => {
+    const raw = z.array(ChampionStatsRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
-    const sum = (k: string) => raw.reduce((n, r) => n + Number(r[k]), 0);
+    const sum = (k: "picks" | "bans" | "wins" | "games") => raw.reduce((n, r) => n + r[k], 0);
     const picks = sum("picks");
     const bans = sum("bans");
     const wins = sum("wins");
     const games = sum("games");
     const players = new Map<string, number>();
-    for (const r of raw)
-      for (const p of JSON.parse(String(r.players)) as { player: string; games: number }[])
-        players.set(p.player, (players.get(p.player) ?? 0) + p.games);
+
+    for (const r of raw) for (const p of r.players) players.set(p.player, (players.get(p.player) ?? 0) + p.games);
     const top = [...players].sort((x, y) => y[1] - x[1]).slice(0, 3);
+
     const facts =
       `${input.champion} ${inLeague(league)} (${span(raw.map((r) => Number(r.year)))}) : ${picks} picks et ${bans} bans ` +
       `sur ${games} parties (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
       `(${pct(wins, picks)} % de victoires).` +
       (top.length ? ` Joueurs les plus fréquents : ${top.map(([p, n]) => `${p} (${n})`).join(", ")}.` : "");
-    const icon = (db.prepare("SELECT icon_url FROM champions WHERE name = ?").get(input.champion) as { icon_url: string | null } | undefined)?.icon_url;
+
+    const icon = selectOne(db, z.object({ icon_url: z.string().nullable() }), "SELECT icon_url FROM champions WHERE name = ?", [
+      input.champion,
+    ])?.icon_url;
+
     return {
       title: `${input.champion} — ${league}`,
       table: {
         columns: ["Année", "Tournoi", "Parties", "Picks", "Bans", "Présence %", "V-D", "% victoire", "Joueurs"],
-        rows: raw.map((r) => {
-          const ps = JSON.parse(String(r.players)) as { player: string; games: number }[];
-          return [
-            Number(r.year),
-            r.tournament,
-            Number(r.games),
-            Number(r.picks),
-            Number(r.bans),
-            pct(Number(r.picks) + Number(r.bans), Number(r.games)),
-            `${r.wins}-${Number(r.picks) - Number(r.wins)}`,
-            Number(r.picks) ? pct(Number(r.wins), Number(r.picks)) : null,
-            ps.slice(0, 3).map((p) => `${p.player} ×${p.games}`).join(", "),
-          ];
-        }),
+        rows: raw.map((r) => [
+          r.year,
+          r.tournament ?? r.event_page,
+          r.games,
+          r.picks,
+          r.bans,
+          pct(r.picks + r.bans, r.games),
+          `${r.wins}-${r.picks - r.wins}`,
+          r.picks ? pct(r.wins, r.picks) : null,
+          r.players.slice(0, 3).map((p) => `${p.player} ×${p.games}`).join(", "),
+        ]),
       },
       facts,
       sources: [
@@ -568,25 +724,30 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
   },
   normalize: (db, input) => {
     const c = resolveChampion(db, input.champion);
+
     return c ? { ...input, champion: c.champion } : null;
   },
 };
 
 // 5. Standings / roll of honour -------------------------------------------------------
 
-const tournamentStandings: ToolDef<typeof StandingsInput> = {
+const tournamentStandings: ToolDef<StandingsInput> = {
   name: "tournament_standings",
   label: "palmarès / classement",
   description:
     "Final standings of a competition: every placement of one edition (full), or the champion and finalist of each edition (roll of honour).",
-  inputSchema: StandingsInput,
   plan: (_db, input) => {
-    const params: Params = { league: input.league };
+    const params: Params = {};
+
+    Object.assign(params, { league: input.league });
+
     const filters: string[] = [];
+
     if (input.split) {
       filters.push("AND t.split = :split");
       params.split = input.split;
     }
+
     if (!input.full) {
       filters.push("AND tr.place_number <= 2");
       // A regular season with its own playoffs: the title is the playoffs one.
@@ -594,6 +755,7 @@ const tournamentStandings: ToolDef<typeof StandingsInput> = {
         "AND NOT (t.stage = 'season' AND EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = t.league AND p.year = t.year AND p.stage = 'playoffs' AND COALESCE(p.split, '') = COALESCE(t.split, '')))",
       );
     }
+
     return {
       params,
       sql: tidy(`SELECT tr.year, tr.event_page, tr.tournament, t.stage, t.split, t.date_start,
@@ -611,65 +773,84 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
     input.split
       ? [{ key: "split", input: { ...input, split: null }, note: `Aucun classement pour le split ${input.split} : affichage de toute l'année.`, reason: "filtre de split retiré" }]
       : [],
-  format: (db, input, raw): ToolOutput => {
+  format: (db, input, sqlRows): ToolOutput => {
+    const raw = z.array(StandingsRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
     const pages = [...new Set(raw.map((r) => String(r.event_page)))];
-    const winnerOf = (page: string) => raw.find((r) => r.event_page === page && Number(r.place_number) === 1);
+    const winnerOf = (page: string) => raw.find((r) => r.event_page === page && r.place_number === 1);
+    const nameOf = (page: string) => raw.find((r) => r.event_page === page)?.tournament ?? page;
+
     const sources = [
       ...eventSources(pages, 30),
     ];
+
     if (input.full) {
       const multi = pages.length > 1;
-      const champions = pages.map((p) => winnerOf(p)).filter(Boolean);
+      const champions = pages.flatMap((p) => winnerOf(p) ?? []);
+
       const facts =
         pages
           .map((p) => {
             const w = winnerOf(p);
-            const f = raw.find((r) => r.event_page === p && Number(r.place_number) === 2);
-            const name = raw.find((r) => r.event_page === p)!.tournament;
+            const f = raw.find((r) => r.event_page === p && r.place_number === 2);
+            const name = nameOf(p);
+
             return w
               ? `${name} : ${displayTeam(String(w.team))} champion${f ? `, ${displayTeam(String(f.team))} finaliste` : ""}.`
               : `${name} : finale pas encore publiée sur Leaguepedia.`;
           })
           .join(" ") + ` ${raw.length} équipes classées.`;
+
       return {
-        title: `Classement — ${pages.length === 1 ? raw[0].tournament : `${league} ${span(raw.map((r) => Number(r.year)))}`}`,
+        title: `Classement — ${pages.length === 1 ? nameOf(pages[0]) : `${league} ${span(raw.map((r) => r.year))}`}`,
         table: {
           columns: [...(multi ? ["Tournoi"] : []), "Place", "Équipe", "Gains (USD)"],
           rows: raw.map((r) => [
-            ...(multi ? [r.tournament] : []),
-            r.place ? `${placeLabel(String(r.place))} (${r.place})` : "—",
-            displayTeam(String(r.team)),
-            r.prize_usd == null ? null : Math.round(Number(r.prize_usd)),
+            ...(multi ? [nameOf(r.event_page)] : []),
+            r.place ? `${placeLabel(r.place)} (${r.place})` : "—",
+            displayTeam(r.team),
+            r.prize_usd == null ? null : Math.round(r.prize_usd),
           ]),
         },
         facts,
         sources,
-        followUps: champions.slice(0, 2).map((w) => `Historique de ${displayTeam(String(w!.team))}`),
-        totals: { champion: champions[0] ? displayTeam(String(champions[0].team)) : "", teams: raw.length, events: pages.length },
+        followUps: champions.slice(0, 2).map((w) => `Historique de ${displayTeam(w.team)}`),
+        totals: { champion: champions[0] ? displayTeam(champions[0].team) : "", teams: raw.length, events: pages.length },
       };
     }
-    const rows = pages.map((p) => {
+
+    const editions = pages.map((p) => {
       const w = winnerOf(p);
-      const f = raw.find((r) => r.event_page === p && Number(r.place_number) === 2);
-      const any = raw.find((r) => r.event_page === p)!;
-      return [Number(any.year), any.tournament, w ? displayTeam(String(w.team)) : "—", f ? displayTeam(String(f.team)) : "—"];
+      const f = raw.find((r) => r.event_page === p && r.place_number === 2);
+
+      return {
+        year: raw.find((r) => r.event_page === p)?.year ?? 0,
+        tournament: nameOf(p),
+        winner: w ? displayTeam(w.team) : null,
+        finalist: f ? displayTeam(f.team) : null,
+      };
     });
+
+    const rows = editions.map((e) => [e.year, e.tournament, e.winner ?? "—", e.finalist ?? "—"]);
     const count = new Map<string, number>();
-    for (const r of rows) if (r[2] !== "—") count.set(String(r[2]), (count.get(String(r[2])) ?? 0) + 1);
+
+    for (const e of editions) if (e.winner) count.set(e.winner, (count.get(e.winner) ?? 0) + 1);
     const ranking = [...count].sort((x, y) => y[1] - x[1]);
+    const latest = editions.findLast((e) => e.winner)?.winner ?? "";
+
     const facts =
-      `Palmarès ${league === "Worlds" ? "des Worlds" : `de ${league}`}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(rows.map((r) => Number(r[0])))}). ` +
+      `Palmarès ${league === "Worlds" ? "des Worlds" : `de ${league}`}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(editions.map((e) => e.year))}). ` +
       (ranking.length
-        ? `Plus titrés : ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Dernier vainqueur : ${[...rows].reverse().find((r) => r[2] !== "—")?.[2]}.`
+        ? `Plus titrés : ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Dernier vainqueur : ${latest}.`
         : "Aucun vainqueur publié.");
+
     return {
       title: `Palmarès — ${league}${input.yearFrom != null ? ` ${span([input.yearFrom, input.yearTo ?? input.yearFrom])}` : ""}`,
       table: { columns: ["Année", "Tournoi", "Vainqueur", "Finaliste"], rows },
       facts,
       sources,
       followUps: ranking.slice(0, 2).map(([t]) => `Historique de ${t}`),
-      totals: { events: rows.length, most_titles: ranking[0]?.[0] ?? "", most_titles_count: ranking[0]?.[1] ?? 0, latest_champion: String([...rows].reverse().find((r) => r[2] !== "—")?.[2] ?? "") },
+      totals: { events: rows.length, most_titles: ranking[0]?.[0] ?? "", most_titles_count: ranking[0]?.[1] ?? 0, latest_champion: latest },
     };
   },
   normalize: (_db, input) => input,
@@ -677,15 +858,81 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
 
 // Registry ----------------------------------------------------------------------------
 
-export const TOOLS = {
-  player_event_history: playerEventHistory,
-  team_history: teamHistory,
-  head_to_head: headToHead,
-  champion_event_stats: championEventStats,
-  tournament_standings: tournamentStandings,
-} as unknown as Record<ToolName, ToolDef>;
+function bind<I extends ToolInput>(def: ToolDef<I>, db: DatabaseSync, input: I, call: (input: I) => ToolCall): BoundTool {
+  const { sql, params } = def.plan(db, input);
+
+  return {
+    call: call(input),
+    label: def.label,
+    sql,
+    params,
+    relaxations: (entities) =>
+      def.relaxations(input, entities).map((r) => ({
+        key: r.key,
+        note: r.note,
+        reason: r.reason,
+        next: () => bind(def, db, r.input, call),
+      })),
+    format: (formatDb, rows) => def.format(formatDb, input, rows),
+  };
+}
+
+/** Validates the input with the tool's zod schema and binds the tool to it. */
+export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
+  switch (call.tool) {
+    case "player_event_history":
+      return bind(playerEventHistory, db, PlayerHistoryInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "team_history":
+      return bind(teamHistory, db, TeamHistoryInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "head_to_head":
+      return bind(headToHead, db, HeadToHeadInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "champion_event_stats":
+      return bind(championEventStats, db, ChampionStatsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "tournament_standings":
+      return bind(tournamentStandings, db, StandingsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+  }
+}
 
 /** The same tools, as AI SDK tools for the LLM router (no `execute`: the agent runs them behind the guard). */
-export const aiTools = Object.fromEntries(
-  Object.values(TOOLS).map((t) => [t.name, tool({ description: t.description, inputSchema: t.inputSchema })]),
-);
+export const aiTools = {
+  player_event_history: tool({ description: playerEventHistory.description, inputSchema: PlayerHistoryInput }),
+  team_history: tool({ description: teamHistory.description, inputSchema: TeamHistoryInput }),
+  head_to_head: tool({ description: headToHead.description, inputSchema: HeadToHeadInput }),
+  champion_event_stats: tool({ description: championEventStats.description, inputSchema: ChampionStatsInput }),
+  tournament_standings: tool({ description: tournamentStandings.description, inputSchema: StandingsInput }),
+};
+
+/** Maps an LLM tool call onto database names (aliases, team shorthands...); null when a name is unknown. */
+export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof aiTools>): ToolCall | null {
+  switch (call.toolName) {
+    case "player_event_history": {
+      const input = playerEventHistory.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "team_history": {
+      const input = teamHistory.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "head_to_head": {
+      const input = headToHead.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "champion_event_stats": {
+      const input = championEventStats.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "tournament_standings": {
+      const input = tournamentStandings.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+  }
+}

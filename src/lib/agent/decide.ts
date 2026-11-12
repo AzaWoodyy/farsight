@@ -49,17 +49,23 @@ export async function decide<I, O>(
 
   for (const d of cascade) {
     let decision: Decision<O> | null = null;
+
     try {
       decision = await d.run(input);
     } catch (err) {
-      attempts.push({ name: d.name, level: d.level, confidence: null, error: (err as Error).message });
+      attempts.push({ name: d.name, level: d.level, confidence: null, error: err instanceof Error ? err.message : String(err) });
       continue;
     }
+
     attempts.push({ name: d.name, level: d.level, confidence: decision?.confidence ?? null });
+
     if (!decision) continue;
+
     if (!best || decision.confidence > best.confidence) best = { ...decision, name: d.name };
+
     if (decision.confidence >= threshold) break;
   }
+
   return best ? { ...best, attempts } : null;
 }
 

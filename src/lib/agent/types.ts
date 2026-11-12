@@ -1,9 +1,36 @@
 import type { UIMessage } from "ai";
 import type { DecisionLevel } from "./decide";
+import type { BoundTool, ToolInput } from "./tools";
 
 /** The four visible steps of the agent, in order. */
 export const STEPS = ["understand", "build", "execute", "format"] as const;
+
 export type StepName = (typeof STEPS)[number];
+
+/** Leaguepedia `League` values of the fixed scope (leagues.name). */
+export const LEAGUE_NAMES = [
+  "World Championship",
+  "Mid-Season Invitational",
+  "LCK Challengers League",
+  "LCK Academy Series",
+  "LoL Champions Korea",
+  "LoL The Champions",
+  "Challengers Korea",
+  "Tencent LoL Pro League",
+  "LoL EMEA Championship",
+  "Europe League Championship Series",
+  "EMEA Masters",
+  "European Masters",
+  "North America League Championship Series",
+  "League of Legends Championship Series",
+  "League of Legends Championship of The Americas North",
+  "League of Legends Championship of The Americas",
+  "La Ligue Française Division 2",
+  "La Ligue Française",
+  "LVP SuperLiga 2nd Division",
+] as const;
+
+export type LeagueName = (typeof LEAGUE_NAMES)[number];
 
 export type TraceStatus = "ok" | "warn" | "error" | "fix";
 
@@ -65,6 +92,8 @@ export type ResolvedTeam = {
   members: string[];
 };
 
+export type Split = "Spring" | "Summer" | "Winter";
+
 export type ResolvedChampion = { mention: string; champion: string };
 
 export type Entities = {
@@ -72,13 +101,13 @@ export type Entities = {
   teams: ResolvedTeam[];
   champion: ResolvedChampion | null;
   unresolved: string[];
-  league: string | null; // Leaguepedia `League` value (leagues.name)
+  league: LeagueName | null;
   leagueShort: string | null;
   leagueMention: string | null;
   yearFrom: number | null;
   yearTo: number | null;
-  /** Spring / Summer / Winter / Finals, when the question names a split. */
-  split: string | null;
+  /** Spring / Summer / Winter, when the question names a split. */
+  split: Split | null;
   /** Out-of-scope competition or game named in the question (LJL, Valorant...). */
   outOfScope: string | null;
 };
@@ -94,8 +123,8 @@ export type Intent = ToolName | "sql";
 
 export type QueryPlan = {
   intent: Intent;
-  /** Tool input (validated by the tool's zod schema); empty for text-to-SQL. */
-  input: Record<string, unknown>;
+  /** The typed tool bound to its validated input; null for text-to-SQL. */
+  tool: BoundTool | null;
   sql: string;
   params: Record<string, string | number>;
   attempt: number;
@@ -124,12 +153,16 @@ export type ResultRow = {
 
 export type Source = { label: string; url: string };
 
+/** One cell of a generic table (other typed tools, text-to-SQL). */
+export type TableCell = string | number | null;
+
 /** Machine-readable outline of how the answer was produced (eval, debugging). */
 export type AnswerMeta = {
   route: Intent | "out_of_scope" | "none";
   /** False when text-to-SQL was needed but no OpenRouter key is configured. */
   sqlAvailable: boolean;
-  input: Record<string, unknown>;
+  /** Input of the typed tool that answered, null otherwise. */
+  input: ToolInput | null;
   players: string[];
   teams: string[];
   champion: string | null;
@@ -147,7 +180,7 @@ export type Answer = {
   /** Player history table (typed tool). */
   rows: ResultRow[];
   /** Generic table (other typed tools and text-to-SQL fallback). */
-  table: { columns: string[]; rows: unknown[][] } | null;
+  table: { columns: string[]; rows: TableCell[][] } | null;
   sources: Source[];
   followUps: string[];
   notes: string[];

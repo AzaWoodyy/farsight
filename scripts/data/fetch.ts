@@ -13,11 +13,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { z } from "zod";
+import { type Json, JsonSchema } from "../../src/lib/json";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import {
   type CargoOptions,
   type CargoQuery,
   type CargoRow,
+  type CargoValue,
+  StoredCargoRow,
   cargoIn,
   cargoQuery,
   cargoStats,
@@ -27,6 +31,7 @@ import {
   CARGO_CACHE_DIR,
   DDRAGON_CACHE_DIR,
   type Dataset,
+  IngestRun,
   LEAGUES,
   RAW_DIR,
   classifyTournament,
@@ -62,6 +67,7 @@ const TOURNAMENT_FIELDS = [
   "Tournaments.IsPlayoffs=IsPlayoffs",
   "Tournaments.TournamentLevel=Level",
 ];
+
 const RESULT_FIELDS = [
   "TR.OverviewPage=Page",
   "TR.Team=Team",
@@ -69,6 +75,7 @@ const RESULT_FIELDS = [
   "TR.Place_Number=PlaceNumber",
   "TR.Prize_USD=PrizeUSD",
 ];
+
 const GAME_FIELDS = [
   "SG.GameId=GameId", "SG.OverviewPage=Page", "SG.Team1=Team1", "SG.Team2=Team2", "SG.Winner=Winner",
   "SG.Gamelength=Len", "SG.Patch=Patch", "SG.DateTime_UTC=Date",
@@ -79,6 +86,7 @@ const GAME_FIELDS = [
   "SG.Team1VoidGrubs=V1", "SG.Team2VoidGrubs=V2", "SG.Team1Atakhans=A1", "SG.Team2Atakhans=A2",
   "SG.Team1Inhibitors=I1", "SG.Team2Inhibitors=I2",
 ];
+
 const LINE_FIELDS = [
   "SP.GameId=GameId", "SP.OverviewPage=Page", "SP.Link=Link", "SP.Name=Name", "SP.Champion=Champion",
   "SP.Role=Role", "SP.Team=Team", "SP.Side=Side", "SP.PlayerWin=Win",
@@ -120,6 +128,7 @@ function linesQuery(where: string, joinTournaments: boolean): CargoQuery {
 async function fetchPlayers(links: string[], opts: CargoOptions) {
   const players: CargoRow[] = [];
   const redirects: CargoRow[] = [];
+
   for (const [i, batch] of chunks(links, 150).entries()) {
     players.push(
       ...(await cargoQuery(
@@ -145,27 +154,33 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
         opts,
       )),
     );
+
     if (i % 10 === 9) console.log(`  players ${(i + 1) * 150}/${links.length} (${progress()})`);
   }
+
   return { players, redirects };
 }
 
 const linkOf = (l: CargoRow) => String(l.Link ?? l.Name ?? "");
+const asText = (v: CargoValue | undefined) => (v == null || v === "" ? null : String(v));
 
 // --- Data Dragon --------------------------------------------------------------
 
-async function ddragon(path: string, force: boolean): Promise<unknown> {
+async function ddragon(path: string, force: boolean): Promise<Json> {
   mkdirSync(DDRAGON_CACHE_DIR, { recursive: true });
   const file = resolve(DDRAGON_CACHE_DIR, `${createHash("sha1").update(path).digest("hex").slice(0, 20)}.json`);
-  if (!force && existsSync(file)) return JSON.parse(readFileSync(file, "utf8"));
+
+  if (!force && existsSync(file)) return JsonSchema.parse(JSON.parse(readFileSync(file, "utf8")));
   const res = await fetch(`${DDRAGON_BASE}${path}`);
+
   if (!res.ok) throw new Error(`Data Dragon ${res.status}: ${path}`);
   const text = await res.text();
   writeFileSync(file, text);
-  return JSON.parse(text);
+
+  return JsonSchema.parse(JSON.parse(text));
 }
 
-type ItemFile = { data: Record<string, { name: string }> };
+const ItemFile = z.object({ data: z.record(z.string(), z.object({ name: z.string() })) });
 
 /**
  * Latest champion/item/rune/spell data, plus item names from older patches so
@@ -173,31 +188,37 @@ type ItemFile = { data: Record<string, { name: string }> };
  * (first, middle, last) are enough to catch nearly every retired item.
  */
 async function fetchDdragon(force: boolean) {
-  const versions = ((await ddragon("/api/versions.json", true)) as string[]).filter((v) =>
+  const versions = z.array(z.string()).parse(await ddragon("/api/versions.json", true)).filter((v) =>
     /^\d+\.\d+\.\d+$/.test(v),
   );
+
   const version = versions[0];
   const cdn = (f: string) => ddragon(`/cdn/${version}/data/en_US/${f}`, force);
   const bySeason = new Map<string, string[]>();
+
   for (const v of versions) {
     const major = v.split(".")[0];
     bySeason.set(major, [...(bySeason.get(major) ?? []), v]);
   }
+
   const legacyVersions = [...bySeason.values()]
     .flatMap((vs) => [...new Set([vs[0], vs[Math.floor(vs.length / 2)], vs[vs.length - 1]])])
     .filter((v) => v !== version);
+
   const legacyItems: { version: string; items: Record<string, string> }[] = [];
+
   for (const v of legacyVersions) {
     try {
-      const file = (await ddragon(`/cdn/${v}/data/en_US/item.json`, false)) as ItemFile;
+      const file = ItemFile.parse(await ddragon(`/cdn/${v}/data/en_US/item.json`, false));
       legacyItems.push({
         version: v,
         items: Object.fromEntries(Object.entries(file.data).map(([id, it]) => [id, it.name])),
       });
     } catch (err) {
-      console.warn(`  ddragon: skipped ${v} (${(err as Error).message})`);
+      console.warn(`  ddragon: skipped ${v} (${err instanceof Error ? err.message : String(err)})`);
     }
   }
+
   return {
     version,
     champion: await cdn("champion.json"),
@@ -212,11 +233,13 @@ async function fetchDdragon(force: boolean) {
 
 function load(name: Dataset): CargoRow[] {
   const file = datasetFile(name);
+
   if (!existsSync(file)) throw new Error(`${file} is missing: run a full \`bun run data:fetch\` first.`);
-  return JSON.parse(readFileSync(file, "utf8"));
+
+  return z.array(StoredCargoRow).parse(JSON.parse(readFileSync(file, "utf8")));
 }
 
-function save(name: Dataset, value: unknown) {
+function save(name: Dataset, value: Json) {
   writeFileSync(datasetFile(name), JSON.stringify(value));
 }
 
@@ -231,6 +254,7 @@ async function full() {
   console.log(`full fetch${refresh ? " (refresh: cache ignored)" : ""}`);
   const tournaments = await cargoQuery(tournamentsQuery, cached);
   console.log(`tournaments: ${tournaments.length}`);
+
   const results = await cargoQuery(
     {
       tables: "TournamentResults=TR,Tournaments=T",
@@ -241,10 +265,12 @@ async function full() {
     },
     cached,
   );
+
   console.log(`results: ${results.length}`);
 
   const games: CargoRow[] = [];
   const lines: CargoRow[] = [];
+
   for (const league of LEAGUES) {
     const where = `T.League=${cargoString(league.name)}`;
     const g = await cargoQuery(gamesQuery(where, true), cached);
@@ -254,7 +280,7 @@ async function full() {
     console.log(`${league.name}: ${g.length} games, ${l.length} player lines (${progress()})`);
   }
 
-  const links = [...new Set(lines.map(linkOf).filter(Boolean))];
+  const links = [...new Set(lines.flatMap((l) => linkOf(l) || []))];
   const { players, redirects } = await fetchPlayers(links, cached);
   console.log(`players: ${players.length}, redirects: ${redirects.length}`);
 
@@ -268,6 +294,7 @@ async function full() {
   save("players", players);
   save("redirects", redirects);
   save("ddragon", dd);
+
   return {
     tournaments: tournaments.length,
     results: results.length,
@@ -283,24 +310,31 @@ async function incrementalFetch() {
   const cutoff = new Date(startedAt.getTime() - days * 86400_000).toISOString().slice(0, 10);
   console.log(`incremental fetch: tournaments running between ${cutoff} and ${today}`);
 
-  const previous = Object.fromEntries(
-    (["tournaments", "results", "games", "lines", "players", "redirects"] as const).map((n) => [n, load(n)]),
-  ) as Record<"tournaments" | "results" | "games" | "lines" | "players" | "redirects", CargoRow[]>;
+  const previous = {
+    results: load("results"),
+    games: load("games"),
+    lines: load("lines"),
+    players: load("players"),
+    redirects: load("redirects"),
+  };
 
   // The tournament list is one request: always refresh it.
   const tournaments = await cargoQuery(tournamentsQuery, fresh);
   const leagueByName = new Map(LEAGUES.map((l) => [l.name, l]));
   const recent: string[] = [];
   const eventPages = new Set<string>();
+
   for (const t of tournaments) {
     const league = leagueByName.get(String(t.League));
     const kind = league && classifyTournament(String(t.Page), league);
-    const start = (t.DateStart ?? t.DateEnd) as string | null;
-    const end = (t.DateEnd ?? today) as string;
+    const start = asText(t.DateStart) ?? asText(t.DateEnd);
+    const end = asText(t.DateEnd) ?? today;
+
     if (!kind || !start || start > today || end < cutoff) continue;
     recent.push(String(t.Page));
     eventPages.add(kind.eventPage);
   }
+
   console.log(`recent or ongoing: ${recent.length}\n  ${recent.join("\n  ")}`);
 
   const pages = new Set(recent);
@@ -308,6 +342,7 @@ async function incrementalFetch() {
   const results: CargoRow[] = [];
   const games: CargoRow[] = [];
   const lines: CargoRow[] = [];
+
   for (const batch of chunks([...standingPages], 40)) {
     results.push(
       ...(await cargoQuery(
@@ -321,15 +356,23 @@ async function incrementalFetch() {
       )),
     );
   }
+
   for (const batch of chunks(recent, 40)) {
     games.push(...(await cargoQuery(gamesQuery(cargoIn("SG.OverviewPage", batch), false), fresh)));
     lines.push(...(await cargoQuery(linesQuery(cargoIn("SP.OverviewPage", batch), false), fresh)));
   }
+
   console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines`);
 
   const known = new Set(previous.players.map((p) => String(p.Page)));
   const lineLinks = new Set(previous.lines.map(linkOf));
-  const newLinks = [...new Set(lines.map(linkOf).filter((l) => l && !known.has(l) && !lineLinks.has(l)))];
+
+  const newLinks = [...new Set(lines.flatMap((line) => {
+    const l = linkOf(line);
+
+    return l && !known.has(l) && !lineLinks.has(l) ? [l] : [];
+  }))];
+
   const { players, redirects } = await fetchPlayers(newLinks, fresh);
   console.log(`new players: ${newLinks.length} (${players.length} with a Players row)`);
 
@@ -343,8 +386,10 @@ async function incrementalFetch() {
     players: [...previous.players, ...players],
     redirects: [...previous.redirects, ...redirects],
   };
-  for (const [name, rows] of Object.entries(merged)) save(name as Dataset, rows);
+
+  for (const name of ["tournaments", "results", "games", "lines", "players", "redirects"] as const) save(name, merged[name]);
   save("ddragon", dd);
+
   return {
     refreshed_tournaments: recent.length,
     results: results.length,
@@ -356,10 +401,12 @@ async function incrementalFetch() {
 }
 
 mkdirSync(RAW_DIR, { recursive: true });
+
 const counts = incremental ? await incrementalFetch() : await full();
 
 const runsFile = datasetFile("runs");
-const runs = existsSync(runsFile) ? JSON.parse(readFileSync(runsFile, "utf8")) : [];
+const runs = existsSync(runsFile) ? z.array(IngestRun).parse(JSON.parse(readFileSync(runsFile, "utf8"))) : [];
+
 runs.push({
   kind: incremental ? "fetch_incremental" : refresh ? "fetch_refresh" : "fetch_full",
   started_at: startedAt.toISOString(),
@@ -368,5 +415,7 @@ runs.push({
   cached_responses: cargoStats.cached,
   row_counts: counts,
 });
+
 save("runs", runs);
+
 console.log(`done in ${elapsed()}: ${cargoStats.requests} Leaguepedia requests, ${cargoStats.cached} from cache`);

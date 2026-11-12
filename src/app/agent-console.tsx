@@ -39,14 +39,18 @@ const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
+
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/ask" }),
   });
+
   const running = status === "submitted" || status === "streaming";
 
   function ask(q: string) {
     const text = q.trim();
+
     if (!text) return;
+
     if (running) stop();
     // One question at a time: the agent does not use the chat history.
     setMessages([]);
@@ -58,8 +62,10 @@ export function AgentConsole() {
   const reply = messages.findLast((m) => m.role === "assistant");
   const steps = new Map<StepName, StepPart>();
   let answer: Answer | null = null;
+
   for (const part of reply?.parts ?? []) {
     if (part.type === "data-step") steps.set(part.data.step, part.data);
+
     if (part.type === "data-answer") answer = part.data;
   }
 
@@ -132,6 +138,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
         {STEPS.map((name, i) => {
           const part = steps.get(name);
           const branch = i === STEPS.length - 1 ? "└─" : "├─";
+
           if (!part)
             return (
               <li key={name} className="flex gap-2 text-muted/60">
@@ -142,6 +149,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
               </li>
             );
           const s = STATUS[part.status];
+
           return (
             <li key={name}>
               <div className="flex gap-2">
@@ -253,15 +261,18 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
           return r.wins / Math.max(1, r.wins + r.losses);
       }
     };
+
     return [...rows].sort((a, b) => {
       const va = value(a);
       const vb = value(b);
+
       return (va < vb ? -1 : va > vb ? 1 : a.year - b.year) * sort.dir;
     });
   }, [rows, sort]);
 
   const header = (key: SortKey, label: string, className = "") => {
     const active = sort.key === key;
+
     return (
       <th scope="col" className={`px-3 py-2 font-normal ${className}`} aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
         <button
@@ -313,7 +324,9 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
                   {r.champions.map((c) => (
                     <li key={c.name} title={`${c.name} : ${c.games} partie(s), ${c.wins} victoire(s)`} className="flex items-center gap-1">
                       {c.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                        // 20 px Data Dragon icons: next/image would spend the Vercel Hobby image-optimization quota
+                        // (shared with the portfolio) without any LCP gain.
+                        // oxlint-disable-next-line nextjs/no-img-element
                         <img src={c.imageUrl} alt={c.name} width={20} height={20} className="h-5 w-5" loading="lazy" />
                       ) : (
                         <span>{c.name}</span>

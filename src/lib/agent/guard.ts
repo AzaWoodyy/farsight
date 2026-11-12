@@ -32,13 +32,14 @@ export const MAX_ROWS = 200;
 
 const FORBIDDEN =
   /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|replace|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint|release)\b/i;
+
 const NOT_ALIAS = /^(on|where|group|order|left|inner|outer|join|limit|cross|using|natural|union|except|intersect|having|window)$/i;
 
 export function allowedSchema(
   schema: Record<string, string[]>,
   objects: readonly string[] = ALLOWED_OBJECTS,
 ): Record<string, string[]> {
-  return Object.fromEntries(objects.filter((t) => schema[t]).map((t) => [t, schema[t]]));
+  return Object.fromEntries(objects.flatMap((t) => (schema[t] ? [[t, schema[t]]] : [])));
 }
 
 export function guardQuery(
@@ -55,20 +56,25 @@ export function guardQuery(
     .replace(/'(?:[^']|'')*'/g, "''")
     .replace(/--[^\n]*/g, "")
     .replace(/\/\*[\s\S]*?\*\//g, "");
+
   const trimmed = code.trim().replace(/;\s*$/, "");
 
   if (!/^(select|with)\b/i.test(trimmed)) issues.push("Only SELECT / WITH queries are allowed.");
+
   if (trimmed.includes(";")) issues.push("Only one statement is allowed.");
   const forbidden = FORBIDDEN.exec(trimmed);
+
   if (forbidden) issues.push(`Forbidden keyword: ${forbidden[1].toUpperCase()}.`);
 
   const ctes = new Set(
     [...trimmed.matchAll(/(?:\bwith|,)\s+(\w+)\s+as\s*\(/gi)].map((m) => m[1].toLowerCase()),
   );
+
   const aliases = new Map<string, string>(); // alias -> table
 
   for (const m of trimmed.matchAll(/\b(?:from|join)\s+(\w+)(?:\s+(?:as\s+)?(\w+))?/gi)) {
     const name = m[1].toLowerCase();
+
     if (!allowed.has(name) && !ctes.has(name)) {
       issues.push(
         schema[m[1]] || schema[m[1].toLowerCase()]
@@ -77,19 +83,24 @@ export function guardQuery(
       );
       continue;
     }
+
     const alias = m[2]?.toLowerCase();
+
     if (alias && !NOT_ALIAS.test(alias)) aliases.set(alias, name);
     aliases.set(name, name);
   }
 
   for (const m of trimmed.matchAll(/\b([A-Za-z_]\w*)\.(\w+)\b/g)) {
     const table = aliases.get(m[1].toLowerCase());
+
     if (!table) {
       issues.push(`Unknown table alias: ${m[1]}.`);
       continue;
     }
+
     if (ctes.has(table)) continue; // CTE columns are checked by prepare()
     const cols = allowed.get(table) ?? [];
+
     if (!cols.includes(m[2]))
       issues.push(`Unknown column ${m[1]}.${m[2]} (${table} has: ${cols.join(", ")}).`);
   }
@@ -104,28 +115,37 @@ export function guardQuery(
   db.setAuthorizer((action, table, column, dbName, view) => {
     if (action === constants.SQLITE_SELECT || action === constants.SQLITE_FUNCTION || action === constants.SQLITE_RECURSIVE)
       return constants.SQLITE_OK;
+
     if (action !== constants.SQLITE_READ) {
       denied.add(`action ${action}`);
+
       return constants.SQLITE_DENY;
     }
+
     const name = table?.toLowerCase() ?? "";
+
     // Reads made by an allow-listed view on its base tables are fine.
     if (objectSet.has(name) || (view != null && objectSet.has(view.toLowerCase()))) return constants.SQLITE_OK;
+
     // Joins inside a view read a base table with no column; SQLite then reports
     // the schema name but not always the view. A direct reference has no schema
     // name, and reading any column still needs an allow-listed view.
     if (column === "" && dbName != null) return constants.SQLITE_OK;
     denied.add(table ?? "?");
+
     return constants.SQLITE_DENY;
   });
+
   try {
     db.prepare(limited);
   } catch (err) {
     if (denied.size)
       return { ok: false, issues: [...denied].map((t) => `Table not allowed: ${t} (use the v_* views).`) };
-    return { ok: false, issues: [`SQLite rejected the query: ${(err as Error).message}`] };
+
+    return { ok: false, issues: [`SQLite rejected the query: ${err instanceof Error ? err.message : String(err)}`] };
   } finally {
     db.setAuthorizer(null);
   }
+
   return { ok: true, sql: limited };
 }

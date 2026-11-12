@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v2, full scope); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count or {min,max}), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v2, full scope); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set.",
   "questions": [
     {
       "id": "worlds-chovy",
@@ -114,7 +114,7 @@
         "league": "LoL Champions Korea",
         "input": { "kind": "team" },
         "totals": { "wins_a": 78, "wins_b": 73 },
-        "rows": { "min": 30 },
+        "rowsMin": 30,
         "sources": 4
       }
     },
@@ -139,7 +139,7 @@
         "teams": ["Gen.G"],
         "league": "LoL Champions Korea",
         "input": { "yearFrom": 2023, "yearTo": null },
-        "rows": { "min": 12 },
+        "rowsMin": 12,
         "totals": { "titles": 5 }
       }
     },
@@ -294,20 +294,20 @@
         "route": "champion_event_stats",
         "champion": "Lee Sin",
         "league": "LoL Champions Korea",
-        "rows": { "min": 1 }
+        "rowsMin": 1
       }
     },
     {
       "id": "sql-pentakills",
       "question": "combien de pentakills Faker a-t-il fait aux Worlds",
       "tags": ["worlds", "text_to_sql"],
-      "expect": { "route": "sql", "players": ["Faker"], "rows": { "min": 1 } }
+      "expect": { "route": "sql", "players": ["Faker"], "rowsMin": 1 }
     },
     {
       "id": "sql-most-games",
       "question": "quel joueur a joué le plus de parties aux Worlds",
       "tags": ["worlds", "text_to_sql"],
-      "expect": { "route": "sql", "league": "World Championship", "rows": { "min": 1 } }
+      "expect": { "route": "sql", "league": "World Championship", "rowsMin": 1 }
     },
     {
       "id": "out-of-scope-league",
