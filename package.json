@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "ingest:worlds": "bun scripts/ingest-worlds.ts",
+    "data:fetch": "bun scripts/data/fetch.ts",
+    "data:build": "bun scripts/data/build.ts",
     "ask": "bun scripts/ask.ts"
   },
   "dependencies": {

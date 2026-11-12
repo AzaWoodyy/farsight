@@ -34,7 +34,8 @@ Prérequis : [Bun](https://bun.sh) 1.3+ et Node.js 22.13+ (pour `node:sqlite`).
 ```bash
 bun install
 cp .env.example .env          # facultatif : configuration du LLM
-bun run ingest:worlds         # remplit data/lol.sqlite (Worlds 2011 → aujourd'hui)
+bun run data:fetch            # Leaguepedia + Data Dragon -> data/raw (~3 min la première fois)
+bun run data:build            # data/raw -> data/lol.sqlite (~80 Mo, quelques secondes)
 bun run dev                   # http://localhost:3000
 ```
 
@@ -46,19 +47,37 @@ bun run ask "résultats de Chovy à tous les Worlds"
 
 ### Ingestion
 
-`scripts/ingest-worlds.ts` lit les tables Cargo de Leaguepedia
-(`Tournaments`, `TournamentResults`, `ScoreboardPlayers`, `Players`,
-`PlayerRedirects`) et les icônes de champions de Data Dragon, puis écrit le
-tout dans `data/lol.sqlite` en une transaction.
+Deux commandes, dans `scripts/data/` :
 
-- Une requête à la fois, 2 s entre deux requêtes (`LEAGUEPEDIA_DELAY_MS`),
-  backoff exponentiel en cas d'erreur.
-- Chaque réponse brute est mise en cache dans `data/raw/` : relancer
-  l'ingestion ne refait aucun appel. Supprimer `data/raw/` pour rafraîchir.
-- L'API `action=cargoquery` est fortement limitée pour les clients anonymes ;
-  le script passe par `Special:CargoExport`, qui sert les mêmes données.
-- Le schéma (`src/lib/db/schema.ts`) porte déjà une colonne `league` : MSI et
-  les ligues (LCK, LPL, LEC, LCS) pourront s'y ajouter sans migration.
+- `data:fetch` lit les tables Cargo de Leaguepedia (`Tournaments`,
+  `TournamentResults`, `ScoreboardGames`, `ScoreboardPlayers`, `Players`,
+  `PlayerRedirects`) pour les 19 ligues du périmètre (voir `scope.ts`), et
+  Data Dragon (champions, objets, runes, sorts, plus les objets des anciens
+  patchs pour les icônes des objets retirés).
+  - Une requête à la fois, au moins 2 s d'écart (`LEAGUEPEDIA_DELAY_MS`,
+    2,5 s par défaut), backoff exponentiel en cas d'erreur, par ligue et par
+    pages de 5 000 lignes via `Special:CargoExport`.
+  - Chaque réponse brute est gardée dans `data/raw/cargo/` : relancer ne refait
+    aucun appel. `--refresh` ignore ce cache (reconstruction mensuelle).
+  - `--incremental [--days=14]` ne récupère que les tournois en cours ou
+    terminés depuis moins de `days` jours, et les fusionne dans les jeux de
+    données existants (`data/raw/*.json`).
+- `data:build` reconstruit `data/lol.sqlite` de zéro à partir de `data/raw/`
+  (schéma normalisé à ids entiers, tables de correspondance, vues `v_*` qui
+  remettent les noms), puis `journal_mode=DELETE` et `VACUUM`.
+  - Chaque tournoi est classé d'après son nom de page (`tournaments.stage` :
+    `event`, `main_event`, `play_in`, `qualifier`, `season`, `playoffs`), car
+    Leaguepedia range les qualifications régionales sous le label
+    `World Championship`. `event_page` pointe vers la page des classements.
+  - `ingest_runs` garde l'historique des récupérations et la construction
+    (date, nombre de lignes, version du schéma, aussi dans `PRAGMA user_version`).
+  - Les objets absents de Data Dragon gardent une icône de repli
+    (`public/icons/item-fallback.svg`, `items.icon_source = 'fallback'`).
+
+`data/` n'est jamais commité.
+
+> L'agent du POC lit encore l'ancien schéma : il sera adapté au nouveau lors de
+> la migration vers l'AI SDK.
 
 ### LLM
 
@@ -76,7 +95,7 @@ Le fournisseur se configure uniquement par variables d'environnement (voir
 ## Structure
 
 ```
-scripts/ingest-worlds.ts     ingestion Worlds -> SQLite
+scripts/data/                data:fetch (sources -> data/raw) et data:build (-> SQLite)
 scripts/ask.ts               agent en CLI
 src/lib/sources/             clients Leaguepedia (Cargo) et Data Dragon
 src/lib/db/                  schéma et accès SQLite
