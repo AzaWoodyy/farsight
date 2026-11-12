@@ -1,6 +1,19 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import { z } from "zod";
 import { runAgent } from "@/lib/agent/run";
 import type { AgentUIMessage } from "@/lib/agent/types";
+
+/** The part of the chat request the agent reads: the text parts of the messages. */
+const ChatRequest = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.string(),
+        parts: z.array(z.object({ type: z.string(), text: z.string().optional() })).default([]),
+      }),
+    )
+    .default([]),
+});
 
 /**
  * useChat endpoint. Body: the AI SDK chat request ({ messages, ... }); only
@@ -9,13 +22,18 @@ import type { AgentUIMessage } from "@/lib/agent/types";
  * a final `data-answer` part.
  */
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { messages?: AgentUIMessage[] };
-  const last = body.messages?.findLast((m) => m.role === "user");
+  const body = ChatRequest.safeParse(await req.json().catch(() => null));
+
+  if (!body.success) return Response.json({ error: "invalid chat request" }, { status: 400 });
+
+  const last = body.data.messages.findLast((m) => m.role === "user");
+
   const question = (last?.parts ?? [])
-    .map((p) => (p.type === "text" ? p.text : ""))
+    .map((p) => (p.type === "text" ? (p.text ?? "") : ""))
     .join(" ")
     .trim()
     .slice(0, 500);
+
   if (!question) return Response.json({ error: "question is required" }, { status: 400 });
 
   const stream = createUIMessageStream<AgentUIMessage>({
@@ -30,8 +48,10 @@ export async function POST(req: Request) {
     },
     onError: (err) => {
       console.error(err);
+
       return "Erreur interne de l'agent.";
     },
   });
+
   return createUIMessageStreamResponse({ stream, headers: { "Cache-Control": "no-store" } });
 }

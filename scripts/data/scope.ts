@@ -3,13 +3,16 @@
  * league scope, and the tournament classifier.
  */
 import { resolve } from "node:path";
+import { z } from "zod";
 
 export const SCHEMA_VERSION = 2;
 
 const ROOT = resolve(import.meta.dirname, "../..");
 export const RAW_DIR = resolve(ROOT, "data/raw");
+
 /** One JSON file per raw Leaguepedia response, keyed by URL hash. */
 export const CARGO_CACHE_DIR = resolve(RAW_DIR, "cargo");
+
 /** One JSON file per Data Dragon response. */
 export const DDRAGON_CACHE_DIR = resolve(RAW_DIR, "ddragon");
 export const DB_FILE = resolve(ROOT, process.env.DATABASE_PATH || "data/lol.sqlite");
@@ -25,8 +28,22 @@ export const DATASETS = [
   "ddragon",
   "runs",
 ] as const;
+
 export type Dataset = (typeof DATASETS)[number];
+
 export const datasetFile = (name: Dataset) => resolve(RAW_DIR, `${name}.json`);
+
+/** One entry of runs.json: a data:fetch run and the row counts it saved. */
+export const IngestRun = z.object({
+  kind: z.string(),
+  started_at: z.string(),
+  finished_at: z.string(),
+  requests: z.number(),
+  cached_responses: z.number(),
+  row_counts: z.record(z.string(), z.number()),
+});
+
+export type IngestRun = z.infer<typeof IngestRun>;
 
 export type League = {
   /** Leaguepedia `League` value. */
@@ -81,25 +98,36 @@ export type Classification = {
 
 const INTERNATIONAL_EVENT =
   /^(?:\d{4} Season World Championship|Season \d World Championship|\d{4} Mid-Season Invitational)$/;
+
 const QUALIFIER = /Regional Finals|Qualif|Promotion|Relegation|LCQ|Placements|Road to /i;
 
 /** Returns null for pages that are not competitive (showmatches). */
 export function classifyTournament(page: string, league: League): Classification | null {
   if (/Showmatch/i.test(page)) return null;
+
   if (league.international) {
     if (QUALIFIER.test(page)) return { stage: "qualifier", eventPage: page };
     const sub = /^(.*)\/(Main Event|Play-In)$/.exec(page);
+
     if (sub && INTERNATIONAL_EVENT.test(sub[1]))
       return { stage: sub[2] === "Play-In" ? "play_in" : "main_event", eventPage: sub[1] };
+
     if (INTERNATIONAL_EVENT.test(page)) return { stage: "main_event", eventPage: page };
+
     // Anything else under an international label is not the event itself.
     return { stage: "qualifier", eventPage: page };
   }
+
   const split = page.split("/").slice(1).join("/") || page;
+
   if (QUALIFIER.test(split)) return { stage: "qualifier", eventPage: page };
+
   if (/Play-In/i.test(split)) return { stage: "play_in", eventPage: page };
+
   // European Masters / EMEA Masters split into Play-In and Main Event.
   if (/Main Event/i.test(split)) return { stage: "main_event", eventPage: page };
+
   if (/Playoffs|Finals|Regional Championship/i.test(split)) return { stage: "playoffs", eventPage: page };
+
   return { stage: "season", eventPage: page };
 }

@@ -1,0 +1,331 @@
+{
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v2, full scope); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set.",
+  "questions": [
+    {
+      "id": "worlds-chovy",
+      "question": "résultats de Chovy à tous les Worlds",
+      "tags": ["worlds", "player"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Chovy"],
+        "league": "World Championship",
+        "rows": 8,
+        "totals": { "wins": 63, "losses": 37, "events": 8 },
+        "attempts": 1,
+        "sources": 9
+      }
+    },
+    {
+      "id": "worlds-faker",
+      "question": "Faker aux Worlds",
+      "tags": ["worlds", "player"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Faker"],
+        "league": "World Championship",
+        "rows": 11,
+        "totals": { "wins": 134, "losses": 50, "best_place": "1" },
+        "sources": 12
+      }
+    },
+    {
+      "id": "worlds-t1-history",
+      "question": "historique de T1 aux Worlds",
+      "tags": ["worlds", "team"],
+      "expect": {
+        "route": "team_history",
+        "teams": ["T1"],
+        "league": "World Championship",
+        "rows": 11,
+        "totals": { "titles": 6, "wins": 138, "losses": 50 },
+        "sources": 2
+      }
+    },
+    {
+      "id": "worlds-2023-winner",
+      "question": "qui a gagné les Worlds 2023",
+      "tags": ["worlds", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": { "yearFrom": 2023, "yearTo": 2023, "full": true },
+        "rows": 22,
+        "totals": { "champion": "T1" },
+        "sources": 1
+      }
+    },
+    {
+      "id": "worlds-roll-of-honour",
+      "question": "palmarès des Worlds",
+      "tags": ["worlds", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": { "full": false },
+        "rows": 15,
+        "totals": { "latest_champion": "T1" },
+        "sources": 15
+      }
+    },
+    {
+      "id": "worlds-ahri-2024",
+      "question": "stats d'Ahri aux Worlds 2024",
+      "tags": ["worlds", "champion"],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Ahri",
+        "league": "World Championship",
+        "rows": 1,
+        "totals": { "picks": 30, "bans": 8, "wins": 14 },
+        "sources": 2
+      }
+    },
+    {
+      "id": "msi-roll-of-honour",
+      "question": "palmarès du MSI",
+      "tags": ["msi", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Mid-Season Invitational",
+        "rows": 11,
+        "totals": { "most_titles": "Royal Never Give Up", "most_titles_count": 3 },
+        "sources": 11
+      }
+    },
+    {
+      "id": "msi-faker",
+      "question": "Faker au MSI",
+      "tags": ["msi", "player"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Faker"],
+        "league": "Mid-Season Invitational",
+        "rows": 9,
+        "totals": { "wins": 113, "losses": 56 }
+      }
+    },
+    {
+      "id": "lck-t1-vs-geng",
+      "question": "T1 contre Gen.G en LCK",
+      "tags": ["lck", "head_to_head"],
+      "expect": {
+        "route": "head_to_head",
+        "teams": ["T1", "Gen.G"],
+        "league": "LoL Champions Korea",
+        "input": { "kind": "team" },
+        "totals": { "wins_a": 78, "wins_b": 73 },
+        "rowsMin": 30,
+        "sources": 4
+      }
+    },
+    {
+      "id": "lck-2024-roll",
+      "question": "palmarès LCK 2024",
+      "tags": ["lck", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LoL Champions Korea",
+        "input": { "yearFrom": 2024, "full": false },
+        "rows": 2,
+        "totals": { "latest_champion": "Hanwha Life Esports" }
+      }
+    },
+    {
+      "id": "lck-geng-since-2023",
+      "question": "historique de Gen.G en LCK depuis 2023",
+      "tags": ["lck", "team"],
+      "expect": {
+        "route": "team_history",
+        "teams": ["Gen.G"],
+        "league": "LoL Champions Korea",
+        "input": { "yearFrom": 2023, "yearTo": null },
+        "rowsMin": 12,
+        "totals": { "titles": 5 }
+      }
+    },
+    {
+      "id": "lpl-ruler",
+      "question": "Ruler en LPL",
+      "tags": ["lpl", "player"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Ruler"],
+        "league": "Tencent LoL Pro League",
+        "rows": 8,
+        "totals": { "titles": 2 }
+      }
+    },
+    {
+      "id": "lpl-2023-roll",
+      "question": "palmarès LPL 2023",
+      "tags": ["lpl", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Tencent LoL Pro League",
+        "rows": 2,
+        "totals": { "most_titles": "JD Gaming", "most_titles_count": 2 }
+      }
+    },
+    {
+      "id": "lec-g2-vs-fnatic",
+      "question": "G2 contre Fnatic en LEC",
+      "tags": ["lec", "head_to_head"],
+      "expect": {
+        "route": "head_to_head",
+        "teams": ["G2 Esports", "Fnatic"],
+        "league": "LoL EMEA Championship",
+        "totals": { "wins_a": 61, "wins_b": 37 }
+      }
+    },
+    {
+      "id": "lec-caps-2024",
+      "question": "Caps en LEC 2024",
+      "tags": ["lec", "player", "ambiguous"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Caps"],
+        "league": "LoL EMEA Championship",
+        "rows": 7,
+        "ambiguity": { "mention": "Caps", "chosen": "Caps", "alternatives": ["caPs"] }
+      }
+    },
+    {
+      "id": "lcs-2016-era",
+      "question": "palmarès LCS 2016",
+      "tags": ["lcs", "standings"],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "North America League Championship Series",
+        "rows": 2,
+        "totals": { "latest_champion": "TSM" }
+      }
+    },
+    {
+      "id": "alias-hangul",
+      "question": "bilan de 정지훈 aux mondiaux",
+      "tags": ["worlds", "alias", "ambiguous"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Chovy"],
+        "league": "World Championship",
+        "rows": 8,
+        "totals": { "wins": 63, "losses": 37 },
+        "ambiguity": { "mention": "정지훈", "chosen": "Chovy", "alternatives": ["Pullbae"] },
+        "notes": ["Pullbae"]
+      }
+    },
+    {
+      "id": "alias-romanized",
+      "question": "Ji hun aux Worlds",
+      "tags": ["worlds", "alias"],
+      "expect": { "route": "player_event_history", "players": ["Chovy"], "rows": 8, "totals": { "wins": 63 } }
+    },
+    {
+      "id": "alias-real-name",
+      "question": "Lee Sang-hyeok aux Worlds",
+      "tags": ["worlds", "alias"],
+      "expect": { "route": "player_event_history", "players": ["Faker"], "rows": 11 }
+    },
+    {
+      "id": "ambiguous-context",
+      "question": "정지훈 en LCK CL",
+      "tags": ["lck", "alias", "ambiguous"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Pullbae"],
+        "league": "LCK Challengers League",
+        "rows": 11,
+        "ambiguity": { "mention": "정지훈", "chosen": "Pullbae", "alternatives": ["Chovy"] },
+        "notes": ["Chovy"]
+      }
+    },
+    {
+      "id": "ambiguous-case",
+      "question": "caPs aux Worlds",
+      "tags": ["worlds", "ambiguous"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["caPs"],
+        "rows": 1,
+        "ambiguity": { "mention": "caPs", "chosen": "caPs", "alternatives": ["Caps"] }
+      }
+    },
+    {
+      "id": "ambiguous-many",
+      "question": "jihoon aux Worlds",
+      "tags": ["worlds", "ambiguous"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Chovy"],
+        "rows": 8,
+        "ambiguity": { "mention": "jihoon", "chosen": "Chovy", "alternatives": ["Easyhoon", "Pullbae"] },
+        "notes": ["désigne plusieurs joueurs"]
+      }
+    },
+    {
+      "id": "players-head-to-head",
+      "question": "Faker vs Chovy",
+      "tags": ["head_to_head", "player"],
+      "expect": {
+        "route": "head_to_head",
+        "players": ["Faker", "Chovy"],
+        "input": { "kind": "player", "league": null },
+        "totals": { "wins_a": 70, "wins_b": 76 }
+      }
+    },
+    {
+      "id": "self-correct-period",
+      "question": "Chovy aux Worlds 2018",
+      "tags": ["worlds", "self_correction"],
+      "expect": {
+        "route": "player_event_history",
+        "players": ["Chovy"],
+        "rows": 8,
+        "attempts": 2,
+        "input": { "yearFrom": null },
+        "notes": ["Rien entre 2018 et 2018"]
+      }
+    },
+    {
+      "id": "lck-lee-sin-spring",
+      "question": "stats de Lee Sin en LCK spring 2024",
+      "tags": ["lck", "champion"],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Lee Sin",
+        "league": "LoL Champions Korea",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "sql-pentakills",
+      "question": "combien de pentakills Faker a-t-il fait aux Worlds",
+      "tags": ["worlds", "text_to_sql"],
+      "expect": { "route": "sql", "players": ["Faker"], "rowsMin": 1 }
+    },
+    {
+      "id": "sql-most-games",
+      "question": "quel joueur a joué le plus de parties aux Worlds",
+      "tags": ["worlds", "text_to_sql"],
+      "expect": { "route": "sql", "league": "World Championship", "rowsMin": 1 }
+    },
+    {
+      "id": "out-of-scope-league",
+      "question": "classement de la LJL 2023",
+      "tags": ["out_of_scope"],
+      "expect": { "route": "out_of_scope", "rows": 0 }
+    },
+    {
+      "id": "out-of-scope-game",
+      "question": "qui a gagné les VCT Champions 2024",
+      "tags": ["out_of_scope"],
+      "expect": { "route": "out_of_scope", "rows": 0 }
+    },
+    {
+      "id": "out-of-scope-topic",
+      "question": "quelle est la météo à Paris",
+      "tags": ["out_of_scope"],
+      "expect": { "route": "out_of_scope", "rows": 0 }
+    }
+  ]
+}
