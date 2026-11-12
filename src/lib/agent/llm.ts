@@ -40,7 +40,9 @@ function configured(): Llm | null {
   const id = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
   const openrouter = createOpenRouter({ apiKey });
 
-  return (cached = { model: openrouter(id), id });
+  // Reasoning tokens count against maxOutputTokens: with the default effort
+  // they used most of the budget and cut the JSON answers short.
+  return (cached = { model: openrouter(id, { reasoning: { effort: "none" } }), id });
 }
 
 export function llmStatus(): LlmStatus {
