@@ -2,7 +2,7 @@ import { AgentConsole } from "./agent-console";
 
 const BANNER = String.raw`┌─────────────────────────────────────────┐
 │  lol-esports-agent                v0.1  │
-│  question > graphe > sql > tableau      │
+│  question > étapes > sql > tableau      │
 └─────────────────────────────────────────┘`;
 
 export default function Home() {
@@ -13,9 +13,9 @@ export default function Home() {
       </pre>
       <h1 className="mt-4 text-lg font-semibold md:sr-only">lol-esports-agent</h1>
       <p className="mt-3 max-w-2xl text-sm text-muted">
-        Pose une question sur l&apos;esport League of Legends. Chaque étape du graphe
-        (compréhension, requête, garde-fou, exécution, auto-correction, mise en forme) s&apos;affiche
-        en direct. Données : cache local de Leaguepedia (Worlds 2011 → aujourd&apos;hui).
+        Pose une question sur l&apos;esport League of Legends. Les quatre étapes de l&apos;agent
+        (comprendre, construire la requête derrière un garde-fou, exécuter et se corriger, mettre en
+        forme) s&apos;affichent en direct. Données : Leaguepedia (Worlds, MSI et ligues majeures).
       </p>
       <AgentConsole />
       <footer className="mt-16 border-t border-dashed border-line pt-4 text-xs text-muted">

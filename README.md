@@ -7,25 +7,22 @@ traite en quatre étapes visibles, et l'interface affiche en direct la trace,
 puis un tableau triable, une phrase de synthèse, les sources et des questions
 de suivi.
 
-> **État** : ce dépôt contient le POC, encore basé sur LangGraph. La cible
-> retenue est l'[AI SDK 7](https://ai-sdk.dev) avec OpenRouter (voir
-> [AGENTS.md](AGENTS.md)). Cette page sera mise à jour avec la migration.
-
 ```
 question
-  └─ understand    entités joueur / compétition / période, alias (Chovy, 정지훈, Jihun)
-  └─ build_query   requête SQL contre le cache SQLite local
-  └─ guard         garde-fou de schéma : lecture seule, tables et colonnes connues
-  └─ execute       exécution
-       └─ correct  auto-correction si vide ou en erreur (visible dans la trace)
-  └─ format        tableau, synthèse, sources, suggestions
+  ├─ 1 understand  entités joueur / compétition / période, alias (Chovy, 정지훈, Jihun)
+  ├─ 2 build       outil typé paramétré, ou text-to-SQL de secours
+  ├─ 3 execute     garde-fou de schéma, exécution, auto-correction si vide ou en erreur
+  └─ 4 format      tableau triable, synthèse, sources, questions de suivi
 ```
+
+Les étapes sont écrites à la main (pas de framework de graphe) et envoyées à
+l'interface en streaming, sous forme de data parts typées de l'AI SDK.
 
 ## Stack
 
-Next.js 16 (App Router) · Bun · Tailwind CSS 4 · Geist · AI SDK 7 + OpenRouter
-(cible ; le POC utilise encore `@langchain/langgraph`) · SQLite (`node:sqlite`,
-aucune dépendance native).
+Next.js 16 (App Router) · Bun · Tailwind CSS 4 · Geist · AI SDK 7
+(`ai`, `@ai-sdk/react`) + OpenRouter (`@openrouter/ai-sdk-provider`) · SQLite
+(`node:sqlite`, aucune dépendance native).
 
 ## Lancer en local
 
@@ -33,7 +30,7 @@ Prérequis : [Bun](https://bun.sh) 1.3+ et Node.js 22.13+ (pour `node:sqlite`).
 
 ```bash
 bun install
-cp .env.example .env          # facultatif : configuration du LLM
+cp .env.example .env          # facultatif : clé OpenRouter
 bun run data:fetch            # Leaguepedia + Data Dragon -> data/raw (~3 min la première fois)
 bun run data:build            # data/raw -> data/lol.sqlite (~80 Mo, quelques secondes)
 bun run dev                   # http://localhost:3000
@@ -76,21 +73,54 @@ Deux commandes, dans `scripts/data/` :
 
 `data/` n'est jamais commité.
 
-> L'agent du POC lit encore l'ancien schéma : il sera adapté au nouveau lors de
-> la migration vers l'AI SDK.
+### Agent
+
+`runAgent()` (`src/lib/agent/run.ts`) enchaîne les quatre étapes. Chaque point
+de décision passe par `decide()` (`src/lib/agent/decide.ts`), une cascade du
+moins cher au plus cher qui renvoie un résultat, une confiance (0 à 1) et le
+niveau utilisé :
+
+| Niveau  | Contenu                                                    | Coût        |
+|---------|------------------------------------------------------------|-------------|
+| `rules` | regex, table d'alias, outils typés, corrections déterministes | 0, ~1 ms |
+| `model` | petit modèle local (classifieur, NER) : réservé, pas encore branché | CPU |
+| `llm`   | OpenRouter                                                  | tokens      |
+
+La cascade s'arrête au premier résultat assez sûr ; sinon le plus confiant
+l'emporte. Un niveau indisponible (pas de clé) ou en erreur est sauté, et la
+trace affiche le niveau et la confiance de chaque décision.
+
+| Étape      | `rules`                                         | `llm` (si la règle hésite)            |
+|------------|-------------------------------------------------|----------------------------------------|
+| understand | n-grammes contre la table d'alias, regex de ligue et d'années | extraction structurée des entités, résolues ensuite contre la table d'alias |
+| build      | outil typé `player_event_history`               | text-to-SQL sur les vues autorisées    |
+| execute    | retirer le filtre de période, essayer un homonyme, reconstruire le modèle | réparer la requête rejetée |
+| format     | phrase construite à partir des agrégats         | phrase rédigée, sans fait ajouté       |
+
+Garde-fou (`src/lib/agent/guard.ts`), appliqué à toute requête, typée ou
+générée : base ouverte en lecture seule, `SELECT`/`WITH` uniquement, une seule
+instruction, tables limitées aux vues `v_*` et à quelques tables de
+correspondance, colonnes connues, `LIMIT 200` forcé, puis `prepare()` comme
+validateur final. Les requêtes excluent `stage = 'qualifier'` (et les pages
+`event`, qui ne portent que les classements).
+
+Streaming : `POST /api/ask` reçoit la requête de `useChat` et renvoie un flux
+de messages UI avec une part `data-step` par étape (mise à jour sur place,
+`id` = nom de l'étape) et une part `data-answer` finale. `bun run ask` lit les
+mêmes événements en CLI.
 
 ### LLM
 
-Le fournisseur se configure uniquement par variables d'environnement (voir
-`.env.example`). Les clés vont dans `.env`, qui n'est jamais commité.
+Uniquement via OpenRouter, configuré par variables d'environnement (voir
+`.env.example`). La clé va dans `.env`, jamais commité.
 
-- `LLM_PROVIDER=none` (défaut) : graphe entièrement déterministe. Les entités
-  sont reconnues par règles et par la table d'alias, la synthèse vient d'un
-  modèle de phrase.
-- `LLM_PROVIDER=anthropic` ou `openai` (tout endpoint compatible OpenAI via
-  `OPENAI_BASE_URL`) : le LLM extrait les entités, répare une requête rejetée et
-  rédige la synthèse. La résolution des joueurs reste faite contre la table
-  d'alias locale.
+- Sans `OPENROUTER_API_KEY` : agent entièrement déterministe. Seul le niveau
+  `rules` répond ; une question hors des outils typés reçoit une réponse vide
+  expliquée.
+- Avec une clé (plafonnée côté OpenRouter) : le LLM n'est appelé que lorsque
+  les règles ne sont pas assez sûres, plus la phrase de synthèse. Modèle
+  `OPENROUTER_MODEL`, par défaut `anthropic/claude-haiku-5.5`. Chaque appel est
+  borné (600 jetons de sortie, 15 s, une seule relance).
 
 ## Structure
 
@@ -98,18 +128,24 @@ Le fournisseur se configure uniquement par variables d'environnement (voir
 scripts/data/                data:fetch (sources -> data/raw) et data:build (-> SQLite)
 scripts/ask.ts               agent en CLI
 src/lib/sources/             clients Leaguepedia (Cargo) et Data Dragon
-src/lib/db/                  schéma et accès SQLite
-src/lib/agent/               graphe LangGraph, compréhension, requêtes, garde-fou
-src/app/api/ask/route.ts     trace du graphe en streaming (NDJSON)
-src/app/                     interface (chat, trace, tableau triable)
+src/lib/db/                  accès SQLite en lecture seule
+src/lib/agent/run.ts         les quatre étapes et leur streaming
+src/lib/agent/decide.ts      cascade rules -> model -> llm
+src/lib/agent/understand.ts  entités et alias
+src/lib/agent/query.ts       outil typé, text-to-SQL, auto-correction
+src/lib/agent/guard.ts       garde-fou de schéma
+src/lib/agent/llm.ts         client OpenRouter
+src/app/api/ask/route.ts     flux de messages UI (data parts) pour useChat
+src/app/                     interface (étapes, tableau triable)
 ```
 
 ## Périmètre actuel
 
-Premier jalon : historique d'un joueur sur toutes les éditions des Worlds
-(équipe, place finale, bilan V-D en parties, champions joués). Les autres
-questions (comparaisons, MSI, ligues régionales, historique d'équipe) ne sont
-pas encore prises en charge.
+Outil typé : historique d'un joueur dans une compétition du périmètre (Worlds,
+MSI, ligues régionales) : équipe, place finale, bilan V-D en parties, champions
+joués. Les autres questions (comparaisons, historique d'équipe) passent par le
+text-to-SQL si une clé OpenRouter est configurée, sinon elles ne sont pas encore
+prises en charge.
 
 ## Sources et licences
 

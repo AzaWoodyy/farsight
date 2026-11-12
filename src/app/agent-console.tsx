@@ -1,19 +1,36 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import type { Answer, ResultRow, TraceEntry } from "@/lib/agent/types";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { useMemo, useState } from "react";
+import {
+  type AgentUIMessage,
+  type Answer,
+  type ResultRow,
+  STEPS,
+  type StepName,
+  type StepPart,
+  type TraceStatus,
+} from "@/lib/agent/types";
 
 const EXAMPLES = [
   "résultats de Chovy à tous les Worlds",
   "bilan de 정지훈 aux mondiaux",
-  "Chovy aux Worlds 2017",
+  "Faker au MSI",
 ];
 
-const STATUS: Record<TraceEntry["status"], { mark: string; cls: string }> = {
+const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   ok: { mark: "ok", cls: "text-ok" },
   warn: { mark: "!!", cls: "text-warn" },
   error: { mark: "xx", cls: "text-error" },
   fix: { mark: "~>", cls: "text-fix" },
+};
+
+const STEP_LABEL: Record<StepName, string> = {
+  understand: "1 comprendre",
+  build: "2 construire",
+  execute: "3 exécuter",
+  format: "4 mettre en forme",
 };
 
 type SortKey = "year" | "team" | "place" | "record" | "winrate";
@@ -22,56 +39,28 @@ const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
-  const [asked, setAsked] = useState<string | null>(null);
-  const [trace, setTrace] = useState<TraceEntry[]>([]);
-  const [answer, setAnswer] = useState<Answer | null>(null);
-  const [running, setRunning] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
+    transport: new DefaultChatTransport({ api: "/api/ask" }),
+  });
+  const running = status === "submitted" || status === "streaming";
 
-  async function ask(q: string) {
+  function ask(q: string) {
     const text = q.trim();
     if (!text) return;
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setAsked(text);
+    if (running) stop();
+    // One question at a time: the agent does not use the chat history.
+    setMessages([]);
     setQuestion("");
-    setTrace([]);
-    setAnswer(null);
-    setRunning(true);
-    try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text }),
-        signal: ctrl.signal,
-      });
-      if (!res.body) throw new Error(`HTTP ${res.status}`);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const update = JSON.parse(line) as { trace: TraceEntry[]; answer: Answer | null };
-          setTrace((prev) => [...prev, ...update.trace]);
-          if (update.answer) setAnswer(update.answer);
-        }
-      }
-    } catch (err) {
-      if ((err as Error).name !== "AbortError")
-        setTrace((prev) => [
-          ...prev,
-          { node: "format", status: "error", title: `Requête échouée : ${(err as Error).message}`, at: new Date().toISOString() },
-        ]);
-    } finally {
-      setRunning(false);
-    }
+    sendMessage({ text });
+  }
+
+  const asked = messages.findLast((m) => m.role === "user");
+  const reply = messages.findLast((m) => m.role === "assistant");
+  const steps = new Map<StepName, StepPart>();
+  let answer: Answer | null = null;
+  for (const part of reply?.parts ?? []) {
+    if (part.type === "data-step") steps.set(part.data.step, part.data);
+    if (part.type === "data-answer") answer = part.data;
   }
 
   return (
@@ -123,9 +112,11 @@ export function AgentConsole() {
       {asked && (
         <div className="mt-10">
           <p className="text-sm">
-            <span className="text-muted">?</span> {asked}
+            <span className="text-muted">?</span>{" "}
+            {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
           </p>
-          <Trace trace={trace} running={running} />
+          <Steps steps={steps} running={running} />
+          {error && <p className="mt-4 text-xs text-error">Requête échouée : {error.message}</p>}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
         </div>
       )}
@@ -133,43 +124,65 @@ export function AgentConsole() {
   );
 }
 
-function Trace({ trace, running }: { trace: TraceEntry[]; running: boolean }) {
+function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
   return (
     <div className="mt-4">
-      <h2 className="text-xs uppercase tracking-widest text-muted">── trace du graphe</h2>
-      <ol className="mt-2 space-y-1 text-xs" aria-live="polite">
-        {trace.map((e, i) => {
-          const s = STATUS[e.status];
-          const last = i === trace.length - 1 && !running;
+      <h2 className="text-xs uppercase tracking-widest text-muted">── étapes de l&apos;agent</h2>
+      <ol className="mt-2 space-y-2 text-xs" aria-live="polite">
+        {STEPS.map((name, i) => {
+          const part = steps.get(name);
+          const branch = i === STEPS.length - 1 ? "└─" : "├─";
+          if (!part)
+            return (
+              <li key={name} className="flex gap-2 text-muted/60">
+                <span aria-hidden>{branch}</span>
+                <span className="w-5 shrink-0">··</span>
+                <span className="w-32 shrink-0">{STEP_LABEL[name]}</span>
+                <span>{running ? "en attente" : "non exécutée"}</span>
+              </li>
+            );
+          const s = STATUS[part.status];
           return (
-            <li key={`${e.at}-${i}`}>
-              <details className="group">
-                <summary className="flex cursor-pointer list-none gap-2 marker:hidden">
-                  <span aria-hidden className="text-muted">
-                    {last ? "└─" : "├─"}
-                  </span>
-                  <span className={`${s.cls} w-5 shrink-0`}>{s.mark}</span>
-                  <span className="w-24 shrink-0 text-muted">{e.node}</span>
-                  <span className="min-w-0">
-                    {e.title}
-                    {e.detail && <span className="ml-2 text-muted group-open:hidden">[+]</span>}
-                  </span>
-                </summary>
-                {e.detail && (
-                  <pre className="mt-1 mb-2 ml-8 overflow-x-auto border-l border-line pl-3 text-[11px] leading-relaxed text-muted">
-                    {e.detail}
-                  </pre>
-                )}
-              </details>
+            <li key={name}>
+              <div className="flex gap-2">
+                <span aria-hidden className="text-muted">
+                  {branch}
+                </span>
+                <span className={`${part.state === "running" ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>
+                  {part.state === "running" ? ".." : s.mark}
+                </span>
+                <span className="w-32 shrink-0 text-muted">{STEP_LABEL[name]}</span>
+                <span className="min-w-0">{part.title}</span>
+              </div>
+              <ul className="mt-1 ml-[4.5rem] space-y-0.5 border-l border-line pl-3">
+                {part.entries.map((e, j) => (
+                  <li key={`${e.at}-${j}`}>
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none gap-2 marker:hidden">
+                        <span className={`${STATUS[e.status].cls} w-5 shrink-0`}>{STATUS[e.status].mark}</span>
+                        <span className="min-w-0">
+                          {e.title}
+                          {e.level && (
+                            <span className="ml-2 text-muted">
+                              [{e.level}
+                              {e.confidence != null && ` ${e.confidence.toFixed(2)}`}]
+                            </span>
+                          )}
+                          {e.detail && <span className="ml-2 text-muted group-open:hidden">[+]</span>}
+                        </span>
+                      </summary>
+                      {e.detail && (
+                        <pre className="mt-1 mb-2 ml-7 overflow-x-auto text-[11px] leading-relaxed text-muted">
+                          {e.detail}
+                        </pre>
+                      )}
+                    </details>
+                  </li>
+                ))}
+              </ul>
             </li>
           );
         })}
-        {running && (
-          <li className="flex gap-2 text-muted">
-            <span aria-hidden>└─</span>
-            <span className="animate-pulse">…</span>
-          </li>
-        )}
       </ol>
     </div>
   );
@@ -182,6 +195,7 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
         <span className="text-accent">#</span> {answer.title}
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
+      {answer.table && <GenericTable table={answer.table} />}
       <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
       {answer.notes.map((n) => (
         <p key={n} className="mt-2 text-xs text-warn">
@@ -309,6 +323,35 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
                   ))}
                 </ul>
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
+  return (
+    <div className="mt-4 overflow-x-auto border border-line">
+      <table className="w-full border-collapse text-left text-xs">
+        <thead className="border-b border-line">
+          <tr>
+            {table.columns.map((c) => (
+              <th key={c} scope="col" className="px-3 py-2 font-normal uppercase tracking-wider text-muted">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((r, i) => (
+            <tr key={i} className="border-b border-dashed border-line last:border-0">
+              {r.map((v, j) => (
+                <td key={j} className="px-3 py-2 tabular-nums">
+                  {v == null ? "—" : String(v)}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
