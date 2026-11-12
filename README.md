@@ -2,10 +2,14 @@
 
 Agent de recherche en langage naturel sur les données esport de League of Legends.
 
-On pose une question (« résultats de Chovy à tous les Worlds »), un graphe
-[LangGraph](https://langchain-ai.github.io/langgraphjs/) la traite étape par
-étape, et l'interface affiche en direct la trace du graphe, puis un tableau
-triable, une phrase de synthèse, les sources et des questions de suivi.
+On pose une question (« résultats de Chovy à tous les Worlds »), l'agent la
+traite en quatre étapes visibles, et l'interface affiche en direct la trace,
+puis un tableau triable, une phrase de synthèse, les sources et des questions
+de suivi.
+
+> **État** : ce dépôt contient le POC, encore basé sur LangGraph. La cible
+> retenue est l'[AI SDK 7](https://ai-sdk.dev) avec OpenRouter (voir
+> [AGENTS.md](AGENTS.md)). Cette page sera mise à jour avec la migration.
 
 ```
 question
@@ -19,8 +23,9 @@ question
 
 ## Stack
 
-Next.js 16 (App Router) · Bun · Tailwind CSS 4 · Geist · `@langchain/langgraph` ·
-SQLite (`node:sqlite`, aucune dépendance native).
+Next.js 16 (App Router) · Bun · Tailwind CSS 4 · Geist · AI SDK 7 + OpenRouter
+(cible ; le POC utilise encore `@langchain/langgraph`) · SQLite (`node:sqlite`,
+aucune dépendance native).
 
 ## Lancer en local
 
