@@ -32,7 +32,7 @@ Prérequis : [Bun](https://bun.sh) 1.3+ et Node.js 22.13+ (pour `node:sqlite`).
 bun install
 cp .env.example .env          # facultatif : clé OpenRouter
 bun run data:fetch            # Leaguepedia + Data Dragon -> data/raw (~3 min la première fois)
-bun run data:build            # data/raw -> data/lol.sqlite (~80 Mo, quelques secondes)
+bun run data:build            # data/raw -> data/lol.sqlite (~68 Mo, quelques secondes)
 bun run dev                   # http://localhost:3000
 ```
 
@@ -63,6 +63,10 @@ Deux commandes, dans `scripts/data/` :
 - `data:build` reconstruit `data/lol.sqlite` de zéro à partir de `data/raw/`
   (schéma normalisé à ids entiers, tables de correspondance, vues `v_*` qui
   remettent les noms), puis `journal_mode=DELETE` et `VACUUM`.
+  - La base ne garde que les colonnes, tables et index lus par les vues `v_*`
+    et par les outils (budget : 100 Mo). Le cache brut garde tout le reste
+    (objectifs par partie, runes secondaires, sorts, trinket…) : une
+    reconstruction suffit pour en remettre une colonne.
   - Chaque tournoi est classé d'après son nom de page (`tournaments.stage` :
     `event`, `main_event`, `play_in`, `qualifier`, `season`, `playoffs`), car
     Leaguepedia range les qualifications régionales sous le label
@@ -70,7 +74,8 @@ Deux commandes, dans `scripts/data/` :
   - `ingest_runs` garde l'historique des récupérations et la construction
     (date, nombre de lignes, version du schéma, aussi dans `PRAGMA user_version`).
   - Les objets absents de Data Dragon gardent une icône de repli
-    (`public/icons/item-fallback.svg`, `items.icon_source = 'fallback'`).
+    (`public/icons/item-fallback.svg`) ; le décompte par origine d'icône est
+    gardé dans `ingest_runs`.
 
 `data/` n'est jamais commité.
 
@@ -151,6 +156,15 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
   les règles ne sont pas assez sûres, plus la phrase de synthèse. Modèle
   `OPENROUTER_MODEL`, par défaut `anthropic/claude-haiku-5.5`. Chaque appel est
   borné (600 jetons de sortie, 15 s, une seule relance).
+- Clé épuisée (402, ou 403 « Key limit exceeded ») : le LLM est coupé pendant
+  15 minutes, l'agent repasse en mode déterministe, et la réponse le dit dans
+  une note.
+
+## Déploiement
+
+Vercel (Hobby), avec la base incluse dans la fonction `/api/ask`, BotID Basic
+sur le chat et un rate limit par IP dans le firewall. Procédure et réglages
+manuels : [docs/deploy.md](docs/deploy.md).
 
 ## Structure
 
@@ -168,6 +182,8 @@ src/lib/agent/guard.ts       garde-fou de schéma
 src/lib/agent/llm.ts         client OpenRouter
 src/app/api/ask/route.ts     flux de messages UI (data parts) pour useChat
 src/app/                     interface (étapes, tableau triable)
+src/instrumentation-client.ts  BotID côté client (protège POST /api/ask)
+docs/deploy.md               déploiement Vercel et réglages manuels
 eval/questions.json          questions de référence et attentes vérifiables
 scripts/eval.ts              bun run eval
 ```
@@ -190,7 +206,7 @@ score global :
   affiche chaque vérification, `--strict` sort en erreur si une question
   échoue.
 
-Les valeurs attendues viennent de la base complète (schéma v2) ; les totaux
+Les valeurs attendues viennent de la base complète (schéma v3) ; les totaux
 clés ont été recoupés par des requêtes indépendantes sur les tables de base.
 Une reconstruction de la base qui change ces chiffres (nouvelle édition,
 correction du wiki) demande de mettre à jour le fichier.
