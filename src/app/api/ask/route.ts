@@ -1,37 +1,37 @@
-import { runAgent } from "@/lib/agent/graph";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import { runAgent } from "@/lib/agent/run";
+import type { AgentUIMessage } from "@/lib/agent/types";
 
 /**
- * POST { question } -> NDJSON stream, one line per executed graph node:
- *   {"node":"understand","trace":[...],"answer":null}
- *   ...
- *   {"node":"format","trace":[...],"answer":{...}}
+ * useChat endpoint. Body: the AI SDK chat request ({ messages, ... }); only
+ * the text of the last user message is used. Response: a UI message stream
+ * with one `data-step` part per step (updated in place, id = step name) and
+ * a final `data-answer` part.
  */
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { question?: unknown };
-  const question = typeof body.question === "string" ? body.question.trim().slice(0, 500) : "";
+  const body = (await req.json().catch(() => ({}))) as { messages?: AgentUIMessage[] };
+  const last = body.messages?.findLast((m) => m.role === "user");
+  const question = (last?.parts ?? [])
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join(" ")
+    .trim()
+    .slice(0, 500);
   if (!question) return Response.json({ error: "question is required" }, { status: 400 });
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const update of runAgent(question)) {
-          controller.enqueue(encoder.encode(`${JSON.stringify(update)}\n`));
-        }
-      } catch (err) {
-        console.error(err);
-        controller.enqueue(
-          encoder.encode(
-            `${JSON.stringify({ node: "error", trace: [{ node: "format", status: "error", title: "Erreur interne de l'agent", at: new Date().toISOString() }], answer: null })}\n`,
-          ),
-        );
-      } finally {
-        controller.close();
-      }
+  const stream = createUIMessageStream<AgentUIMessage>({
+    execute: async ({ writer }) => {
+      writer.write({ type: "start" });
+      await runAgent(question, (event) => {
+        if (event.type === "step")
+          writer.write({ type: "data-step", id: event.part.step, data: event.part });
+        else writer.write({ type: "data-answer", id: "answer", data: event.answer });
+      });
+      writer.write({ type: "finish" });
+    },
+    onError: (err) => {
+      console.error(err);
+      return "Erreur interne de l'agent.";
     },
   });
-
-  return new Response(stream, {
-    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  return createUIMessageStreamResponse({ stream, headers: { "Cache-Control": "no-store" } });
 }

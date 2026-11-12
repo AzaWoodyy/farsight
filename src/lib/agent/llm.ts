@@ -1,50 +1,27 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import type { LanguageModel } from "ai";
 
 /**
- * LLM provider, configured only through environment variables:
+ * LLM access, through OpenRouter only.
  *
- *   LLM_PROVIDER=none | anthropic | openai   (default: none)
- *   LLM_MODEL=<model id>
- *   ANTHROPIC_API_KEY / OPENAI_API_KEY
- *   OPENAI_BASE_URL   (any OpenAI-compatible endpoint: OpenRouter, Ollama, ...)
- *
- * With LLM_PROVIDER=none the graph runs fully deterministic (rule-based
- * understanding + templated summary), which is enough for the first milestone.
+ *   OPENROUTER_API_KEY   capped key; without it the agent stays fully
+ *                        deterministic (rules level of every cascade)
+ *   OPENROUTER_MODEL     model id (default: a small, cheap model)
  */
-export type LlmInfo = { provider: string; model: string } | null;
+export const DEFAULT_MODEL = "anthropic/claude-haiku-5.5";
 
-let cached: { model: BaseChatModel; info: LlmInfo } | null | undefined;
+/** Every LLM call is short: bound its cost and latency. */
+export const LLM_CALL = { maxOutputTokens: 600, maxRetries: 1, timeoutMs: 15_000 } as const;
 
-export async function getChatModel(): Promise<{
-  model: BaseChatModel;
-  info: LlmInfo;
-} | null> {
+export type Llm = { model: LanguageModel; id: string };
+
+let cached: Llm | null | undefined;
+
+export function getLlm(): Llm | null {
   if (cached !== undefined) return cached;
-  const provider = (process.env.LLM_PROVIDER ?? "none").toLowerCase();
-
-  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
-    const { ChatAnthropic } = await import("@langchain/anthropic");
-    const modelName = process.env.LLM_MODEL ?? "claude-sonnet-5-5";
-    cached = {
-      model: new ChatAnthropic({ model: modelName, temperature: 0 }),
-      info: { provider, model: modelName },
-    };
-  } else if (provider === "openai" && process.env.OPENAI_API_KEY) {
-    const { ChatOpenAI } = await import("@langchain/openai");
-    const modelName = process.env.LLM_MODEL;
-    if (!modelName) throw new Error("LLM_MODEL is required with LLM_PROVIDER=openai");
-    cached = {
-      model: new ChatOpenAI({
-        model: modelName,
-        temperature: 0,
-        configuration: process.env.OPENAI_BASE_URL
-          ? { baseURL: process.env.OPENAI_BASE_URL }
-          : undefined,
-      }),
-      info: { provider, model: modelName },
-    };
-  } else {
-    cached = null;
-  }
-  return cached;
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey) return (cached = null);
+  const id = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+  const openrouter = createOpenRouter({ apiKey });
+  return (cached = { model: openrouter(id), id });
 }
