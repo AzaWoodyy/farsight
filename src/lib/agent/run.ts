@@ -5,7 +5,7 @@ import { openDb, readSchema, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
-import { getLlm, LLM_CALL } from "./llm";
+import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE } from "./llm";
 import { buildQuery, type CorrectInput, correctQuery, type Route, routeQuestion } from "./query";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { understandQuestion } from "./understand";
@@ -131,6 +131,18 @@ async function understand(db: DatabaseSync, question: string, emit: Emit) {
 }
 
 // 2. Build (typed tool or text-to-SQL) + guard ---------------------------------
+const SQL_FALLBACK_DETAIL: Record<LlmStatus, string> = {
+  ready: "Le text-to-SQL n'a rien produit.",
+  missing: "Mode déterministe (pas de OPENROUTER_API_KEY) : le text-to-SQL de secours est désactivé.",
+  exhausted: "Mode déterministe (quota OpenRouter épuisé) : le text-to-SQL de secours est désactivé pour le moment.",
+};
+
+const SQL_FALLBACK_TITLE: Record<LlmStatus, string> = {
+  ready: "Pas de requête",
+  missing: "text-to-SQL requis (désactivé sans clé)",
+  exhausted: "text-to-SQL requis (quota épuisé)",
+};
+
 async function build(db: DatabaseSync, question: string, entities: Entities, route: Route, emit: Emit, notes: string[]) {
   const step = new Step("build", "Construction de la requête…", emit);
 
@@ -144,19 +156,15 @@ async function build(db: DatabaseSync, question: string, entities: Entities, rou
   const decision = await buildQuery({ db, question, entities, route });
 
   if (!decision) {
+    const status = llmStatus();
     step.add(
       entry({
         status: "warn",
         title: "Aucun outil typé ne couvre la question",
-        detail: [
-          route.reason,
-          getLlm()
-            ? "Le text-to-SQL n'a rien produit."
-            : "Mode déterministe (pas de OPENROUTER_API_KEY) : le text-to-SQL de secours est désactivé.",
-        ].join("\n"),
+        detail: [route.reason, SQL_FALLBACK_DETAIL[status]].join("\n"),
       }),
     );
-    step.done("warn", getLlm() ? "Pas de requête" : "text-to-SQL requis (désactivé sans clé)");
+    step.done("warn", SQL_FALLBACK_TITLE[status]);
 
     return null;
   }
@@ -308,11 +316,16 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
       "la LPL, l'Europe (EU LCS, LEC, EU Masters, EMEA Masters), l'Amérique du Nord (NA LCS, LCS, LTA), la LFL, la LFL D2 et la SuperLiga 2nd Division."
     );
 
-  if (!plan)
-    return getLlm()
-      ? `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"}) et la requête générée n'a rien donné.`
-      : `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"}). ` +
-          "Le text-to-SQL de secours demande une clé OpenRouter, absente ici.";
+  if (!plan) {
+    const why = `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"})`;
+    const status = llmStatus();
+
+    if (status === "ready") return `${why} et la requête générée n'a rien donné.`;
+
+    return status === "exhausted"
+      ? `${why}. Le text-to-SQL de secours est indisponible pour le moment (quota du modèle épuisé).`
+      : `${why}. Le text-to-SQL de secours demande une clé OpenRouter, absente ici.`;
+  }
 
   const who = [...entities.players.map((p) => p.player), ...entities.teams.map((t) => t.team), entities.champion?.champion]
     .filter(Boolean)
@@ -434,6 +447,8 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
   }
 
   const answer = await format(db, question, entities, route, plan, rows, emit, notes);
+
+  if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
   emit({ type: "answer", answer });
 
   return answer;

@@ -13,6 +13,8 @@
  * model) or fails returns null and the cascade moves on. When nobody reaches
  * the threshold, the most confident result wins.
  */
+import { describeLlmError } from "./llm";
+
 export type DecisionLevel = "rules" | "model" | "llm";
 
 export type Decision<T> = {
@@ -53,7 +55,8 @@ export async function decide<I, O>(
     try {
       decision = await d.run(input);
     } catch (err) {
-      attempts.push({ name: d.name, level: d.level, confidence: null, error: err instanceof Error ? err.message : String(err) });
+      const error = err instanceof Error ? err : new Error(String(err));
+      attempts.push({ name: d.name, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
       continue;
     }
 
