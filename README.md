@@ -40,6 +40,7 @@ En ligne de commande, sans serveur :
 
 ```bash
 bun run ask "résultats de Chovy à tous les Worlds"
+bun run eval                  # questions de référence, score par question et global
 ```
 
 ### Ingestion
@@ -92,17 +93,46 @@ trace affiche le niveau et la confiance de chaque décision.
 
 | Étape      | `rules`                                         | `llm` (si la règle hésite)            |
 |------------|-------------------------------------------------|----------------------------------------|
-| understand | n-grammes contre la table d'alias, regex de ligue et d'années | extraction structurée des entités, résolues ensuite contre la table d'alias |
-| build      | outil typé `player_event_history`               | text-to-SQL sur les vues autorisées    |
-| execute    | retirer le filtre de période, essayer un homonyme, reconstruire le modèle | réparer la requête rejetée |
+| understand | n-grammes contre les tables d'alias (joueurs, équipes, champions), regex de ligue, d'années et de split | extraction structurée des entités, résolues ensuite contre les tables d'alias |
+| build      | routage vers un outil typé (`src/lib/agent/tools.ts`) | choix d'outil par appel d'outil AI SDK, sinon text-to-SQL sur les vues `v_*` |
+| execute    | corrections propres à l'outil : retirer la période, le split ou la compétition, essayer un homonyme | réparer la requête rejetée, en erreur ou vide (text-to-SQL) |
 | format     | phrase construite à partir des agrégats         | phrase rédigée, sans fait ajouté       |
+
+Outils typés (`src/lib/agent/tools.ts`) : chaque outil a un schéma zod
+d'entrée (partagé avec le LLM via `tool()` de l'AI SDK, sans `execute` : la
+requête passe toujours par le garde-fou), une requête paramétrée, ses
+corrections déterministes, sa mise en forme et ses sources Leaguepedia.
+
+| Outil                  | Question type                                   | Sortie |
+|------------------------|-------------------------------------------------|--------|
+| `player_event_history` | « résultats de Chovy à tous les Worlds »       | par édition : équipe, place finale, V-D, champions joués |
+| `team_history`         | « historique de T1 aux Worlds »                | par tournoi : place, V-D ; titres (hors saison régulière) ; noms successifs fusionnés (SK Telecom T1 → T1) |
+| `head_to_head`         | « T1 contre Gen.G en LCK », « Faker vs Chovy » | victoires de chaque côté en parties, par tournoi |
+| `champion_event_stats` | « stats d'Ahri aux Worlds 2024 »               | picks, bans, présence, % de victoires, joueurs |
+| `tournament_standings` | « qui a gagné les Worlds 2023 », « palmarès du MSI » | classement complet d'une édition, ou vainqueur et finaliste de chaque édition |
+
+Sans compétition précisée, les outils joueur, champion et palmarès cherchent
+sur les Worlds (et le disent). « LCS 2016 », « LEC 2017 » et « LCK 2014 »
+pointent vers la ligue de l'époque (NA LCS, EU LCS, OGN Champions). Les
+statistiques que les outils ne calculent pas (kills, or, durées, classements
+ouverts) partent en text-to-SQL ; les compétitions et jeux hors périmètre
+(LJL, VCT…) reçoivent une réponse « hors périmètre » sans requête.
+
+Alias ambigus : quand un alias désigne plusieurs joueurs (정지훈 → Chovy ou
+Pullbae, Caps / caPs), l'agent retient le plus probable (casse exacte du
+pseudo, puis parties dans la compétition et la période de la question, puis
+parties au total), le signale dans une note avec les autres candidats, et
+propose la même question pour les autres en questions de suivi.
 
 Garde-fou (`src/lib/agent/guard.ts`), appliqué à toute requête, typée ou
 générée : base ouverte en lecture seule, `SELECT`/`WITH` uniquement, une seule
-instruction, tables limitées aux vues `v_*` et à quelques tables de
-correspondance, colonnes connues, `LIMIT 200` forcé, puis `prepare()` comme
-validateur final. Les requêtes excluent `stage = 'qualifier'` (et les pages
-`event`, qui ne portent que les classements).
+instruction, colonnes connues, `LIMIT 200` forcé, puis `prepare()` comme
+validateur final, sous l'autorisateur SQLite qui refuse toute lecture d'une
+table hors liste (jointures par virgule, sous-requêtes, CTE). Le text-to-SQL
+ne lit que les vues `v_*` ; les outils typés lisent aussi quelques tables de
+correspondance (icônes de champions). Les requêtes excluent
+`stage = 'qualifier'` (et les pages `event`, qui ne portent que les
+classements).
 
 Streaming : `POST /api/ask` reçoit la requête de `useChat` et renvoie un flux
 de messages UI avec une part `data-step` par étape (mise à jour sur place,
@@ -116,7 +146,7 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
 
 - Sans `OPENROUTER_API_KEY` : agent entièrement déterministe. Seul le niveau
   `rules` répond ; une question hors des outils typés reçoit une réponse vide
-  expliquée.
+  expliquée (text-to-SQL requis mais désactivé).
 - Avec une clé (plafonnée côté OpenRouter) : le LLM n'est appelé que lorsque
   les règles ne sont pas assez sûres, plus la phrase de synthèse. Modèle
   `OPENROUTER_MODEL`, par défaut `anthropic/claude-haiku-5.5`. Chaque appel est
@@ -132,20 +162,46 @@ src/lib/db/                  accès SQLite en lecture seule
 src/lib/agent/run.ts         les quatre étapes et leur streaming
 src/lib/agent/decide.ts      cascade rules -> model -> llm
 src/lib/agent/understand.ts  entités et alias
-src/lib/agent/query.ts       outil typé, text-to-SQL, auto-correction
+src/lib/agent/tools.ts       outils typés (schémas zod, requêtes, corrections, mise en forme)
+src/lib/agent/query.ts       routage vers les outils, text-to-SQL, auto-correction
 src/lib/agent/guard.ts       garde-fou de schéma
 src/lib/agent/llm.ts         client OpenRouter
 src/app/api/ask/route.ts     flux de messages UI (data parts) pour useChat
 src/app/                     interface (étapes, tableau triable)
+eval/questions.json          questions de référence et attentes vérifiables
+scripts/eval.ts              bun run eval
 ```
+
+## Évaluation
+
+`eval/questions.json` liste 30 questions de référence (Worlds, MSI, LCK, LPL,
+LEC, LCS, alias Chovy / 정지훈 / Ji hun / Lee Sang-hyeok, alias ambigus,
+confrontations, auto-correction, text-to-SQL, hors périmètre) avec leurs
+attentes : outil ou route, entités résolues, entrée de l'outil, nombre de
+lignes, totaux clés (bilan V-D, titres, picks…), ambiguïté signalée, notes,
+sources. `bun run eval` les rejoue et affiche un score par question et un
+score global :
+
+- sans clé, en mode déterministe ; les vérifications qui demandent un résultat
+  de text-to-SQL sont ignorées (la route reste vérifiée) ;
+- avec `OPENROUTER_API_KEY` dans l'environnement, le même jeu passe par le LLM
+  quand les règles hésitent, et le text-to-SQL est vérifié ;
+- `--deterministic` ignore la clé, `--only=id1,id2` filtre, `--verbose`
+  affiche chaque vérification, `--strict` sort en erreur si une question
+  échoue.
+
+Les valeurs attendues viennent de la base complète (schéma v2) ; les totaux
+clés ont été recoupés par des requêtes indépendantes sur les tables de base.
+Une reconstruction de la base qui change ces chiffres (nouvelle édition,
+correction du wiki) demande de mettre à jour le fichier.
 
 ## Périmètre actuel
 
-Outil typé : historique d'un joueur dans une compétition du périmètre (Worlds,
-MSI, ligues régionales) : équipe, place finale, bilan V-D en parties, champions
-joués. Les autres questions (comparaisons, historique d'équipe) passent par le
-text-to-SQL si une clé OpenRouter est configurée, sinon elles ne sont pas encore
-prises en charge.
+Cinq outils typés (voir plus haut) : historique d'un joueur, historique d'une
+équipe, confrontations, stats d'un champion, palmarès et classements. Les
+autres questions passent par le text-to-SQL si une clé OpenRouter est
+configurée, sinon l'agent explique qu'elles ne sont pas encore prises en
+charge.
 
 ## Sources et licences
 
