@@ -8,12 +8,13 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun run data:pull && next build",
     "start": "next start",
     "lint": "oxlint",
     "data:fetch": "bun scripts/data/fetch.ts",
     "data:build": "bun scripts/data/build.ts",
     "data:package": "bun scripts/data/package.ts",
+    "data:pull": "bun scripts/data/pull.ts",
     "ask": "bun scripts/ask.ts",
     "eval": "bun scripts/eval.ts"
   },
