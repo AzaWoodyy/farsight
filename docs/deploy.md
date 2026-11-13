@@ -9,9 +9,13 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 - **Fonction `/api/ask`** (Node 24, `engines.node` dans `package.json`) : la
   base `data/lol.sqlite` est ajoutée au bundle par `outputFileTracingIncludes`
   (`next.config.ts`), puis ouverte en lecture seule (`src/lib/db/index.ts`).
-  - Taille mesurée sur le build local : base 67,8 Mo, bundle d'environ 101 Mo
-    au total (fichiers tracés de la route et du serveur Next). La limite de
-    Vercel est de 250 Mo décompressés.
+  - Budget : base sous 190 Mo, fonction sous 250 Mo décompressés (limite de
+    Vercel). `bun run size`, lancé à la fin de `bun run build`, additionne les
+    fichiers tracés de la route et du serveur Next, avertit à partir de 225 Mo
+    et fait échouer le build au-delà de 250 Mo (ou si la base dépasse 190 Mo).
+    `data/raw` et `data/release` sont exclus du tracé (`next.config.ts`).
+  - Taille mesurée : voir le dernier `bun run size` (valeurs du schéma v4 dans
+    la section « Données in-game » plus bas).
   - `DATABASE_PATH` ne doit pas être défini sur Vercel : le fichier tracé est
     `data/lol.sqlite`.
 - **BotID Basic** : `src/instrumentation-client.ts` protège les `POST /api/ask`
@@ -34,26 +38,35 @@ du dépôt, et le build la télécharge avant `next build`.
 `.github/workflows/data-release.yml` tourne chaque lundi à 05:23 UTC et à la
 demande (**Actions** → **Data release** → **Run workflow**) :
 
-1. `bun run data:fetch` : ingestion complète depuis Leaguepedia (environ 180
-   requêtes Cargo, une à la fois, 3 s d'écart, User-Agent explicite, backoff),
-   puis Data Dragon. Compter une dizaine de minutes.
-2. `bun run data:build` : `data/lol.sqlite`, fini par
+1. Restaure `ingame.jsonl.zst` depuis la release précédente si elle a le même
+   schéma (résumés in-game déjà calculés).
+2. `bun run data:fetch --riot-budget=90` : tables Cargo complètes (environ 200
+   requêtes, une à la fois, 3 s d'écart, User-Agent explicite, backoff), JSON
+   Riot des seules nouvelles parties (2 par requête, 90 min au plus ; le reste
+   passe à la semaine suivante), puis Data Dragon. Avec les secrets `R2_*`,
+   chaque nouvelle partie est aussi envoyée sur R2.
+3. `bun run data:build` : `data/lol.sqlite`, fini par
    `journal_mode=DELETE` et `VACUUM`.
-3. `bun run data:package` : contrôles, puis assets de release. Le workflow
+4. `bun run data:package` : contrôles, puis assets de release. Le workflow
    s'arrête sans rien publier si l'un d'eux échoue :
    - `integrity_check`, `foreign_key_check`, mode de journal `delete`, aucun
      fichier `-wal`/`-shm`, `user_version` égal à `SCHEMA_VERSION` ;
    - toutes les tables et vues `v_*` lues par l'app présentes et lisibles,
      aucune ligne orpheline, au moins une partie dans chacune des 19 ligues ;
-   - taille sous 200 Mo, et au moins 98 % des parties de la release
-     précédente (garde contre une ingestion partielle).
-4. Release `data-YYYYMMDD` (`-2`, `-3`… si le tag existe déjà) avec deux
+   - taille sous 190 Mo (avertissement dès 170 Mo), et au moins 98 % des
+     parties, et des parties avec stats in-game, de la release précédente
+     (garde contre une ingestion partielle).
+5. Release `data-YYYYMMDD` (`-2`, `-3`… si le tag existe déjà) avec trois
    assets :
    - `lol.sqlite.zst` : la base compressée en zstd niveau 19 (environ 19 Mo
      pour 68 Mo) ;
+   - `ingame.jsonl.zst` : les résumés in-game, une ligne par partie, relus
+     par l'exécution suivante ;
    - `manifest.json` : version du schéma, date, commit, taille et sha256 de
-     la base et de l'asset, nombre de parties, de ligues, de tournois, de
-     joueurs et d'équipes, version Data Dragon.
+     la base et des assets, nombre de parties (dont avec stats in-game), de
+     ligues, de tournois, de joueurs et d'équipes, version Data Dragon.
+6. Supprime les releases `data-*` au-delà des 4 plus récentes (tags compris),
+   séparément pour les releases publiées et les prereleases.
 
 Lancé depuis une autre branche que `main`, le workflow publie une
 **prerelease**, que `data:pull` ignore sauf si `DATA_RELEASE` l'épingle. Le
@@ -99,6 +112,67 @@ bun run data:build            # data/lol.sqlite
 vercel build --prod           # sans DATA_GITHUB_TOKEN, data:pull garde la base locale
 vercel deploy --prebuilt --prod
 ```
+
+## Données in-game (JSON Riot, R2)
+
+Les stats in-game viennent des JSON Riot que Leaguepedia héberge (pages
+`V4 data:…`/`V5 data:…` et leur `/Timeline`, listées par la table Cargo
+`PostgameJsonMetadata`) : environ 28 300 parties du périmètre, **aucune en
+LPL**. L'ingestion calcule les stats agrégées (golds, CS et XP à 10/15/20 min
+et écarts avec l'adversaire direct, kills avant 10 min, solo kills, first
+blood, multi-kills, wards, plaques, premiers objectifs) et les met en SQL. Le
+JSON brut de chaque partie (stats + timeline minute par minute) reste hors
+SQL : un objet gzip par partie, `games/<RiotPlatformGameId>.json.gz`, dans le
+cache local `data/raw/riot` et dans un bucket R2.
+
+Volumes : environ 28 300 objets, de 15 à 120 Ko chacun (environ 1,5 Go au
+total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
+lectures par mois).
+
+### Premier rattrapage (local, une fois)
+
+```bash
+LEAGUEPEDIA_DELAY_MS=2000 nohup caffeinate -i bun run data:fetch > data/catchup.log 2>&1 &
+```
+
+Environ 8 h (2 parties par requête, une requête toutes les 2 s). Reprenable :
+relancer la même commande reprend là où le processus s'est arrêté. Ensuite
+`bun run data:build`, puis, une fois R2 configuré, `bun run data:sync` pour
+envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
+
+### Configurer R2 (à faire par Enzo)
+
+1. Cloudflare → **R2 Object Storage** → activer R2 (offre gratuite ; Cloudflare
+   demande un moyen de paiement, rien n'est facturé sous les quotas gratuits).
+2. **Create bucket** : nom `lolesport-games`, emplacement automatique (ou
+   juridiction EU, voir `R2_ENDPOINT`), classe Standard. Laisser l'accès
+   public désactivé.
+3. **Manage R2 API Tokens** → **Create API token** : permission
+   **Object Read & Write**, limitée au bucket `lolesport-games`, sans
+   expiration ou un an au plus. Noter l'*Access Key ID* et le *Secret Access
+   Key* (affiché une seule fois) et l'*Account ID*.
+4. En local, dans `.env` (jamais commité) : `R2_ACCOUNT_ID`, `R2_BUCKET`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (et `R2_ENDPOINT` seulement pour
+   la juridiction EU). Vérifier avec `bun run data:sync --dry-run`, puis
+   lancer `bun run data:sync`.
+5. GitHub → dépôt → **Settings** → **Secrets and variables** → **Actions** :
+   les quatre mêmes secrets (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`). Sans eux le workflow marche, mais n'envoie pas les
+   nouvelles parties sur R2.
+6. Vercel : rien pour l'instant, l'app ne lit pas encore le détail par partie.
+   Le jour où une route le lira, ajouter les mêmes variables (Production,
+   Sensitive), de préférence avec un token **Object Read only**.
+
+### Première release v4
+
+Le workflow restaure les résumés in-game de la release précédente ; une
+release v3 n'en a pas. Deux façons d'amorcer :
+
+- R2 configuré et `bun run data:sync` fait : le premier workflow v4 lit chaque
+  partie sur R2 au lieu du wiki (environ 30 min pour 28 000 lectures) ;
+- sans R2 : le workflow télécharge depuis le wiki 90 min par exécution
+  (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
+  chaque release intermédiaire est utilisable, avec une couverture partielle.
 
 ## Réglages du projet Vercel
 
