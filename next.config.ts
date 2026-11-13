@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/ask": ["./data/lol.sqlite"],
   },
+  // The ingestion cache (data/raw: Cargo responses, Riot game JSON) and release
+  // assets are never read at runtime, but the tracer picks up the cache files a
+  // shared module can write: keep them out, or a local `vercel build` with a
+  // full cache would ship gigabytes.
+  outputFileTracingExcludes: {
+    "/api/ask": ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"],
+  },
   turbopack: {
     rules: {
       "*.css": {

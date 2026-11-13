@@ -5,6 +5,15 @@
  *   bun run data:fetch --refresh           full scope, ignores the cache (monthly rebuild)
  *   bun run data:fetch --incremental       only recent or ongoing tournaments
  *   bun run data:fetch --incremental --days=30
+ *   bun run data:fetch --riot-budget=90    stop downloading Riot JSON after 90 min
+ *   bun run data:fetch --no-riot           Cargo and Data Dragon only
+ *   bun run data:fetch --rederive          recompute every in-game summary from the cached Riot JSON
+ *
+ * Riot game JSON (stats + timeline, one wiki request per game) is downloaded
+ * for every game listed in `PostgameJsonMetadata` that has no summary yet:
+ * cached as one object per game under data/raw/riot (and uploaded to R2 when
+ * R2_* is set), summarized into data/raw/ingame.jsonl. The first catch-up is
+ * about 15 000 games (8-9 h at 2 s per request) and resumes where it stopped.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
  * league with 5000-row pages. Every raw response is kept under data/raw/cargo,
@@ -27,6 +36,8 @@ import {
   cargoStats,
   cargoString,
 } from "../../src/lib/sources/leaguepedia";
+import { remoteStoreFromEnv } from "../../src/lib/storage";
+import { fetchRiotGameList, fetchRiotGames } from "./riot";
 import {
   CARGO_CACHE_DIR,
   DDRAGON_CACHE_DIR,
@@ -42,12 +53,18 @@ const args = process.argv.slice(2);
 const incremental = args.includes("--incremental");
 const refresh = args.includes("--refresh");
 const days = Number(args.find((a) => a.startsWith("--days="))?.slice(7) ?? 14);
+const noRiot = args.includes("--no-riot");
+const rederive = args.includes("--rederive");
+const budgetArg = args.find((a) => a.startsWith("--riot-budget="))?.slice(14);
+const riotBudget = budgetArg ? Number(budgetArg) : null;
 
 const startedAt = new Date();
 const cached: CargoOptions = { cacheDir: CARGO_CACHE_DIR, refresh };
 const fresh: CargoOptions = { cacheDir: CARGO_CACHE_DIR, refresh: true };
 const elapsed = () => `${((Date.now() - startedAt.getTime()) / 60000).toFixed(1)} min`;
 const progress = () => `${cargoStats.requests} requests, ${cargoStats.cached} cached, ${elapsed()}`;
+
+if (riotBudget != null && !(riotBudget > 0)) throw new Error("--riot-budget expects a number of minutes");
 
 const chunks = <T>(arr: T[], size: number) =>
   Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
@@ -248,6 +265,20 @@ function merge(previous: CargoRow[], next: CargoRow[], pages: Set<string>) {
   return [...previous.filter((r) => !pages.has(String(r.Page))), ...next];
 }
 
+// --- Riot game JSON -----------------------------------------------------------
+
+/** The list of games with Riot JSON (refreshed in incremental mode), then the downloads. */
+async function riot(opts: CargoOptions) {
+  if (noRiot) return {};
+  const list = await fetchRiotGameList(opts);
+  save("riot_games", list);
+  const remote = remoteStoreFromEnv();
+  console.log(`riot: raw JSON cached locally${remote ? `, uploaded to ${remote.label}` : " (R2 not configured: no upload)"}`);
+  const counts = await fetchRiotGames(list, { budgetMinutes: riotBudget, remote, rederive });
+
+  return Object.fromEntries(Object.entries(counts).map(([k, v]) => [`riot_${k}`, v]));
+}
+
 // --- Modes --------------------------------------------------------------------
 
 async function full() {
@@ -295,7 +326,10 @@ async function full() {
   save("redirects", redirects);
   save("ddragon", dd);
 
+  const riotCounts = await riot(cached);
+
   return {
+    ...riotCounts,
     tournaments: tournaments.length,
     results: results.length,
     games: games.length,
@@ -390,7 +424,10 @@ async function incrementalFetch() {
   for (const name of ["tournaments", "results", "games", "lines", "players", "redirects"] as const) save(name, merged[name]);
   save("ddragon", dd);
 
+  const riotCounts = await riot(fresh);
+
   return {
+    ...riotCounts,
     refreshed_tournaments: recent.length,
     results: results.length,
     games: games.length,

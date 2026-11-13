@@ -8,6 +8,7 @@
         "@ai-sdk/react": "^4",
         "@openrouter/ai-sdk-provider": "^3.1.0",
         "ai": "^7",
+        "aws4fetch": "1.0.20",
         "botid": "1.5.12",
         "next": "16.4.6",
         "react": "19.3.0",
@@ -213,6 +214,8 @@
     "@workflow/serde": ["@workflow/serde@4.1.0", "", {}, "sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ=="],
 
     "ai": ["ai@7.0.171", "", { "dependencies": { "@ai-sdk/gateway": "4.0.144", "@ai-sdk/provider": "4.0.38", "@ai-sdk/provider-utils": "5.0.80" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-YGyMIMn7XZY1H1EwSGn0QItd8PeVXA6OOzq+bVugnsfCjgFmHjcBIGs8JgmTzblMAd0lFRAL2ng5r0ozq98l6g=="],
+
+    "aws4fetch": ["aws4fetch@1.0.20", "", {}, "sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g=="],
 
     "baseline-browser-mapping": ["baseline-browser-mapping@2.11.36", "", { "bin": { "baseline-browser-mapping": "dist/cli.cjs" } }, "sha512-AbPFGS4K9S3meMRCLTM0Zas+e9X7b5ygUBOboDT5zevCZt9ByKSbMtKhwyVqW+oL8WemPVsbP7X3rdZcIyOa0w=="],
 
