@@ -6,7 +6,7 @@ import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
 import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE } from "./llm";
-import { buildQuery, type CorrectInput, correctQuery, type Route, routeQuestion } from "./query";
+import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { understandQuestion } from "./understand";
 
@@ -387,11 +387,21 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
 const ROUTE_LABEL: Partial<Record<Route["kind"], AnswerMeta["route"]>> = { out_of_scope: "out_of_scope", sql: "sql" };
 
 /** Says which data is missing and what the database does hold. States no figure. */
-function missingSummary(missing: string[]): string {
+function missingSummary(missing: string[], route: Route): string {
+  const head = `Donnée absente de la base : ${[...new Set(missing)].join(", ")}. `;
+
+  if (route.kind === "missing" && route.coverage)
+    return (
+      head +
+      "Les statistiques in-game (or, CS et XP aux minutes clés, first blood, solo kills, multi-kills, wards, plaques, premiers objectifs) " +
+      "viennent des données Riot que Leaguepedia publie pour une partie des matchs, et il n'en publie aucune pour ce périmètre (aucune pour la LPL). " +
+      "Les résultats, les drafts et les statistiques de fin de partie (kills, morts, assists, or, CS, dégâts, vision, objectifs) y restent disponibles : aucun chiffre in-game n'est donc donné."
+    );
+
   return (
-    `Donnée absente de la base : ${[...new Set(missing)].join(", ")}. ` +
-    "La base ne contient que les résultats, les drafts et les statistiques individuelles par partie " +
-    "(kills, morts, assists, or, CS, dégâts, score de vision, objets, rune principale) : aucun chiffre n'est donc donné."
+    head +
+    "La base contient les résultats, les drafts, les statistiques de fin de partie (kills, morts, assists, or, CS, dégâts, vision, objets, rune principale, objectifs) " +
+    "et, pour les parties dont Leaguepedia publie les données Riot, les statistiques in-game : aucun chiffre n'est donc donné."
   );
 }
 
@@ -432,7 +442,7 @@ async function format(
 
     return {
       title: "Donnée absente de la base",
-      summary: missingSummary(missing),
+      summary: missingSummary(missing, route),
       rows: [],
       table: null,
       sources: [],
@@ -509,7 +519,7 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
   const entities = await understand(db, question, emit);
-  const route = routeQuestion(question, entities, readSchema(db));
+  const route = routeQuestion(question, entities, readSchema(db), coverageLookup(db));
   const missing: string[] = [];
   let rows: SqlRow[] = [];
   let plan: QueryPlan | null = null;
