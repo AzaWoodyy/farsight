@@ -306,6 +306,12 @@
       "expect": { "route": "missing_data", "players": ["Faker"], "noFigure": true, "summaryIncludes": ["Donnée absente de la base", "pentakills"] }
     },
     {
+      "id": "missing-solo-kills",
+      "question": "quel joueur a fait le plus de solo kills aux Worlds",
+      "tags": ["worlds", "missing_data", "alias"],
+      "expect": { "route": "missing_data", "players": [], "noFigure": true, "summaryIncludes": ["Donnée absente de la base", "solo kills"] }
+    },
+    {
       "id": "sql-most-games",
       "question": "quel joueur a joué le plus de parties aux Worlds",
       "tags": ["worlds", "text_to_sql"],

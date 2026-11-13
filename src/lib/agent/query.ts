@@ -40,6 +40,7 @@ const LOL_DOMAIN = word(
  */
 const DATA_CONCEPTS = [
   { label: "les pentakills et autres multi-kills", pattern: word("penta ?kills?|quadra ?kills?|triple ?kills?|multi ?kills?"), view: "v_game_players", column: "pentakills" },
+  { label: "les solo kills", pattern: word("solo ?kills?"), view: "v_game_players", column: "solo_kills" },
   { label: "le first blood", pattern: word("first ?blood|premier sang"), view: "v_game_players", column: "first_blood" },
   { label: "les wards posées ou détruites", pattern: word("wards?"), view: "v_game_players", column: "wards_placed" },
   {

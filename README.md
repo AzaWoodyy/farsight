@@ -124,7 +124,7 @@ ouverts) partent en text-to-SQL ; les compétitions et jeux hors périmètre
 (LJL, VCT…) reçoivent une réponse « hors périmètre » sans requête.
 
 Données absentes : quand la question demande une donnée que la base ne
-contient pas (pentakills, first blood, wards, objectifs par partie, sorts
+contient pas (pentakills, solo kills, first blood, wards, objectifs par partie, sorts
 d'invocateur, MVP), l'agent répond « Donnée absente de la base » sans requête
 ni chiffre. La règle associe chaque notion à la colonne de vue qui la
 porterait : elle cesse de s'appliquer d'elle-même si une reconstruction ajoute
@@ -136,6 +136,11 @@ Synthèse LLM : le modèle ne reçoit que la phrase de faits de l'outil (agréga
 du périmètre de la question), pas les lignes brutes. Une phrase qui contient
 un chiffre ou un mot de période (« saison », « cette année »…) absent de ces
 faits est rejetée, et la phrase des règles est gardée.
+
+Les mots d'une expression de stats ou de jeu connue (« solo kills », « first
+blood », « mid lane »…) ne sont jamais pris pour des alias : « solo » dans
+« solo kills » n'est pas le joueur Solo, qui reste reconnu seul (« Solo aux
+Worlds »).
 
 Alias ambigus : quand un alias désigne plusieurs joueurs (정지훈 → Chovy ou
 Pullbae, Caps / caPs), l'agent retient le plus probable (casse exacte du
@@ -204,7 +209,7 @@ scripts/eval.ts              bun run eval
 
 ## Évaluation
 
-`eval/questions.json` liste 30 questions de référence (Worlds, MSI, LCK, LPL,
+`eval/questions.json` liste 31 questions de référence (Worlds, MSI, LCK, LPL,
 LEC, LCS, alias Chovy / 정지훈 / Ji hun / Lee Sang-hyeok, alias ambigus,
 confrontations, auto-correction, text-to-SQL, donnée absente, hors périmètre) avec leurs
 attentes : outil ou route, entités résolues, entrée de l'outil, nombre de
