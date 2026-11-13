@@ -14,6 +14,16 @@ export const TAG_PREFIX = "data-";
 export const MANIFEST_ASSET = "manifest.json";
 export const DB_ASSET = "lol.sqlite.zst";
 
+/**
+ * In-game summaries (data/raw/ingame.jsonl, zstd): published with the
+ * database so the weekly workflow only downloads the games it does not have.
+ */
+export const INGAME_ASSET = "ingame.jsonl.zst";
+
+/** Database size above which `data:build` and `data:package` warn, and the hard limit. */
+export const DB_WARN_BYTES = 170e6;
+export const DB_MAX_BYTES = 190e6;
+
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 export const Manifest = z.object({
@@ -39,7 +49,13 @@ export const Manifest = z.object({
     tournaments: z.number().int(),
     players: z.number().int(),
     teams: z.number().int(),
+    /** Games with in-game (Riot) stats; absent before schema v4. */
+    ingame_games: z.number().int().optional(),
   }),
+  /** The in-game summaries asset; absent before schema v4. */
+  ingame: z
+    .object({ file: z.literal(INGAME_ASSET), compression: z.literal("zstd"), size: z.number().int().positive(), sha256: Sha256, lines: z.number().int() })
+    .optional(),
   ddragon_version: z.string().nullable(),
 });
 
@@ -86,6 +102,7 @@ export function readFacts(path: string): DbFacts {
         tournaments: count(db, "SELECT COUNT(*) AS n FROM tournaments"),
         players: count(db, "SELECT COUNT(*) AS n FROM players"),
         teams: count(db, "SELECT COUNT(*) AS n FROM teams"),
+        ingame_games: schemaVersion >= 4 ? count(db, "SELECT COUNT(*) AS n FROM game_riot") : undefined,
       },
       ddragonVersion: ddragon?.success ? (ddragon.data.ddragon_version ?? null) : null,
     };

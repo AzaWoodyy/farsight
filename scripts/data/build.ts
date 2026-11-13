@@ -11,6 +11,8 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { normalizeAlias } from "../../src/lib/aliases";
+import { DB_MAX_BYTES, DB_WARN_BYTES } from "./artifact";
+import { loadIngame } from "./riot";
 import { selectAll, selectOne } from "../../src/lib/db";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
@@ -80,7 +82,31 @@ CREATE TABLE tournament_results (
   PRIMARY KEY (tournament_id, team_id)) WITHOUT ROWID;
 CREATE TABLE games (
   id INTEGER PRIMARY KEY, tournament_id INT NOT NULL,
-  blue_team_id INT, red_team_id INT, winner_side INT, length_s INT, patch TEXT, played_at INT);
+  blue_team_id INT, red_team_id INT, winner_side INT, length_s INT, patch TEXT, played_at INT,
+  -- end-of-game objective counts from Leaguepedia scoreboards (every league)
+  blue_dragons INT, red_dragons INT, blue_barons INT, red_barons INT, blue_towers INT, red_towers INT,
+  blue_heralds INT, red_heralds INT, blue_void_grubs INT, red_void_grubs INT, blue_inhibitors INT, red_inhibitors INT);
+-- Games with Riot JSON on Leaguepedia (none for the LPL): the source of the two tables below.
+CREATE TABLE game_riot (
+  game_id INTEGER PRIMARY KEY, riot_key TEXT NOT NULL, stats_page TEXT NOT NULL, json_version INT NOT NULL,
+  has_timeline INT NOT NULL);
+-- Per player, computed at ingestion from the Riot JSON (scripts/data/ingame.ts has the definitions).
+CREATE TABLE game_player_stats (
+  game_id INT NOT NULL, player_id INT NOT NULL,
+  gold_10 INT, gold_15 INT, gold_20 INT, xp_10 INT, xp_15 INT, xp_20 INT, cs_10 INT, cs_15 INT, cs_20 INT,
+  gold_diff_10 INT, gold_diff_15 INT, gold_diff_20 INT, xp_diff_10 INT, xp_diff_15 INT, xp_diff_20 INT,
+  cs_diff_10 INT, cs_diff_15 INT, cs_diff_20 INT,
+  kills_10 INT, deaths_10 INT, assists_10 INT, solo_kills INT,
+  first_blood_kill INT, first_blood_assist INT, first_blood_victim INT,
+  double_kills INT, triple_kills INT, quadra_kills INT, penta_kills INT,
+  wards_placed INT, wards_killed INT, control_wards INT, plates INT, damage_taken INT,
+  PRIMARY KEY (game_id, player_id)) WITHOUT ROWID;
+CREATE TABLE game_team_stats (
+  game_id INT NOT NULL, side INT NOT NULL,
+  first_blood INT, first_tower INT, first_dragon INT, first_herald INT, first_baron INT, first_inhibitor INT,
+  plates INT, gold_10 INT, gold_15 INT, gold_20 INT, gold_diff_10 INT, gold_diff_15 INT, gold_diff_20 INT,
+  kills_10 INT, kills_15 INT, kills_20 INT, towers_15 INT,
+  PRIMARY KEY (game_id, side)) WITHOUT ROWID;
 CREATE TABLE game_draft (
   game_id INT NOT NULL, side INT NOT NULL, kind INT NOT NULL, slot INT NOT NULL, champion_id INT NOT NULL,
   PRIMARY KEY (game_id, side, kind, slot)) WITHOUT ROWID;
@@ -213,7 +239,7 @@ for (const r of load("results", Rows)) {
 
 // Games -------------------------------------------------------------------------
 const gameId = new Map<string, number>();
-const insGame = db.prepare("INSERT INTO games VALUES (?,?,?,?,?,?,?,?)");
+const insGame = db.prepare(`INSERT INTO games VALUES (${Array(20).fill("?").join(",")})`);
 const insDraft = db.prepare("INSERT OR IGNORE INTO game_draft VALUES (?,?,?,?,?)");
 let skippedGames = 0;
 
@@ -233,6 +259,8 @@ for (const g of load("games", Rows)) {
   insGame.run(
     id, tid, team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
     date ? Math.floor(Date.parse(`${date.replace(" ", "T")}Z`) / 1000) : null,
+    int(g.D1), int(g.D2), int(g.Ba1), int(g.Ba2), int(g.To1), int(g.To2),
+    int(g.H1), int(g.H2), int(g.V1), int(g.V2), int(g.I1), int(g.I2),
   );
 
   for (const [side, kind, value] of [[1, 0, g.P1], [2, 0, g.P2], [1, 1, g.B1], [2, 1, g.B2]] as const)
@@ -260,6 +288,9 @@ const player = (page: string) => {
 const insLine = db.prepare(`INSERT OR IGNORE INTO game_players VALUES (${Array(15).fill("?").join(",")})`);
 const insItem = db.prepare("INSERT OR IGNORE INTO game_player_items VALUES (?,?,?,?)");
 let skippedLines = 0;
+
+/** The Leaguepedia lines of each game, to map Riot participants onto players. */
+const linesByGame = new Map<number, { pid: number; side: number | null; role: string | null; championId: number | null; kills: number | null }[]>();
 const ignByPlayer = new Map<number, Set<string>>();
 
 for (const l of load("lines", Rows)) {
@@ -272,10 +303,15 @@ for (const l of load("lines", Rows)) {
   }
 
   const pid = player(page);
+  const championId = champion(l.Champion);
+  const side = int(l.Side);
+  const lines = linesByGame.get(gid) ?? [];
+  lines.push({ pid, side, role: text(l.Role), championId, kills: int(l.K) });
+  linesByGame.set(gid, lines);
 
   if (l.Name) ignByPlayer.set(pid, (ignByPlayer.get(pid) ?? new Set()).add(String(l.Name)));
   insLine.run(
-    gid, pid, team(l.Team), int(l.Side), text(l.Role), champion(l.Champion), yes(l.Win),
+    gid, pid, team(l.Team), side, text(l.Role), championId, yes(l.Win),
     int(l.K), int(l.D), int(l.A), int(l.Gold), int(l.CS), int(l.Dmg), int(l.Vision), rune(l.Keystone),
   );
   list(l.Items).forEach((it, slot) => insItem.run(gid, pid, slot + 1, item(it)));
@@ -320,7 +356,7 @@ for (const [pid, names] of ignByPlayer) for (const n of names) alias(n, pid);
 const DdragonData = z.object({
   version: z.string(),
   champion: z.object({
-    data: z.record(z.string(), z.object({ id: z.string(), name: z.string(), image: z.object({ full: z.string() }) })),
+    data: z.record(z.string(), z.object({ id: z.string(), key: z.string(), name: z.string(), image: z.object({ full: z.string() }) })),
   }),
   item: z.object({ data: z.record(z.string(), z.object({ name: z.string() })) }),
   legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()) })),
@@ -368,10 +404,133 @@ for (const [name, id] of itemIds) {
   itemIcons[icon ? (icon.legacy ? "ddragon_legacy" : "ddragon") : "fallback"]++;
 }
 
+// In-game stats (Riot JSON summaries) --------------------------------------------
+// Riot participants are matched to Leaguepedia lines by champion (unique in a
+// game), then by side and position for the rare champion that does not match.
+const ROLE_ORDER = ["Top", "Jungle", "Mid", "Bot", "Support"];
+
+const championIdByKey = new Map<number, number>();
+
+const championIdByName = new Map(
+  selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM champions").map((c) => [normalizeAlias(c.name), c.id]),
+);
+
+for (const c of Object.values(dd.champion.data)) {
+  const id = championIdByName.get(normalizeAlias(c.name)) ?? championIdByName.get(normalizeAlias(c.id));
+
+  if (id != null) championIdByKey.set(Number(c.key), id);
+}
+
+const insRiot = db.prepare("INSERT INTO game_riot VALUES (?,?,?,?,?)");
+const PLAYER_STATS = 36;
+const insPlayerStats = db.prepare(`INSERT OR IGNORE INTO game_player_stats VALUES (${Array(PLAYER_STATS).fill("?").join(",")})`);
+const insTeamStats = db.prepare(`INSERT OR IGNORE INTO game_team_stats VALUES (${Array(19).fill("?").join(",")})`);
+const ingameCounts = { games: 0, skipped_unknown_game: 0, skipped_mapping: 0, participants_by_position: 0, kills_mismatch: 0, missing: 0, invalid: 0, duplicates: 0 };
+const diff = (a: number | null, b: number | null | undefined) => (a == null || b == null ? null : a - b);
+const ingame = loadIngame();
+const doneGames = new Set<number>();
+
+for (const line of ingame.values()) {
+  if (line.status !== "ok") {
+    ingameCounts[line.status]++;
+    continue;
+  }
+
+  const gid = gameId.get(line.gameId);
+  const lines = gid == null ? undefined : linesByGame.get(gid);
+
+  if (gid == null || !lines) {
+    ingameCounts.skipped_unknown_game++;
+    continue;
+  }
+
+  if (doneGames.has(gid)) {
+    ingameCounts.duplicates++;
+    continue;
+  }
+
+  // Champion match first (a champion is unique in a game, except in the odd
+  // blind-pick game), then the Riot side each matched team corresponds to.
+  const byChampion = new Map<number, typeof lines>();
+
+  for (const l of lines) if (l.championId != null) byChampion.set(l.championId, [...(byChampion.get(l.championId) ?? []), l]);
+  const candidates = (p: (typeof line.players)[number]) => byChampion.get(championIdByKey.get(p.championId) ?? -1) ?? [];
+  const sideVotes = { same: 0, swapped: 0 };
+
+  for (const p of line.players) {
+    const c = candidates(p);
+
+    if (c.length === 1) sideVotes[(p.teamId === 100) === (c[0].side === 1) ? "same" : "swapped"]++;
+  }
+
+  const swapped = sideVotes.swapped > sideVotes.same;
+  const sideOf = (teamId: number) => ((teamId === 100) !== swapped ? 1 : 2);
+  const matched = new Map<number, (typeof lines)[number]>();
+
+  for (const p of line.players) {
+    const c = candidates(p);
+    const l = c.length === 1 ? c[0] : c.find((x) => x.side === sideOf(p.teamId));
+
+    if (l) matched.set(p.pid, l);
+  }
+
+  for (const p of line.players) {
+    if (matched.has(p.pid)) continue;
+    const role = ROLE_ORDER[(p.pid - 1) % 5];
+    const taken = new Set(matched.values());
+    const l = lines.find((x) => x.side === sideOf(p.teamId) && x.role === role && !taken.has(x));
+
+    if (l) {
+      matched.set(p.pid, l);
+      ingameCounts.participants_by_position++;
+    }
+  }
+
+  if (matched.size < line.players.length || new Set([...matched.values()].map((l) => l.pid)).size < matched.size) {
+    ingameCounts.skipped_mapping++;
+    continue;
+  }
+
+  doneGames.add(gid);
+  ingameCounts.games++;
+  insRiot.run(gid, line.key, line.statsPage, line.version, line.hasTimeline ? 1 : 0);
+
+  const stats = line.players.map((p) => ({ p, l: matched.get(p.pid)! }));
+
+  for (const { p, l } of stats) {
+    // Riot and Leaguepedia disagree on kills: a mapping (or scoreboard) problem worth a look.
+    if (l.kills != null && l.kills !== p.kills) ingameCounts.kills_mismatch++;
+    const opp = stats.find((o) => o.l.side !== l.side && o.l.role != null && o.l.role === l.role)?.p;
+    insPlayerStats.run(
+      gid, l.pid,
+      p.gold_10, p.gold_15, p.gold_20, p.xp_10, p.xp_15, p.xp_20, p.cs_10, p.cs_15, p.cs_20,
+      diff(p.gold_10, opp?.gold_10), diff(p.gold_15, opp?.gold_15), diff(p.gold_20, opp?.gold_20),
+      diff(p.xp_10, opp?.xp_10), diff(p.xp_15, opp?.xp_15), diff(p.xp_20, opp?.xp_20),
+      diff(p.cs_10, opp?.cs_10), diff(p.cs_15, opp?.cs_15), diff(p.cs_20, opp?.cs_20),
+      p.kills_10, p.deaths_10, p.assists_10, p.solo_kills,
+      p.first_blood_kill, p.first_blood_assist, p.first_blood_victim,
+      p.double_kills, p.triple_kills, p.quadra_kills, p.penta_kills,
+      p.wards_placed, p.wards_killed, p.control_wards, p.plates, p.damage_taken,
+    );
+  }
+
+  for (const t of line.teams) {
+    const o = line.teams.find((x) => x.teamId !== t.teamId);
+    insTeamStats.run(
+      gid, sideOf(t.teamId),
+      t.first_blood, t.first_tower, t.first_dragon, t.first_herald, t.first_baron, t.first_inhibitor,
+      t.plates, t.gold_10, t.gold_15, t.gold_20,
+      diff(t.gold_10, o?.gold_10), diff(t.gold_15, o?.gold_15), diff(t.gold_20, o?.gold_20),
+      t.kills_10, t.kills_15, t.kills_20, t.towers_15,
+    );
+  }
+}
+
 // Indexes and views -------------------------------------------------------------
 db.exec(`
 CREATE INDEX gp_player ON game_players(player_id);
 CREATE INDEX gp_champion ON game_players(champion_id);
+CREATE INDEX gps_player ON game_player_stats(player_id);
 CREATE INDEX games_tournament ON games(tournament_id);
 CREATE INDEX tournaments_league_year ON tournaments(league_id, year);
 CREATE INDEX tournaments_event ON tournaments(event_page);
@@ -390,9 +549,13 @@ CREATE VIEW v_games AS
   SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
          l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch, g.length_s,
          b.name AS blue_team, r.name AS red_team,
-         CASE g.winner_side WHEN 1 THEN b.name WHEN 2 THEN r.name END AS winner
+         CASE g.winner_side WHEN 1 THEN b.name WHEN 2 THEN r.name END AS winner,
+         g.blue_dragons, g.red_dragons, g.blue_barons, g.red_barons, g.blue_towers, g.red_towers,
+         g.blue_heralds, g.red_heralds, g.blue_void_grubs, g.red_void_grubs, g.blue_inhibitors, g.red_inhibitors,
+         (gr.game_id IS NOT NULL) AS has_ingame
   FROM games g JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
-  LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id;
+  LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id
+  LEFT JOIN game_riot gr ON gr.game_id = g.id;
 CREATE VIEW v_game_players AS
   SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
          l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch,
@@ -402,6 +565,43 @@ CREATE VIEW v_game_players AS
   JOIN leagues l ON l.id = t.league_id JOIN players p ON p.id = gp.player_id
   LEFT JOIN teams tm ON tm.id = gp.team_id LEFT JOIN champions c ON c.id = gp.champion_id
   LEFT JOIN runes k ON k.id = gp.keystone_id;
+CREATE VIEW v_game_player_stats AS
+  SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
+         l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch, g.length_s,
+         p.page AS player, gp.role, tm.name AS team, gp.side, c.name AS champion, gp.win,
+         gp.kills, gp.deaths, gp.assists,
+         s.gold_10, s.gold_15, s.gold_20, s.xp_10, s.xp_15, s.xp_20, s.cs_10, s.cs_15, s.cs_20,
+         s.gold_diff_10, s.gold_diff_15, s.gold_diff_20, s.xp_diff_10, s.xp_diff_15, s.xp_diff_20,
+         s.cs_diff_10, s.cs_diff_15, s.cs_diff_20,
+         s.kills_10, s.deaths_10, s.assists_10, s.solo_kills,
+         s.first_blood_kill, s.first_blood_assist, s.first_blood_victim,
+         s.double_kills, s.triple_kills, s.quadra_kills, s.penta_kills,
+         s.wards_placed, s.wards_killed, s.control_wards, s.plates, s.damage_taken,
+         gr.stats_page
+  FROM game_player_stats s JOIN game_players gp ON gp.game_id = s.game_id AND gp.player_id = s.player_id
+  JOIN games g ON g.id = s.game_id JOIN game_riot gr ON gr.game_id = s.game_id
+  JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
+  JOIN players p ON p.id = s.player_id
+  LEFT JOIN teams tm ON tm.id = gp.team_id LEFT JOIN champions c ON c.id = gp.champion_id;
+CREATE VIEW v_game_team_stats AS
+  SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
+         l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch, g.length_s,
+         CASE s.side WHEN 1 THEN b.name ELSE r.name END AS team,
+         CASE s.side WHEN 1 THEN r.name ELSE b.name END AS opponent,
+         s.side, (g.winner_side = s.side) AS win,
+         s.first_blood, s.first_tower, s.first_dragon, s.first_herald, s.first_baron, s.first_inhibitor,
+         s.plates, s.gold_10, s.gold_15, s.gold_20, s.gold_diff_10, s.gold_diff_15, s.gold_diff_20,
+         s.kills_10, s.kills_15, s.kills_20, s.towers_15,
+         gr.stats_page
+  FROM game_team_stats s JOIN games g ON g.id = s.game_id JOIN game_riot gr ON gr.game_id = s.game_id
+  JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
+  LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id;
+CREATE VIEW v_ingame_coverage AS
+  SELECT l.name AS league, l.short_name AS league_short, t.year,
+         COUNT(*) AS games, COUNT(gr.game_id) AS ingame_games
+  FROM games g JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
+  LEFT JOIN game_riot gr ON gr.game_id = g.id
+  GROUP BY l.id, t.year;
 CREATE VIEW v_draft AS
   SELECT d.game_id, d.side, CASE d.kind WHEN 0 THEN 'pick' ELSE 'ban' END AS kind, d.slot,
          c.name AS champion
@@ -415,6 +615,7 @@ CREATE VIEW v_player_items AS
 const TABLES = [
   "leagues", "tournaments", "tournament_results", "teams", "players", "player_aliases", "champions",
   "items", "runes", "games", "game_draft", "game_players", "game_player_items",
+  "game_riot", "game_player_stats", "game_team_stats",
 ] as const;
 
 const count = (sql: string) => selectOne(db, z.object({ n: z.number() }), sql)?.n ?? 0;
@@ -430,7 +631,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons }),
+  JSON.stringify({ ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, ingame: ingameCounts }),
 );
 
 db.exec("COMMIT");
@@ -439,8 +640,9 @@ db.exec(`PRAGMA user_version=${SCHEMA_VERSION}; PRAGMA journal_mode=DELETE; ANAL
 
 const byLeague = db
   .prepare(
-    `SELECT l.short_name AS league, COUNT(DISTINCT t.id) AS tournaments, COUNT(g.id) AS games
+    `SELECT l.short_name AS league, COUNT(DISTINCT t.id) AS tournaments, COUNT(g.id) AS games, COUNT(gr.game_id) AS ingame
      FROM leagues l LEFT JOIN tournaments t ON t.league_id = l.id LEFT JOIN games g ON g.tournament_id = t.id
+     LEFT JOIN game_riot gr ON gr.game_id = g.id
      GROUP BY l.id ORDER BY l.id`,
   )
   .all();
@@ -451,12 +653,21 @@ db.close();
 
 console.log(`built ${DB_FILE} in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
-console.log(`size: ${(statSync(DB_FILE).size / 1e6).toFixed(1)} MB, journal_mode=${journal}, schema v${SCHEMA_VERSION}`);
+const dbSize = statSync(DB_FILE).size;
+
+console.log(`size: ${(dbSize / 1e6).toFixed(1)} MB, journal_mode=${journal}, schema v${SCHEMA_VERSION}`);
+
+if (dbSize > DB_WARN_BYTES)
+  console.warn(
+    `warning: ${(dbSize / 1e6).toFixed(1)} MB is ${dbSize > DB_MAX_BYTES ? "over" : "close to"} the ${DB_MAX_BYTES / 1e6} MB budget (data:package refuses more): the /api/ask function must stay under 250 MB`,
+  );
 
 console.log(`skipped: ${skippedGames} games, ${skippedLines} player lines (outside scope or duplicates)`);
 
 console.log("rows:", rowCounts);
 
 console.log("item icons:", itemIcons);
+
+console.log("in-game:", ingameCounts);
 
 console.table(byLeague);
