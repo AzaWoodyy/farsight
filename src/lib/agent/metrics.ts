@@ -143,7 +143,7 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
   { pattern: word("(?:wards?|balises?) (?:d[ée]truites?|killed|cleared|tu[ée]es?)|dewards?"), player: "wards_killed", team: null },
   { pattern: word("wards?|balises?"), player: "wards_placed", team: null },
   { pattern: word("plates?|plaques?"), player: "plates", team: "plates" },
-  { pattern: word("(?:gold|golds|or) (?:à|a|at|@) ?(?:10|15|20)|(?:gold|golds|or) (?:à|a) (?:10|15|20) ?min"), player: "gold", team: "gold_diff" },
+  { pattern: word("(?:gold|golds|or) (?:à|a|at|@) ?(?:10|15|20)|(?:gold|golds|or) (?:à|a) (?:10|15|20) ?min"), player: "gold", team: null },
   { pattern: word("cs (?:à|a|at|@) ?(?:10|15|20)"), player: "cs", team: null },
   { pattern: word("(?:xp|exp[ée]rience) (?:à|a|at|@) ?(?:10|15|20)"), player: "xp", team: null },
 ];

@@ -1062,13 +1062,13 @@ ORDER BY is_total, first_game`),
     const fb = val("first_bloods");
 
     const parts: Record<PlayerMetric, string> = {
-      solo_kills: `${val("solo_kills") ?? 0} solo kills`,
-      penta_kills: `${val("penta_kills") ?? 0} pentakill${(val("penta_kills") ?? 0) > 1 ? "s" : ""}`,
-      quadra_kills: `${val("quadra_kills") ?? 0} quadrakills`,
-      triple_kills: `${val("triple_kills") ?? 0} triple kills`,
-      double_kills: `${val("double_kills") ?? 0} double kills`,
-      first_bloods: `${fb ?? 0} first bloods (${pct(fb ?? 0, total.games)} % des parties)`,
-      kills_before_10: `${val("kills_before_10") ?? 0} kills avant 10 min`,
+      solo_kills: `${val("solo_kills") ?? "n/d"} solo kills`,
+      penta_kills: `${val("penta_kills") ?? "n/d"} pentakill${(val("penta_kills") ?? 0) > 1 ? "s" : ""}`,
+      quadra_kills: `${val("quadra_kills") ?? "n/d"} quadrakills`,
+      triple_kills: `${val("triple_kills") ?? "n/d"} triple kills`,
+      double_kills: `${val("double_kills") ?? "n/d"} double kills`,
+      first_bloods: fb == null ? "first bloods n/d" : `${fb} first bloods (${pct(fb, total.games)} % des parties)`,
+      kills_before_10: `${val("kills_before_10") ?? "n/d"} kills avant 10 min`,
       gold_diff: `un écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min face à son adversaire direct`,
       cs_diff: `un écart de CS moyen de ${signed(val("cs_diff"))} à ${minute} min`,
       xp_diff: `un écart d'XP moyen de ${signed(val("xp_diff"))} à ${minute} min`,
@@ -1078,7 +1078,7 @@ ORDER BY is_total, first_game`),
       wards_placed: `${val("wards_placed") ?? "n/d"} wards posées par partie`,
       wards_killed: `${val("wards_killed") ?? "n/d"} wards détruites par partie`,
       control_wards: `${val("control_wards") ?? "n/d"} control wards achetées par partie`,
-      plates: `${val("plates") ?? 0} plaques de tourelle`,
+      plates: `${val("plates") ?? "n/d"} plaques de tourelle`,
     };
 
     const facts =
@@ -1109,7 +1109,8 @@ ORDER BY is_total, first_game`),
       totals: {
         games: total.games,
         coverage_games: cov.games,
-        ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? 0])),
+        // n/d: no game of the scope has this metric (no timeline, or no plate events before match-v5).
+        ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? "n/d"])),
       },
     };
   },
@@ -1249,7 +1250,7 @@ LIMIT 20`),
 
 // 8. A team's in-game stats --------------------------------------------------------------
 
-const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "gold_diff", "plates"];
+const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "gold_diff", "kills_before_10", "plates"];
 
 const TEAM_COLUMN_LABELS: Record<TeamMetric, string> = {
   first_blood: "First blood %",
@@ -1318,7 +1319,7 @@ ORDER BY is_total, first_game`),
       `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${span(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
       `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? "n/d"} % des parties, première tourelle ${val("first_tower") ?? "n/d"} %, ` +
       `premier dragon ${val("first_dragon") ?? "n/d"} %, premier héraut ${val("first_herald") ?? "n/d"} %, premier baron ${val("first_baron") ?? "n/d"} %, ` +
-      `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +
+      `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? "n/d"} kills avant 10 min et ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +
       coverageNote(cov);
 
     return {
@@ -1334,7 +1335,7 @@ ORDER BY is_total, first_game`),
         RIOT_DATA_SOURCE,
       ],
       followUps: [`Historique de ${team}`, `Équipes qui prennent le plus souvent le first blood ${input.league ? inLeague(league) : "aux Worlds"}`],
-      totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? 0])) },
+      totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? "n/d"])) },
     };
   },
   normalize: (db, input) => (resolveTeam(db, input.team) ? input : null),

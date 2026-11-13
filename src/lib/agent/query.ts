@@ -183,7 +183,11 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
   }
 
   if (e.players.length + e.teams.length === 0 && !e.champion && RANKING.test(question)) {
-    const team = (TEAM_WORDS.test(question) && cue.team != null) || cue.player == null;
+    const asksTeams = TEAM_WORDS.test(question);
+
+    // A team ranking on a metric only players have (or the reverse): text-to-SQL.
+    if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: `classement sur « ${cue.mention} » sans outil typé` };
+    const team = asksTeams || cue.player == null;
     const metric = team ? cue.team : cue.player;
 
     if (!metric) return null;
