@@ -12,7 +12,9 @@
         "rows": 8,
         "totals": { "wins": 63, "losses": 37, "events": 8 },
         "attempts": 1,
-        "sources": 9
+        "sources": 9,
+        "summaryIncludes": ["63", "37"],
+        "summaryExcludes": ["saison", "10-1"]
       }
     },
     {

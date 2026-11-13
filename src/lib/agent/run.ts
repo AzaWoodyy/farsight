@@ -297,7 +297,27 @@ const PageColumns = z
   .object({ event_page: z.string().optional().catch(undefined), tournament_page: z.string().optional().catch(undefined), player: z.string().optional().catch(undefined) })
   .transform((r) => [r.event_page, r.tournament_page, r.player]);
 
-type SummaryInput = { question: string; facts: string; rows: unknown };
+/** `facts`: the tool's own sentence, built from the aggregates of the question's scope. */
+type SummaryInput = { question: string; facts: string };
+
+const NUMBER = /\d+(?:[.,]\d+)?/g;
+
+/** Period words that would narrow or move the scope ("cette saison" for a Worlds run). */
+const PERIOD_WORDS = ["saison", "season", "cette année", "this year", "actuellement", "en cours", "currently"];
+
+/**
+ * What an LLM sentence states beyond the facts: numbers the facts do not
+ * contain, and period words they do not use. The sentence must only reword.
+ */
+function claimsBeyondFacts(text: string, facts: string): string[] {
+  const known = new Set(facts.match(NUMBER) ?? []);
+  const lower = text.toLowerCase();
+  const factsLower = facts.toLowerCase();
+  const numbers = (text.match(NUMBER) ?? []).filter((n) => !known.has(n));
+  const periods = PERIOD_WORDS.filter((w) => lower.includes(w) && !factsLower.includes(w));
+
+  return [...new Set([...numbers, ...periods])];
+}
 
 const templateSummary: Decider<SummaryInput, string> = {
   level: "rules",
@@ -308,7 +328,9 @@ const templateSummary: Decider<SummaryInput, string> = {
 const llmSummary: Decider<SummaryInput, string> = {
   level: "llm",
   name: "rédaction",
-  run: async ({ question, facts, rows }) => {
+  // Only the facts go to the model: the raw rows carry no scope (a 10-1 row
+  // is one Worlds edition, not "this season"), so the model could misread them.
+  run: async ({ question, facts }) => {
     const llm = getLlm();
 
     if (!llm) return null;
@@ -316,14 +338,24 @@ const llmSummary: Decider<SummaryInput, string> = {
     const { text } = await generateText({
       model: llm.model,
       instructions:
-        "Rédige une ou deux phrases de synthèse en français à partir de ces données. N'ajoute aucun fait absent des données.",
-      prompt: JSON.stringify({ question, facts, rows }),
+        "Reformule ces faits en une ou deux phrases de synthèse en français, qui répondent à la question. " +
+        "Garde exactement leurs chiffres et leur périmètre (compétition, éditions, période) : " +
+        "n'ajoute aucun chiffre, aucune période (saison, année en cours…) ni aucune interprétation absente des faits.",
+      prompt: JSON.stringify({ question, faits: facts }),
       maxOutputTokens: 300,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
     });
 
-    return text.trim() ? { result: text.trim(), confidence: 0.85, level: "llm", reason: llm.id } : null;
+    const sentence = text.trim();
+
+    if (!sentence) return null;
+    const beyond = claimsBeyondFacts(sentence, facts);
+
+    // Thrown so the trace shows why the template sentence was kept.
+    if (beyond.length) throw new Error(`synthèse rejetée, absent des faits : ${beyond.join(", ")}`);
+
+    return { result: sentence, confidence: 0.85, level: "llm", reason: llm.id };
   },
 };
 
@@ -449,7 +481,7 @@ async function format(
 
   const out = plan.tool.format(db, raw);
   meta.totals = out.totals;
-  const summary = (await decide({ question, facts: out.facts, rows: out.rows ?? out.table }, [templateSummary, llmSummary], { threshold: 0.8 }))!;
+  const summary = (await decide({ question, facts: out.facts }, [templateSummary, llmSummary], { threshold: 0.8 }))!;
   step.add(decisionEntry(summary, `Synthèse (${summary.level === "llm" ? "LLM" : "modèle de phrase"})`));
   const followUps = [...new Set([...amb.followUps, ...out.followUps])].slice(0, 4);
   step.add(

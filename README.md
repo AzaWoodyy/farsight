@@ -101,7 +101,7 @@ trace affiche le niveau et la confiance de chaque décision.
 | understand | n-grammes contre les tables d'alias (joueurs, équipes, champions), regex de ligue, d'années et de split | extraction structurée des entités, résolues ensuite contre les tables d'alias |
 | build      | routage vers un outil typé (`src/lib/agent/tools.ts`) | choix d'outil par appel d'outil AI SDK, sinon text-to-SQL sur les vues `v_*` |
 | execute    | corrections propres à l'outil : retirer la période, le split ou la compétition, essayer un homonyme | réparer la requête rejetée, en erreur ou vide (text-to-SQL) |
-| format     | phrase construite à partir des agrégats         | phrase rédigée, sans fait ajouté       |
+| format     | phrase construite à partir des agrégats         | la même phrase reformulée ; rejetée si elle ajoute un chiffre ou une période |
 
 Outils typés (`src/lib/agent/tools.ts`) : chaque outil a un schéma zod
 d'entrée (partagé avec le LLM via `tool()` de l'AI SDK, sans `execute` : la
@@ -131,6 +131,11 @@ porterait : elle cesse de s'appliquer d'elle-même si une reconstruction ajoute
 cette colonne. Pour les autres notions, le text-to-SQL signale lui-même la
 donnée manquante au lieu de renvoyer une constante (une requête du type
 `WHERE 0 = 1` est traitée de la même façon).
+
+Synthèse LLM : le modèle ne reçoit que la phrase de faits de l'outil (agrégats
+du périmètre de la question), pas les lignes brutes. Une phrase qui contient
+un chiffre ou un mot de période (« saison », « cette année »…) absent de ces
+faits est rejetée, et la phrase des règles est gardée.
 
 Alias ambigus : quand un alias désigne plusieurs joueurs (정지훈 → Chovy ou
 Pullbae, Caps / caPs), l'agent retient le plus probable (casse exacte du
