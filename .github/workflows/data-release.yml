@@ -1,0 +1,83 @@
+name: Data release
+
+# Full ingestion from Leaguepedia, checks, then a `data-YYYYMMDD` release
+# holding the compressed SQLite file and its manifest. `bun run data:pull`
+# (Vercel build) downloads the newest release matching the code's schema.
+# A run on a branch other than main publishes a prerelease, which data:pull
+# ignores unless DATA_RELEASE pins it.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays 05:23 UTC: after the weekend's matches.
+    - cron: "23 5 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # About 180 Cargo requests, one at a time, 3 s apart, cached in data/raw.
+      LEAGUEPEDIA_DELAY_MS: "3000"
+      LEAGUEPEDIA_USER_AGENT: "lol-esports-agent/1.0 (+https://lolesport.enzoneault.dev; weekly batch ingestion, one request every 3 s)"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - run: bun install --frozen-lockfile
+
+      - name: Fetch Leaguepedia and Data Dragon
+        run: bun run data:fetch
+
+      - name: Build the database
+        run: bun run data:build
+
+      - name: Pick the tag and the previous release
+        id: meta
+        run: |
+          base="data-$(date -u +%Y%m%d)"
+          tag="$base"
+          n=1
+          while gh release view "$tag" >/dev/null 2>&1; do
+            n=$((n + 1))
+            tag="$base-$n"
+          done
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          previous=$(gh release list --exclude-drafts --exclude-pre-releases --limit 50 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.createdAt) | reverse | .[0].tagName // ""')
+          if [ -n "$previous" ]; then
+            gh release download "$previous" --pattern manifest.json --dir data/previous
+            echo "previous=data/previous/manifest.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check and package
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          PREVIOUS: ${{ steps.meta.outputs.previous }}
+        run: bun run data:package --tag="$TAG" ${PREVIOUS:+--previous="$PREVIOUS"} --out=data/release
+
+      - name: Publish the release
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          flags=(--latest=false)
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" data/release/lol.sqlite.zst data/release/manifest.json \
+            --target "$GITHUB_SHA" \
+            --title "Data $TAG" \
+            --notes-file data/release/notes.md \
+            "${flags[@]}"
+          { echo '```json'; cat data/release/manifest.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

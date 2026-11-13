@@ -13,6 +13,7 @@
     "lint": "oxlint",
     "data:fetch": "bun scripts/data/fetch.ts",
     "data:build": "bun scripts/data/build.ts",
+    "data:package": "bun scripts/data/package.ts",
     "ask": "bun scripts/ask.ts",
     "eval": "bun scripts/eval.ts"
   },
