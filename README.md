@@ -123,6 +123,15 @@ statistiques que les outils ne calculent pas (kills, or, durées, classements
 ouverts) partent en text-to-SQL ; les compétitions et jeux hors périmètre
 (LJL, VCT…) reçoivent une réponse « hors périmètre » sans requête.
 
+Données absentes : quand la question demande une donnée que la base ne
+contient pas (pentakills, first blood, wards, objectifs par partie, sorts
+d'invocateur, MVP), l'agent répond « Donnée absente de la base » sans requête
+ni chiffre. La règle associe chaque notion à la colonne de vue qui la
+porterait : elle cesse de s'appliquer d'elle-même si une reconstruction ajoute
+cette colonne. Pour les autres notions, le text-to-SQL signale lui-même la
+donnée manquante au lieu de renvoyer une constante (une requête du type
+`WHERE 0 = 1` est traitée de la même façon).
+
 Alias ambigus : quand un alias désigne plusieurs joueurs (정지훈 → Chovy ou
 Pullbae, Caps / caPs), l'agent retient le plus probable (casse exacte du
 pseudo, puis parties dans la compétition et la période de la question, puis
@@ -192,10 +201,11 @@ scripts/eval.ts              bun run eval
 
 `eval/questions.json` liste 30 questions de référence (Worlds, MSI, LCK, LPL,
 LEC, LCS, alias Chovy / 정지훈 / Ji hun / Lee Sang-hyeok, alias ambigus,
-confrontations, auto-correction, text-to-SQL, hors périmètre) avec leurs
+confrontations, auto-correction, text-to-SQL, donnée absente, hors périmètre) avec leurs
 attentes : outil ou route, entités résolues, entrée de l'outil, nombre de
 lignes, totaux clés (bilan V-D, titres, picks…), ambiguïté signalée, notes,
-sources. `bun run eval` les rejoue et affiche un score par question et un
+sources, contenu de la synthèse (mots attendus ou interdits) et absence de
+chiffre pour les données absentes. `bun run eval` les rejoue et affiche un score par question et un
 score global :
 
 - sans clé, en mode déterministe ; les vérifications qui demandent un résultat

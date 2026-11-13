@@ -143,12 +143,21 @@ const SQL_FALLBACK_TITLE: Record<LlmStatus, string> = {
   exhausted: "text-to-SQL requis (quota épuisé)",
 };
 
-async function build(db: DatabaseSync, question: string, entities: Entities, route: Route, emit: Emit, notes: string[]) {
+/** `missing` collects the data the database does not hold (rules or text-to-SQL); the answer then gives no figure. */
+async function build(db: DatabaseSync, question: string, entities: Entities, route: Route, emit: Emit, notes: string[], missing: string[]) {
   const step = new Step("build", "Construction de la requête…", emit);
 
   if (route.kind === "out_of_scope") {
     step.add(entry({ status: "warn", title: "Question hors périmètre", detail: route.reason }));
     step.done("warn", "Hors périmètre");
+
+    return null;
+  }
+
+  if (route.kind === "missing") {
+    missing.push(...route.concepts);
+    step.add(entry({ status: "warn", title: "Donnée absente de la base", detail: `${route.reason}\nAucune requête : un chiffre serait inventé.` }));
+    step.done("warn", "Donnée absente de la base");
 
     return null;
   }
@@ -169,8 +178,17 @@ async function build(db: DatabaseSync, question: string, entities: Entities, rou
     return null;
   }
 
-  const { plan } = decision.result;
   notes.push(...decision.result.notes);
+
+  if (decision.result.plan === null) {
+    missing.push(...decision.result.missing);
+    step.add(decisionEntry(decision, "Donnée absente de la base", "warn", decision.result.missing.join("\n")));
+    step.done("warn", "Donnée absente de la base");
+
+    return null;
+  }
+
+  const { plan } = decision.result;
   const label = plan.tool ? `Outil typé : ${plan.tool.label}` : "Requête générée (text-to-SQL)";
   step.add(
     decisionEntry(
@@ -334,6 +352,17 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
   return `Aucun résultat${who ? ` pour ${who}` : ""}${entities.league ? ` (${entities.leagueShort ?? entities.league})` : ""} dans la base.`;
 }
 
+const ROUTE_LABEL: Partial<Record<Route["kind"], AnswerMeta["route"]>> = { out_of_scope: "out_of_scope", sql: "sql" };
+
+/** Says which data is missing and what the database does hold. States no figure. */
+function missingSummary(missing: string[]): string {
+  return (
+    `Donnée absente de la base : ${[...new Set(missing)].join(", ")}. ` +
+    "La base ne contient que les résultats, les drafts et les statistiques individuelles par partie " +
+    "(kills, morts, assists, or, CS, dégâts, score de vision, objets, rune principale) : aucun chiffre n'est donc donné."
+  );
+}
+
 async function format(
   db: DatabaseSync,
   question: string,
@@ -343,6 +372,7 @@ async function format(
   raw: SqlRow[],
   emit: Emit,
   notes: string[],
+  missing: string[],
 ): Promise<Answer> {
   const step = new Step("format", "Mise en forme…", emit);
   const amb = ambiguityNotes(question, entities);
@@ -351,7 +381,7 @@ async function format(
   const input = plan ? (plan.tool?.call.input ?? null) : route.kind === "tool" ? route.call.input : null;
 
   const meta: AnswerMeta = {
-    route: route.kind === "out_of_scope" ? "out_of_scope" : (plan?.intent ?? (route.kind === "sql" ? "sql" : route.call.tool)),
+    route: missing.length ? "missing_data" : (plan?.intent ?? ROUTE_LABEL[route.kind] ?? (route.kind === "tool" ? route.call.tool : "none")),
     sqlAvailable: getLlm() != null,
     input,
     players: entities.players.map((p) => p.player),
@@ -363,6 +393,22 @@ async function format(
     ambiguities: amb.ambiguities,
     attempts: plan?.attempt ?? 0,
   };
+
+  if (missing.length) {
+    step.add(entry({ status: "warn", title: "Réponse « donnée absente » mise en forme, sans chiffre" }));
+    step.done("warn", "Donnée absente de la base");
+
+    return {
+      title: "Donnée absente de la base",
+      summary: missingSummary(missing),
+      rows: [],
+      table: null,
+      sources: [],
+      followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
+      notes,
+      meta,
+    };
+  }
 
   if (!raw.length || !plan) {
     step.add(entry({ status: "warn", title: "Réponse vide mise en forme" }));
@@ -431,11 +477,12 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
   const entities = await understand(db, question, emit);
-  const route = routeQuestion(question, entities);
+  const route = routeQuestion(question, entities, readSchema(db));
+  const missing: string[] = [];
   let rows: SqlRow[] = [];
   let plan: QueryPlan | null = null;
 
-  const first = await build(db, question, entities, route, emit, notes);
+  const first = await build(db, question, entities, route, emit, notes, missing);
 
   if (first) {
     const result = await execute(db, question, entities, first, emit, notes);
@@ -446,7 +493,7 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
     step.done("warn", "Rien à exécuter");
   }
 
-  const answer = await format(db, question, entities, route, plan, rows, emit, notes);
+  const answer = await format(db, question, entities, route, plan, rows, emit, notes, missing);
 
   if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
   emit({ type: "answer", answer });

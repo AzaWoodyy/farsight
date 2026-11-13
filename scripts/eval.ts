@@ -48,6 +48,11 @@ const Expect = z.strictObject({
   attempts: z.number().int().optional(),
   notes: z.array(z.string()).optional(),
   sources: z.number().int().optional(),
+  /** Substrings the summary must contain, and must not contain (case-insensitive). */
+  summaryIncludes: z.array(z.string()).optional(),
+  summaryExcludes: z.array(z.string()).optional(),
+  /** The answer gives no figure: no row, no table, no digit in the summary. */
+  noFigure: z.boolean().optional(),
 });
 
 const Case = z.strictObject({ id: z.string(), question: z.string(), tags: z.array(z.string()), expect: Expect });
@@ -119,6 +124,19 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
 
   if (e.notes)
     for (const n of e.notes) add(`note « ${n} »`, answer.notes.some((x) => x.includes(n)), answer.notes.join(" | ") || "aucune note");
+
+  const summary = answer.summary.toLowerCase();
+
+  if (e.summaryIncludes)
+    for (const t of e.summaryIncludes) add(`synthèse contient « ${t} »`, summary.includes(t.toLowerCase()), answer.summary);
+
+  if (e.summaryExcludes)
+    for (const t of e.summaryExcludes) add(`synthèse sans « ${t} »`, !summary.includes(t.toLowerCase()), answer.summary);
+
+  if (e.noFigure) {
+    const figures = answer.rows.length + (answer.table?.rows.length ?? 0);
+    add("aucun chiffre donné", figures === 0 && !/\d/.test(answer.summary), `${figures} ligne(s) · ${answer.summary}`);
+  }
 
   if (e.sources !== undefined || (e.route !== "out_of_scope" && answer.meta.rowCount > 0)) {
     const min = e.sources ?? 1;

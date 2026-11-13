@@ -158,7 +158,8 @@ export type TableCell = string | number | null;
 
 /** Machine-readable outline of how the answer was produced (eval, debugging). */
 export type AnswerMeta = {
-  route: Intent | "out_of_scope" | "none";
+  /** missing_data: the question needs data the database does not hold; no figure is given. */
+  route: Intent | "out_of_scope" | "missing_data" | "none";
   /** False when text-to-SQL was needed but no OpenRouter key is configured. */
   sqlAvailable: boolean;
   /** Input of the typed tool that answered, null otherwise. */
