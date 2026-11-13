@@ -1,4 +1,5 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import { checkBotId } from "botid/server";
 import { z } from "zod";
 import { runAgent } from "@/lib/agent/run";
 import type { AgentUIMessage } from "@/lib/agent/types";
@@ -19,9 +20,15 @@ const ChatRequest = z.object({
  * useChat endpoint. Body: the AI SDK chat request ({ messages, ... }); only
  * the text of the last user message is used. Response: a UI message stream
  * with one `data-step` part per step (updated in place, id = step name) and
- * a final `data-answer` part.
+ * a final `data-answer` part. Requests flagged as bots by BotID get a 403.
  */
 export async function POST(req: Request) {
+  // BotID Basic, before any model call. Outside Vercel (`bun run dev`, a local
+  // `next start`) there is no BotID service: the check answers "human".
+  const verification = await checkBotId({ developmentOptions: { isDevelopment: process.env.VERCEL !== "1" } });
+
+  if (verification.isBot) return Response.json({ error: "access denied" }, { status: 403 });
+
   const body = ChatRequest.safeParse(await req.json().catch(() => null));
 
   if (!body.success) return Response.json({ error: "invalid chat request" }, { status: 400 });

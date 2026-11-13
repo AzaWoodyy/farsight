@@ -32,8 +32,36 @@ const LOL_DOMAIN = word(
     "parties|games?|matchs?|splits?|playoffs|picks?|bans?|mid|jungle|jungler|adc|bot|support|top ?lane|kills?|pentakills?",
 );
 
+/**
+ * Concepts people ask about that the database does not hold, each with the
+ * view column that would hold it. A concept counts as missing while that
+ * column is absent from the live schema, so a rebuild that adds it to the
+ * views switches the detection off by itself.
+ */
+const DATA_CONCEPTS = [
+  { label: "les pentakills et autres multi-kills", pattern: word("penta ?kills?|quadra ?kills?|triple ?kills?|multi ?kills?"), view: "v_game_players", column: "pentakills" },
+  { label: "les solo kills", pattern: word("solo ?kills?"), view: "v_game_players", column: "solo_kills" },
+  { label: "le first blood", pattern: word("first ?blood|premier sang"), view: "v_game_players", column: "first_blood" },
+  { label: "les wards posées ou détruites", pattern: word("wards?"), view: "v_game_players", column: "wards_placed" },
+  {
+    label: "les objectifs par partie (dragons, barons, hérauts, tourelles, inhibiteurs)",
+    pattern: word("dragons?|drakes?|barons?|nashor|h[ée]rauts?|heralds?|towers?|tourelles?|inhibiteurs?|inhibitors?|grubs?|larves?|atakhans?"),
+    view: "v_games",
+    column: "blue_dragons",
+  },
+  { label: "les sorts d'invocateur", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
+  { label: "les distinctions MVP et joueur du match", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
+] as const;
+
+/** The concepts of the question that no column of the schema holds. */
+export function missingConcepts(question: string, schema: Record<string, string[]>): string[] {
+  return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [c.label] : []));
+}
+
 export type Route =
   | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[] }
+  /** The question needs data the database does not hold: answered without a query. */
+  | { kind: "missing"; concepts: string[]; reason: string }
   /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. */
   | { kind: "sql"; reason: string; open?: boolean }
   | { kind: "out_of_scope"; reason: string };
@@ -42,16 +70,20 @@ const WORLDS = "World Championship";
 
 /**
  * Deterministic intent routing on the resolved entities and a few cues.
- * Returns a typed tool + input, "sql" when no tool covers the question, or
- * "out_of_scope".
+ * Returns a typed tool + input, "sql" when no tool covers the question,
+ * "missing" when the data is not in the database, or "out_of_scope".
  */
-export function routeQuestion(question: string, e: Entities): Route {
+export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>): Route {
   if (e.outOfScope)
     return { kind: "out_of_scope", reason: `« ${e.outOfScope} » n'est pas dans le périmètre (Worlds, MSI, LCK, LPL, LEC, LCS, LFL…)` };
   const nEntities = e.players.length + e.teams.length + (e.champion ? 1 : 0);
 
   if (nEntities === 0 && !e.league && !LOL_DOMAIN.test(question) && !STANDINGS.test(question))
     return { kind: "out_of_scope", reason: "aucune entité ni notion esport League of Legends dans la question" };
+
+  const missing = missingConcepts(question, schema);
+
+  if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
 
   if (UNSUPPORTED.test(question))
     return { kind: "sql", reason: `métrique ou classement non couvert par les outils typés (« ${UNSUPPORTED.exec(question)![0]} »)` };
@@ -160,9 +192,22 @@ const SQL_RULES =
   "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
   "Use only these views and columns (no other table). " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
-  "Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under 200 rows.";
+  "Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under 200 rows. " +
+  "If the answer needs data that no listed column holds (for example pentakills, first blood, MVP awards, objectives per game), " +
+  "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
+  "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
 
-const SqlOutput = z.object({ sql: z.string(), explanation: z.string() });
+const SqlOutput = z.object({ sql: z.string(), explanation: z.string(), missing: z.array(z.string()) });
+
+/** A predicate that is always false: the query states a figure without reading any data. */
+const ALWAYS_FALSE = /\b(?:0\s*=\s*1|1\s*=\s*0)\b|\bwhere\s+(?:false|0)\b/i;
+
+/** What a generated query would leave out: the data it says is missing, or a query that reads nothing real. */
+function generatedGaps(reply: { sql: string; missing: string[] }): string[] {
+  if (reply.missing.length) return reply.missing;
+
+  return !reply.sql || ALWAYS_FALSE.test(reply.sql) ? ["la donnée demandée (la requête générée ne lisait aucune donnée réelle)"] : [];
+}
 
 async function askSql(db: DatabaseSync, prompt: string) {
   const llm = getLlm();
@@ -196,7 +241,8 @@ const entitySummary = (e: Entities) =>
 
 type BuildInput = { db: DatabaseSync; question: string; entities: Entities; route: Route };
 
-export type BuildResult = { plan: QueryPlan; notes: string[] };
+/** A query plan, or (text-to-SQL only) the data the database does not hold. */
+export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; missing: string[]; notes: string[] };
 
 const rulesRouter: Decider<BuildInput, BuildResult> = {
   level: "rules",
@@ -259,6 +305,9 @@ const textToSqlDecider: Decider<BuildInput, BuildResult> = {
     const reply = await askSql(db, `Question: ${question}\nResolved entities: ${entitySummary(entities)}`);
 
     if (!reply) return null;
+    const gaps = generatedGaps(reply);
+
+    if (gaps.length) return { result: { plan: null, missing: gaps, notes: [] }, confidence: 0.8, level: "llm", reason: `${reply.model} : donnée absente` };
 
     return {
       result: { plan: { intent: "sql", tool: null, sql: reply.sql, params: {}, attempt: 1, relaxed: [] }, notes: [] },
@@ -318,7 +367,8 @@ const llmCorrector: Decider<CorrectInput, Fix> = {
         "Return a corrected query. Inline the parameter values as literals.",
     );
 
-    if (!reply) return null;
+    // A repair that gives up on real data is no repair.
+    if (!reply || generatedGaps(reply).length) return null;
 
     return {
       result: { plan: { ...plan, intent: "sql", tool: null, sql: reply.sql, params: {}, attempt: plan.attempt + 1 } },

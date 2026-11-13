@@ -32,7 +32,7 @@ Prérequis : [Bun](https://bun.sh) 1.3+ et Node.js 22.13+ (pour `node:sqlite`).
 bun install
 cp .env.example .env          # facultatif : clé OpenRouter
 bun run data:fetch            # Leaguepedia + Data Dragon -> data/raw (~3 min la première fois)
-bun run data:build            # data/raw -> data/lol.sqlite (~80 Mo, quelques secondes)
+bun run data:build            # data/raw -> data/lol.sqlite (~68 Mo, quelques secondes)
 bun run dev                   # http://localhost:3000
 ```
 
@@ -63,6 +63,10 @@ Deux commandes, dans `scripts/data/` :
 - `data:build` reconstruit `data/lol.sqlite` de zéro à partir de `data/raw/`
   (schéma normalisé à ids entiers, tables de correspondance, vues `v_*` qui
   remettent les noms), puis `journal_mode=DELETE` et `VACUUM`.
+  - La base ne garde que les colonnes, tables et index lus par les vues `v_*`
+    et par les outils (budget : 100 Mo). Le cache brut garde tout le reste
+    (objectifs par partie, runes secondaires, sorts, trinket…) : une
+    reconstruction suffit pour en remettre une colonne.
   - Chaque tournoi est classé d'après son nom de page (`tournaments.stage` :
     `event`, `main_event`, `play_in`, `qualifier`, `season`, `playoffs`), car
     Leaguepedia range les qualifications régionales sous le label
@@ -70,7 +74,8 @@ Deux commandes, dans `scripts/data/` :
   - `ingest_runs` garde l'historique des récupérations et la construction
     (date, nombre de lignes, version du schéma, aussi dans `PRAGMA user_version`).
   - Les objets absents de Data Dragon gardent une icône de repli
-    (`public/icons/item-fallback.svg`, `items.icon_source = 'fallback'`).
+    (`public/icons/item-fallback.svg`) ; le décompte par origine d'icône est
+    gardé dans `ingest_runs`.
 
 `data/` n'est jamais commité.
 
@@ -96,7 +101,7 @@ trace affiche le niveau et la confiance de chaque décision.
 | understand | n-grammes contre les tables d'alias (joueurs, équipes, champions), regex de ligue, d'années et de split | extraction structurée des entités, résolues ensuite contre les tables d'alias |
 | build      | routage vers un outil typé (`src/lib/agent/tools.ts`) | choix d'outil par appel d'outil AI SDK, sinon text-to-SQL sur les vues `v_*` |
 | execute    | corrections propres à l'outil : retirer la période, le split ou la compétition, essayer un homonyme | réparer la requête rejetée, en erreur ou vide (text-to-SQL) |
-| format     | phrase construite à partir des agrégats         | phrase rédigée, sans fait ajouté       |
+| format     | phrase construite à partir des agrégats         | la même phrase reformulée ; rejetée si elle ajoute un chiffre ou une période |
 
 Outils typés (`src/lib/agent/tools.ts`) : chaque outil a un schéma zod
 d'entrée (partagé avec le LLM via `tool()` de l'AI SDK, sans `execute` : la
@@ -117,6 +122,25 @@ pointent vers la ligue de l'époque (NA LCS, EU LCS, OGN Champions). Les
 statistiques que les outils ne calculent pas (kills, or, durées, classements
 ouverts) partent en text-to-SQL ; les compétitions et jeux hors périmètre
 (LJL, VCT…) reçoivent une réponse « hors périmètre » sans requête.
+
+Données absentes : quand la question demande une donnée que la base ne
+contient pas (pentakills, solo kills, first blood, wards, objectifs par partie, sorts
+d'invocateur, MVP), l'agent répond « Donnée absente de la base » sans requête
+ni chiffre. La règle associe chaque notion à la colonne de vue qui la
+porterait : elle cesse de s'appliquer d'elle-même si une reconstruction ajoute
+cette colonne. Pour les autres notions, le text-to-SQL signale lui-même la
+donnée manquante au lieu de renvoyer une constante (une requête du type
+`WHERE 0 = 1` est traitée de la même façon).
+
+Synthèse LLM : le modèle ne reçoit que la phrase de faits de l'outil (agrégats
+du périmètre de la question), pas les lignes brutes. Une phrase qui contient
+un chiffre ou un mot de période (« saison », « cette année »…) absent de ces
+faits est rejetée, et la phrase des règles est gardée.
+
+Les mots d'une expression de stats ou de jeu connue (« solo kills », « first
+blood », « mid lane »…) ne sont jamais pris pour des alias : « solo » dans
+« solo kills » n'est pas le joueur Solo, qui reste reconnu seul (« Solo aux
+Worlds »).
 
 Alias ambigus : quand un alias désigne plusieurs joueurs (정지훈 → Chovy ou
 Pullbae, Caps / caPs), l'agent retient le plus probable (casse exacte du
@@ -151,6 +175,15 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
   les règles ne sont pas assez sûres, plus la phrase de synthèse. Modèle
   `OPENROUTER_MODEL`, par défaut `anthropic/claude-haiku-5.5`. Chaque appel est
   borné (600 jetons de sortie, 15 s, une seule relance).
+- Clé épuisée (402, ou 403 « Key limit exceeded ») : le LLM est coupé pendant
+  15 minutes, l'agent repasse en mode déterministe, et la réponse le dit dans
+  une note.
+
+## Déploiement
+
+Vercel (Hobby), avec la base incluse dans la fonction `/api/ask`, BotID Basic
+sur le chat et un rate limit par IP dans le firewall. Procédure et réglages
+manuels : [docs/deploy.md](docs/deploy.md).
 
 ## Structure
 
@@ -168,18 +201,21 @@ src/lib/agent/guard.ts       garde-fou de schéma
 src/lib/agent/llm.ts         client OpenRouter
 src/app/api/ask/route.ts     flux de messages UI (data parts) pour useChat
 src/app/                     interface (étapes, tableau triable)
+src/instrumentation-client.ts  BotID côté client (protège POST /api/ask)
+docs/deploy.md               déploiement Vercel et réglages manuels
 eval/questions.json          questions de référence et attentes vérifiables
 scripts/eval.ts              bun run eval
 ```
 
 ## Évaluation
 
-`eval/questions.json` liste 30 questions de référence (Worlds, MSI, LCK, LPL,
+`eval/questions.json` liste 31 questions de référence (Worlds, MSI, LCK, LPL,
 LEC, LCS, alias Chovy / 정지훈 / Ji hun / Lee Sang-hyeok, alias ambigus,
-confrontations, auto-correction, text-to-SQL, hors périmètre) avec leurs
+confrontations, auto-correction, text-to-SQL, donnée absente, hors périmètre) avec leurs
 attentes : outil ou route, entités résolues, entrée de l'outil, nombre de
 lignes, totaux clés (bilan V-D, titres, picks…), ambiguïté signalée, notes,
-sources. `bun run eval` les rejoue et affiche un score par question et un
+sources, contenu de la synthèse (mots attendus ou interdits) et absence de
+chiffre pour les données absentes. `bun run eval` les rejoue et affiche un score par question et un
 score global :
 
 - sans clé, en mode déterministe ; les vérifications qui demandent un résultat
@@ -190,7 +226,7 @@ score global :
   affiche chaque vérification, `--strict` sort en erreur si une question
   échoue.
 
-Les valeurs attendues viennent de la base complète (schéma v2) ; les totaux
+Les valeurs attendues viennent de la base complète (schéma v3) ; les totaux
 clés ont été recoupés par des requêtes indépendantes sur les tables de base.
 Une reconstruction de la base qui change ces chiffres (nouvelle édition,
 correction du wiki) demande de mettre à jour le fichier.

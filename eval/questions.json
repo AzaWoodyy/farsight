@@ -12,7 +12,9 @@
         "rows": 8,
         "totals": { "wins": 63, "losses": 37, "events": 8 },
         "attempts": 1,
-        "sources": 9
+        "sources": 9,
+        "summaryIncludes": ["63", "37"],
+        "summaryExcludes": ["saison", "10-1"]
       }
     },
     {
@@ -298,10 +300,16 @@
       }
     },
     {
-      "id": "sql-pentakills",
+      "id": "missing-pentakills",
       "question": "combien de pentakills Faker a-t-il fait aux Worlds",
-      "tags": ["worlds", "text_to_sql"],
-      "expect": { "route": "sql", "players": ["Faker"], "rowsMin": 1 }
+      "tags": ["worlds", "missing_data"],
+      "expect": { "route": "missing_data", "players": ["Faker"], "noFigure": true, "summaryIncludes": ["Donnée absente de la base", "pentakills"] }
+    },
+    {
+      "id": "missing-solo-kills",
+      "question": "quel joueur a fait le plus de solo kills aux Worlds",
+      "tags": ["worlds", "missing_data", "alias"],
+      "expect": { "route": "missing_data", "players": [], "noFigure": true, "summaryIncludes": ["Donnée absente de la base", "solo kills"] }
     },
     {
       "id": "sql-most-games",

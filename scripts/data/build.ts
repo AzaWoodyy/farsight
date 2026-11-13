@@ -65,37 +65,28 @@ CREATE TABLE tournaments (
   event_page TEXT NOT NULL,           -- page holding the final standings (parent event for Worlds/MSI stages)
   stage TEXT NOT NULL,                -- event | main_event | play_in | qualifier | season | playoffs
   name TEXT, league_id INT NOT NULL REFERENCES leagues(id),
-  year INT, date_start TEXT, date_end TEXT, region TEXT, split TEXT, level TEXT);
+  year INT, date_start TEXT, date_end TEXT, split TEXT);
 CREATE TABLE teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 CREATE TABLE players (
-  id INTEGER PRIMARY KEY, page TEXT NOT NULL UNIQUE, ign TEXT, real_name TEXT, native_name TEXT,
-  country TEXT, role TEXT, current_team TEXT);
+  id INTEGER PRIMARY KEY, page TEXT NOT NULL UNIQUE, ign TEXT, real_name TEXT, native_name TEXT);
 CREATE TABLE player_aliases (
   alias TEXT NOT NULL, raw TEXT NOT NULL, player_id INT NOT NULL,
   PRIMARY KEY (alias, player_id)) WITHOUT ROWID;
-CREATE TABLE champions (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, ddragon_id TEXT, icon_url TEXT);
-CREATE TABLE items (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, ddragon_id TEXT,
-  icon_url TEXT NOT NULL, icon_source TEXT NOT NULL);  -- ddragon | ddragon_legacy | fallback
-CREATE TABLE runes (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
-CREATE TABLE spells (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+CREATE TABLE champions (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT);
+CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT NOT NULL);
+CREATE TABLE runes (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);  -- keystones
 CREATE TABLE tournament_results (
   tournament_id INT NOT NULL, team_id INT NOT NULL, place TEXT, place_number INT, prize_usd REAL,
   PRIMARY KEY (tournament_id, team_id)) WITHOUT ROWID;
 CREATE TABLE games (
-  id INTEGER PRIMARY KEY, tournament_id INT NOT NULL, game_key TEXT NOT NULL,
-  blue_team_id INT, red_team_id INT, winner_side INT, length_s INT, patch TEXT, played_at INT,
-  blue_kills INT, red_kills INT, blue_gold INT, red_gold INT, blue_towers INT, red_towers INT,
-  blue_dragons INT, red_dragons INT, blue_barons INT, red_barons INT, blue_heralds INT, red_heralds INT,
-  blue_grubs INT, red_grubs INT, blue_atakhans INT, red_atakhans INT, blue_inhibitors INT, red_inhibitors INT);
+  id INTEGER PRIMARY KEY, tournament_id INT NOT NULL,
+  blue_team_id INT, red_team_id INT, winner_side INT, length_s INT, patch TEXT, played_at INT);
 CREATE TABLE game_draft (
   game_id INT NOT NULL, side INT NOT NULL, kind INT NOT NULL, slot INT NOT NULL, champion_id INT NOT NULL,
   PRIMARY KEY (game_id, side, kind, slot)) WITHOUT ROWID;
 CREATE TABLE game_players (
   game_id INT NOT NULL, player_id INT NOT NULL, team_id INT, side INT, role TEXT, champion_id INT, win INT,
-  kills INT, deaths INT, assists INT, gold INT, cs INT, damage INT, vision INT,
-  keystone_id INT, primary_tree_id INT, secondary_tree_id INT, runes TEXT, trinket_id INT,
-  spell1_id INT, spell2_id INT,
+  kills INT, deaths INT, assists INT, gold INT, cs INT, damage INT, vision INT, keystone_id INT,
   PRIMARY KEY (game_id, player_id)) WITHOUT ROWID;
 CREATE TABLE game_player_items (
   game_id INT NOT NULL, player_id INT NOT NULL, slot INT NOT NULL, item_id INT NOT NULL,
@@ -155,7 +146,6 @@ const leagueByName = new Map(LEAGUES.map((l) => [l.name, l]));
 const team = dictionary("teams");
 const champion = dictionary("champions");
 const rune = dictionary("runes");
-const spell = dictionary("spells");
 
 // Items carry a NOT NULL icon, so they are collected first and inserted at the end.
 const itemIds = new Map<string, number>();
@@ -200,14 +190,14 @@ for (const t of tournaments.values())
   if (t.eventPage !== t.Page && tournaments.has(t.eventPage)) tournaments.get(t.eventPage)!.stage = "event";
 
 const tournamentId = new Map<string, number>();
-const insTournament = db.prepare("INSERT INTO tournaments VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+const insTournament = db.prepare("INSERT INTO tournaments VALUES (?,?,?,?,?,?,?,?,?,?)");
 
 for (const [page, t] of tournaments) {
   const id = tournamentId.size + 1;
   tournamentId.set(page, id);
   insTournament.run(
     id, page, t.eventPage, t.stage, text(t.Name), leagueId.get(String(t.League))!, yearOf(t),
-    text(t.DateStart), text(t.DateEnd), text(t.Region), text(t.Split), text(t.Level),
+    text(t.DateStart), text(t.DateEnd), text(t.Split),
   );
 }
 
@@ -223,7 +213,7 @@ for (const r of load("results", Rows)) {
 
 // Games -------------------------------------------------------------------------
 const gameId = new Map<string, number>();
-const insGame = db.prepare(`INSERT INTO games VALUES (${Array(27).fill("?").join(",")})`);
+const insGame = db.prepare("INSERT INTO games VALUES (?,?,?,?,?,?,?,?)");
 const insDraft = db.prepare("INSERT OR IGNORE INTO game_draft VALUES (?,?,?,?,?)");
 let skippedGames = 0;
 
@@ -241,12 +231,8 @@ for (const g of load("games", Rows)) {
   gameId.set(key, id);
   const date = text(g.Date);
   insGame.run(
-    id, tid, key.startsWith(`${page}_`) ? key.slice(page.length + 1) : key,
-    team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
+    id, tid, team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
     date ? Math.floor(Date.parse(`${date.replace(" ", "T")}Z`) / 1000) : null,
-    int(g.K1), int(g.K2), int(g.G1), int(g.G2), int(g.To1), int(g.To2), int(g.D1), int(g.D2),
-    int(g.Ba1), int(g.Ba2), int(g.H1), int(g.H2), int(g.V1), int(g.V2), int(g.A1), int(g.A2),
-    int(g.I1), int(g.I2),
   );
 
   for (const [side, kind, value] of [[1, 0, g.P1], [2, 0, g.P2], [1, 1, g.B1], [2, 1, g.B2]] as const)
@@ -271,7 +257,7 @@ const player = (page: string) => {
   return id;
 };
 
-const insLine = db.prepare(`INSERT OR IGNORE INTO game_players VALUES (${Array(21).fill("?").join(",")})`);
+const insLine = db.prepare(`INSERT OR IGNORE INTO game_players VALUES (${Array(15).fill("?").join(",")})`);
 const insItem = db.prepare("INSERT OR IGNORE INTO game_player_items VALUES (?,?,?,?)");
 let skippedLines = 0;
 const ignByPlayer = new Map<number, Set<string>>();
@@ -288,13 +274,9 @@ for (const l of load("lines", Rows)) {
   const pid = player(page);
 
   if (l.Name) ignByPlayer.set(pid, (ignByPlayer.get(pid) ?? new Set()).add(String(l.Name)));
-  const spells = list(l.Spells);
   insLine.run(
     gid, pid, team(l.Team), int(l.Side), text(l.Role), champion(l.Champion), yes(l.Win),
-    int(l.K), int(l.D), int(l.A), int(l.Gold), int(l.CS), int(l.Dmg), int(l.Vision),
-    rune(l.Keystone), rune(l.Primary), rune(l.Secondary),
-    list(l.Runes).map((r) => rune(r)).join(",") || null,
-    item(l.Trinket), spell(spells[0]), spell(spells[1]),
+    int(l.K), int(l.D), int(l.A), int(l.Gold), int(l.CS), int(l.Dmg), int(l.Vision), rune(l.Keystone),
   );
   list(l.Items).forEach((it, slot) => insItem.run(gid, pid, slot + 1, item(it)));
 }
@@ -309,15 +291,13 @@ const alias = (raw: Field, pid: number) => {
   if (n.length >= 2) insAlias.run(n, String(raw), pid);
 };
 
-const updPlayer = db.prepare(
-  "UPDATE players SET ign=?, real_name=?, native_name=?, country=?, role=?, current_team=? WHERE id=?",
-);
+const updPlayer = db.prepare("UPDATE players SET ign=?, real_name=?, native_name=? WHERE id=?");
 
 for (const p of load("players", Rows)) {
   const pid = playerId.get(String(p.Page));
 
   if (!pid) continue;
-  updPlayer.run(text(p.ID), text(p.Name), text(p.NativeName), text(p.Country), text(p.Role), text(p.Team), pid);
+  updPlayer.run(text(p.ID), text(p.Name), text(p.NativeName), pid);
 
   for (const a of [p.ID, p.Name, p.NativeName]) alias(a, pid);
   // Korean/Chinese romanizations: also index the given name ("Jeong Ji-hoon" -> "Ji-hoon").
@@ -357,11 +337,11 @@ for (const [display, id] of [["Nunu", "Nunu"], ["Wukong", "MonkeyKing"]] as cons
   if (c) championByName.set(normalizeAlias(display), c);
 }
 
-const updChampion = db.prepare("UPDATE champions SET ddragon_id=?, icon_url=? WHERE id=?");
+const updChampion = db.prepare("UPDATE champions SET icon_url=? WHERE id=?");
 
 for (const c of selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM champions")) {
   const d = championByName.get(normalizeAlias(c.name));
-  updChampion.run(d?.id ?? null, d ? `${cdn}/${dd.version}/img/champion/${d.image.full}` : null, c.id);
+  updChampion.run(d ? `${cdn}/${dd.version}/img/champion/${d.image.full}` : null, c.id);
 }
 
 // Latest patch first, then older patches (newest first) for retired items.
@@ -379,15 +359,13 @@ for (const src of itemSources)
     if (!itemIcon.has(key)) itemIcon.set(key, { id, version: src.version, legacy: src.legacy });
   }
 
-const insItemRow = db.prepare("INSERT INTO items VALUES (?, ?, ?, ?, ?)");
+const insItemRow = db.prepare("INSERT INTO items VALUES (?, ?, ?)");
+const itemIcons = { ddragon: 0, ddragon_legacy: 0, fallback: 0 };
 
 for (const [name, id] of itemIds) {
   const icon = itemIcon.get(normalizeAlias(name));
-  insItemRow.run(
-    id, name, icon?.id ?? null,
-    icon ? `${cdn}/${icon.version}/img/item/${icon.id}.png` : ITEM_FALLBACK_ICON,
-    icon ? (icon.legacy ? "ddragon_legacy" : "ddragon") : "fallback",
-  );
+  insItemRow.run(id, name, icon ? `${cdn}/${icon.version}/img/item/${icon.id}.png` : ITEM_FALLBACK_ICON);
+  itemIcons[icon ? (icon.legacy ? "ddragon_legacy" : "ddragon") : "fallback"]++;
 }
 
 // Indexes and views -------------------------------------------------------------
@@ -397,7 +375,6 @@ CREATE INDEX gp_champion ON game_players(champion_id);
 CREATE INDEX games_tournament ON games(tournament_id);
 CREATE INDEX tournaments_league_year ON tournaments(league_id, year);
 CREATE INDEX tournaments_event ON tournaments(event_page);
-CREATE INDEX aliases_player ON player_aliases(player_id);
 
 CREATE VIEW v_tournaments AS
   SELECT t.id AS tournament_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
@@ -437,7 +414,7 @@ CREATE VIEW v_player_items AS
 // Ingest metadata ---------------------------------------------------------------
 const TABLES = [
   "leagues", "tournaments", "tournament_results", "teams", "players", "player_aliases", "champions",
-  "items", "runes", "spells", "games", "game_draft", "game_players", "game_player_items",
+  "items", "runes", "games", "game_draft", "game_players", "game_player_items",
 ] as const;
 
 const count = (sql: string) => selectOne(db, z.object({ n: z.number() }), sql)?.n ?? 0;
@@ -450,13 +427,6 @@ for (const r of load("runs", z.array(IngestRun)))
     JSON.stringify(r.row_counts),
     JSON.stringify({ requests: r.requests, cached_responses: r.cached_responses }),
   );
-
-const itemIcons = Object.fromEntries(
-  selectAll(db, z.object({ s: z.string(), n: z.number() }), "SELECT icon_source AS s, COUNT(*) AS n FROM items GROUP BY 1").map((r) => [
-    r.s,
-    r.n,
-  ]),
-);
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),

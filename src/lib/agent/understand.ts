@@ -72,6 +72,26 @@ const STOPWORDS = new Set(
   ).split(/\s+/),
 );
 
+/**
+ * Stat and game terms. Their words are never entity aliases: in "solo kills"
+ * the word "solo" is part of the term, not the player Solo. A handle used on
+ * its own ("Solo aux Worlds") is still resolved.
+ */
+const TERM_PHRASES =
+  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|early game|late game|dragon soul|baron steals?)(?![\p{L}\p{N}])/giu;
+
+/** The question with its stat and game terms blanked out, for alias lookups. */
+function maskTerms(question: string): string {
+  return question.replace(TERM_PHRASES, (m) => " ".repeat(m.length));
+}
+
+/** True when a mention only occurs inside a stat or game term of the question. */
+function onlyInTerms(question: string, mention: string): boolean {
+  const m = mention.toLowerCase();
+
+  return question.toLowerCase().includes(m) && !maskTerms(question).toLowerCase().includes(m);
+}
+
 // Players -----------------------------------------------------------------------
 
 const AliasHit = z.object({
@@ -343,11 +363,11 @@ type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedCh
 
 /**
  * Rule-based detection: longest n-gram that matches a known champion, team or
- * player alias. On the same words a champion wins over a player ("Ahri"), and
+ * player alias, outside stat and game terms. On the same words a champion wins over a player ("Ahri"), and
  * a team wins over a player when it is a known shorthand or has more games.
  */
 function detectMentions(db: DatabaseSync, question: string): Mentions {
-  const tokens = question
+  const tokens = maskTerms(question)
     .replace(/[’']/g, " ")
     .split(/[^\p{L}\p{N}.\-&]+/u)
     .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
@@ -563,7 +583,8 @@ const llmDecider: Decider<Input, Entities> = {
     const entities = buildEntities(
       db,
       question,
-      { players: output.players, teams, champion: output.champion ? resolveChampion(db, output.champion) : null },
+      // The LLM may still copy a term's word as a name ("solo" in "solo kills").
+      { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, champion: output.champion ? resolveChampion(db, output.champion) : null },
       { league: output.league, yearFrom: output.yearFrom, yearTo: output.yearTo },
     );
 

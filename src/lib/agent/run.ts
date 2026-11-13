@@ -5,7 +5,7 @@ import { openDb, readSchema, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
-import { getLlm, LLM_CALL } from "./llm";
+import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE } from "./llm";
 import { buildQuery, type CorrectInput, correctQuery, type Route, routeQuestion } from "./query";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { understandQuestion } from "./understand";
@@ -131,7 +131,20 @@ async function understand(db: DatabaseSync, question: string, emit: Emit) {
 }
 
 // 2. Build (typed tool or text-to-SQL) + guard ---------------------------------
-async function build(db: DatabaseSync, question: string, entities: Entities, route: Route, emit: Emit, notes: string[]) {
+const SQL_FALLBACK_DETAIL: Record<LlmStatus, string> = {
+  ready: "Le text-to-SQL n'a rien produit.",
+  missing: "Mode déterministe (pas de OPENROUTER_API_KEY) : le text-to-SQL de secours est désactivé.",
+  exhausted: "Mode déterministe (quota OpenRouter épuisé) : le text-to-SQL de secours est désactivé pour le moment.",
+};
+
+const SQL_FALLBACK_TITLE: Record<LlmStatus, string> = {
+  ready: "Pas de requête",
+  missing: "text-to-SQL requis (désactivé sans clé)",
+  exhausted: "text-to-SQL requis (quota épuisé)",
+};
+
+/** `missing` collects the data the database does not hold (rules or text-to-SQL); the answer then gives no figure. */
+async function build(db: DatabaseSync, question: string, entities: Entities, route: Route, emit: Emit, notes: string[], missing: string[]) {
   const step = new Step("build", "Construction de la requête…", emit);
 
   if (route.kind === "out_of_scope") {
@@ -141,28 +154,41 @@ async function build(db: DatabaseSync, question: string, entities: Entities, rou
     return null;
   }
 
+  if (route.kind === "missing") {
+    missing.push(...route.concepts);
+    step.add(entry({ status: "warn", title: "Donnée absente de la base", detail: `${route.reason}\nAucune requête : un chiffre serait inventé.` }));
+    step.done("warn", "Donnée absente de la base");
+
+    return null;
+  }
+
   const decision = await buildQuery({ db, question, entities, route });
 
   if (!decision) {
+    const status = llmStatus();
     step.add(
       entry({
         status: "warn",
         title: "Aucun outil typé ne couvre la question",
-        detail: [
-          route.reason,
-          getLlm()
-            ? "Le text-to-SQL n'a rien produit."
-            : "Mode déterministe (pas de OPENROUTER_API_KEY) : le text-to-SQL de secours est désactivé.",
-        ].join("\n"),
+        detail: [route.reason, SQL_FALLBACK_DETAIL[status]].join("\n"),
       }),
     );
-    step.done("warn", getLlm() ? "Pas de requête" : "text-to-SQL requis (désactivé sans clé)");
+    step.done("warn", SQL_FALLBACK_TITLE[status]);
+
+    return null;
+  }
+
+  notes.push(...decision.result.notes);
+
+  if (decision.result.plan === null) {
+    missing.push(...decision.result.missing);
+    step.add(decisionEntry(decision, "Donnée absente de la base", "warn", decision.result.missing.join("\n")));
+    step.done("warn", "Donnée absente de la base");
 
     return null;
   }
 
   const { plan } = decision.result;
-  notes.push(...decision.result.notes);
   const label = plan.tool ? `Outil typé : ${plan.tool.label}` : "Requête générée (text-to-SQL)";
   step.add(
     decisionEntry(
@@ -271,7 +297,27 @@ const PageColumns = z
   .object({ event_page: z.string().optional().catch(undefined), tournament_page: z.string().optional().catch(undefined), player: z.string().optional().catch(undefined) })
   .transform((r) => [r.event_page, r.tournament_page, r.player]);
 
-type SummaryInput = { question: string; facts: string; rows: unknown };
+/** `facts`: the tool's own sentence, built from the aggregates of the question's scope. */
+type SummaryInput = { question: string; facts: string };
+
+const NUMBER = /\d+(?:[.,]\d+)?/g;
+
+/** Period words that would narrow or move the scope ("cette saison" for a Worlds run). */
+const PERIOD_WORDS = ["saison", "season", "cette année", "this year", "actuellement", "en cours", "currently"];
+
+/**
+ * What an LLM sentence states beyond the facts: numbers the facts do not
+ * contain, and period words they do not use. The sentence must only reword.
+ */
+function claimsBeyondFacts(text: string, facts: string): string[] {
+  const known = new Set(facts.match(NUMBER) ?? []);
+  const lower = text.toLowerCase();
+  const factsLower = facts.toLowerCase();
+  const numbers = (text.match(NUMBER) ?? []).filter((n) => !known.has(n));
+  const periods = PERIOD_WORDS.filter((w) => lower.includes(w) && !factsLower.includes(w));
+
+  return [...new Set([...numbers, ...periods])];
+}
 
 const templateSummary: Decider<SummaryInput, string> = {
   level: "rules",
@@ -282,7 +328,9 @@ const templateSummary: Decider<SummaryInput, string> = {
 const llmSummary: Decider<SummaryInput, string> = {
   level: "llm",
   name: "rédaction",
-  run: async ({ question, facts, rows }) => {
+  // Only the facts go to the model: the raw rows carry no scope (a 10-1 row
+  // is one Worlds edition, not "this season"), so the model could misread them.
+  run: async ({ question, facts }) => {
     const llm = getLlm();
 
     if (!llm) return null;
@@ -290,14 +338,24 @@ const llmSummary: Decider<SummaryInput, string> = {
     const { text } = await generateText({
       model: llm.model,
       instructions:
-        "Rédige une ou deux phrases de synthèse en français à partir de ces données. N'ajoute aucun fait absent des données.",
-      prompt: JSON.stringify({ question, facts, rows }),
+        "Reformule ces faits en une ou deux phrases de synthèse en français, qui répondent à la question. " +
+        "Garde exactement leurs chiffres et leur périmètre (compétition, éditions, période) : " +
+        "n'ajoute aucun chiffre, aucune période (saison, année en cours…) ni aucune interprétation absente des faits.",
+      prompt: JSON.stringify({ question, faits: facts }),
       maxOutputTokens: 300,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
     });
 
-    return text.trim() ? { result: text.trim(), confidence: 0.85, level: "llm", reason: llm.id } : null;
+    const sentence = text.trim();
+
+    if (!sentence) return null;
+    const beyond = claimsBeyondFacts(sentence, facts);
+
+    // Thrown so the trace shows why the template sentence was kept.
+    if (beyond.length) throw new Error(`synthèse rejetée, absent des faits : ${beyond.join(", ")}`);
+
+    return { result: sentence, confidence: 0.85, level: "llm", reason: llm.id };
   },
 };
 
@@ -308,17 +366,33 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
       "la LPL, l'Europe (EU LCS, LEC, EU Masters, EMEA Masters), l'Amérique du Nord (NA LCS, LCS, LTA), la LFL, la LFL D2 et la SuperLiga 2nd Division."
     );
 
-  if (!plan)
-    return getLlm()
-      ? `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"}) et la requête générée n'a rien donné.`
-      : `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"}). ` +
-          "Le text-to-SQL de secours demande une clé OpenRouter, absente ici.";
+  if (!plan) {
+    const why = `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"})`;
+    const status = llmStatus();
+
+    if (status === "ready") return `${why} et la requête générée n'a rien donné.`;
+
+    return status === "exhausted"
+      ? `${why}. Le text-to-SQL de secours est indisponible pour le moment (quota du modèle épuisé).`
+      : `${why}. Le text-to-SQL de secours demande une clé OpenRouter, absente ici.`;
+  }
 
   const who = [...entities.players.map((p) => p.player), ...entities.teams.map((t) => t.team), entities.champion?.champion]
     .filter(Boolean)
     .join(", ");
 
   return `Aucun résultat${who ? ` pour ${who}` : ""}${entities.league ? ` (${entities.leagueShort ?? entities.league})` : ""} dans la base.`;
+}
+
+const ROUTE_LABEL: Partial<Record<Route["kind"], AnswerMeta["route"]>> = { out_of_scope: "out_of_scope", sql: "sql" };
+
+/** Says which data is missing and what the database does hold. States no figure. */
+function missingSummary(missing: string[]): string {
+  return (
+    `Donnée absente de la base : ${[...new Set(missing)].join(", ")}. ` +
+    "La base ne contient que les résultats, les drafts et les statistiques individuelles par partie " +
+    "(kills, morts, assists, or, CS, dégâts, score de vision, objets, rune principale) : aucun chiffre n'est donc donné."
+  );
 }
 
 async function format(
@@ -330,6 +404,7 @@ async function format(
   raw: SqlRow[],
   emit: Emit,
   notes: string[],
+  missing: string[],
 ): Promise<Answer> {
   const step = new Step("format", "Mise en forme…", emit);
   const amb = ambiguityNotes(question, entities);
@@ -338,7 +413,7 @@ async function format(
   const input = plan ? (plan.tool?.call.input ?? null) : route.kind === "tool" ? route.call.input : null;
 
   const meta: AnswerMeta = {
-    route: route.kind === "out_of_scope" ? "out_of_scope" : (plan?.intent ?? (route.kind === "sql" ? "sql" : route.call.tool)),
+    route: missing.length ? "missing_data" : (plan?.intent ?? ROUTE_LABEL[route.kind] ?? (route.kind === "tool" ? route.call.tool : "none")),
     sqlAvailable: getLlm() != null,
     input,
     players: entities.players.map((p) => p.player),
@@ -350,6 +425,22 @@ async function format(
     ambiguities: amb.ambiguities,
     attempts: plan?.attempt ?? 0,
   };
+
+  if (missing.length) {
+    step.add(entry({ status: "warn", title: "Réponse « donnée absente » mise en forme, sans chiffre" }));
+    step.done("warn", "Donnée absente de la base");
+
+    return {
+      title: "Donnée absente de la base",
+      summary: missingSummary(missing),
+      rows: [],
+      table: null,
+      sources: [],
+      followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
+      notes,
+      meta,
+    };
+  }
 
   if (!raw.length || !plan) {
     step.add(entry({ status: "warn", title: "Réponse vide mise en forme" }));
@@ -390,7 +481,7 @@ async function format(
 
   const out = plan.tool.format(db, raw);
   meta.totals = out.totals;
-  const summary = (await decide({ question, facts: out.facts, rows: out.rows ?? out.table }, [templateSummary, llmSummary], { threshold: 0.8 }))!;
+  const summary = (await decide({ question, facts: out.facts }, [templateSummary, llmSummary], { threshold: 0.8 }))!;
   step.add(decisionEntry(summary, `Synthèse (${summary.level === "llm" ? "LLM" : "modèle de phrase"})`));
   const followUps = [...new Set([...amb.followUps, ...out.followUps])].slice(0, 4);
   step.add(
@@ -418,11 +509,12 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
   const entities = await understand(db, question, emit);
-  const route = routeQuestion(question, entities);
+  const route = routeQuestion(question, entities, readSchema(db));
+  const missing: string[] = [];
   let rows: SqlRow[] = [];
   let plan: QueryPlan | null = null;
 
-  const first = await build(db, question, entities, route, emit, notes);
+  const first = await build(db, question, entities, route, emit, notes, missing);
 
   if (first) {
     const result = await execute(db, question, entities, first, emit, notes);
@@ -433,7 +525,9 @@ export async function runAgent(question: string, emit: Emit): Promise<Answer> {
     step.done("warn", "Rien à exécuter");
   }
 
-  const answer = await format(db, question, entities, route, plan, rows, emit, notes);
+  const answer = await format(db, question, entities, route, plan, rows, emit, notes, missing);
+
+  if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
   emit({ type: "answer", answer });
 
   return answer;
