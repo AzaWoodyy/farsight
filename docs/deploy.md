@@ -14,8 +14,8 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
     fichiers tracés de la route et du serveur Next, avertit à partir de 225 Mo
     et fait échouer le build au-delà de 250 Mo (ou si la base dépasse 190 Mo).
     `data/raw` et `data/release` sont exclus du tracé (`next.config.ts`).
-  - Taille mesurée : voir le dernier `bun run size` (valeurs du schéma v4 dans
-    la section « Données in-game » plus bas).
+  - Mesuré le 14/11/2026 (schéma v4, 28 327 parties avec stats in-game) :
+    base 98,1 Mo, fonction 131,8 Mo.
   - `DATABASE_PATH` ne doit pas être défini sur Vercel : le fichier tracé est
     `data/lol.sqlite`.
 - **BotID Basic** : `src/instrumentation-client.ts` protège les `POST /api/ask`
@@ -125,8 +125,7 @@ JSON brut de chaque partie (stats + timeline minute par minute) reste hors
 SQL : un objet gzip par partie, `games/<RiotPlatformGameId>.json.gz`, dans le
 cache local `data/raw/riot` et dans un bucket R2.
 
-Volumes : environ 28 300 objets, de 15 à 120 Ko chacun (environ 1,5 Go au
-total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
+Volumes : 28 342 objets, de 15 à 120 Ko chacun (1,2 Go au total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
 lectures par mois).
 
 ### Premier rattrapage (local, une fois)
@@ -135,7 +134,8 @@ lectures par mois).
 LEAGUEPEDIA_DELAY_MS=2000 nohup caffeinate -i bun run data:fetch > data/catchup.log 2>&1 &
 ```
 
-Environ 8 h (2 parties par requête, une requête toutes les 2 s). Reprenable :
+Environ 8 h (7 h 55 le 13/11/2026 : 14 150 requêtes, 2 parties par requête,
+une requête toutes les 2 s, aucune page manquante). Reprenable :
 relancer la même commande reprend là où le processus s'est arrêté. Ensuite
 `bun run data:build`, puis, une fois R2 configuré, `bun run data:sync` pour
 envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
