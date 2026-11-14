@@ -96,6 +96,12 @@ describe("one team and a roster word: its players by role, decided by the rules"
     }
   });
 
+  test.each(["botlaner TL 2019", "TL botlaner 2019"])("a team mention inside a role word does not hide the role (%s)", (q) => {
+    const route = routeQuestion(q, entities({ teams: [team("TL", "Team Liquid")], ...year(2019) }), SCHEMA, COVERAGE);
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_roster", input: { team: "Team Liquid", role: "Bot" } } });
+  });
+
   test("short role words stay rankings, teams and metrics where they were", () => {
     const route = (q: string, e: Entities) => {
       const r = routeQuestion(q, e, SCHEMA, COVERAGE);
