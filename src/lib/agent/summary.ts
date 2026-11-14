@@ -1,9 +1,9 @@
 /** A rephrasing may omit facts, but may not permute or invent their numbers. */
-const numbers = (text: string) => [...text.matchAll(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?(?![\p{L}\p{N}])/gu)].map((m) => m[0].replace(",", "."));
+const numbers = (text: string) => [...text.replaceAll("−", "-").matchAll(/(?<![\p{L}\p{N}])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\p{N}])/gu)].map((m) => m[0].replace(",", "."));
 const PERIODS = ["saison", "season", "cette année", "this year", "actuellement", "en cours", "currently"];
 const INTERPRETATIONS = /\b(meilleur\w*|best|record|plus de deux|deux tiers|sur trois|majorit[ée]|domine\w*)\b/giu;
 const METRIC = /first blood|premi[eè]re tourelle|first tower|premier dragon|first dragon|premier baron|first baron/giu;
-const fold = (s: string) => s.toLocaleLowerCase().replaceAll(",", ".");
+const fold = (s: string) => s.toLocaleLowerCase().replaceAll(",", ".").replaceAll("−", "-");
 
 function metricValues(text: string): Map<string, string[]> {
   const matches = [...text.matchAll(METRIC)];
@@ -15,7 +15,7 @@ export function claimsBeyondFacts(text: string, facts: string, question = ""): s
   const issues: string[] = [];
   // A free paraphrase cannot prove which metric owns a number. Keep the original
   // numeric wording (decimal commas/punctuation may change) instead of guessing.
-  const wording = (s: string) => fold(s).replace(/[^\p{L}\p{N}.%]+/gu, " ").replace(/\.$/, "").trim();
+  const wording = (s: string) => fold(s).replace(/[^\p{L}\p{N}.%+-]+/gu, " ").replace(/\.$/, "").trim();
 
   if (/\d/.test(text) && !wording(facts).includes(wording(text))) issues.push("formulation chiffrée différente des faits");
   const known = numbers(facts);

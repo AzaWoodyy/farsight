@@ -24,6 +24,19 @@ describe("summary facts", () => {
   ])("%s", (text, rejected) => expect(claimsBeyondFacts(text, facts).length > 0).toBe(rejected));
 });
 
+test("summary numbers preserve negative and positive signs", () => {
+  const facts = "Chovy : écart d'or -500,5 ; XP +200.";
+  expect(claimsBeyondFacts(facts, facts)).toEqual([]);
+  expect(claimsBeyondFacts("Chovy : écart d'or −500,5 ; XP +200.", facts)).toEqual([]);
+
+  for (const changed of [
+    "Chovy : écart d'or 500,5 ; XP +200.",
+    "Chovy : écart d'or +500,5 ; XP +200.",
+    "Chovy : écart d'or -500,5 ; XP -200.",
+    "Chovy : écart d'or -500,5 ; XP 200.",
+  ]) expect(claimsBeyondFacts(changed, facts).length).toBeGreaterThan(0);
+});
+
 test("league cues choose the longest match and preserve all scope names", () => {
   expect(new Set(LEAGUES.map((l) => l.name)).size).toBe(LEAGUES.length);
   expect(detectLeague("LCK CL 2024").league).toBe("LCK Challengers League");
