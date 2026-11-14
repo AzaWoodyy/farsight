@@ -349,7 +349,7 @@ Projet → **Firewall** → **Configure** → **New Rule** :
 | Then | `Rate Limit` |
 | Algorithme | `Fixed Window` |
 | Fenêtre | `600` secondes (10 min) |
-| Requêtes | `15` |
+| Requêtes | `30` |
 | Clé | `IP` |
 | Action au dépassement | `Too Many Requests` (429) |
 
@@ -366,12 +366,12 @@ vercel firewall rules add "ask rate limit" \
   --action rate_limit \
   --rate-limit-algo fixed_window \
   --rate-limit-window 600 \
-  --rate-limit-requests 15 \
+  --rate-limit-requests 30 \
   --rate-limit-keys ip \
   --rate-limit-action rate_limit
 ```
 
-Pour vérifier : 16 questions de suite depuis la même IP, la 16ᵉ doit recevoir
+Pour vérifier : 31 questions de suite depuis la même IP, la 31ᵉ doit recevoir
 un 429. Le chat affiche alors une erreur.
 
 Deuxième règle, contre un usage soutenu sur la durée (même formulaire) :

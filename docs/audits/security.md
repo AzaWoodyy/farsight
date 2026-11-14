@@ -41,7 +41,7 @@ Un worker thread ne règle rien : `worker.terminate()` ne rend pas la main tant 
 **Exploitabilité**
 - Le SQL vient du modèle, et le modèle lit la question du visiteur (`query.ts:687`). Une consigne dans la question suffit en principe, et une question honnête peut aussi produire une auto-jointure (« pour chaque paire de joueurs… »).
 - Effet attendu : la fonction est bloquée jusqu'à `maxDuration` (90 s, `route.ts:19`), avec les requêtes concurrentes de la même instance. Le temps CPU consommé sort du quota Hobby, partagé avec le portfolio.
-- La limite de débit prévue (15 questions par 10 min et par IP) laisse largement la place : une question toutes les 90 s suffit.
+- La limite de débit (30 questions par 10 min et par IP) laisse largement la place : une question toutes les 90 s suffit.
 - Non vérifié : que le modèle de production émette bien ce SQL sur demande (aucun appel LLM fait), et le comportement exact de Vercel pendant le blocage.
 
 **Correctif**
