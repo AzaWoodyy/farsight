@@ -1110,6 +1110,42 @@
       }
     },
     {
+      "id": "common-handle-ingame-metric",
+      "question": "balises posées par Life",
+      "tags": [
+        "player",
+        "common_handle",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Life"
+        ],
+        "input": {
+          "metric": "wards_placed"
+        }
+      }
+    },
+    {
+      "id": "common-handle-ingame-xp",
+      "question": "XP à 15 de Life",
+      "tags": [
+        "player",
+        "common_handle",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Life"
+        ],
+        "input": {
+          "metric": "xp"
+        }
+      }
+    },
+    {
       "id": "timeline-t1-geng-worlds-2024",
       "question": "timeline de T1 vs Gen.G finale Worlds 2024 game 3",
       "tags": [

@@ -6,6 +6,7 @@ import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL } from "./llm";
 import { COMMON_WORDS } from "./common-words";
+import { detectMetric } from "./metrics";
 import { ROLE_WORDS } from "./roles";
 import {
   type Ambiguity,
@@ -505,6 +506,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       found.players.some((m) => !isCommonHandle(m)) ||
       detectLeague(question).league != null ||
       [TERM_PHRASES, ROLE_PHRASES, STAT_WORDS].some((p) => blank(question, p) !== question) ||
+      detectMetric(question) != null ||
       LOL_DOMAIN.test(question);
 
     const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t));
