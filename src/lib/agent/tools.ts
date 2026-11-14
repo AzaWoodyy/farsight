@@ -1801,6 +1801,7 @@ const championPool: ToolDef<ChampionPoolInput> = {
   plan: (db, input) => {
     const params: Params = {};
 
+    // Who played each champion is aggregated once and joined: a correlated subquery rescanned every pick per champion (10 s for T1).
     return {
       params,
       sql: tidy(`WITH picks AS (
@@ -1813,14 +1814,16 @@ tot AS (
          COUNT(*) AS total_picks, COUNT(DISTINCT champion) AS unique_champions
   FROM picks
 ),
-by_player AS (SELECT champion, player, COUNT(*) AS games FROM picks GROUP BY champion, player)
+by_player AS (SELECT champion, player, COUNT(*) AS games FROM picks GROUP BY champion, player),
+pool_players AS (
+  SELECT b.champion, json_group_array(json_object('player', b.player, 'games', b.games) ORDER BY b.games DESC, b.player) AS players
+  FROM by_player b GROUP BY b.champion
+)
 SELECT p.champion, c.icon_url AS icon, COUNT(*) AS games, SUM(p.win) AS wins,
        ROUND(1.0 * SUM(CASE WHEN p.deaths IS NOT NULL THEN p.kills + p.assists END)
              / MAX(1, SUM(CASE WHEN p.kills IS NOT NULL AND p.assists IS NOT NULL THEN p.deaths END)), 2) AS kda,
-       (SELECT json_group_array(json_object('player', b.player, 'games', b.games) ORDER BY b.games DESC, b.player)
-          FROM by_player b WHERE b.champion = p.champion) AS players,
-       tot.total_games, tot.total_wins, tot.total_picks, tot.unique_champions
-FROM picks p CROSS JOIN tot
+       pp.players, tot.total_games, tot.total_wins, tot.total_picks, tot.unique_champions
+FROM picks p JOIN pool_players pp ON pp.champion = p.champion CROSS JOIN tot
 LEFT JOIN champions c ON c.name = p.champion
 GROUP BY p.champion
 ORDER BY games DESC, wins DESC, p.champion
