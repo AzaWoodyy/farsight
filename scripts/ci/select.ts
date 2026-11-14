@@ -17,6 +17,10 @@ if (event.pull_request) {
   if (attribution.test(`${commits}\n${pr.title ?? ""}\n${pr.body ?? ""}`)) throw new Error("Generation attribution in commit or PR metadata");
   const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}...${head}`], { encoding: "utf8" }).split("\0").filter(Boolean);
   selected = affected(paths);
+} else if (event.before && event.after && /^[a-f0-9]{40}$/.test(event.before) && !/^0+$/.test(event.before) && /^[a-f0-9]{40}$/.test(event.after)) {
+  // main uses the pushed range, so unrelated merges also keep the pinned DB.
+  const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${event.before}..${event.after}`], { encoding: "utf8" }).split("\0").filter(Boolean);
+  selected = affected(paths);
 }
 
 for (const check of CHECKS) appendFileSync(process.env.GITHUB_OUTPUT!, `${check}=${selected.has(check)}\n`);

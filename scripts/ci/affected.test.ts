@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { affected, attribution, CHECKS } from "./affected";
+import { affected, attribution, CHECKS, CODE_CHECKS } from "./affected";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
@@ -14,9 +14,18 @@ const cases: [string[], readonly string[]][] = [
   [["scripts/data/fetch.ts"], ["lint", "typecheck", "test"]],
   [["scripts/tracing.test.ts"], ["lint", "typecheck", "test"]],
   [["eval/questions.json"], ["lint", "typecheck", "eval"]],
-  [[".githooks/pre-push"], CHECKS],
+  [[".githooks/pre-push"], CODE_CHECKS],
+  [[".github/workflows/ci.yml"], CODE_CHECKS],
+  [["scripts/ci/select.ts"], CODE_CHECKS],
+  [["ci/raw.tar.zst"], CHECKS],
+  [["src/lib/db/schema.ts"], CHECKS],
+  [["src/lib/domain/leagues.ts"], CHECKS],
+  [["src/lib/sources/riot.ts"], CHECKS],
+  [["package.json"], CHECKS],
+  [["bun.lock"], CHECKS],
+  [["data/raw/lines.json"], CHECKS],
   [["ci/data.json"], CHECKS],
-  [["new dir/deleted.ts"], CHECKS],
+  [["new dir/deleted.ts"], CODE_CHECKS],
   [["docs/x.md", "src/lib/db/index.ts"], CHECKS.filter(check => check !== "database")],
   [["src/app/old.tsx", "scripts/data/new.ts"], CHECKS],
 ];

@@ -56,7 +56,7 @@ bun run build
 
 Les tests sont côté serveur. L’interface se vérifie dans l’application. L’eval lit [eval/questions.json](eval/questions.json), avec une date figée et des attentes attachées au snapshot. Les cas qui nécessitent un modèle sont signalés comme non vérifiés en mode déterministe ; les timelines demandent le JSON local ou R2 et sont exclues de la CI sans secrets.
 
-La CI des PR sélectionne les contrôles selon les fichiers modifiés, lance les commandes indépendantes avec deux workers et collecte chaque statut. Un chemin inconnu déclenche tout. Les changements d’ingestion reconstruisent et contrôlent la base hors réseau à partir du [snapshot épinglé](ci/data.json). Le cache est revérifié après restauration ; les PR ne sauvegardent pas de cache partagé. La protection de branche doit rendre `PR checks` requis ; le workflow seul n’impose pas cette protection.
+La CI des PR sélectionne les contrôles selon les fichiers modifiés, lance les commandes indépendantes avec deux workers et collecte chaque statut. Un chemin inconnu déclenche tous les contrôles de code. La reconstruction est réservée aux données, au schéma et à leurs dépendances ; les autres changements utilisent la base épinglée. Les changements d’ingestion reconstruisent et contrôlent la base hors réseau à partir du [snapshot épinglé](ci/data.json). Les contrôles de publication tournent sans compression en CI ; les archives zstd niveau 19 sont créées lors des releases de données. Le cache est revérifié après restauration ; les PR ne sauvegardent pas de cache partagé. La protection de branche doit rendre `PR checks` requis ; le workflow seul n’impose pas cette protection.
 
 ## Limites et confidentialité
 

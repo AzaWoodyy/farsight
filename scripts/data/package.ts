@@ -2,6 +2,7 @@
  * data:package: check the database built by `data:build`, then write the
  * release assets (zstd-compressed file, manifest, release notes).
  *
+ *   bun run data:package --check-only  (all checks, no release assets)
  *   bun run data:package --tag=data-20261113
  *   bun run data:package --tag=data-20261113 --previous=prev/manifest.json --out=data/release
  *
@@ -42,6 +43,7 @@ import { DB_FILE, INGAME_FILE, LEAGUES, SCHEMA_VERSION } from "./scope";
 const args = process.argv.slice(2);
 const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
+const checkOnly = args.includes("--check-only");
 const tag = arg("tag");
 const previousFile = arg("previous");
 const outDir = resolve(arg("out") ?? "data/release");
@@ -72,7 +74,7 @@ function fail(problems: string[]): never {
   process.exit(1);
 }
 
-if (!tag || !/^data-\d{8}(?:-\d+)?$/.test(tag)) fail(["--tag=data-YYYYMMDD (optional numeric suffix) is required"]);
+if ((!checkOnly && !tag) || (tag != null && !/^data-\d{8}(?:-\d+)?$/.test(tag))) fail(["--tag=data-YYYYMMDD (optional numeric suffix) is required"]);
 
 if (!existsSync(DB_FILE)) fail([`${DB_FILE} is missing: run \`bun run data:build\` first`]);
 
@@ -159,6 +161,11 @@ if (previousFile) {
 }
 
 if (problems.length > 0) fail(problems);
+
+if (checkOnly) {
+  console.log(`data:package: checks passed, schema v${facts.schemaVersion}, ${facts.counts.games} games; no assets written`);
+  process.exit(0);
+}
 
 // --- Assets -------------------------------------------------------------------
 

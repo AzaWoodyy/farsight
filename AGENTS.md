@@ -45,7 +45,7 @@ These decisions describe the current implementation.
 
 - Branches are named `<type>/<subject>`, with type `feat`, `fix`, `chore`, `hotfix` or `improve`. Open pull requests against `main`.
 - Commit messages and PR descriptions are written in the author's voice, with no tool attribution or AI trailers.
-- Before pushing: lint, typecheck, backend tests in normal and randomized order, deterministic eval (exclude timeline without local JSON/R2), and build must pass. CI uses the verified snapshot in `ci/data.json`; update it and expectations together. Keep its release excluded from retention. Unknown changed paths must select every check.
+- Before pushing: lint, typecheck, backend tests in normal and randomized order, deterministic eval (exclude timeline without local JSON/R2), and build must pass. CI uses the verified snapshot in `ci/data.json`; update it and expectations together. Keep its release excluded from retention. Unknown changed paths select every code check. Rebuild only for data inputs, ingestion/shared data dependencies, schema or dependency-lock changes; other PRs keep the verified pinned database. Main uses the pushed range for the same selection. CI runs `data:package --check-only`; full zstd compression stays in Data release.
 - PRs target `main`; merge waits for Enzo. A successful CI on `main` triggers production Deploy; never push `main` from a cleanup task.
 - The frontend has no automated tests. Verify UI changes by running the app and looking at the changed screen.
 - Secrets live in `.env` only, and `.env.example` lists every variable with an empty value.
