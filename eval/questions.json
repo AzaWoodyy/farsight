@@ -653,7 +653,9 @@
           "wins_b": 695,
           "h2h_games": 146,
           "h2h_wins_a": 70,
-          "h2h_listed": 146
+          "h2h_listed": 146,
+          "solo_kills_a": 15,
+          "solo_kills_b": 30
         },
         "rows": 2,
         "summaryIncludes": [
@@ -709,7 +711,9 @@
           "games_b": 400,
           "wins_b": 215,
           "h2h_games": 0,
-          "h2h_listed": 0
+          "h2h_listed": 0,
+          "solo_kills_a": 125,
+          "solo_kills_b": 78
         },
         "summaryIncludes": [
           "ne se sont jamais affrontés"
@@ -787,6 +791,35 @@
           "games_a": 400,
           "games_b": 408
         }
+      }
+    },
+    {
+      "id": "compare-solo-kills-faker-chovy",
+      "question": "compare les solo kills de Faker et Chovy",
+      "tags": [
+        "comparison",
+        "player",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "league": null
+        },
+        "rows": 2,
+        "totals": {
+          "h2h_games": 146,
+          "solo_kills_a": 15,
+          "solo_kills_b": 30
+        },
+        "summaryIncludes": [
+          "15 solo kills",
+          "30 solo kills"
+        ]
       }
     },
     {
