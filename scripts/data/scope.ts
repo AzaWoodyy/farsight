@@ -5,7 +5,7 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 5;
+export { SCHEMA_VERSION } from "../../src/lib/db/schema";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 export const RAW_DIR = resolve(ROOT, "data/raw");
@@ -60,27 +60,7 @@ export type League = {
   international: boolean;
 };
 
-export const LEAGUES: League[] = [
-  { name: "World Championship", short: "Worlds", region: "International", international: true },
-  { name: "Mid-Season Invitational", short: "MSI", region: "International", international: true },
-  { name: "LoL The Champions", short: "OGN Champions", region: "Korea", international: false },
-  { name: "LoL Champions Korea", short: "LCK", region: "Korea", international: false },
-  { name: "LCK Challengers League", short: "LCK CL", region: "Korea", international: false },
-  { name: "Challengers Korea", short: "CK", region: "Korea", international: false },
-  { name: "LCK Academy Series", short: "LCK AS", region: "Korea", international: false },
-  { name: "Tencent LoL Pro League", short: "LPL", region: "China", international: false },
-  { name: "Europe League Championship Series", short: "EU LCS", region: "Europe", international: false },
-  { name: "LoL EMEA Championship", short: "LEC", region: "Europe", international: false },
-  { name: "European Masters", short: "EU Masters", region: "Europe", international: false },
-  { name: "EMEA Masters", short: "EMEA Masters", region: "Europe", international: false },
-  { name: "North America League Championship Series", short: "NA LCS", region: "North America", international: false },
-  { name: "League of Legends Championship Series", short: "LCS", region: "North America", international: false },
-  { name: "League of Legends Championship of The Americas", short: "LTA", region: "Americas", international: false },
-  { name: "League of Legends Championship of The Americas North", short: "LTA North", region: "North America", international: false },
-  { name: "La Ligue Française", short: "LFL", region: "France", international: false },
-  { name: "La Ligue Française Division 2", short: "LFL D2", region: "France", international: false },
-  { name: "LVP SuperLiga 2nd Division", short: "SL 2nd Div", region: "Spain", international: false },
-];
+export { LEAGUES } from "../../src/lib/domain/leagues";
 
 /**
  * What a tournament page is, read from its Leaguepedia page name. The Cargo

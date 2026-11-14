@@ -4,18 +4,17 @@ name: Deploy
 # `vercel deploy --prod` as by hand. Vercel runs the build, so `data:pull`
 # downloads the newest data release there with the project's DATA_GITHUB_TOKEN.
 #
-# Runs after a push to main, on demand, and at the end of a successful "Data
+# Runs after successful CI on main, on demand, and at the end of a successful "Data
 # release" run, which passes the tag it published: the build must then have
 # picked that tag, or the job fails.
 #
 # Secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (docs/deploy.md).
 
 on:
-  push:
+  workflow_run:
+    workflows: [PR CI]
+    types: [completed]
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -33,11 +32,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   production:
     # On demand from another branch: nothing to deploy.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # One production deployment at a time, in the order they were asked for.
@@ -46,14 +46,13 @@ jobs:
       cancel-in-progress: false
     env:
       SITE_URL: https://lolesport.enzoneault.dev
-      VERCEL_CLI: vercel@65.16.0
     steps:
-      # Always the tip of main, not the commit that started the run: a data
-      # release takes up to 2 h 30, and deploying its starting commit would
-      # roll back code merged in the meantime.
+      # CI-driven deploys use the validated SHA. A data release/manual call
+      # takes the tip of main, rather than rolling back to the ingestion start.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -61,13 +60,29 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - run: bun run lint
-
-      - run: bun run typecheck
-
-      - run: bun run test
+      - name: Require successful CI for the exact deployment commit
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          deploy=true
+          if [ -n "$CI_SHA" ]; then
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [ "$CI_SHA" != "$latest" ]; then deploy=false; fi
+          fi
+          if [ "$deploy" = true ]; then
+            sha=$(git rev-parse HEAD)
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&head_sha=$sha&status=success&per_page=1" --jq '.workflow_runs | length')
+            if [ "$passed" = 0 ]; then
+              echo "::error::No successful PR CI push run for the checked-out commit $sha"
+              exit 1
+            fi
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to production
+        if: steps.current.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -75,9 +90,10 @@ jobs:
         run: |
           set -o pipefail
           # Fails when the build fails, and returns once the domain points to the new deployment.
-          bunx "$VERCEL_CLI" deploy --prod --yes --logs --token "$VERCEL_TOKEN" 2>&1 | tee deploy.log
+          bunx --no-install vercel deploy --prod --yes --logs 2>&1 | tee deploy.log
 
       - name: Check the data release the build downloaded
+        if: steps.current.outputs.deploy == 'true'
         env:
           DATA_TAG: ${{ inputs.data-tag }}
         run: |
@@ -90,6 +106,7 @@ jobs:
 
       # The page only: POST /api/ask is behind BotID, which rejects a client without a browser.
       - name: Check the site answers
+        if: steps.current.outputs.deploy == 'true'
         run: |
           curl --fail --silent --show-error --location --output /dev/null \
             --retry 5 --retry-delay 10 --retry-all-errors --max-time 30 "$SITE_URL/"

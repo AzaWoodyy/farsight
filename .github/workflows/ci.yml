@@ -1,0 +1,78 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  checks:
+    name: PR checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          filter: blob:none
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Metadata and conservative selection
+        id: changes
+        run: |
+          bun test scripts/ci/affected.test.ts
+          bun scripts/ci/select.ts
+      - if: steps.changes.outputs.any == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      # Direct install measured at 2s; caching the 100MB dependency cache costs more.
+      - if: steps.changes.outputs.any == 'true'
+        run: bun install --frozen-lockfile
+      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: snapshot
+        with:
+          path: .ci-data
+          key: snapshot-v1-${{ hashFiles('ci/data.json') }}
+      - name: Restore and verify the pinned snapshot
+        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REBUILD: ${{ steps.changes.outputs.database }}
+        run: |
+          args=()
+          if [ "$REBUILD" = true ]; then args+=(--raw); fi
+          bun scripts/ci/data.ts "${args[@]}"
+      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true')
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .ci-data
+          key: snapshot-v1-${{ hashFiles('ci/data.json') }}
+      - name: Rebuild and validate offline when data dependencies change
+        if: steps.changes.outputs.database == 'true'
+        run: |
+          bun run data:build
+          bun run data:package --check-only
+      # Complete type checking before Next rewrites generated route types.
+      - name: Typecheck
+        if: steps.changes.outputs.typecheck == 'true'
+        run: bun run typecheck --incremental false
+      - name: Independent checks (two workers, every status collected)
+        if: steps.changes.outputs.any == 'true'
+        run: python3 scripts/ci/run.py

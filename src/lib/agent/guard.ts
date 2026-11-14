@@ -1,7 +1,9 @@
 import { constants, type DatabaseSync } from "node:sqlite";
+import { SCHEMA_VIEWS } from "../db/schema";
 
 /**
- * Schema guard, applied to every query (typed or generated) before it runs:
+ * Schema guard for pipeline plans (typed or generated). Trusted, parameterized
+ * helper queries inside tools do not need this guard:
  *
  * - read-only: SELECT / WITH only, no write or admin keyword, and the database
  *   itself is opened read-only;
@@ -16,17 +18,7 @@ import { constants, type DatabaseSync } from "node:sqlite";
 export type GuardResult = { ok: true; sql: string } | { ok: false; issues: string[] };
 
 /** Name-resolving views: the only objects generated (text-to-SQL) queries may read. */
-export const VIEWS = [
-  "v_tournaments",
-  "v_tournament_results",
-  "v_games",
-  "v_game_players",
-  "v_draft",
-  "v_player_items",
-  "v_game_player_stats",
-  "v_game_team_stats",
-  "v_ingame_coverage",
-] as const;
+export const VIEWS = SCHEMA_VIEWS;
 
 /** What typed tools may read: the views plus small lookup tables (champion icons, a game's Riot key...). */
 export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "players", "game_riot"] as const;
@@ -34,7 +26,7 @@ export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "play
 export const MAX_ROWS = 200;
 
 const FORBIDDEN =
-  /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|replace|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint|release)\b/i;
+  /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint)\b/i;
 
 const NOT_ALIAS = /^(on|where|group|order|left|inner|outer|join|limit|cross|using|natural|union|except|intersect|having|window)$/i;
 
@@ -55,10 +47,10 @@ export function guardQuery(
   const allowed = new Map(Object.entries(allowedSchema(schema, objects)).map(([t, c]) => [t.toLowerCase(), c]));
 
   // Ignore string literals and comments when scanning identifiers.
-  const code = sql
-    .replace(/'(?:[^']|'')*'/g, "''")
-    .replace(/--[^\n]*/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const scanned = scanSql(sql);
+
+  if (!scanned.ok) return { ok: false, issues: [scanned.issue] };
+  const code = scanned.code;
 
   const trimmed = code.trim().replace(/;\s*$/, "");
 
@@ -70,7 +62,7 @@ export function guardQuery(
   if (forbidden) issues.push(`Forbidden keyword: ${forbidden[1].toUpperCase()}.`);
 
   const ctes = new Set(
-    [...trimmed.matchAll(/(?:\bwith|,)\s+(\w+)\s+as\s*\(/gi)].map((m) => m[1].toLowerCase()),
+    [...trimmed.matchAll(/(?:\bwith|,)\s+(\w+)\s*(?:\([^)]*\)\s*)?as\s*\(/gi)].map((m) => m[1].toLowerCase()),
   );
 
   const aliases = new Map<string, string>(); // alias -> table
@@ -108,6 +100,9 @@ export function guardQuery(
       issues.push(`Unknown column ${m[1]}.${m[2]} (${table} has: ${cols.join(", ")}).`);
   }
 
+  if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > MAX_ROWS)
+    issues.push(`Row limit must be between 1 and ${MAX_ROWS}.`);
+
   if (issues.length) return { ok: false, issues: [...new Set(issues)] };
 
   const limited = `SELECT * FROM (\n${sql.trim().replace(/;\s*$/, "")}\n) LIMIT ${maxRows}`;
@@ -116,8 +111,19 @@ export function guardQuery(
   // SQLite's authorizer sees every table the compiled statement reads, including
   // the ones the static pass cannot spot (comma joins, nested subqueries).
   db.setAuthorizer((action, table, column, dbName, view) => {
-    if (action === constants.SQLITE_SELECT || action === constants.SQLITE_FUNCTION || action === constants.SQLITE_RECURSIVE)
+    if (action === constants.SQLITE_FUNCTION) {
+      const name = column ?? table ?? "";
+
+      if (/^(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)$/i.test(name)) {
+        denied.add(`function ${name}`);
+
+        return constants.SQLITE_DENY;
+      }
+
       return constants.SQLITE_OK;
+    }
+
+    if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;
 
     if (action !== constants.SQLITE_READ) {
       denied.add(`action ${action}`);
@@ -151,4 +157,56 @@ export function guardQuery(
   }
 
   return { ok: true, sql: limited };
+}
+
+/** Strip literals/comments for the static pass and reject an unfinished token.
+ * A trailing /* would otherwise swallow the forced LIMIT added by the wrapper.
+ */
+function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: string } {
+  let code = "";
+  let depth = 0;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+
+    if (char === "'" || char === '"' || char === "`" || char === "[") {
+      const close = char === "[" ? "]" : char;
+      let token = char;
+      let closed = false;
+
+      for (i++; i < sql.length; i++) {
+        token += sql[i];
+
+        if (sql[i] !== close) continue;
+
+        if (sql[i + 1] === close && close !== "]") {
+          token += sql[++i];
+          continue;
+        }
+
+        closed = true;
+        break;
+      }
+
+      if (!closed) return { ok: false, issue: "Unclosed SQL literal or identifier." };
+      code += char === "'" ? "''" : token;
+    } else if (char === "-" && sql[i + 1] === "-") {
+      for (i += 2; i < sql.length && sql[i] !== "\n"; i++) { /* line comment */ }
+
+      code += "\n";
+    } else if (char === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+
+      if (end < 0) return { ok: false, issue: "Unclosed SQL comment." };
+      i = end + 1;
+      code += " ";
+    } else {
+      if (char === "(") depth++;
+
+      if (char === ")" && --depth < 0) return { ok: false, issue: "Unbalanced SQL parentheses." };
+      code += char;
+    }
+  }
+
+  return depth === 0 ? { ok: true, code } : { ok: false, issue: "Unbalanced SQL parentheses." };
 }

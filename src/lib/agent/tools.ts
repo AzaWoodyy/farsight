@@ -1,3 +1,5 @@
+import { leagueMembers } from "../domain/leagues";
+import { YEAR_MIN } from "../domain/years";
 import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
@@ -14,7 +16,6 @@ import {
   type Source,
   type TableCell,
   type TimelineView,
-  type ToolName,
   type TraceStatus,
 } from "./types";
 import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
@@ -47,7 +48,7 @@ const COMPETITION_STAGES = "'main_event', 'play_in', 'season', 'playoffs'";
 const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
 
 const League = z.enum(LEAGUE_NAMES).describe("Leaguepedia League value. Worlds = World Championship, LCK = LoL Champions Korea.");
-const Year = z.number().int().min(2011).max(2030).nullable();
+const Year = z.number().int().min(YEAR_MIN).nullable();
 const Period = { yearFrom: Year.describe("First season (inclusive), null for all"), yearTo: Year.describe("Last season (inclusive), null for all") };
 
 export const PlayerHistoryInput = z.object({
@@ -150,16 +151,9 @@ export type ChampionStatsInput = z.infer<typeof ChampionStatsInput>;
 export type StandingsInput = z.infer<typeof StandingsInput>;
 
 /** A typed tool with its input, as decided by the router (rules or LLM). */
-export type ToolCall =
-  | { tool: "player_event_history"; input: PlayerHistoryInput }
-  | { tool: "team_history"; input: TeamHistoryInput }
-  | { tool: "head_to_head"; input: HeadToHeadInput }
-  | { tool: "champion_event_stats"; input: ChampionStatsInput }
-  | { tool: "tournament_standings"; input: StandingsInput }
-  | { tool: "player_ingame_stats"; input: PlayerIngameInput }
-  | { tool: "ingame_leaderboard"; input: LeaderboardInput }
-  | { tool: "team_ingame_stats"; input: TeamIngameInput }
-  | { tool: "game_timeline"; input: GameTimelineInput };
+export type ToolName = keyof typeof TOOLS;
+
+export type ToolCall = { [K in ToolName]: { tool: K; input: z.infer<(typeof TOOLS)[K]["input"]> } }[ToolName];
 
 export type ToolInput = ToolCall["input"];
 
@@ -186,8 +180,8 @@ export type ToolOutput = {
   totals: Record<string, string | number>;
 };
 
-type ToolDef<I extends ToolInput> = {
-  name: ToolName;
+type ToolDef<I> = {
+  name: string;
   /** French label, shown in the trace. */
   label: string;
   description: string;
@@ -222,6 +216,12 @@ function inList(prefix: string, values: string[], params: Params): string {
 }
 
 type Period = { yearFrom: number | null; yearTo: number | null };
+
+function leagueFilter(column: string, input: { league: string | null; yearFrom?: number | null; yearTo?: number | null; year?: number | null }, params: Params): string {
+  const members = leagueMembers(input.league!, input.yearFrom ?? input.year ?? null, input.yearTo ?? input.year ?? null);
+
+  return `${column} IN (${inList("league", members, params)})`;
+}
 
 function periodFilter(col: string, input: Period, params: Params): string {
   const parts: string[] = [];
@@ -372,7 +372,7 @@ const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   plan: (_db, input) => {
     const params: Params = {};
 
-    Object.assign(params, { player: input.player, league: input.league });
+    Object.assign(params, { player: input.player });
 
     const period = periodFilter("gp.year", input, params);
 
@@ -382,7 +382,7 @@ const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   SELECT gp.year, gp.event_page, gp.stage, gp.team, gp.champion, gp.win
   FROM v_game_players gp
   WHERE gp.player = :player
-    AND gp.league = :league
+    AND ${leagueFilter("gp.league", input, params)}
     AND gp.stage IN (${COMPETITION_STAGES})
     ${period}
 ),
@@ -511,8 +511,8 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
     let league = "";
 
     if (input.league) {
-      league = "AND g.league = :league";
-      params.league = input.league;
+      league = `AND ${leagueFilter("g.league", input, params)}`;
+
     }
 
     return {
@@ -618,8 +618,8 @@ const headToHead: ToolDef<HeadToHeadInput> = {
       params.b = input.sideB;
 
       if (input.league) {
-        filters.push("AND a.league = :league");
-        params.league = input.league;
+        filters.push(`AND ${leagueFilter("a.league", input, params)}`);
+
       }
 
       return {
@@ -641,8 +641,8 @@ ORDER BY a.year, MIN(a.played_at), a.event_page`),
     const B = inList("b", teamMembers(db, input.sideB).members, params);
 
     if (input.league) {
-      filters.push("AND g.league = :league");
-      params.league = input.league;
+      filters.push(`AND ${leagueFilter("g.league", input, params)}`);
+
     }
 
     return {
@@ -726,20 +726,20 @@ const championEventStats: ToolDef<ChampionStatsInput> = {
   plan: (_db, input) => {
     const params: Params = {};
 
-    Object.assign(params, { champion: input.champion, league: input.league });
+    Object.assign(params, { champion: input.champion });
 
     return {
       params,
       sql: tidy(`WITH ev AS (
   SELECT g.game_id, g.year, g.league_short, g.event_page, g.tournament, g.played_at
   FROM v_games g
-  WHERE g.league = :league AND g.stage IN (${COMPETITION_STAGES})
+  WHERE ${leagueFilter("g.league", input, params)} AND g.stage IN (${COMPETITION_STAGES})
     ${periodFilter("g.year", input, params)}
 ),
 picks AS (
   SELECT gp.game_id, gp.win, gp.player
   FROM v_game_players gp
-  WHERE gp.champion = :champion AND gp.league = :league AND gp.stage IN (${COMPETITION_STAGES})
+  WHERE gp.champion = :champion AND ${leagueFilter("gp.league", input, params)} AND gp.stage IN (${COMPETITION_STAGES})
 ),
 bans AS (
   SELECT DISTINCT d.game_id FROM v_draft d WHERE d.champion = :champion AND d.kind = 'ban'
@@ -828,7 +828,7 @@ const tournamentStandings: ToolDef<StandingsInput> = {
   plan: (_db, input) => {
     const params: Params = {};
 
-    Object.assign(params, { league: input.league });
+    
 
     const filters: string[] = [];
 
@@ -851,7 +851,7 @@ const tournamentStandings: ToolDef<StandingsInput> = {
        tr.place, tr.place_number, tr.team, tr.prize_usd
 FROM v_tournament_results tr
 JOIN v_tournaments t ON t.tournament_page = tr.event_page
-WHERE tr.league = :league
+WHERE ${leagueFilter("tr.league", input, params)}
   AND t.stage IN (${STANDINGS_STAGES})
   ${periodFilter("tr.year", input, params)}
   ${filters.join("\n  ")}
@@ -934,7 +934,7 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
         : "Aucun vainqueur publié.");
 
     return {
-      title: `Palmarès — ${league}${input.yearFrom != null ? ` ${span([input.yearFrom, input.yearTo ?? input.yearFrom])}` : ""}`,
+      title: `Palmarès — ${league}${hasPeriod(input) ? ` ${yearSpan(editions.map((e) => e.year))}` : ""}`,
       table: { columns: ["Année", "Tournoi", "Vainqueur", "Finaliste"], rows },
       facts,
       sources,
@@ -974,8 +974,8 @@ function ingameScope(input: { league: string | null } & Period, params: Params):
   const parts = [`s.stage IN (${COMPETITION_STAGES})`];
 
   if (input.league) {
-    parts.push("s.league = :league");
-    params.league = input.league;
+    parts.push(leagueFilter("s.league", input, params));
+
   }
 
   return `${parts.join(" AND ")} ${periodFilter("s.year", input, params)}`;
@@ -1165,12 +1165,16 @@ const LeaderRow = z.object({ name: z.string(), team: z.string().nullable(), game
 
 function leaderboardMetric(input: LeaderboardInput) {
   if (input.subject === "team") {
-    const key = TEAM_METRICS.find((m) => m === input.metric) ?? "first_blood";
+    const key = TEAM_METRICS.find((m) => m === input.metric);
+
+    if (!key) throw new Error(`Métrique équipe invalide : ${input.metric}`);
 
     return { def: TEAM_METRIC_DEFS[key], key };
   }
 
-  const key = PLAYER_METRICS.find((m) => m === input.metric) ?? "solo_kills";
+  const key = PLAYER_METRICS.find((m) => m === input.metric);
+
+  if (!key) throw new Error(`Métrique joueur invalide : ${input.metric}`);
 
   return { def: PLAYER_METRIC_DEFS[key], key };
 }
@@ -1555,8 +1559,8 @@ const gameTimeline: ToolDef<GameTimelineInput> = {
     else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
 
     if (input.league) {
-      where.push("g.league = :league");
-      params.league = input.league;
+      where.push(leagueFilter("g.league", input, params));
+
     }
 
     if (input.year != null) {
@@ -1722,117 +1726,57 @@ ORDER BY g.played_at DESC, g.game_n`,
 
 // Registry ----------------------------------------------------------------------------
 
-function bind<I extends ToolInput>(def: ToolDef<I>, db: DatabaseSync, input: I, call: (input: I) => ToolCall): BoundTool {
-  const { sql, params } = def.plan(db, input);
+/** Capture each tool's input/implementation relationship once, before indexing the heterogeneous registry. */
+function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the registry parsing boundary.
+  const bind = (db: DatabaseSync, raw: unknown): BoundTool => {
+    const value = input.parse(raw);
+    const plan = def.plan(db, value);
 
-  return {
-    call: call(input),
-    label: def.label,
-    sql,
-    params,
-    relaxations: (entities) =>
-      def.relaxations(input, entities).map((r) => ({
-        key: r.key,
-        note: r.note,
-        reason: r.reason,
-        next: () => bind(def, db, r.input, call),
-      })),
-    format: (formatDb, rows) => def.format(formatDb, input, rows),
+    return {
+      // SAFETY: defineTool captures this definition with its own validated schema.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- TypeScript erases the captured heterogeneous pair.
+      call: { tool: def.name, input: value } as unknown as ToolCall,
+      label: def.label,
+      ...plan,
+      relaxations: (entities) => def.relaxations(value, entities).map((r) => ({ ...r, next: () => bind(db, r.input) })),
+      format: (formatDb, rows) => def.format(formatDb, value, rows),
+    };
+  };
+
+  return { input, bind, ai: tool({ description: def.description, inputSchema: input }),
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The schema parses dynamic SDK input here.
+    normalize: (db: DatabaseSync, raw: unknown): ToolCall | null => {
+      const value = def.normalize(db, input.parse(raw));
+
+      // SAFETY: normalize preserves the definition's input type and tool name.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- TypeScript erases the captured heterogeneous pair.
+      return value == null ? null : { tool: def.name, input: value } as unknown as ToolCall;
+    },
   };
 }
 
-/** Validates the input with the tool's zod schema and binds the tool to it. */
-export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
-  switch (call.tool) {
-    case "player_event_history":
-      return bind(playerEventHistory, db, PlayerHistoryInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "team_history":
-      return bind(teamHistory, db, TeamHistoryInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "head_to_head":
-      return bind(headToHead, db, HeadToHeadInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "champion_event_stats":
-      return bind(championEventStats, db, ChampionStatsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "tournament_standings":
-      return bind(tournamentStandings, db, StandingsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "player_ingame_stats":
-      return bind(playerIngameStats, db, PlayerIngameInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "ingame_leaderboard":
-      return bind(ingameLeaderboard, db, LeaderboardInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "team_ingame_stats":
-      return bind(teamIngameStats, db, TeamIngameInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-    case "game_timeline":
-      return bind(gameTimeline, db, GameTimelineInput.parse(call.input), (input) => ({ tool: call.tool, input }));
-  }
-}
-
-/** The same tools, as AI SDK tools for the LLM router (no `execute`: the agent runs them behind the guard). */
-export const aiTools = {
-  player_event_history: tool({ description: playerEventHistory.description, inputSchema: PlayerHistoryInput }),
-  team_history: tool({ description: teamHistory.description, inputSchema: TeamHistoryInput }),
-  head_to_head: tool({ description: headToHead.description, inputSchema: HeadToHeadInput }),
-  champion_event_stats: tool({ description: championEventStats.description, inputSchema: ChampionStatsInput }),
-  tournament_standings: tool({ description: tournamentStandings.description, inputSchema: StandingsInput }),
-  player_ingame_stats: tool({ description: playerIngameStats.description, inputSchema: PlayerIngameInput }),
-  ingame_leaderboard: tool({ description: ingameLeaderboard.description, inputSchema: LeaderboardInput }),
-  team_ingame_stats: tool({ description: teamIngameStats.description, inputSchema: TeamIngameInput }),
-  game_timeline: tool({ description: gameTimeline.description, inputSchema: GameTimelineInput }),
+export const TOOLS = {
+  player_event_history: defineTool(PlayerHistoryInput, playerEventHistory),
+  team_history: defineTool(TeamHistoryInput, teamHistory),
+  head_to_head: defineTool(HeadToHeadInput, headToHead),
+  champion_event_stats: defineTool(ChampionStatsInput, championEventStats),
+  tournament_standings: defineTool(StandingsInput, tournamentStandings),
+  player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
+  ingame_leaderboard: defineTool(LeaderboardInput, ingameLeaderboard),
+  team_ingame_stats: defineTool(TeamIngameInput, teamIngameStats),
+  game_timeline: defineTool(GameTimelineInput, gameTimeline),
 };
 
-/** Maps an LLM tool call onto database names (aliases, team shorthands...); null when a name is unknown. */
+export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
+  return TOOLS[call.tool].bind(db, call.input);
+}
+
+type AiTools = { [K in ToolName]: (typeof TOOLS)[K]["ai"] };
+
+// SAFETY: entries preserve each registry key and its own AI SDK tool.
+export const aiTools = Object.fromEntries(Object.entries(TOOLS).map(([name, def]) => [name, def.ai])) as AiTools;
+
 export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof aiTools>): ToolCall | null {
-  switch (call.toolName) {
-    case "player_event_history": {
-      const input = playerEventHistory.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "team_history": {
-      const input = teamHistory.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "head_to_head": {
-      const input = headToHead.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "champion_event_stats": {
-      const input = championEventStats.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "tournament_standings": {
-      const input = tournamentStandings.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "player_ingame_stats": {
-      const input = playerIngameStats.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "ingame_leaderboard": {
-      const input = ingameLeaderboard.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "team_ingame_stats": {
-      const input = teamIngameStats.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-
-    case "game_timeline": {
-      const input = gameTimeline.normalize(db, call.input);
-
-      return input && { tool: call.toolName, input };
-    }
-  }
+  return TOOLS[call.toolName].normalize(db, call.input);
 }

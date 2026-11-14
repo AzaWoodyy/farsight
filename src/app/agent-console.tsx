@@ -114,14 +114,14 @@ export function AgentConsole() {
   const reply = messages.findLast((m) => m.role === "assistant");
   const steps = new Map<StepName, StepPart>();
   let answer: Answer | null = null;
-  let traceId: string | null = null;
+  let trace: { traceId: string; token: string } | null = null;
 
   for (const part of reply?.parts ?? []) {
     if (part.type === "data-step") steps.set(part.data.step, part.data);
 
     if (part.type === "data-answer") answer = part.data;
 
-    if (part.type === "data-trace") traceId = part.data.traceId;
+    if (part.type === "data-trace") trace = part.data;
   }
 
   return (
@@ -142,6 +142,7 @@ export function AgentConsole() {
         <input
           id="question"
           value={question}
+          maxLength={500}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="résultats de Chovy à tous les Worlds"
           autoComplete="off"
@@ -182,13 +183,13 @@ export function AgentConsole() {
             </button>
           </div>
           <Steps steps={steps} running={running} />
-          {error && (
+          {error && !answer && (
             <p role="alert" className="mt-4 text-xs text-error">
               <span aria-hidden>xx</span> {error.message}
             </p>
           )}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
-          {answer && traceId && <Feedback key={traceId} traceId={traceId} />}
+          {answer && trace && <Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
         </div>
       )}
     </section>
@@ -213,7 +214,9 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                 <span>{running ? "en attente" : "non exécutée"}</span>
               </li>
             );
-          const s = STATUS[part.status];
+          const interrupted = part.state === "running" && !running;
+          const active = part.state === "running" && running;
+          const s = STATUS[interrupted ? "error" : part.status];
 
           return (
             <li key={name}>
@@ -221,11 +224,11 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                 <span aria-hidden className="text-muted">
                   {branch}
                 </span>
-                <span className={`${part.state === "running" ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>
-                  {part.state === "running" ? ".." : s.mark}
+                <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>
+                  {active ? ".." : s.mark}
                 </span>
                 <span className="w-32 shrink-0 text-muted">{STEP_LABEL[name]}</span>
-                <span className="min-w-0">{part.title}</span>
+                <span className="min-w-0">{interrupted ? "interrompue" : part.title}</span>
               </div>
               <ul className="mt-1 ml-[4.5rem] space-y-0.5 border-l border-line pl-3">
                 {part.entries.map((e, j) => (
@@ -321,25 +324,27 @@ const RATINGS: { rating: Rating; label: string }[] = [
  * The rating goes to /api/feedback with the trace id and nothing else; a
  * second click replaces the first.
  */
-function Feedback({ traceId }: { traceId: string }) {
-  const [sent, setSent] = useState<Rating | null>(null);
-  const [state, setState] = useState<"idle" | "sending" | "failed">("idle");
+type FeedbackState =
+  | { kind: "idle"; recorded: Rating | null }
+  | { kind: "sending"; recorded: Rating | null; rating: Rating }
+  | { kind: "failed"; recorded: Rating | null };
+
+function Feedback({ traceId, token }: { traceId: string; token: string }) {
+  const [state, setState] = useState<FeedbackState>({ kind: "idle", recorded: null });
 
   async function rate(rating: Rating) {
-    setState("sending");
+    setState({ kind: "sending", rating, recorded: state.recorded });
 
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ traceId, rating }),
+        body: JSON.stringify({ traceId, token, rating }),
       });
 
-      setSent(res.ok ? rating : null);
-      setState(res.ok ? "idle" : "failed");
+      setState({ kind: res.ok ? "idle" : "failed", recorded: res.ok ? rating : state.recorded });
     } catch {
-      setSent(null);
-      setState("failed");
+      setState({ kind: "failed", recorded: state.recorded });
     }
   }
 
@@ -351,17 +356,17 @@ function Feedback({ traceId }: { traceId: string }) {
           key={rating}
           type="button"
           onClick={() => rate(rating)}
-          disabled={state === "sending"}
-          aria-pressed={sent === rating}
+          disabled={state.kind === "sending"}
+          aria-pressed={state.recorded === rating}
           className={`border px-2 py-1 hover:border-accent hover:text-accent disabled:opacity-40 ${
-            sent === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
+            state.recorded === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
           }`}
         >
           {label}
         </button>
       ))}
-      <span role="status" className={state === "failed" ? "text-error" : "text-muted"}>
-        {state === "failed" ? "avis non enregistré, réessaie" : sent ? "merci, avis enregistré" : ""}
+      <span role="status" className={state.kind === "failed" ? "text-error" : "text-muted"}>
+        {state.kind === "failed" ? "avis non enregistré, réessaie" : state.recorded ? "merci, avis enregistré" : ""}
       </span>
     </div>
   );

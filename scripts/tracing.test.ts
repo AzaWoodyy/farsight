@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { InMemorySpanExporter, type ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { generateText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
@@ -14,7 +15,7 @@ import {
   understandReport,
 } from "../src/lib/agent/trace";
 import type { Answer, Entities, QueryPlan, StepName, StepPart } from "../src/lib/agent/types";
-import { FEEDBACK_SCORE, flushTracing, langfuseConfig, sampleRate, sendFeedback, startTracing } from "../src/lib/tracing/langfuse";
+import { FEEDBACK_SCORE, flushTracing, sampleRate, sendFeedback, shutdownTracing, startTracing } from "../src/lib/tracing/langfuse";
 
 /** Conversation id as the browser makes it up. */
 const SESSION = "2b6f0cff-4e0f-4e5c-9d2a-6a4b8f3c1d7e";
@@ -137,20 +138,21 @@ const meta = (span: ReadableSpan, key: string) => JSON.parse(String(span.attribu
 
 // Tracing off -------------------------------------------------------------------
 
-test("without the three Langfuse variables tracing stays off", async () => {
-  delete process.env.LANGFUSE_PUBLIC_KEY;
-  delete process.env.LANGFUSE_SECRET_KEY;
-  delete process.env.LANGFUSE_BASE_URL;
+test("without the three Langfuse variables tracing stays off", () => {
+  // A fresh process proves the off state independently of the initialized singleton.
+  const env = { ...process.env };
 
-  expect(langfuseConfig()).toBeNull();
-  expect(startTracing()).toBe(false);
-  // The agent runs the same, with no trace id for the UI and nothing to flush.
-  expect(await runQuestion(answer({}))).toBeNull();
-  await flushTracing();
+  for (const key of ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL"]) delete env[key];
 
-  process.env.LANGFUSE_PUBLIC_KEY = "pk-test";
-  process.env.LANGFUSE_SECRET_KEY = "sk-test";
-  expect(langfuseConfig()).toBeNull();
+  const result = spawnSync(process.execPath, ["-e", `
+    import { langfuseConfig, startTracing, flushTracing } from "./src/lib/tracing/langfuse";
+    import { traceQuestion } from "./src/lib/agent/trace";
+    if (langfuseConfig() !== null || startTracing() !== false) process.exit(1);
+    if (await traceQuestion("test", null, async id => id) !== null) process.exit(2);
+    await flushTracing();
+  `], { env, encoding: "utf8", timeout: 5000 });
+
+  expect(result.status).toBe(0);
 });
 
 test("no score is sent while tracing is off", async () => {
@@ -204,7 +206,35 @@ test("tags name what went wrong", () => {
 
 // Exported spans -----------------------------------------------------------------
 
-const exporter = new InMemorySpanExporter();
+let exporter = new InMemorySpanExporter();
+const originalExport = exporter.export;
+const envKeys = ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_SAMPLE_RATE", "LANGFUSE_TRACING_ENVIRONMENT"] as const;
+let savedEnv: Partial<Record<(typeof envKeys)[number], string>>;
+
+beforeEach(async () => {
+  await shutdownTracing();
+  exporter = new InMemorySpanExporter();
+  savedEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, {
+    LANGFUSE_PUBLIC_KEY: "pk-test", LANGFUSE_SECRET_KEY: "sk-test", LANGFUSE_BASE_URL: "https://langfuse.test",
+    LANGFUSE_SAMPLE_RATE: "1", LANGFUSE_TRACING_ENVIRONMENT: "development",
+  });
+  exporter.export = originalExport;
+  exporter.reset();
+  startTracing(exporter);
+});
+
+afterEach(async () => {
+  await flushTracing();
+  exporter.export = originalExport;
+  exporter.reset();
+
+  for (const key of envKeys) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+});
+
 
 test("a question is one trace: root, step observations and the LLM generation", async () => {
   expect(startTracing(exporter)).toBe(true);

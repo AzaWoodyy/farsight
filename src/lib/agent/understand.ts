@@ -1,10 +1,11 @@
+import { detectLeague, eraLeague, leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { normalizeAlias } from "../aliases";
 import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
-import { getLlm, LLM_CALL } from "./llm";
+import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
 import { ROLE_WORDS } from "./roles";
@@ -12,7 +13,6 @@ import {
   type Ambiguity,
   type Entities,
   LEAGUE_NAMES,
-  type LeagueName,
   type PlayerCandidate,
   type ResolvedChampion,
   type ResolvedPlayer,
@@ -20,31 +20,6 @@ import {
   type Split,
 } from "./types";
 
-/** Cues for the Leaguepedia `League` values of the scope (leagues.name). */
-const LEAGUE_CUES: { league: LeagueName; pattern: RegExp }[] = [
-  {
-    league: "World Championship",
-    pattern: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i,
-  },
-  { league: "Mid-Season Invitational", pattern: /\b(msi|mid[- ]season invitational)\b/i },
-  { league: "LCK Challengers League", pattern: /\b(lck cl|lck challengers)\b/i },
-  { league: "LCK Academy Series", pattern: /\blck (as|academy)\b/i },
-  { league: "LoL Champions Korea", pattern: /\blck\b/i },
-  { league: "LoL The Champions", pattern: /\b(ogn|champions korea \d{4}|the champions)\b/i },
-  { league: "Challengers Korea", pattern: /\bchallengers korea\b/i },
-  { league: "Tencent LoL Pro League", pattern: /\blpl\b/i },
-  { league: "LoL EMEA Championship", pattern: /\blec\b/i },
-  { league: "Europe League Championship Series", pattern: /\beu ?lcs\b/i },
-  { league: "EMEA Masters", pattern: /\bemea masters\b/i },
-  { league: "European Masters", pattern: /\b(eu masters|european masters)\b/i },
-  { league: "North America League Championship Series", pattern: /\bna ?lcs\b/i },
-  { league: "League of Legends Championship Series", pattern: /\blcs\b/i },
-  { league: "League of Legends Championship of The Americas North", pattern: /\blta (north|nord)\b/i },
-  { league: "League of Legends Championship of The Americas", pattern: /\blta\b/i },
-  { league: "La Ligue Française Division 2", pattern: /\b(lfl d(iv(ision)?)? ?2|div2)\b/i },
-  { league: "La Ligue Française", pattern: /\blfl\b/i },
-  { league: "LVP SuperLiga 2nd Division", pattern: /\b(superliga|sl 2nd)\b/i },
-];
 
 /**
  * Competitions and games outside the fixed scope. Named explicitly so the
@@ -111,7 +86,7 @@ const RELATIVE_YEARS = [
   },
 ];
 
-const YEAR = /\b(20[1-3]\d)\b/g;
+const YEAR = /\b((?:19|20)\d{2})\b/g;
 
 const blank = (text: string, pattern: RegExp) => text.replace(pattern, (m) => " ".repeat(m.length));
 
@@ -193,6 +168,8 @@ function lookupAlias(db: DatabaseSync, mention: string): AliasHit[] {
 type Context = { league: string | null; yearFrom: number | null; yearTo: number | null };
 
 function contextGames(db: DatabaseSync, playerId: number, ctx: Context): number {
+  const members = ctx.league ? leagueMembers(ctx.league, ctx.yearFrom, ctx.yearTo) : [];
+
   const row = selectOne(
     db,
     CountRow,
@@ -200,10 +177,10 @@ function contextGames(db: DatabaseSync, playerId: number, ctx: Context): number 
      JOIN games g ON g.id = gp.game_id JOIN tournaments t ON t.id = g.tournament_id
      JOIN leagues l ON l.id = t.league_id
      WHERE gp.player_id = :id AND t.stage <> 'qualifier'
-       AND (:league IS NULL OR l.name = :league)
+       AND (:league IS NULL OR l.name IN (SELECT value FROM json_each(:members)))
        AND (:yearFrom IS NULL OR t.year >= :yearFrom)
        AND (:yearTo IS NULL OR t.year <= :yearTo)`,
-    { id: playerId, league: ctx.league, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo },
+    { id: playerId, members: JSON.stringify(members), league: ctx.league, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo },
   );
 
   return row?.n ?? 0;
@@ -361,8 +338,12 @@ function getIndexes(db: DatabaseSync): Indexes {
   const rows = selectAll(
     db,
     z.object({ name: z.string(), games: z.number() }),
-    `SELECT t.name, COUNT(g.id) AS games FROM teams t
-     JOIN games g ON t.id IN (g.blue_team_id, g.red_team_id) GROUP BY t.id ORDER BY games DESC`,
+    `SELECT t.name, x.games FROM (
+       SELECT team_id, COUNT(*) AS games FROM (
+         SELECT blue_team_id AS team_id FROM games
+         UNION ALL SELECT red_team_id FROM games WHERE red_team_id != blue_team_id
+       ) GROUP BY team_id
+     ) x JOIN teams t ON t.id = x.team_id ORDER BY x.games DESC, t.name`,
   );
 
   const gamesOf = new Map(rows.map((r) => [r.name, r.games]));
@@ -524,15 +505,6 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
 // Competition and period ----------------------------------------------------------
 
-function detectLeague(question: string) {
-  for (const l of LEAGUE_CUES) {
-    const m = l.pattern.exec(question);
-
-    if (m) return { league: l.league, mention: m[0] };
-  }
-
-  return { league: null, mention: null };
-}
 
 /** "l'an dernier", "cette saison": the years they mean today, and whether one follows "depuis" / "since". */
 function relativeYears(question: string, now: Date) {
@@ -550,8 +522,8 @@ function detectPeriod(question: string, now: Date) {
   if (years.length === 0) return { yearFrom: null, yearTo: null };
 
   if (years.length === 1 && relative.length === 1) return { yearFrom: years[0], yearTo: relative[0].since ? null : years[0] };
-  const since = /\b(depuis|since|apr[eè]s|after|from)\s+(20[1-3]\d)\b/i.exec(question);
-  const before = /\b(avant|before|until|jusqu'?en)\s+(20[1-3]\d)\b/i.exec(question);
+  const since = /\b(depuis|since|apr[eè]s|after|from)\s+((?:19|20)\d{2})\b/i.exec(question);
+  const before = /\b(avant|before|until|jusqu'?en)\s+((?:19|20)\d{2})\b/i.exec(question);
 
   if (since && years.length === 1) return { yearFrom: Number(since[2]), yearTo: null };
 
@@ -560,21 +532,6 @@ function detectPeriod(question: string, now: Date) {
   return { yearFrom: Math.min(...years), yearTo: Math.max(...years) };
 }
 
-/**
- * The same name covers different leagues over time: "LCS 2016" is NA LCS,
- * "LEC 2017" is EU LCS, "LCK 2014" is OGN Champions.
- */
-function eraLeague(league: LeagueName | null, yearTo: number | null): LeagueName | null {
-  if (league == null || yearTo == null) return league;
-
-  if (league === "League of Legends Championship Series" && yearTo <= 2018) return "North America League Championship Series";
-
-  if (league === "LoL EMEA Championship" && yearTo <= 2018) return "Europe League Championship Series";
-
-  if (league === "LoL Champions Korea" && yearTo <= 2015) return "LoL The Champions";
-
-  return league;
-}
 
 function leagueShort(db: DatabaseSync, league: string | null): string | null {
   if (!league) return null;
@@ -595,7 +552,7 @@ function buildEntities(
   const dated = rulesPeriod.yearFrom != null || rulesPeriod.yearTo != null;
   const yearFrom = overrides.yearFrom !== undefined && !dated ? overrides.yearFrom : rulesPeriod.yearFrom;
   const yearTo = overrides.yearTo !== undefined && !dated ? overrides.yearTo : rulesPeriod.yearTo;
-  const league = eraLeague(overrides.league !== undefined ? overrides.league : rulesLeague.league, yearTo);
+  const league = eraLeague(overrides.league !== undefined ? overrides.league : rulesLeague.league, yearFrom, yearTo);
   const players: ResolvedPlayer[] = [];
   const unresolved: string[] = [];
 
@@ -685,7 +642,7 @@ const llmDecider: Decider<Input, Entities> = {
       telemetry: { functionId: "extract-entities" },
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
-      abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
+      abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
     const teams = output.teams.map((t) => resolveTeam(db, t)).filter((t): t is ResolvedTeam => t != null);

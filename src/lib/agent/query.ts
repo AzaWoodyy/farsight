@@ -1,10 +1,11 @@
+import { leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
-import { allowedSchema, VIEWS } from "./guard";
-import { getLlm, LLM_CALL } from "./llm";
+import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
+import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { aiTools, type BoundTool, bindTool, type GamePhase, normalizeToolCall, type ToolCall } from "./tools";
 import { detectMetric, type MetricCue, MINUTE } from "./metrics";
 import { ROLE_CUES as ROLES } from "./roles";
@@ -36,16 +37,6 @@ const UNSUPPORTED = word(
  * views switches the detection off by itself.
  */
 const DATA_CONCEPTS = [
-  { label: "les pentakills et autres multi-kills", pattern: word("penta ?kills?|quadra ?kills?|triple ?kills?|multi ?kills?"), view: "v_game_player_stats", column: "penta_kills" },
-  { label: "les solo kills", pattern: word("solo ?kills?"), view: "v_game_player_stats", column: "solo_kills" },
-  { label: "le first blood", pattern: word("first ?blood|premier sang"), view: "v_game_player_stats", column: "first_blood_kill" },
-  { label: "les wards posées ou détruites", pattern: word("wards?"), view: "v_game_player_stats", column: "wards_placed" },
-  {
-    label: "les objectifs par partie (dragons, barons, hérauts, tourelles, inhibiteurs)",
-    pattern: word("dragons?|drakes?|barons?|nashor|h[ée]rauts?|heralds?|towers?|tourelles?|inhibiteurs?|inhibitors?|grubs?|larves?|atakhans?"),
-    view: "v_games",
-    column: "blue_dragons",
-  },
   { label: "les sorts d'invocateur", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
   { label: "les distinctions MVP et joueur du match", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
 ] as const;
@@ -93,13 +84,15 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
   return {
     league: (league, yearFrom, yearTo) => {
       const params: (string | number)[] = [];
-      const where = league ? (params.push(league), "league = ?") : "1";
+      const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
+      const where = league ? (params.push(...members), `league IN (${members.map(() => "?").join(",")})`) : "1";
 
       return read(`SELECT SUM(games) AS games, SUM(ingame_games) AS ingame FROM v_ingame_coverage WHERE ${where}${period("year", yearFrom, yearTo, params)}`, params);
     },
     player: (player, league, yearFrom, yearTo) => {
       const params: (string | number)[] = [player];
-      const where = league ? (params.push(league), " AND p.league = ?") : "";
+      const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
+      const where = league ? (params.push(...members), ` AND p.league IN (${members.map(() => "?").join(",")})`) : "";
 
       return read(
         `SELECT COUNT(*) AS games, SUM(g.has_ingame) AS ingame FROM v_game_players p JOIN v_games g ON g.game_id = p.game_id
@@ -298,7 +291,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     return { kind: "out_of_scope", reason: "aucune entité ni notion esport League of Legends dans la question" };
 
   // Before the in-game metrics: "courbe d'or" or "dragons" in a timeline question are not a statistic.
-  const timeline = schema.v_games?.includes("game_n") ? routeTimeline(question, e) : null;
+  const timeline = routeTimeline(question, e);
 
   if (timeline) return timeline;
 
@@ -306,7 +299,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
 
-  const cue = schema.v_game_player_stats ? detectMetric(question) : null;
+  const cue = detectMetric(question);
   const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
 
   if (ingame) return ingame;
@@ -555,7 +548,7 @@ const SQL_RULES =
   "Use only these views and columns (no other table). " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
   "A role is one of 'Top', 'Jungle', 'Mid', 'Bot', 'Support' (an ADC is 'Bot'). " +
-  "Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under 200 rows. " +
+  `Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under ${MAX_ROWS} rows. ` +
   "If the answer needs data that no listed column holds (for example MVP awards or summoner spells), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
   "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
@@ -586,7 +579,7 @@ async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sq
     telemetry: { functionId },
     maxOutputTokens: LLM_CALL.maxOutputTokens,
     maxRetries: LLM_CALL.maxRetries,
-    abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
+    abortSignal: llmSignal(LLM_CALL.timeoutMs),
   });
 
   return { ...output, sql: output.sql.replace(/^```\w*\n?|```$/g, "").trim(), model: llm.id };
@@ -659,7 +652,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       telemetry: { functionId: "pick-tool" },
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
-      abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
+      abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
     // Dynamic calls are unknown or unparsable tool calls: treat them as "no tool".
@@ -711,7 +704,7 @@ export type CorrectInput = {
   question: string;
   entities: Entities;
   plan: QueryPlan;
-  problem: { kind: "guard" | "error" | "empty"; message: string };
+  problem: { kind: "guard" | "error" | "empty" | "timeout"; message: string };
 };
 
 type Fix = { plan: QueryPlan; note?: string };

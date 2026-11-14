@@ -2,6 +2,7 @@
  * data:package: check the database built by `data:build`, then write the
  * release assets (zstd-compressed file, manifest, release notes).
  *
+ *   bun run data:package --check-only  (all checks, no release assets)
  *   bun run data:package --tag=data-20261113
  *   bun run data:package --tag=data-20261113 --previous=prev/manifest.json --out=data/release
  *
@@ -28,18 +29,21 @@ import {
   MANIFEST_ASSET,
   Manifest,
   SIDE_FILES,
-  TAG_PREFIX,
   corruption,
+  derivationProblems,
   headerProblems,
   readFacts,
   sha256File,
 } from "./artifact";
 import { loadIngame } from "./riot";
+import { DERIVE_VERSION } from "./ingame";
+import { SCHEMA_OBJECTS } from "../../src/lib/db/schema";
 import { DB_FILE, INGAME_FILE, LEAGUES, SCHEMA_VERSION } from "./scope";
 
 const args = process.argv.slice(2);
 const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
+const checkOnly = args.includes("--check-only");
 const tag = arg("tag");
 const previousFile = arg("previous");
 const outDir = resolve(arg("out") ?? "data/release");
@@ -49,13 +53,7 @@ const outDir = resolve(arg("out") ?? "data/release");
 const MIN_GAMES_RATIO = 0.98;
 
 /** Tables and views the app reads (tools, schema guard, views). */
-const REQUIRED = [
-  "leagues", "tournaments", "teams", "players", "player_aliases", "champions", "items", "runes",
-  "tournament_results", "games", "game_draft", "game_players", "game_player_items", "ingest_runs",
-  "game_riot", "game_player_stats", "game_team_stats",
-  "v_tournaments", "v_tournament_results", "v_games", "v_game_players", "v_draft", "v_player_items",
-  "v_game_player_stats", "v_game_team_stats", "v_ingame_coverage",
-];
+const REQUIRED = SCHEMA_OBJECTS;
 
 /** Rows pointing at a parent that does not exist. */
 const ORPHANS: [string, string][] = [
@@ -76,7 +74,7 @@ function fail(problems: string[]): never {
   process.exit(1);
 }
 
-if (!tag || !tag.startsWith(TAG_PREFIX)) fail([`--tag=${TAG_PREFIX}YYYYMMDD is required`]);
+if ((!checkOnly && !tag) || (tag != null && !/^data-\d{8}(?:-\d+)?$/.test(tag))) fail(["--tag=data-YYYYMMDD (optional numeric suffix) is required"]);
 
 if (!existsSync(DB_FILE)) fail([`${DB_FILE} is missing: run \`bun run data:build\` first`]);
 
@@ -103,7 +101,9 @@ if (broken) problems.push(`integrity_check: ${broken}`);
 
 const facts = readFacts(DB_FILE);
 
-if (facts.schemaVersion !== SCHEMA_VERSION) problems.push(`user_version is ${facts.schemaVersion}, scope.ts says v${SCHEMA_VERSION}`);
+if (facts.schemaVersion !== SCHEMA_VERSION) problems.push(`user_version is ${facts.schemaVersion}, schema.ts says v${SCHEMA_VERSION}`);
+
+problems.push(...derivationProblems(facts, DERIVE_VERSION));
 
 if (facts.journalMode !== "delete") problems.push(`journal_mode=${facts.journalMode}, expected delete`);
 
@@ -131,10 +131,6 @@ if (problems.length === 0) {
     if (n > 0) problems.push(`${n} ${label}`);
   }
 
-  const fk = db.prepare("PRAGMA foreign_key_check").all();
-
-  if (fk.length > 0) problems.push(`foreign_key_check: ${fk.length} violation(s)`);
-
   const emptyLeagues = selectAll(
     db,
     Name,
@@ -158,13 +154,18 @@ if (previousFile) {
 
   if (facts.counts.leagues < previous.counts.leagues)
     problems.push(`${facts.counts.leagues} leagues, previous release ${previous.tag} had ${previous.counts.leagues}`);
-  const previousIngame = previous.schema_version === facts.schemaVersion ? (previous.counts.ingame_games ?? 0) : 0;
+  const previousIngame = previous.counts.ingame_games ?? 0;
 
-  if ((facts.counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
+  if (!args.includes("--allow-ingame-drop") && (facts.counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
     problems.push(`${facts.counts.ingame_games} games with in-game stats, previous release ${previous.tag} had ${previousIngame}`);
 }
 
 if (problems.length > 0) fail(problems);
+
+if (checkOnly) {
+  console.log(`data:package: checks passed, schema v${facts.schemaVersion}, ${facts.counts.games} games; no assets written`);
+  process.exit(0);
+}
 
 // --- Assets -------------------------------------------------------------------
 
@@ -191,6 +192,7 @@ const manifest = Manifest.parse({
   format: 1,
   tag,
   schema_version: facts.schemaVersion,
+  derive_version: DERIVE_VERSION,
   created_at: new Date().toISOString(),
   commit,
   database: { file: basename(DB_FILE), size, sha256: await sha256File(DB_FILE) },

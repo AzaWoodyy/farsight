@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
 import { z } from "zod";
+import { SCHEMA_VERSION } from "./schema";
 
 /**
  * The SQLite file is built by `bun run data:build` and shipped read-only: the
@@ -22,11 +23,30 @@ export type SqlParams = Record<string, SQLInputValue> | SQLInputValue[];
 
 let cached: DatabaseSync | null = null;
 
+/** Validate a file before caching it; usable by offline verification too. */
+export function openReadOnlyDb(path: string): DatabaseSync {
+  const db = new DatabaseSync(path, { readOnly: true, limits: { length: 1_000_000 } });
+
+  try {
+    if (!db.limits || db.limits.length > 1_000_000)
+      throw new Error("SQLite length limit unavailable; Node >=24.15 is required.");
+    const version = db.prepare("PRAGMA user_version").get()?.user_version;
+
+    if (version !== SCHEMA_VERSION)
+      throw new Error(`Database schema version ${version}; expected ${SCHEMA_VERSION}. Run data:pull --force or rebuild the database.`);
+
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+}
+
 export function openDb(): DatabaseSync {
   if (cached) return cached;
 
   try {
-    cached = new DatabaseSync(DB_PATH, { readOnly: true });
+    cached = openReadOnlyDb(DB_PATH);
   } catch (err) {
     throw new Error(`Cannot open ${DB_PATH} (${err instanceof Error ? err.message : String(err)}). Run \`bun run data:build\` first.`);
   }

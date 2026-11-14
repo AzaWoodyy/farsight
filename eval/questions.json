@@ -2109,6 +2109,111 @@
         ],
         "rowsMin": 1
       }
+    },
+    {
+      "id": "lcs-cross-era",
+      "question": "palmarès LCS depuis 2015",
+      "tags": [
+        "era",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "League of Legends Championship Series",
+        "input": {
+          "yearFrom": 2015,
+          "yearTo": null
+        },
+        "totals": {
+          "events": 31
+        },
+        "notes": [
+          "plusieurs noms de ligue"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "lec-cross-era",
+      "question": "palmarès LEC entre 2016 et 2020",
+      "tags": [
+        "era",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "yearFrom": 2016,
+          "yearTo": 2020
+        },
+        "totals": {
+          "events": 10
+        },
+        "notes": [
+          "plusieurs noms de ligue"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "lck-cross-era",
+      "question": "palmarès LCK entre 2014 et 2020",
+      "tags": [
+        "era",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2020
+        },
+        "totals": {
+          "events": 16
+        },
+        "notes": [
+          "plusieurs noms de ligue"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "outside-year-2010",
+      "question": "Faker aux Worlds 2010",
+      "tags": [
+        "coverage"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "attempts": 0,
+        "summaryIncludes": [
+          "commence en 2011"
+        ],
+        "summaryExcludes": [
+          "Aucun outil"
+        ]
+      }
+    },
+    {
+      "id": "outside-year-2031",
+      "question": "Faker aux Worlds 2031",
+      "tags": [
+        "coverage"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "attempts": 0,
+        "summaryIncludes": [
+          "future"
+        ],
+        "summaryExcludes": [
+          "Aucun outil"
+        ]
+      }
     }
   ]
 }

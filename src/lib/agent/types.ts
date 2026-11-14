@@ -8,30 +8,9 @@ export const STEPS = ["understand", "build", "execute", "format"] as const;
 
 export type StepName = (typeof STEPS)[number];
 
-/** Leaguepedia `League` values of the fixed scope (leagues.name). */
-export const LEAGUE_NAMES = [
-  "World Championship",
-  "Mid-Season Invitational",
-  "LCK Challengers League",
-  "LCK Academy Series",
-  "LoL Champions Korea",
-  "LoL The Champions",
-  "Challengers Korea",
-  "Tencent LoL Pro League",
-  "LoL EMEA Championship",
-  "Europe League Championship Series",
-  "EMEA Masters",
-  "European Masters",
-  "North America League Championship Series",
-  "League of Legends Championship Series",
-  "League of Legends Championship of The Americas North",
-  "League of Legends Championship of The Americas",
-  "La Ligue Française Division 2",
-  "La Ligue Française",
-  "LVP SuperLiga 2nd Division",
-] as const;
+export { LEAGUE_NAMES, type LeagueName } from "../domain/leagues";
 
-export type LeagueName = (typeof LEAGUE_NAMES)[number];
+import type { LeagueName } from "../domain/leagues";
 
 export type TraceStatus = "ok" | "warn" | "error" | "fix";
 
@@ -113,16 +92,9 @@ export type Entities = {
   outOfScope: string | null;
 };
 
-export type ToolName =
-  | "player_event_history"
-  | "team_history"
-  | "head_to_head"
-  | "champion_event_stats"
-  | "tournament_standings"
-  | "player_ingame_stats"
-  | "ingame_leaderboard"
-  | "team_ingame_stats"
-  | "game_timeline";
+export type { ToolName } from "./tools";
+
+import type { ToolName } from "./tools";
 
 export type Intent = ToolName | "sql";
 
@@ -220,6 +192,6 @@ export type AgentUIMessage = UIMessage<
     step: StepPart;
     answer: Answer;
     /** Sent before the steps when the question is traced: the id the thumbs up / down score points to. */
-    trace: { traceId: string };
+    trace: { traceId: string; token: string };
   }
 >;
