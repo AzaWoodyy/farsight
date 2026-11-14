@@ -1,7 +1,7 @@
 "use client";
 
 import "./zod-client";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { Answer, ResultRow, TableCell } from "@/lib/agent/types";
 import { z } from "zod";
 import { detectChampionRanking } from "@/lib/champions";
@@ -177,11 +177,11 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
     const active = sort.key === key;
 
     return (
-      <th scope="col" className={`px-2 py-2 font-normal sm:px-3 ${className}`} aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+      <th scope="col" className={`px-1 py-2 font-normal sm:px-3 ${className}`} aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
         <button
           type="button"
           onClick={() => setSort({ key, dir: active ? (sort.dir === 1 ? -1 : 1) : 1 })}
-          className={`tap uppercase tracking-wider hover:text-accent ${active ? "text-foreground" : "text-muted"}`}
+          className={`tap uppercase hover:text-accent sm:tracking-wider ${active ? "text-foreground" : "text-muted"}`}
         >
           {label}
           <span aria-hidden className="ml-1 inline-block w-2">
@@ -194,8 +194,8 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
 
   return (
     <div className="mt-4 overflow-x-auto border border-line">
-      {/* Phone width: no champions column (it was off screen, behind a horizontal scroll); each team's
-          champions go under its name, and the table fits the screen. */}
+      {/* Phone width: no champions column (it was off screen, behind a horizontal scroll); each result's
+          champions get a row of their own under it, and the table fits the screen. */}
       <table className="w-full border-collapse text-left text-xs sm:min-w-[720px]">
         <thead className="border-b border-line">
           <tr>
@@ -203,7 +203,7 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
             {header("team", "Équipe")}
             {header("place", "Place")}
             {header("record", "V-D", "text-right")}
-            {header("winrate", "%", "text-right")}
+            {header("winrate", "%", "hidden text-right sm:table-cell")}
             <th scope="col" className="hidden px-3 py-2 font-normal uppercase tracking-wider text-muted sm:table-cell">
               Champions
             </th>
@@ -211,32 +211,39 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
         </thead>
         <tbody>
           {sorted.map((r) => (
-            <tr key={`${r.event}-${r.team}`} className="border-b border-dashed border-line last:border-0 align-top">
-              <td className="px-2 py-2 tabular-nums sm:px-3">{r.year}</td>
-              <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">
-                {displayTeam(r.team)}
-                <ResultChampions champions={r.champions} className="mt-1.5 sm:hidden" />
-              </td>
-              <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">
-                <span className={r.place === "1" ? "text-accent" : ""}>{r.placeLabel}</span>
-                {r.place && <span className="ml-1 whitespace-nowrap text-muted">({r.place})</span>}
-              </td>
-              <td className="px-2 py-2 text-right whitespace-nowrap tabular-nums sm:px-3">
-                {r.wins}-{r.losses}
-              </td>
-              <td className="px-2 py-2 text-right tabular-nums text-muted sm:px-3">
-                {Math.round((100 * r.wins) / Math.max(1, r.wins + r.losses))}
-              </td>
-              <td className="hidden px-3 py-2 sm:table-cell">
-                <ResultChampions champions={r.champions} />
-              </td>
-            </tr>
+            <Fragment key={`${r.event}-${r.team}`}>
+              <tr className="border-b border-dashed border-line align-top last:border-0 max-sm:border-0">
+                <td className="px-2 py-2 tabular-nums sm:px-3">{r.year}</td>
+                <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">{displayTeam(r.team)}</td>
+                <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">
+                  <span className={r.place === "1" ? "text-accent" : ""}>{r.placeLabel}</span>
+                  {r.place && <span className="ml-1 whitespace-nowrap text-muted">({r.place})</span>}
+                </td>
+                <td className="px-2 py-2 text-right whitespace-nowrap tabular-nums sm:px-3">
+                  {r.wins}-{r.losses}
+                  {/* Phone width: the win rate under the record, the % column would not fit at 320 px. */}
+                  <div className="text-muted sm:hidden">{winRate(r)} %</div>
+                </td>
+                <td className="hidden px-3 py-2 text-right tabular-nums text-muted sm:table-cell">{winRate(r)}</td>
+                <td className="hidden px-3 py-2 sm:table-cell">
+                  <ResultChampions champions={r.champions} />
+                </td>
+              </tr>
+              {/* Phone width: the champions take a row of their own, the table's whole width. */}
+              <tr className="border-b border-dashed border-line last:border-0 sm:hidden">
+                <td colSpan={4} className="px-2 pb-2">
+                  <ResultChampions champions={r.champions} />
+                </td>
+              </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>
     </div>
   );
 }
+
+const winRate = (r: ResultRow) => Math.round((100 * r.wins) / Math.max(1, r.wins + r.losses));
 
 /** The champions a player played in one result line: icon and games, the name in the alt text and tooltip. */
 function ResultChampions({ champions, className = "" }: { champions: ResultRow["champions"]; className?: string }) {

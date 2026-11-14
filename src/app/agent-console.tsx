@@ -186,7 +186,7 @@ export function AgentConsole() {
         <div className="mt-8 min-h-svh">
           {/* A long question takes the whole line and pushes the button under it, instead of a narrow column. */}
           <div className="flex flex-wrap items-start justify-between gap-x-4">
-            <p className="min-w-0 flex-1 basis-48 pt-2.5 text-sm sm:pt-1">
+            <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
               <span aria-hidden className="text-muted">
                 ?
               </span>{" "}

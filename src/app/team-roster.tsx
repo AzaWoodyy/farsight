@@ -72,7 +72,7 @@ export function TeamRoster({ r }: { r: View }) {
       <h3 className="mt-6 text-xs uppercase tracking-widest text-muted">── tournois</h3>
       <ul className="mt-2 space-y-1 text-xs leading-6">
         {r.tournaments.map((t) => (
-          <li key={t.source.url} className="flex gap-3">
+          <li key={t.source.url} className="flex items-center gap-3">
             <a href={t.source.url} target="_blank" rel="noreferrer" title={t.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
               {t.label}
             </a>
