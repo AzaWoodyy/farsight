@@ -1,0 +1,247 @@
+"use client";
+
+import { type ReactNode, useState } from "react";
+import type { ChampionProfile as Profile } from "@/lib/agent/types";
+import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
+
+const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
+
+const nd = (v: number | null, signed = false) => (v == null ? "n/d" : `${signed && v > 0 ? "+" : v < 0 ? "−" : ""}${NUMBER.format(Math.abs(v))}`);
+
+const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)} %` : "n/d");
+
+/**
+ * A Data Dragon square icon, or the champion's first letters in a box when the icon is missing or fails
+ * to load. Plain <img>: next/image would spend the shared Vercel Hobby image quota for no LCP gain.
+ */
+export function ChampionIcon({ name, src, size }: { name: string; src: string | null; size: number }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed)
+    return (
+      <span
+        aria-hidden
+        style={{ width: size, height: size }}
+        className="flex shrink-0 items-center justify-center border border-line text-[10px] uppercase text-muted"
+      >
+        {name.replace(/[^\p{L}]/gu, "").slice(0, 2)}
+      </span>
+    );
+
+  return (
+    // oxlint-disable-next-line nextjs/no-img-element
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size }}
+      className="shrink-0 border border-line"
+    />
+  );
+}
+
+/** A horizontal ASCII-like gauge: filled share in accent, the rest dotted. */
+function Gauge({ share, label }: { share: number; label: string }) {
+  return (
+    <div role="img" aria-label={label} className="relative h-1.5 w-full bg-[repeating-linear-gradient(90deg,var(--line)_0_2px,transparent_2px_4px)]">
+      <div className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${Math.min(100, Math.max(0, share * 100)).toFixed(1)}%` }} />
+    </div>
+  );
+}
+
+/** Champions ranked: one line per champion, a gauge on the ranking metric, the other metrics beside it. */
+export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; fallback: ReactNode }) {
+  const [asTable, setAsTable] = useState(false);
+  const primary = ranking.metrics[ranking.primary];
+  const max = Math.max(...ranking.lines.map((l) => Math.abs(l.values[ranking.primary] ?? 0)), 0);
+  const others = ranking.metrics.map((m, i) => ({ m, i })).filter(({ i }) => i !== ranking.primary);
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+        <p className="text-muted">
+          classé par <span className="text-foreground">{primary.label}</span> · {ranking.lines.length} champion{ranking.lines.length > 1 ? "s" : ""}
+        </p>
+        <button
+          type="button"
+          onClick={() => setAsTable(!asTable)}
+          aria-pressed={asTable}
+          className="border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
+        >
+          {asTable ? "vue champions" : "vue tableau"}
+        </button>
+      </div>
+      {asTable ? (
+        fallback
+      ) : (
+        <div className="border border-line">
+          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted sm:flex">
+            <span className="w-8 shrink-0">#</span>
+            <span className="min-w-0 flex-1">champion</span>
+            <span className="w-[4.5rem] shrink-0 text-right text-foreground">{primary.label}</span>
+            {others.map(({ m }) => (
+              <span key={m.key} className="w-[4.5rem] shrink-0 text-right">
+                {m.label}
+              </span>
+            ))}
+          </div>
+          <ol>
+            {ranking.lines.map((l) => {
+              const value = l.values[ranking.primary];
+
+              return (
+                <li
+                  key={l.champion}
+                  className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0 sm:flex"
+                >
+                  <span className="tabular-nums text-muted sm:w-8 sm:shrink-0">{l.rank}</span>
+                  <div className="flex min-w-0 items-center gap-2 sm:flex-1">
+                    <ChampionIcon name={l.champion} src={l.icon} size={28} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate" translate="no">
+                        {l.champion}
+                      </div>
+                      <div className="mt-1">
+                        <Gauge share={max ? Math.abs(value ?? 0) / max : 0} label={`${primary.label} : ${formatChampionValue(value, primary.percent)}`} />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-right font-semibold tabular-nums text-accent sm:w-[4.5rem] sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
+                  {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
+                  <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
+                    {others.map(({ m, i }) => (
+                      <div key={m.key} className="flex gap-1">
+                        <dt>{m.label}</dt>
+                        <dd className="tabular-nums text-foreground">{formatChampionValue(l.values[i], m.percent)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {others.map(({ m, i }) => (
+                    <span key={m.key} className="hidden w-[4.5rem] shrink-0 text-right tabular-nums sm:block">
+                      {formatChampionValue(l.values[i], m.percent)}
+                    </span>
+                  ))}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One champion in the scope: draft figures, averages per game, roles and the players who played it most. */
+export function ChampionProfileView({ p }: { p: Profile }) {
+  const presence = p.games ? (p.picks + p.bans) / p.games : 0;
+  const losses = p.picks - p.wins;
+  const maxRole = Math.max(1, ...p.roles.map((r) => r.games));
+
+  const draft = [
+    { label: "picks", value: String(p.picks) },
+    { label: "bans", value: String(p.bans) },
+    { label: "victoires", value: p.picks ? `${p.wins}-${losses} · ${pct(p.wins, p.picks)}` : "n/d" },
+    { label: "KDA", value: nd(p.kda) },
+  ];
+
+  return (
+    <div className="mt-4 border border-line">
+      <div className="flex items-center gap-3 border-b border-line px-3 py-3">
+        <ChampionIcon name={p.champion} src={p.icon} size={48} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold" translate="no">
+            {p.champion}
+          </div>
+          <div className="truncate text-[11px] text-muted">
+            {p.scope || "toutes compétitions"} · {p.games} parties
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-[11px]">
+            <span className="shrink-0 text-muted">présence</span>
+            <Gauge share={presence} label={`présence ${pct(p.picks + p.bans, p.games)}`} />
+            <span className="w-10 shrink-0 text-right font-semibold tabular-nums text-accent">{pct(p.picks + p.bans, p.games)}</span>
+          </div>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-2 border-b border-line text-xs sm:grid-cols-4">
+        {draft.map((d) => (
+          <div key={d.label} className="border-b border-dashed border-line px-3 py-2 last:border-b-0 sm:border-b-0 [&:nth-child(-n+2)]:border-b sm:[&:nth-child(-n+2)]:border-b-0">
+            <dt className="text-[11px] text-muted">{d.label}</dt>
+            <dd className="tabular-nums">{d.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <section aria-labelledby="champion-averages" className="border-b border-line px-3 py-2">
+        <h3 id="champion-averages" className="text-[11px] text-muted">
+          ── moyennes par partie jouée
+        </h3>
+        <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+          {p.averages.map((a) => (
+            <div key={a.key} className="flex items-baseline justify-between gap-2 border-b border-dashed border-line/60 py-0.5">
+              <dt className="truncate text-muted">{a.label}</dt>
+              <dd className="shrink-0 tabular-nums" title={a.counted < p.picks ? `sur ${a.counted} parties sur ${p.picks}` : undefined}>
+                {nd(a.value, a.signed)}
+                {a.value != null && a.counted < p.picks && <span className="ml-1 text-[10px] text-muted">({a.counted})</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-1 text-[10px] text-muted">
+          (n) : moyenne sur n parties seulement, les autres n&apos;ont pas la donnée · n/d : donnée absente pour cette époque ou ce périmètre
+        </p>
+      </section>
+
+      <div className="grid sm:grid-cols-2">
+        <section aria-labelledby="champion-players" className="border-b border-line px-3 py-2 sm:border-b-0 sm:border-r">
+          <h3 id="champion-players" className="text-[11px] text-muted">
+            ── joueurs (classés par parties)
+          </h3>
+          {p.players.length ? (
+            <ul className="mt-1 text-xs">
+              {p.players.map((pl) => (
+                <li
+                  key={pl.player}
+                  className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-baseline gap-x-3 border-b border-dashed border-line/60 py-1 last:border-0"
+                >
+                  <span className="min-w-0 truncate">
+                    <span translate="no">{pl.player}</span>
+                    {pl.team && <span className="ml-1 text-[11px] text-muted">{pl.team}</span>}
+                  </span>
+                  <span className="text-right tabular-nums">{pl.games} p.</span>
+                  <span className="text-right tabular-nums" title="taux de victoire">
+                    {pct(pl.wins, pl.games)}
+                  </span>
+                  <span className="text-right tabular-nums text-muted">KDA {nd(pl.kda)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-muted">aucun pick dans ce périmètre</p>
+          )}
+        </section>
+        <section aria-labelledby="champion-roles" className="px-3 py-2">
+          <h3 id="champion-roles" className="text-[11px] text-muted">
+            ── rôles
+          </h3>
+          {p.roles.length ? (
+            <ul className="mt-1 space-y-1 text-xs">
+              {p.roles.map((r) => (
+                <li key={r.role} className="grid grid-cols-[4.5rem_1fr_3.5rem] items-center gap-2">
+                  <span>{r.role}</span>
+                  <Gauge share={r.games / maxRole} label={`${r.role} : ${r.games} parties`} />
+                  <span className="text-right tabular-nums text-muted">{r.games}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-muted">n/d</p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
