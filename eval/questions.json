@@ -4738,6 +4738,32 @@
         },
         "unread": []
       }
+    },
+    {
+      "id": "series-lck-2024-summer-final",
+      "question": "finale LCK summer 2024",
+      "tags": [
+        "series",
+        "lck",
+        "split"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "LoL Champions Korea",
+        "input": {
+          "phase": "final",
+          "split": "Summer",
+          "yearFrom": 2024
+        },
+        "totals": {
+          "series": 1,
+          "games": 5,
+          "team_a": "Hanwha Life Esports",
+          "team_b": "Gen.G",
+          "score": "3-2"
+        },
+        "unread": []
+      }
     }
   ]
 }

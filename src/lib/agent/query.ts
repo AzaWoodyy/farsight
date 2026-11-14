@@ -432,7 +432,7 @@ function routeSeries(question: string, e: Entities): Route | null {
 
   return {
     kind: "tool",
-    call: { tool: "series", input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, phase } },
+    call: { tool: "series", input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, phase, split: e.split } },
     confidence: 0.9,
     reason: `phase de compétition (« ${PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0]} ») → séries en BO`,
     notes,

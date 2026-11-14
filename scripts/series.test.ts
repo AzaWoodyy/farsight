@@ -50,7 +50,7 @@ describe("a stage of a competition routes to its series", () => {
   test("two teams and a stage: that match, before their head-to-head", () => {
     expect(route("T1 vs Gen.G finale LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({
       tool: "series",
-      input: { teamA: "T1", teamB: "Gen.G", league: "LoL Champions Korea", phase: "final" },
+      input: { teamA: "T1", teamB: "Gen.G", league: "LoL Champions Korea", phase: "final", split: null },
     });
     expect(route("T1 vs Gen.G LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({ tool: "head_to_head" });
   });
@@ -60,6 +60,10 @@ describe("a stage of a competition routes to its series", () => {
     expect(route("palmarès des finales des Worlds", entities(WORLDS, null))).toMatchObject({ tool: "tournament_standings" });
     expect(route("game 5 de la finale des Worlds 2024", entities(WORLDS, 2024))).toMatchObject({ tool: "game_timeline" });
     expect(route("kills en finale des Worlds 2025", entities(WORLDS, 2025)).tool).not.toBe("series");
+  });
+
+  test("the split asked is kept: the LCK summer final is not the spring one", () => {
+    expect(route("finale LCK summer 2024", { ...entities("LoL Champions Korea", 2024), split: "Summer" })).toMatchObject({ tool: "series", input: { phase: "final", split: "Summer" } });
   });
 
   test("a stage alone, without a competition or a team, is not routed to a series", () => {
@@ -116,7 +120,7 @@ describe("series tool on a seeded database", () => {
 
     try {
       seed(db);
-      const out = await run(db, { teamA: null, teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final" });
+      const out = await run(db, { teamA: null, teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final", split: null });
 
       expect(out.series?.series.map((s) => [s.teamA, s.winsA, s.winsB, s.teamB, s.bestOf, s.label])).toEqual([["T1", 3, 2, "KT Rolster", 5, "Worlds 2025 · finale"]]);
       expect(out.title).toBe("T1 3-2 KT Rolster — Worlds 2025 · finale");
@@ -135,6 +139,8 @@ describe("series tool on a seeded database", () => {
       expect(g1.source.url).toBe("https://lol.fandom.com/wiki/V5_data%3ALOLTMNT01_1");
       expect(out.series!.series[0].games![1].source.url).toBe("https://lol.fandom.com/wiki/2025_Season_World_Championship/Main_Event");
       expect(out.table?.rows).toHaveLength(5);
+      // A follow-up recap names both teams, so it opens a game of this series.
+      expect(out.followUps[0]).toBe("Récap de la game 5 de T1 vs KT Rolster, la finale des Worlds 2025");
     } finally {
       db.close();
     }
@@ -145,11 +151,28 @@ describe("series tool on a seeded database", () => {
 
     try {
       seed(db);
-      const out = await run(db, { teamA: null, teamB: null, league: "Mid-Season Invitational", yearFrom: 2024, yearTo: 2024, phase: "semifinal" });
+      const out = await run(db, { teamA: null, teamB: null, league: "Mid-Season Invitational", yearFrom: 2024, yearTo: 2024, phase: "semifinal", split: null });
 
       expect(out.series?.series.map((s) => `${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`)).toEqual(["Gen.G 1-0 Bilibili Gaming", "Bilibili Gaming 1-0 T1"]);
       expect(out.title).toBe("Demi-finales — MSI 2024");
       expect(out.notes?.join(" ")).toContain("double élimination");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("a split filters the tournaments: no MSI 2024 semifinal in a Summer split", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      db.exec("UPDATE tournaments SET split = 'Spring' WHERE id = 3");
+      const input = { teamA: null, teamB: null, league: "Mid-Season Invitational", yearFrom: 2024, yearTo: 2024, phase: "semifinal" } as const;
+      const summer = bindTool(db, { tool: "series", input: { ...input, split: "Summer" } });
+      const spring = bindTool(db, { tool: "series", input: { ...input, split: "Spring" } });
+
+      expect(db.prepare(summer.sql).all(summer.params)).toHaveLength(0);
+      expect(db.prepare(spring.sql).all(spring.params)).toHaveLength(2);
     } finally {
       db.close();
     }
@@ -160,7 +183,7 @@ describe("series tool on a seeded database", () => {
 
     try {
       seed(db);
-      const tool = bindTool(db, { tool: "series", input: { teamA: "G2 Esports", teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final" } });
+      const tool = bindTool(db, { tool: "series", input: { teamA: "G2 Esports", teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final", split: null } });
 
       expect(db.prepare(tool.sql).all(tool.params)).toHaveLength(0);
       const [relax] = tool.relaxations(entities(WORLDS, 2025));

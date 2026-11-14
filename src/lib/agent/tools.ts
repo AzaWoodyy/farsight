@@ -220,6 +220,7 @@ export const SeriesInput = z.object({
   league: League.nullable(),
   ...Period,
   phase: z.enum(GAME_PHASES).nullable().describe("Stage of the series (final, semifinal, quarterfinal...), null for every series of the teams"),
+  split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Split of the season (LCK summer final...), null when not given"),
 });
 
 export type SeriesInput = z.infer<typeof SeriesInput>;
@@ -736,7 +737,7 @@ const roleRank = (role: string) => {
 };
 
 /** A split of the season ("Spring 2018"): the tournament pages of that split. */
-function splitFilter(column: string, input: TeamRosterInput, params: Params): string {
+function splitFilter(column: string, input: { split: string | null }, params: Params): string {
   if (!input.split) return "";
   params.split = input.split;
 
@@ -2852,7 +2853,7 @@ const seriesLabel = (r: SeriesNaming) => [`${r.league_short}${r.year ? ` ${r.yea
 function seriesPhrase(r: SeriesNaming): string {
   const tab = tabLabel(r.tab);
 
-  return tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : "la "}${tab} ${ofEvent(r)}` : (r.tournament ?? `${r.league_short}${r.year ? ` ${r.year}` : ""}`);
+  return tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : /^(quart|match)/.test(tab) ? "le " : "la "}${tab} ${ofEvent(r)}` : (r.tournament ?? `${r.league_short}${r.year ? ` ${r.year}` : ""}`);
 }
 
 const thousands = (n: number) => Math.abs(n).toLocaleString("fr-FR").replace(/ | /g, " ");
@@ -3306,7 +3307,7 @@ function phaseTabs(db: DatabaseSync, input: SeriesInput & { phase: GamePhase }):
     `SELECT g.tournament_page, g.tab, MIN(g.played_at) AS start, MAX(g.played_at) AS end,
             MAX(${PHASE_SQL[input.phase]}) AS named, MAX(${PHASE_SQL.final}) AS final, MAX(${PHASE_SQL.play_in}) AS play_in
      FROM v_games g
-     WHERE g.stage IN (${COMPETITION_STAGES}) AND g.tab IS NOT NULL ${league} ${periodFilter("g.year", input, params)}
+     WHERE g.stage IN (${COMPETITION_STAGES}) AND g.tab IS NOT NULL ${league} ${periodFilter("g.year", input, params)} ${splitFilter("g.tournament_page", input, params)}
      GROUP BY g.tournament_page, g.tab`,
     params,
   );
@@ -3464,6 +3465,7 @@ const series: ToolDef<SeriesInput> = {
 FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
 WHERE ${where.join("\n  AND ")}
   ${periodFilter("g.year", input, params)}
+  ${splitFilter("g.tournament_page", input, params)}
 ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
     };
   },
@@ -3590,7 +3592,7 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
 
     const followUps = one
       ? [
-          ...(one.games ?? []).filter((g) => g.n != null).slice(-2).reverse().map((g) => `Récap de la game ${g.n} de ${seriesPhrase(firstRow)}`),
+          ...(one.games ?? []).filter((g) => g.n != null).slice(-2).reverse().map((g) => `Récap de la game ${g.n} de ${one.teamA} vs ${one.teamB}, ${seriesPhrase(firstRow)}`),
           `${one.teamA} contre ${one.teamB}`,
         ]
       : list.slice(0, 3).map(askAgain);
