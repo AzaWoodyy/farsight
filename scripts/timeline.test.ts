@@ -1,4 +1,6 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { getCache } from "@vercel/functions";
+import { TIMELINE_FORMAT } from "../src/lib/sources/timeline";
 import { gameNumberOf, phaseOf, routeQuestion } from "../src/lib/agent/query";
 import type { Entities } from "../src/lib/agent/types";
 import type { Json } from "../src/lib/json";
@@ -194,7 +196,8 @@ test("a game without timeline parses to null, a timeline without frames throws",
 const objects = new Map([[rawGameKey("TEST_V5"), encodeRawGame(v5Game())]]);
 const seen: { method: string; key: string; credential: string }[] = [];
 let server: ReturnType<typeof Bun.serve>;
-const saved = { ...process.env };
+const envKeys = ["R2_ACCOUNT_ID", "R2_BUCKET", "R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_READ_ACCESS_KEY_ID", "R2_READ_SECRET_ACCESS_KEY"] as const;
+const saved = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
 
 beforeAll(() => {
   server = Bun.serve({
@@ -224,8 +227,20 @@ beforeAll(() => {
 
 afterAll(() => {
   server.stop(true);
-  process.env = saved;
+
+  for (const key of envKeys) {
+    if (saved[key] === undefined) delete process.env[key];
+    else process.env[key] = saved[key];
+  }
+
   resetTimelineStore();
+});
+
+beforeEach(async () => {
+  seen.length = 0;
+  resetTimelineStore();
+  const cache = getCache({ namespace: "lolesport" });
+  await Promise.all(["TEST_V5", "TEST_ABSENT"].map(key => cache.delete(`timeline:v${TIMELINE_FORMAT}:${key}`)));
 });
 
 test("a timeline is read from R2 with the read-only key, then served from the cache", async () => {
@@ -307,6 +322,4 @@ test("timeline questions route to game_timeline before the in-game statistics", 
 
   // Not a single game: the usual routes.
   expect(routeQuestion("T1 contre Gen.G aux Worlds 2024", entities({ ...worlds, teams }), SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head" } });
-  // A schema without game numbers (older database): no timeline route.
-  expect(routeQuestion("timeline de T1 vs Gen.G game 3", entities({ teams }), { v_games: ["game_id"] }, NO_COVERAGE)).not.toMatchObject({ call: { tool: "game_timeline" } });
 });

@@ -90,6 +90,8 @@ const Text = z.union([z.string().transform(maskPersonalData), z.array(z.string()
 const environment = () => process.env.LANGFUSE_TRACING_ENVIRONMENT?.trim() || process.env.VERCEL_ENV || "development";
 
 let processor: LangfuseSpanProcessor | null = null;
+let provider: BasicTracerProvider | null = null;
+let telemetryRegistered = false;
 
 /**
  * Registers the Langfuse exporter and the AI SDK integration, once. Returns
@@ -110,7 +112,7 @@ export function startTracing(exporter?: SpanExporter): boolean {
     timeout: SEND_TIMEOUT_MS / 1000,
   });
 
-  const provider = new BasicTracerProvider({
+  provider = new BasicTracerProvider({
     sampler: new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(sampleRate()) }),
     spanProcessors: [new MaskingSpanProcessor(processor)],
   });
@@ -118,9 +120,24 @@ export function startTracing(exporter?: SpanExporter): boolean {
   // Spans nest through the active context, which needs a context manager.
   context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
   setLangfuseTracerProvider(provider);
-  registerTelemetry(llmTelemetry);
+
+  if (!telemetryRegistered) {
+    registerTelemetry(llmTelemetry);
+    telemetryRegistered = true;
+  }
 
   return true;
+}
+
+/** Release the isolated provider; tests use this to prove each scenario from a fresh lifecycle. */
+export async function shutdownTracing(): Promise<void> {
+  const current = provider;
+
+  provider = null;
+  processor = null;
+  setLangfuseTracerProvider(null);
+  context.disable();
+  await current?.shutdown();
 }
 
 const timeout = () => new Promise<void>((resolve) => setTimeout(resolve, SEND_TIMEOUT_MS).unref());
