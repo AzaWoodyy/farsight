@@ -1,7 +1,7 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
-import type { ChampionProfile as Profile } from "@/lib/agent/types";
+import { type ReactNode, useMemo, useState } from "react";
+import type { ChampionPool as Pool, ChampionProfile as Profile } from "@/lib/agent/types";
 import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
 
 const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
@@ -242,6 +242,174 @@ export function ChampionProfileView({ p }: { p: Profile }) {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+type PoolKey = "games" | "wins" | "winrate" | "kda" | "share" | "champion";
+
+const POOL_COLUMNS: { key: PoolKey; label: string; title: string }[] = [
+  { key: "games", label: "parties", title: "parties jouées sur le champion" },
+  { key: "wins", label: "V-D", title: "victoires - défaites" },
+  { key: "winrate", label: "winrate", title: "victoires / parties" },
+  { key: "kda", label: "KDA", title: "(kills + assists) / morts" },
+  { key: "share", label: "part", title: "part du pool : parties sur le champion / tous les picks" },
+];
+
+
+/** Two figures in the sort direction; a missing one (a KDA without deaths data) goes last either way. */
+function compareFigures(x: number | null, y: number | null, dir: 1 | -1): number {
+  if (x == null || y == null) return x == null ? (y == null ? 0 : dir) : -dir;
+
+  return x - y;
+}
+
+/**
+ * A player's or a team's champion pool: diversity on top (distinct champions, share of the three most played),
+ * then one line per champion with its icon, sortable on every column.
+ */
+export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: ReactNode }) {
+  const [asTable, setAsTable] = useState(false);
+  const [sort, setSort] = useState<{ key: PoolKey; dir: 1 | -1 }>({ key: "games", dir: -1 });
+
+  const lines = useMemo(
+    () =>
+      [...pool.lines].sort((a, b) => {
+        const order = sort.key === "champion" ? a.champion.localeCompare(b.champion, "fr") : compareFigures(a[sort.key], b[sort.key], sort.dir);
+
+        // Ties keep the most played first.
+        return order * sort.dir || b.games - a.games;
+      }),
+    [pool.lines, sort],
+  );
+
+  const maxShare = Math.max(...pool.lines.map((l) => l.share), 0);
+  const team = pool.subject === "team";
+
+  const toggle = (key: PoolKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "champion" ? 1 : -1 }));
+
+  const header = (key: PoolKey, label: string, title: string, className: string) => {
+    const active = sort.key === key;
+
+    return (
+      <button
+        type="button"
+        title={title}
+        onClick={() => toggle(key)}
+        aria-label={`trier par ${label}`}
+        className={`${className} whitespace-nowrap hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        <span aria-hidden className="ml-0.5 inline-block w-2">
+          {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
+        </span>
+      </button>
+    );
+  };
+
+  const diversity = [
+    { label: "parties", value: String(pool.games) },
+    { label: "bilan", value: `${pool.wins}-${pool.losses} · ${pct(pool.wins, pool.games)}` },
+    { label: "champions uniques", value: String(pool.unique) },
+    { label: "part du top 3", value: `${NUMBER.format(pool.top3Share)} %` },
+  ];
+
+  return (
+    <div className="mt-4">
+      <div className="border border-line">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-3 py-2 text-xs">
+          <p className="min-w-0 truncate">
+            <span translate="no" className="font-semibold">
+              {pool.name}
+            </span>
+            <span className="text-muted"> · {pool.scope || "toutes compétitions"}</span>
+          </p>
+          <button
+            type="button"
+            onClick={() => setAsTable(!asTable)}
+            aria-pressed={asTable}
+            className="border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
+          >
+            {asTable ? "vue champions" : "vue tableau"}
+          </button>
+        </div>
+        <dl className="grid grid-cols-2 text-xs sm:grid-cols-4">
+          {diversity.map((d) => (
+            <div key={d.label} className="border-b border-dashed border-line px-3 py-2 sm:border-b-0 [&:nth-child(odd)]:border-r sm:border-r sm:last:border-r-0">
+              <dt className="text-[11px] text-muted">{d.label}</dt>
+              <dd className="tabular-nums">{d.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="flex items-center gap-2 border-t border-line px-3 py-2 text-[11px]">
+          <span className="shrink-0 text-muted">top 3</span>
+          <Gauge share={pool.top3Share / 100} label={`les trois champions les plus joués font ${NUMBER.format(pool.top3Share)} % du pool`} />
+          <span className="shrink-0 text-muted">
+            {team ? `${pool.picks} picks` : `${pool.games} parties`}
+          </span>
+        </div>
+      </div>
+
+      {asTable ? (
+        fallback
+      ) : (
+        <div className="mt-2 border border-line">
+          <div className="flex items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted">
+            <span className="w-6 shrink-0">#</span>
+            {header("champion", "champion", "ordre alphabétique", "min-w-0 flex-1 text-left")}
+            {POOL_COLUMNS.map((c) => (
+              <span key={c.key} className={c.key === "games" || c.key === "winrate" ? "w-14 shrink-0 text-right" : "hidden w-14 shrink-0 text-right sm:block"}>
+                {header(c.key, c.label, c.title, "w-full text-right")}
+              </span>
+            ))}
+          </div>
+          <ol>
+            {lines.map((l, i) => (
+              <li key={l.champion} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0">
+                <span className="w-6 shrink-0 tabular-nums text-muted">{i + 1}</span>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <ChampionIcon name={l.champion} src={l.icon} size={28} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate" translate="no">
+                      {l.champion}
+                      {team && l.players.length > 0 && (
+                        <span className="ml-1 text-[11px] text-muted">{l.players.slice(0, 2).map((p) => `${p.player} ×${p.games}`).join(", ")}</span>
+                      )}
+                    </div>
+                    <div className="mt-1">
+                      <Gauge share={maxShare ? l.share / maxShare : 0} label={`part du pool : ${NUMBER.format(l.share)} %`} />
+                    </div>
+                  </div>
+                </div>
+                <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">{l.games}</span>
+                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                  {l.wins}-{l.losses}
+                </span>
+                <span className="w-14 shrink-0 text-right tabular-nums">{NUMBER.format(l.winrate)} %</span>
+                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">{nd(l.kda)}</span>
+                <span className="hidden w-14 shrink-0 text-right tabular-nums text-muted sm:block">{NUMBER.format(l.share)} %</span>
+                {/* Phone width: the columns that do not fit wrap under the name. */}
+                <dl className="flex w-full flex-wrap gap-x-3 pl-[calc(1.5rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
+                  <div className="flex gap-1">
+                    <dt>V-D</dt>
+                    <dd className="tabular-nums text-foreground">
+                      {l.wins}-{l.losses}
+                    </dd>
+                  </div>
+                  <div className="flex gap-1">
+                    <dt>KDA</dt>
+                    <dd className="tabular-nums text-foreground">{nd(l.kda)}</dd>
+                  </div>
+                  <div className="flex gap-1">
+                    <dt>part</dt>
+                    <dd className="tabular-nums text-foreground">{NUMBER.format(l.share)} %</dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
   );
 }

@@ -136,6 +136,17 @@ const NOT_ROSTER = word(
   "le plus|la plus|les plus|most|meilleure?s?|best|pires?|worst|top ?\\d+|kda|kills?|gold|golds|cs|d[ée]g[âa]ts|damage|vision|winrate|win rate|stats?|statistiques?",
 );
 
+/**
+ * Words asking for the champions one player or one team plays: "champion pool", "pool de Caps", "quels champions joue Keria",
+ * "champions joués par T1", "winrate de Faker par champion". Only with one player or one team named.
+ */
+export const POOL = word(
+  "champions?[- ]?pools?|pools? (?:de |of )?champions?|pools?|quels? champions?|quelles? champions?|which champions?|what champions?|" +
+    "champions? (?:jou[ée]e?s?|played|pick[ée]e?s?|picked|utilis[ée]e?s?|used)|champions? (?:les? |la )?(?:plus|most) (?:jou[ée]e?s|played|pick[ée]e?s|picked)|" +
+    "(?:most|least) (?:played|picked) champions?|(?:par|by|per) champions?|ses champions|his champions|her champions|their champions|" +
+    "persos?|signature picks?",
+);
+
 // Champions and roles ranked ------------------------------------------------------------
 
 /**
@@ -451,6 +462,30 @@ function rosterRoute(question: string, e: Entities): Route {
   };
 }
 
+/** One player's or one team's champion pool, in the competition and period asked (every competition when none is named). */
+function poolRoute(question: string, e: Entities): Route {
+  const team = e.players.length === 0;
+  const name = team ? e.teams[0].team : e.players[0].player;
+  const notes: string[] = [];
+
+  if (!team && e.teams.length) notes.push(`Équipe « ${e.teams[0].mention} » ignorée : champion pool de ${name} toutes équipes confondues.`);
+
+  if (!e.league) notes.push("Aucune compétition précisée : toutes compétitions confondues.");
+
+  const role = team ? roleOf(question) : null;
+
+  if (role) notes.push("Poste non filtré : pool de toute l'équipe, avec le joueur de chaque champion.");
+
+  return {
+    kind: "tool",
+    call: { tool: "champion_pool", input: { subject: team ? "team" : "player", name, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split } },
+    confidence: 0.9,
+    reason: `${team ? "une équipe" : "un joueur"} et « ${POOL.exec(question)![0]} » → champion pool`,
+    notes,
+    forced: true,
+  };
+}
+
 /** A champion alone: its stats in the competition (the Worlds when the question names none). */
 function championRoute(e: Entities): Route {
   return {
@@ -489,6 +524,11 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   // Two teams set against each other ("h2h KC et MKOI", "G2 vs Fnatic"): their series, decided by the rules.
   if (e.teams.length >= 2 && !e.players.length && OPPOSE.test(question)) return teamsRoute(question, e);
+
+  // One player or one team and a pool word ("champion pool de Faker", "quels champions joue Keria", "pool de T1 aux Worlds 2023"),
+  // before the roster: "quels champions joue le mid de T1" asks for champions, not players.
+  // Not with a champion named (a player on one champion), nor with an in-game metric the pool does not hold.
+  if (!e.champion && !detectMetric(question) && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
 
   // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
   // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?"): the roster, that role first.
@@ -645,6 +685,14 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ...CHAMPION_SORT_CUES.map(([, re]) => re),
     ...ROLE_CUES.map((r) => r.pattern),
     word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?"),
+  ],
+  champion_pool: [
+    POOL,
+    ...SPLIT_CUES.map((c) => c.pattern),
+    word(
+      "champions?|champs?|jou[ée]e?s?|joue(?:nt)?|jouait|played|plays?|picks?|pick[ée]s?|stats?|statistiques?|win ?rates?|kda|bilan|r[ée]sultats?|" +
+        "victoires?|d[ée]faites?|liste|list|diversit[ée]|vari[ée]t[ée]|uniques?|diff[ée]rents?|souvent|often|carri[èe]re|career|en|in|au|at",
+    ),
   ],
   player_leaderboard: [
     // Roles first: "meilleur top" is a role, not "meilleur" then a stray "top".

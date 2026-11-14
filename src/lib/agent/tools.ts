@@ -10,6 +10,8 @@ import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
 import {
   type ChampionPlayer,
+  type ChampionPool,
+  type ChampionPoolLine,
   type ChampionProfile,
   type Entities,
   type GameScoreboard,
@@ -120,6 +122,16 @@ export const ChampionRankingInput = z.object({
 });
 
 export type ChampionRankingInput = z.infer<typeof ChampionRankingInput>;
+
+export const ChampionPoolInput = z.object({
+  subject: z.enum(["player", "team"]).describe("Whose pool: one player's champions, or every champion a team's players picked"),
+  name: z.string().min(1).describe("Player handle or Leaguepedia page (Faker, Chovy...), or team name (T1, G2...)"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+  split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Restrict to one split of the season, null for the whole season"),
+});
+
+export type ChampionPoolInput = z.infer<typeof ChampionPoolInput>;
 
 export const PLAYER_CRITERIA = ["kda", "winrate", "games", "kills", "assists", "kp", "dpm", "cspm", "gpm", "vspm"] as const;
 
@@ -243,6 +255,7 @@ export type ToolOutput = {
   teams?: TeamHeadToHead;
   roster?: TeamRoster;
   champion?: ChampionProfile;
+  pool?: ChampionPool;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
   trace?: ToolTrace[];
@@ -1747,6 +1760,205 @@ LIMIT 20`),
   normalize: (_db, input) => ({ ...input, minPicks: input.minPicks != null && input.minPicks >= 3 ? input.minPicks : null }),
 };
 
+// 4c. A player's or a team's champion pool ---------------------------------------------
+
+/** Columns of the champion pool table; the team pool adds who played each champion. */
+export const CHAMPION_POOL_COLUMNS = ["rank", "champion", "games", "wins", "losses", "winrate", "kda", "share"] as const;
+
+const ChampionPoolRow = z.object({
+  champion: Text,
+  icon: NullableText,
+  games: z.number(),
+  wins: z.number(),
+  kda: z.number().nullable(),
+  players: jsonColumn(z.array(z.object({ player: z.string(), games: z.number() }))),
+  total_games: z.number(),
+  total_wins: z.number(),
+  total_picks: z.number(),
+  unique_champions: z.number(),
+});
+
+/** The picks of a pool's scope: the player's or the team's games in the competition, period and split. */
+function poolScope(db: DatabaseSync, input: ChampionPoolInput, params: Params): string {
+  const who =
+    input.subject === "player"
+      ? ((params.player = input.name), "gp.player = :player")
+      : `gp.team IN (${inList("team", teamMembers(db, input.name).members, params)})`;
+
+  const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
+  const split = input.split ? ((params.split = input.split), "AND gp.tournament_page IN (SELECT t.tournament_page FROM v_tournaments t WHERE t.split = :split)") : "";
+
+  return `${who} AND gp.champion IS NOT NULL AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${split}`;
+}
+
+const championPool: ToolDef<ChampionPoolInput> = {
+  name: "champion_pool",
+  label: "champion pool",
+  description:
+    "The champion pool of one player, or of one team (every champion its players picked), in a competition, period and split: games, " +
+    "W-L, win rate and KDA on each champion, its share of the pool, and the pool's diversity (distinct champions, share of the three most played). " +
+    "Use it for 'champion pool de Faker', 'quels champions joue Keria', 'champions joués par T1 aux Worlds 2023'.",
+  plan: (db, input) => {
+    const params: Params = {};
+
+    return {
+      params,
+      sql: tidy(`WITH picks AS (
+  SELECT gp.game_id, gp.champion, gp.player, gp.win, gp.kills, gp.deaths, gp.assists
+  FROM v_game_players gp
+  WHERE ${poolScope(db, input, params)}
+),
+tot AS (
+  SELECT COUNT(DISTINCT game_id) AS total_games, COUNT(DISTINCT CASE WHEN win = 1 THEN game_id END) AS total_wins,
+         COUNT(*) AS total_picks, COUNT(DISTINCT champion) AS unique_champions
+  FROM picks
+),
+by_player AS (SELECT champion, player, COUNT(*) AS games FROM picks GROUP BY champion, player)
+SELECT p.champion, c.icon_url AS icon, COUNT(*) AS games, SUM(p.win) AS wins,
+       ROUND(1.0 * SUM(CASE WHEN p.deaths IS NOT NULL THEN p.kills + p.assists END)
+             / MAX(1, SUM(CASE WHEN p.kills IS NOT NULL AND p.assists IS NOT NULL THEN p.deaths END)), 2) AS kda,
+       (SELECT json_group_array(json_object('player', b.player, 'games', b.games) ORDER BY b.games DESC, b.player)
+          FROM by_player b WHERE b.champion = p.champion) AS players,
+       tot.total_games, tot.total_wins, tot.total_picks, tot.unique_champions
+FROM picks p CROSS JOIN tot
+LEFT JOIN champions c ON c.name = p.champion
+GROUP BY p.champion
+ORDER BY games DESC, wins DESC, p.champion
+LIMIT 200`),
+    };
+  },
+  relaxations: (input, entities) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (input.split) out.push({ key: "split", input: { ...input, split: null }, note: `Aucune partie en ${input.split} : toute la saison.`, reason: "filtre de split retiré" });
+
+    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, "toutes les saisons"));
+
+    if (input.subject !== "player") return out;
+    const resolved = entities.players.find((p) => p.player === input.name || p.otherCandidates.includes(input.name));
+
+    for (const other of resolved ? [resolved.player, ...resolved.otherCandidates] : [])
+      if (other !== input.name)
+        out.push({
+          key: `player:${other}`,
+          input: { ...input, name: other },
+          note: `« ${resolved!.mention} » désigne aussi ${other} : champion pool de ${other}.`,
+          reason: `alias homonyme essayé : ${other}`,
+        });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(ChampionPoolRow).parse(sqlRows);
+    const first = rows[0];
+    const league = leagueShortName(db, input.league);
+    const scope = [scopeLabel(league, input), input.split ? `(${input.split})` : ""].filter(Boolean).join(" ");
+    const team = input.subject === "team";
+    const name = team ? displayTeam(input.name) : input.name;
+    const share = (games: number) => Math.round((1000 * games) / Math.max(1, first.total_picks)) / 10;
+
+    const lines: ChampionPoolLine[] = rows.map((r) => ({
+      champion: r.champion,
+      icon: r.icon,
+      games: r.games,
+      wins: r.wins,
+      losses: r.games - r.wins,
+      winrate: Math.round((1000 * r.wins) / Math.max(1, r.games)) / 10,
+      kda: r.kda,
+      share: share(r.games),
+      players: team ? r.players : [],
+    }));
+
+    const top3Share = share(rows.slice(0, 3).reduce((n, r) => n + r.games, 0));
+
+    const pool: ChampionPool = {
+      subject: input.subject,
+      name,
+      scope,
+      games: first.total_games,
+      wins: first.total_wins,
+      losses: first.total_games - first.total_wins,
+      picks: first.total_picks,
+      unique: first.unique_champions,
+      top3Share,
+      lines,
+    };
+
+    const params: Params = {};
+
+    const pages = selectAll(
+      db,
+      z.object({ event_page: Text }),
+      `SELECT DISTINCT gp.event_page FROM v_game_players gp WHERE ${poolScope(db, input, params)} ORDER BY gp.played_at DESC LIMIT 12`,
+      params,
+    ).map((r) => r.event_page);
+
+    const line = (l: ChampionPoolLine) =>
+      `${l.champion} (${l.games} partie${l.games > 1 ? "s" : ""}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)} % de victoires, KDA ${frNumber(l.kda)}` +
+      `${team && l.players[0] ? `, surtout ${l.players[0].player}` : ""})`;
+
+    const facts =
+      `Champion pool de ${name}${scope ? ` ${scope}` : " toutes compétitions"} : ${pool.unique} champion${pool.unique > 1 ? "s" : ""} différent${pool.unique > 1 ? "s" : ""} ` +
+      `sur ${pool.games} partie${pool.games > 1 ? "s" : ""} (${pool.wins} victoire${pool.wins > 1 ? "s" : ""}, ${pool.losses} défaite${pool.losses > 1 ? "s" : ""})${team ? `, ${pool.picks} picks` : ""}. ` +
+      `Les plus joués : ${lines.slice(0, 3).map(line).join(", ")}. ` +
+      `Les ${Math.min(3, lines.length)} premiers font ${frNumber(top3Share)} % du pool.`;
+
+    const ongoingParams: Params = {};
+    const ongoing = inProgressNote(db, `g.game_id IN (SELECT gp.game_id FROM v_game_players gp WHERE ${poolScope(db, input, ongoingParams)})`, ongoingParams);
+    const period = input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : "";
+    const where = inLeague(league);
+
+    return {
+      title: `Champion pool — ${name}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}${input.split ? ` ${input.split}` : ""}`,
+      pool,
+      table: {
+        columns: [...CHAMPION_POOL_COLUMNS, ...(team ? ["players"] : [])],
+        rows: lines.map((l, i) => [
+          i + 1, l.champion, l.games, l.wins, l.losses, l.winrate, l.kda, l.share,
+          ...(team ? [l.players.slice(0, 3).map((p) => `${p.player} ×${p.games}`).join(", ")] : []),
+        ]),
+      },
+      icons: Object.fromEntries(lines.flatMap((l) => (l.icon ? [[l.champion, l.icon]] : []))),
+      facts,
+      notes: ongoing ? [ongoing] : [],
+      sources: [
+        { label: `Leaguepedia — ${input.name}`, url: wikiUrl(input.name) },
+        ...eventSources(pages, 12),
+        { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` },
+      ],
+      followUps: [
+        ...lines.slice(0, 1).map((l) => `Stats ${/^[AEIOUYH]/i.test(l.champion) ? "d'" : "de "}${l.champion} ${where || "aux Worlds"}${period}`),
+        team ? `Historique de ${name}${where ? ` ${where}` : ""}` : `Résultats de ${name} ${where || "à tous les Worlds"}`,
+        `Champions les plus joués ${where || "aux Worlds"}${period}`,
+      ],
+      totals: {
+        games: pool.games,
+        wins: pool.wins,
+        losses: pool.losses,
+        picks: pool.picks,
+        unique: pool.unique,
+        top3_share: top3Share,
+        top: lines[0]?.champion ?? "",
+        top_games: lines[0]?.games ?? 0,
+        top_wins: lines[0]?.wins ?? 0,
+        top_kda: lines[0]?.kda ?? "n/d",
+        rows: lines.length,
+      },
+    };
+  },
+  normalize: (db, input) => {
+    if (input.subject === "team") {
+      const t = resolveTeam(db, input.name);
+
+      return t ? { ...input, name: t.team } : null;
+    }
+
+    const p = resolvePlayer(db, input.name, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+
+    return p ? { ...input, name: p.player } : null;
+  },
+};
+
 // 5. Standings / roll of honour -------------------------------------------------------
 
 const tournamentStandings: ToolDef<StandingsInput> = {
@@ -3082,6 +3294,7 @@ export const TOOLS = {
   player_comparison: defineTool(PlayerComparisonInput, playerComparison),
   champion_event_stats: defineTool(ChampionStatsInput, championEventStats),
   champion_ranking: defineTool(ChampionRankingInput, championRanking),
+  champion_pool: defineTool(ChampionPoolInput, championPool),
   player_leaderboard: defineTool(PlayerLeaderboardInput, playerLeaderboard),
   tournament_standings: defineTool(StandingsInput, tournamentStandings),
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
