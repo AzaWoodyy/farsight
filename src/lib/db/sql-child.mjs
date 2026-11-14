@@ -17,7 +17,10 @@ try {
   if (db.prepare("PRAGMA user_version").get().user_version !== schemaVersion) throw new Error("Database schema version mismatch.");
   const allowed = new Set(objects);
   db.setAuthorizer((action, table, column, dbName, view) => {
-    if (action === constants.SQLITE_SELECT || action === constants.SQLITE_FUNCTION) return constants.SQLITE_OK;
+    if (action === constants.SQLITE_FUNCTION)
+      return /^(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)$/i.test(column ?? table ?? "") ? constants.SQLITE_DENY : constants.SQLITE_OK;
+
+    if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;
 
     if (action !== constants.SQLITE_READ) return constants.SQLITE_DENY;
 

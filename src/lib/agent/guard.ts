@@ -111,8 +111,19 @@ export function guardQuery(
   // SQLite's authorizer sees every table the compiled statement reads, including
   // the ones the static pass cannot spot (comma joins, nested subqueries).
   db.setAuthorizer((action, table, column, dbName, view) => {
-    if (action === constants.SQLITE_SELECT || action === constants.SQLITE_FUNCTION)
+    if (action === constants.SQLITE_FUNCTION) {
+      const name = column ?? table ?? "";
+
+      if (/^(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)$/i.test(name)) {
+        denied.add(`function ${name}`);
+
+        return constants.SQLITE_DENY;
+      }
+
       return constants.SQLITE_OK;
+    }
+
+    if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;
 
     if (action !== constants.SQLITE_READ) {
       denied.add(`action ${action}`);

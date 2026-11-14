@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery, MAX_ROWS, VIEWS } from "../src/lib/agent/guard";
-import { executeGeneratedQuery, SqlTimeoutError } from "../src/lib/db/generated-query";
+import { executeGeneratedQuery, SqlTimeoutError, SQL_TIMEOUT_MS } from "../src/lib/db/generated-query";
 import { openReadOnlyDb, readSchema } from "../src/lib/db";
 import { SCHEMA_VERSION } from "../src/lib/db/schema";
 
@@ -21,7 +21,12 @@ function fixture(count = 300) {
   db.exec(`PRAGMA user_version=${SCHEMA_VERSION}; CREATE TABLE players (id INTEGER PRIMARY KEY, player TEXT); CREATE VIEW v_game_players AS SELECT * FROM players;`);
   const insert = db.prepare("INSERT INTO players VALUES (?, ?)");
 
+  // One fixture transaction avoids hundreds of fsyncs on the shared CI runner.
+  db.exec("BEGIN");
+
   for (let i = 0; i < count; i++) insert.run(i, `Player${i}`);
+
+  db.exec("COMMIT");
 
   return { path, db, schema: readSchema(db) };
 }
@@ -30,12 +35,21 @@ test("guard rejects writes, unauthorized reads, recursive CTEs and wrapper escap
   const { db, schema } = fixture();
 
   try {
+    // macOS SQLite may omit these functions. Harmless stand-ins make this test
+    // exercise the authorizer policy rather than platform availability.
+    for (const name of ["load_extension", "readfile", "writefile", "fts3_tokenizer", "eval", "edit", "shell", "system"]) {
+      db.function(name, (value) => value);
+      expect(guardQuery(db, schema, `SELECT ${name}('x')`, { objects: VIEWS }).ok, name).toBe(false);
+      expect(guardQuery(db, schema, `SELECT "${name}"('x')`, { objects: VIEWS }).ok, name).toBe(false);
+    }
+
     const rejected = [
       "INSERT INTO players VALUES (301, 'x')", "DELETE FROM players", "PRAGMA user_version", "ATTACH ':memory:' AS other",
       "SELECT * FROM sqlite_master", "SELECT * FROM players", 'SELECT * FROM "players"',
       "SELECT count(*) FROM players", "SELECT count(*) FROM v_game_players a, players b",
       "SELECT * FROM v_game_players WHERE id IN (SELECT id FROM players)",
-      "SELECT * FROM pragma_table_info('players')", "SELECT load_extension('x')", "SELECT readfile('/etc/passwd')",
+      "SELECT * FROM pragma_table_info('players')", "SELECT load_extension('x')", 'SELECT "load_extension"(\'x\')',
+      "SELECT readfile('/etc/passwd')", "SELECT writefile('x')",
       "SELECT * FROM v_game_players; SELECT 1", "SELECT player FROM v_game_players) /*",
       "SELECT player FROM v_game_players /* unfinished", "SELECT 'unterminated", "SELECT (1", "SELECT 1)",
       "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<2) SELECT * FROM c",
@@ -45,7 +59,7 @@ test("guard rejects writes, unauthorized reads, recursive CTEs and wrapper escap
 
     const accepted = [
       "SELECT player FROM v_game_players", "SELECT REPLACE(player, 'a', 'b') AS release FROM v_game_players",
-      "WITH c(x) AS (SELECT player FROM v_game_players) SELECT x FROM c", "SELECT '/*' AS value -- comment",
+      "WITH c(x) AS (SELECT player FROM v_game_players) SELECT x FROM c", "SELECT '/*' AS value -- comment", "SELECT 'load_extension' AS value",
     ];
 
     for (const sql of accepted) expect(guardQuery(db, schema, sql, { objects: VIEWS }).ok, sql).toBe(true);
@@ -77,7 +91,8 @@ test("an expensive generated query is killed while the serving process stays res
     await expect(executeGeneratedQuery("SELECT count(*) AS n FROM v_game_players a, v_game_players b, v_game_players c, v_game_players d", [], { databasePath: path })).rejects.toBeInstanceOf(SqlTimeoutError);
     expect(responsive).toBe(true);
   } finally { clearTimeout(timer); }
-}, 6_000);
+// Includes disk fixture setup and process startup; production SQL keeps its 4s deadline.
+}, SQL_TIMEOUT_MS + 6_000);
 
 test("aborting a generated query kills its child", async () => {
   const { db, path } = fixture(1_000);
