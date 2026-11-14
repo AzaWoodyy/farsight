@@ -1,0 +1,95 @@
+name: Deploy
+
+# Production deployment of the tip of main with the Vercel CLI: the same
+# `vercel deploy --prod` as by hand. Vercel runs the build, so `data:pull`
+# downloads the newest data release there with the project's DATA_GITHUB_TOKEN.
+#
+# Runs after a push to main, on demand, and at the end of a successful "Data
+# release" run, which passes the tag it published: the build must then have
+# picked that tag, or the job fails.
+#
+# Secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (docs/deploy.md).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      data-tag:
+        description: Data release the build is expected to download
+        type: string
+        default: ""
+    secrets:
+      VERCEL_TOKEN:
+        required: true
+      VERCEL_ORG_ID:
+        required: true
+      VERCEL_PROJECT_ID:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    # On demand from another branch: nothing to deploy.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # One production deployment at a time, in the order they were asked for.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      SITE_URL: https://lolesport.enzoneault.dev
+      VERCEL_CLI: vercel@65.16.0
+    steps:
+      # Always the tip of main, not the commit that started the run: a data
+      # release takes up to 2 h 30, and deploying its starting commit would
+      # roll back code merged in the meantime.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run lint
+
+      - run: bun run typecheck
+
+      - run: bun run test
+
+      - name: Deploy to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -o pipefail
+          # Fails when the build fails, and returns once the domain points to the new deployment.
+          bunx "$VERCEL_CLI" deploy --prod --yes --logs --token "$VERCEL_TOKEN" 2>&1 | tee deploy.log
+
+      - name: Check the data release the build downloaded
+        env:
+          DATA_TAG: ${{ inputs.data-tag }}
+        run: |
+          picked=$(grep -Eo 'data:pull: (latest|pinned) release [^:]+' deploy.log | tail -n 1 || true)
+          echo "${picked:-data:pull line not found in the build log}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$DATA_TAG" ] && [ "$picked" != "data:pull: latest release $DATA_TAG" ]; then
+            echo "::error::the build did not download $DATA_TAG (is DATA_RELEASE pinned on the Vercel project?)"
+            exit 1
+          fi
+
+      # The page only: POST /api/ask is behind BotID, which rejects a client without a browser.
+      - name: Check the site answers
+        run: |
+          curl --fail --silent --show-error --location --output /dev/null \
+            --retry 5 --retry-delay 10 --retry-all-errors --max-time 30 "$SITE_URL/"

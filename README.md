@@ -188,7 +188,9 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
 ## Déploiement
 
 Vercel (Hobby), avec la base incluse dans la fonction `/api/ask`, BotID Basic
-sur le chat et un rate limit par IP dans le firewall. Procédure et réglages
+sur le chat et un rate limit par IP dans le firewall. La production est
+redéployée par GitHub Actions après chaque push sur `main` et chaque release
+de données réussie. Procédure et réglages
 manuels : [docs/deploy.md](docs/deploy.md).
 
 ## Structure
@@ -197,6 +199,7 @@ manuels : [docs/deploy.md](docs/deploy.md).
 scripts/data/                data:fetch (sources -> data/raw), data:build (-> SQLite),
                              data:package (contrôles + assets de release), data:pull (release -> data/)
 .github/workflows/           data-release.yml : ingestion hebdo et release data-YYYYMMDD
+                             deploy.yml : déploiement de main en production (push, release réussie)
 scripts/ask.ts               agent en CLI
 src/lib/sources/             clients Leaguepedia (Cargo) et Data Dragon
 src/lib/db/                  accès SQLite en lecture seule

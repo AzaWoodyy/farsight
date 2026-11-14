@@ -57,7 +57,7 @@ const Release = z.object({
   tag_name: z.string(),
   draft: z.boolean(),
   prerelease: z.boolean(),
-  created_at: z.string(),
+  published_at: z.string().nullable(),
   assets: z.array(Asset),
 });
 
@@ -143,7 +143,9 @@ async function resolveRelease(): Promise<{ release: Release; manifest: Manifest 
 
     const candidates = releases
       .filter((r) => !r.draft && !r.prerelease && r.tag_name.startsWith(TAG_PREFIX))
-      .toSorted((a, b) => b.created_at.localeCompare(a.created_at));
+      // published_at, not created_at: GitHub's created_at is the date of the tagged commit, so
+      // two releases cut from the same commit (two weekly runs without a push) would tie.
+      .toSorted((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""));
 
     for (const release of candidates) {
       const manifest = await readManifest(release);

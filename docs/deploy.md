@@ -70,6 +70,12 @@ demande (**Actions** → **Data release** → **Run workflow**) :
 6. Supprime les releases `data-*` au-delà des 4 plus récentes (tags compris),
    séparément pour les releases publiées et les prereleases.
 
+Avant de publier, le workflow pose la question de référence (« résultats de
+Chovy à tous les Worlds », `bun run eval --only=worlds-chovy --deterministic
+--strict`) à l'agent sur la nouvelle base ; un échec arrête tout. Sur `main`,
+une release réussie redéploie ensuite la production (voir « Déploiement
+automatique »).
+
 Lancé depuis une autre branche que `main`, le workflow publie une
 **prerelease**, que `data:pull` ignore sauf si `DATA_RELEASE` l'épingle. Le
 cron ne tourne que sur la branche par défaut.
@@ -79,8 +85,10 @@ cron ne tourne que sur la branche par défaut.
 Le script `build` lance `bun run data:pull && next build`. `data:pull` :
 
 - choisit la release : celle de `DATA_RELEASE` (ou `--release=`), sinon la
-  plus récente release publiée `data-*` dont le manifeste a le
-  `SCHEMA_VERSION` du code. Une release d'un autre schéma est ignorée, donc
+  release publiée `data-*` à la date de publication la plus récente dont le
+  manifeste a le `SCHEMA_VERSION` du code (`published_at` ; le `created_at`
+  de GitHub est la date du commit tagué, identique pour deux releases faites
+  sur le même commit). Une release d'un autre schéma est ignorée, donc
   publier une base v4 ne casse pas les builds de code v3 ;
 - télécharge l'asset, vérifie sa taille et son sha256, le décompresse,
   vérifie le sha256 et la taille de la base, son `user_version`, son mode de
@@ -100,6 +108,37 @@ n'est pas envoyé au stockage vers lequel GitHub redirige le téléchargement.
 
 `next.config.ts` garde un garde-fou : un build Vercel sans
 `data/lol.sqlite` échoue au lieu de déployer un agent sans données.
+
+### Déploiement automatique
+
+`.github/workflows/deploy.yml` déploie la pointe de `main` en production avec
+le CLI Vercel (`vercel deploy --prod`, build sur Vercel) :
+
+- après chaque push sur `main` (sauf un push qui ne touche que `*.md` ou
+  `docs/`) ;
+- à la fin d'un « Data release » réussi sur `main` (cron ou lancement à la
+  main) : le job `deploy` dépend du job `release`, donc un contrôle, une
+  publication ou un nettoyage en échec ne déploie rien ;
+- à la demande : **Actions** → **Deploy** → **Run workflow** sur `main`.
+
+Le job lance `lint`, `typecheck` et `test`, déploie, puis vérifie :
+
+- la release lue par le build, d'après la ligne `data:pull: latest release …`
+  du log. Après un « Data release », ce doit être le tag qui vient d'être
+  publié, sinon le job échoue (c'est le cas si `DATA_RELEASE` est épinglée
+  sur Vercel) ;
+- que `https://lolesport.enzoneault.dev/` répond 200.
+
+La question Chovy n'est pas posée au domaine : `POST /api/ask` est derrière
+BotID, qui refuse un client sans navigateur. Elle est posée à la nouvelle base
+avant la publication.
+
+Rien ne garde une ancienne base : `data/` n'est ni envoyé (`.vercelignore`)
+ni dans le cache de build de Vercel (`node_modules`, `.next/cache`), et
+`data:pull` relit la liste des releases à chaque build puis compare le sha256.
+
+Un seul déploiement à la fois (groupe `deploy-production`). Les déploiements
+de preview restent manuels (`vercel deploy`).
 
 ### Revenir à une base précédente
 
@@ -224,9 +263,8 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
   Node 24.x vient de `engines.node` dans `package.json`.
 - Région des fonctions `cdg1` (Paris). Le plan Hobby n'en autorise qu'une.
 - `git.deploymentEnabled: false` : même si le dépôt est connecté au projet,
-  un push ne déploie rien. Les déploiements passent par le CLI
-  (`vercel deploy`, puis `vercel deploy --prod`). Supprimer la clé le jour où
-  les déploiements depuis Git sont voulus.
+  l'intégration Git ne déploie rien. La production est déployée par le
+  workflow « Deploy » avec le CLI, les previews à la main (`vercel deploy`).
 - `/api/ask` : `maxDuration = 90` (dans la route). Au pire cinq appels LLM de
   15 s ; le défaut de Vercel est 300 s.
 
@@ -281,6 +319,20 @@ seulement pour tester le LLM avant la production.
 
 Pour tester `data:pull` en local : `DATA_GITHUB_TOKEN=$(gh auth token) bun run data:pull --force`
 (le token reste dans la commande, pas dans un fichier).
+
+### 0 bis. Secrets du workflow « Deploy »
+
+GitHub → dépôt → **Settings** → **Secrets and variables** → **Actions** :
+
+| Secret | Valeur |
+|---|---|
+| `VERCEL_TOKEN` | token créé sur [vercel.com/account/tokens](https://vercel.com/account/tokens), nom `lolesport-github-deploy`, expiration un an au plus |
+| `VERCEL_ORG_ID` | `orgId` de `.vercel/project.json` (après `vercel link`) |
+| `VERCEL_PROJECT_ID` | `projectId` du même fichier |
+
+Sur le plan Hobby, un token donne accès à tout le compte, portfolio compris :
+il ne va que dans ce secret. `DATA_GITHUB_TOKEN` reste sur Vercel, le build
+s'y fait.
 
 ### 1. Règle de rate limit du firewall Vercel
 
