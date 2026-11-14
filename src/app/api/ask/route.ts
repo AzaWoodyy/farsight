@@ -5,6 +5,8 @@ import { z } from "zod";
 import { runAgent } from "@/lib/agent/run";
 import { traceQuestion } from "@/lib/agent/trace";
 import type { AgentUIMessage } from "@/lib/agent/types";
+import { requestPolicy } from "@/lib/http/request-policy";
+import { signFeedback } from "@/lib/tracing/feedback-token";
 import { flushTracing, startTracing } from "@/lib/tracing/langfuse";
 
 // Registered with the route: a registration made in instrumentation.ts did not reach
@@ -44,6 +46,9 @@ const ChatRequest = z.object({
  * `data-trace` part gives the trace id to the thumbs up / down of the UI.
  */
 export async function POST(req: Request) {
+  const denied = requestPolicy(req, "ask");
+
+  if (denied) return denied;
   // BotID Basic, before any model call. Outside Vercel (`bun run dev`, a local
   // `next start`) there is no BotID service: the check answers "human".
   const verification = await checkBotId({ developmentOptions: { isDevelopment: process.env.VERCEL !== "1" } });
@@ -59,8 +64,9 @@ export async function POST(req: Request) {
   const question = (last?.parts ?? [])
     .map((p) => (p.type === "text" ? (p.text ?? "") : ""))
     .join(" ")
-    .trim()
-    .slice(0, 500);
+    .trim();
+
+  if (question.length > 500) return Response.json({ error: "question exceeds 500 characters" }, { status: 400 });
 
   if (!question) return Response.json({ error: "question is required" }, { status: 400 });
 
@@ -75,12 +81,14 @@ export async function POST(req: Request) {
 
       try {
         await traceQuestion(question, body.data.sessionId ?? null, (traceId) => {
-          if (traceId) writer.write({ type: "data-trace", id: "trace", data: { traceId } });
+          const token = traceId ? signFeedback(traceId) : null;
+
+          if (traceId && token) writer.write({ type: "data-trace", id: "trace", data: { traceId, token } });
 
           return runAgent(question, (event) => {
             if (event.type === "step") writer.write({ type: "data-step", id: event.part.step, data: event.part });
             else writer.write({ type: "data-answer", id: "answer", data: event.answer });
-          });
+          }, undefined, req.signal);
         });
       } finally {
         answered.resolve();
@@ -89,7 +97,7 @@ export async function POST(req: Request) {
       writer.write({ type: "finish" });
     },
     onError: (err) => {
-      console.error(err);
+      console.error(err instanceof Error ? err.name : "AgentError");
 
       return "Erreur interne de l'agent.";
     },

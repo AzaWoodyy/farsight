@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,4 +103,19 @@ test("read-only opening checks the schema version and enforces SQLite length lim
   db.exec(`PRAGMA user_version=${SCHEMA_VERSION - 1}`);
   db.close();
   expect(() => openReadOnlyDb(path)).toThrow(/schema version/);
+});
+
+test("the SQL child also runs under the Node production runtime", () => {
+  const { db, path } = fixture();
+  db.close();
+
+  const result = spawnSync("node", ["src/lib/db/sql-child.mjs"], {
+    input: JSON.stringify({ databasePath: path, schemaVersion: SCHEMA_VERSION, sql: "SELECT COUNT(*) AS games FROM v_game_players", params: [], objects: VIEWS, maxRows: MAX_ROWS, maxBytes: 2_000_000 }),
+    encoding: "utf8",
+    env: { NODE_ENV: "test", NODE_NO_WARNINGS: "1", PATH: process.env.PATH },
+    timeout: 5_000,
+  });
+
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ rows: [{ games: 300 }] });
 });

@@ -1,19 +1,25 @@
 import { checkBotId } from "botid/server";
 import { z } from "zod";
+import { requestPolicy } from "@/lib/http/request-policy";
+import { verifyFeedback } from "@/lib/tracing/feedback-token";
 import { sendFeedback } from "@/lib/tracing/langfuse";
 
 /** A thumbs up or down on one answer, addressed by the id of its trace (32 hex digits). */
 const FeedbackRequest = z.object({
   traceId: z.string().regex(/^[0-9a-f]{32}$/),
+  token: z.string().regex(/^\d{13}\.[0-9a-f]{64}$/),
   rating: z.enum(["up", "down"]),
 });
 
 /**
- * Body: { traceId, rating: "up" | "down" }. The rating becomes a boolean
+ * Body: { traceId, token, rating: "up" | "down" }. The rating becomes a boolean
  * Langfuse score on the trace; nothing about the visitor is sent with it.
  * 204 when recorded, 503 when tracing is off or Langfuse did not take it.
  */
 export async function POST(req: Request) {
+  const denied = requestPolicy(req, "feedback");
+
+  if (denied) return denied;
   const verification = await checkBotId({ developmentOptions: { isDevelopment: process.env.VERCEL !== "1" } });
 
   if (verification.isBot) return Response.json({ error: "access denied" }, { status: 403 });
@@ -21,6 +27,9 @@ export async function POST(req: Request) {
   const body = FeedbackRequest.safeParse(await req.json().catch(() => null));
 
   if (!body.success) return Response.json({ error: "invalid feedback" }, { status: 400 });
+
+  if (!verifyFeedback(body.data.traceId, body.data.token))
+    return Response.json({ error: "invalid feedback signature" }, { status: 403 });
 
   const recorded = await sendFeedback({ traceId: body.data.traceId, value: body.data.rating === "up" ? 1 : 0 });
 

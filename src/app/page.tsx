@@ -33,7 +33,8 @@ export default function Home() {
           Riot Data Dragon
         </a>
         . Projet non affilié à Riot Games. Les questions posées sont conservées 30 jours, sans adresse IP ni
-        identifiant personnel, pour améliorer l&apos;agent.
+        identifiant personnel, pour améliorer l&apos;agent. Elles sont aussi envoyées à OpenRouter et au
+        fournisseur du modèle de langage. Évite d’y inclure des informations personnelles.
       </footer>
     </main>
   );
