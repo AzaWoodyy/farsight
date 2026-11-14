@@ -12,11 +12,13 @@ import {
   type StepPart,
   type TraceStatus,
 } from "@/lib/agent/types";
+import { GameTimeline } from "./game-timeline";
 
 const EXAMPLES = [
   "résultats de Chovy à tous les Worlds",
   "bilan de 정지훈 aux mondiaux",
   "Faker au MSI",
+  "timeline de la game 5 de la finale des Worlds 2024",
 ];
 
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
@@ -246,6 +248,7 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
       {answer.table && <GenericTable table={answer.table} />}
+      {answer.timeline && <GameTimeline timeline={answer.timeline} />}
       <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
       {answer.notes.map((n) => (
         <p key={n} className="mt-2 text-xs text-warn">

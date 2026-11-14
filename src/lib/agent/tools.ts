@@ -4,7 +4,19 @@ import { z } from "zod";
 import { selectAll, selectOne, type SqlRow } from "../db";
 import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
-import { type Entities, LEAGUE_NAMES, type ResultRow, type Source, type TableCell, type ToolName } from "./types";
+import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
+import { loadTimeline } from "../storage/timelines";
+import {
+  type Entities,
+  LEAGUE_NAMES,
+  type ResultRow,
+  type Side,
+  type Source,
+  type TableCell,
+  type TimelineView,
+  type ToolName,
+  type TraceStatus,
+} from "./types";
 import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
 import {
   PLAYER_METRIC_DEFS,
@@ -106,6 +118,21 @@ export const TeamIngameInput = z.object({
   minute: MinuteInput,
 });
 
+export const GAME_PHASES = ["final", "semifinal", "quarterfinal", "third_place", "groups", "play_in"] as const;
+
+export type GamePhase = (typeof GAME_PHASES)[number];
+
+export const GameTimelineInput = z.object({
+  teamA: z.string().min(1).nullable().describe("One team of the game (T1, Gen.G...), null when the question names none"),
+  teamB: z.string().min(1).nullable().describe("The other team, null when the question names one team or none"),
+  league: League.nullable(),
+  year: Year.describe("Season of the game, null when not given"),
+  phase: z.enum(GAME_PHASES).nullable().describe("Stage of the series (final, semifinal...), null when not given"),
+  game: z.number().int().min(1).max(5).nullable().describe("Game number in the series (\"game 3\" = 3), null when not given"),
+});
+
+export type GameTimelineInput = z.infer<typeof GameTimelineInput>;
+
 export type PlayerIngameInput = z.infer<typeof PlayerIngameInput>;
 
 export type LeaderboardInput = z.infer<typeof LeaderboardInput>;
@@ -131,7 +158,8 @@ export type ToolCall =
   | { tool: "tournament_standings"; input: StandingsInput }
   | { tool: "player_ingame_stats"; input: PlayerIngameInput }
   | { tool: "ingame_leaderboard"; input: LeaderboardInput }
-  | { tool: "team_ingame_stats"; input: TeamIngameInput };
+  | { tool: "team_ingame_stats"; input: TeamIngameInput }
+  | { tool: "game_timeline"; input: GameTimelineInput };
 
 export type ToolInput = ToolCall["input"];
 
@@ -141,10 +169,17 @@ type Plan = { sql: string; params: Params };
 
 type Relaxation<I> = { key: string; input: I; note: string; reason: string };
 
+/** A line a tool adds to the trace while formatting (a timeline read from storage...). */
+export type ToolTrace = { status: TraceStatus; title: string; detail?: string };
+
 export type ToolOutput = {
   title: string;
   rows?: ResultRow[];
   table?: { columns: string[]; rows: TableCell[][] };
+  timeline?: TimelineView;
+  trace?: ToolTrace[];
+  /** Notes shown under the answer (the game shown when several match...). */
+  notes?: string[];
   facts: string;
   sources: Source[];
   followUps: string[];
@@ -159,7 +194,7 @@ type ToolDef<I extends ToolInput> = {
   plan: (db: DatabaseSync, input: I) => Plan;
   /** Deterministic corrections when the result is empty, most conservative first. */
   relaxations: (input: I, entities: Entities) => Relaxation<I>[];
-  format: (db: DatabaseSync, input: I, rows: SqlRow[]) => ToolOutput;
+  format: (db: DatabaseSync, input: I, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
   /** Maps names written by the LLM onto database names. */
   normalize: (db: DatabaseSync, input: I) => I | null;
 };
@@ -171,7 +206,7 @@ export type BoundTool = {
   sql: string;
   params: Params;
   relaxations: (entities: Entities) => { key: string; note: string; reason: string; next: () => BoundTool }[];
-  format: (db: DatabaseSync, rows: SqlRow[]) => ToolOutput;
+  format: (db: DatabaseSync, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
 };
 
 // Helpers -------------------------------------------------------------------------
@@ -1344,6 +1379,347 @@ ORDER BY is_total, first_game`),
   normalize: (db, input) => (resolveTeam(db, input.team) ? input : null),
 };
 
+
+// 9. One game's timeline (Riot JSON in R2, read server-side) ---------------------------------
+
+const PHASE_SQL: Record<GamePhase, string> = {
+  final: "g.tab IN ('Finals', 'Final', 'Grand Finals', 'Grand Final')",
+  semifinal: "g.tab IN ('Semifinals', 'Semifinal')",
+  quarterfinal: "g.tab IN ('Quarterfinals', 'Quarterfinal')",
+  third_place: "g.tab LIKE 'Third-Place%'",
+  groups: "(g.tab LIKE 'Group%' OR g.tab LIKE 'Swiss%' OR (g.stage = 'main_event' AND g.tab LIKE 'Day %'))",
+  play_in: "(g.stage = 'play_in' OR g.tab LIKE 'Play-In%')",
+};
+
+const PHASE_LABEL: Record<GamePhase, string> = {
+  final: "finale",
+  semifinal: "demi-finale",
+  quarterfinal: "quart de finale",
+  third_place: "match pour la 3e place",
+  groups: "phase de groupes",
+  play_in: "play-in",
+};
+
+const TAB_LABELS = new Map([
+  ["Finals", "finale"],
+  ["Final", "finale"],
+  ["Grand Finals", "grande finale"],
+  ["Grand Final", "grande finale"],
+  ["Semifinals", "demi-finale"],
+  ["Semifinal", "demi-finale"],
+  ["Quarterfinals", "quart de finale"],
+  ["Quarterfinal", "quart de finale"],
+  ["Third-Place Match", "match pour la 3e place"],
+  ["Tiebreakers", "départage"],
+]);
+
+/** French name of a Leaguepedia tab: "Finals" → "finale", "Week 3" → "semaine 3". */
+export function tabLabel(tab: string | null): string {
+  if (!tab) return "";
+
+  const fixed = TAB_LABELS.get(tab);
+
+  if (fixed) return fixed;
+
+  return tab
+    .replace(/^Week (\d+)/, "semaine $1")
+    .replace(/^Day (\d+)/, "jour $1")
+    .replace(/^Round (\d+)/, "tour $1")
+    .replace(/^Groups? /, "groupes ")
+    .replace(/^Group ([A-Z])$/, "groupe $1");
+}
+
+const TimelineGameRow = z.object({
+  game_id: z.number(),
+  tournament_page: Text,
+  event_page: Text,
+  tournament: NullableText,
+  league_short: Text,
+  year: z.number().nullable(),
+  tab: NullableText,
+  match_n: z.number().nullable(),
+  game_n: z.number().nullable(),
+  played_at: z.number().nullable(),
+  blue_team: NullableText,
+  red_team: NullableText,
+  winner: NullableText,
+  length_s: z.number().nullable(),
+  riot_key: NullableText,
+  stats_page: NullableText,
+  has_timeline: z.number().nullable(),
+  side_swapped: z.number().nullable(),
+});
+
+type TimelineGameRow = z.infer<typeof TimelineGameRow>;
+
+/** The series a game belongs to: one tab's match of one tournament page. */
+const seriesKey = (r: TimelineGameRow) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
+
+/** "Worlds 2024 · finale" */
+const seriesLabel = (r: TimelineGameRow) => [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · ");
+
+/** "la finale des Worlds 2024" */
+function seriesPhrase(r: TimelineGameRow): string {
+  const event = `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
+  const of = r.league_short === "Worlds" || r.league_short.endsWith("Masters") ? `des ${event}` : r.league_short === "MSI" ? `du ${event}` : `de la ${event}`;
+  const tab = tabLabel(r.tab);
+
+  return tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : "la "}${tab} ${of}` : r.tournament ?? event;
+}
+
+const thousands = (n: number) => Math.abs(n).toLocaleString("fr-FR").replace(/ | /g, " ");
+
+const signedGold = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${thousands(n)}`;
+
+const KIND_COUNT: { kind: ParsedTimeline["events"][number]["kind"]; one: string; many: string }[] = [
+  { kind: "tower", one: "tour", many: "tours" },
+  // Elder dragons count as dragons, as in Leaguepedia's scoreboards.
+  { kind: "dragon", one: "dragon", many: "dragons" },
+  { kind: "baron", one: "baron", many: "barons" },
+  { kind: "inhibitor", one: "inhibiteur", many: "inhibiteurs" },
+];
+
+/** Riot team → Leaguepedia side (blue = Team1), as the build matched them. */
+const sideOf = (team: RiotTeam, swapped: boolean): Side => ((team === 100) !== swapped ? "blue" : "red");
+
+function timelineView(r: TimelineGameRow, t: ParsedTimeline): TimelineView {
+  const swapped = r.side_swapped === 1;
+  const sign = swapped ? -1 : 1;
+
+  return {
+    label: `${seriesLabel(r)}${r.game_n ? ` · game ${r.game_n}` : ""}`,
+    blue: displayTeam(r.blue_team ?? "Bleu"),
+    red: displayTeam(r.red_team ?? "Rouge"),
+    winner: t.winner ? sideOf(t.winner, swapped) : null,
+    durationS: t.durationS,
+    version: t.version,
+    gold: t.gold.map((g) => ({ s: g.s, diff: sign * g.diff })),
+    events: t.events.map((e) => ({ s: e.s, kind: e.kind, side: sideOf(e.team, swapped), detail: e.detail })),
+  };
+}
+
+/** The one-sentence story of the game, from the parsed timeline only. */
+function timelineFacts(r: TimelineGameRow, v: TimelineView): string {
+  const name = (side: Side) => (side === "blue" ? v.blue : v.red);
+  const winner = v.winner ? name(v.winner) : null;
+  const at15 = v.gold.find((g) => g.s >= 15 * 60 - 30 && g.s <= 15 * 60 + 30);
+  const peak = v.gold.reduce((best, g) => (Math.abs(g.diff) > Math.abs(best.diff) ? g : best), v.gold[0]);
+  const fb = v.events.find((e) => e.kind === "first_blood");
+  const lead = (diff: number) => (diff === 0 ? "égalité" : `${signedGold(Math.abs(diff))} pour ${name(diff > 0 ? "blue" : "red")}`);
+
+  const counts = (["blue", "red"] as const).map(
+    (side) =>
+      `${name(side)} ${KIND_COUNT.map((k) => {
+        const n = v.events.filter((e) => e.side === side && (e.kind === k.kind || (k.kind === "dragon" && e.kind === "elder"))).length;
+
+        return `${n} ${n > 1 ? k.many : k.one}`;
+      }).join(", ")}`,
+  );
+
+  return (
+    `Game ${r.game_n ?? "?"} de ${seriesPhrase(r)}, ${v.blue} (bleu) contre ${v.red} (rouge) : ` +
+    `${winner ? `victoire de ${winner}` : "vainqueur inconnu"}${v.durationS ? ` en ${clock(v.durationS)}` : ""}` +
+    `${fb ? `, first blood pour ${name(fb.side)} à ${clock(fb.s)}` : ""}` +
+    `${at15 ? `, écart d'or à 15 min : ${lead(at15.diff)}` : ""}` +
+    `${peak && peak.diff !== 0 ? `, écart maximal ${lead(peak.diff)} à ${clock(peak.s)}` : ""}. ` +
+    `Objectifs : ${counts.join(" ; ")}.`
+  );
+}
+
+const gameSources = (r: TimelineGameRow): Source[] => [
+  ...(r.stats_page
+    ? [
+        { label: `Leaguepedia — page de la partie (${r.stats_page})`, url: wikiUrl(r.stats_page) },
+        { label: `Leaguepedia — timeline de la partie (${r.stats_page}/Timeline)`, url: wikiUrl(`${r.stats_page}/Timeline`) },
+      ]
+    : []),
+  { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) },
+];
+
+const SOURCE_LABEL = { cache: "Runtime Cache", r2: "R2", local: "cache local (data/raw/riot)" } as const;
+
+const gameTimeline: ToolDef<GameTimelineInput> = {
+  name: "game_timeline",
+  label: "timeline d'une partie",
+  description:
+    "The minute-by-minute story of one game: gold difference at every minute and the key events (first blood, towers, dragons, heralds, " +
+    "barons, inhibitors, aces) with their time and team. The game is found by its teams, competition, season, stage of the series " +
+    "(final, semifinal...) and game number. Not available for the LPL (no Riot data).",
+  plan: (db, input) => {
+    const params: Params = {};
+    const where = [`g.stage IN (${COMPETITION_STAGES})`];
+    const a = input.teamA ? inList("a", teamMembers(db, input.teamA).members, params) : null;
+    const b = input.teamB ? inList("b", teamMembers(db, input.teamB).members, params) : null;
+
+    if (a && b) where.push(`((g.blue_team IN (${a}) AND g.red_team IN (${b})) OR (g.blue_team IN (${b}) AND g.red_team IN (${a})))`);
+    else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
+
+    if (input.league) {
+      where.push("g.league = :league");
+      params.league = input.league;
+    }
+
+    if (input.year != null) {
+      where.push("g.year = :year");
+      params.year = input.year;
+    }
+
+    if (input.phase) where.push(PHASE_SQL[input.phase]);
+
+    // Every game of the matching series, so the answer can say a series had no game 5.
+    return {
+      params,
+      sql: `SELECT g.game_id, g.tournament_page, g.event_page, g.tournament, g.league_short, g.year, g.tab, g.match_n, g.game_n,
+       g.played_at, g.blue_team, g.red_team, g.winner, g.length_s,
+       r.riot_key, r.stats_page, r.has_timeline, r.side_swapped
+FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
+WHERE ${where.join("\n  AND ")}
+ORDER BY g.played_at DESC, g.game_n`,
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+    const teams = [input.teamA, input.teamB].filter(Boolean).join(" – ");
+
+    // Without a team, dropping a filter would show an unrelated game.
+    if (!input.teamA) return out;
+
+    if (input.phase)
+      out.push({
+        key: "phase",
+        input: { ...input, phase: null },
+        note: `Aucune ${PHASE_LABEL[input.phase]} ${teams} dans ce périmètre : recherche sur toute la compétition.`,
+        reason: `phase « ${PHASE_LABEL[input.phase]} » retirée`,
+      });
+
+    if (input.year != null)
+      out.push({ key: "year", input: { ...input, phase: null, year: null }, note: `Aucune partie ${teams} en ${input.year} : recherche sur toutes les saisons.`, reason: "saison retirée" });
+
+    return out;
+  },
+  format: async (_db, input, sqlRows): Promise<ToolOutput> => {
+    const rows = z.array(TimelineGameRow).parse(sqlRows);
+    const series = new Map<string, TimelineGameRow[]>();
+
+    for (const r of rows) series.set(seriesKey(r), [...(series.get(seriesKey(r)) ?? []), r]);
+    // Rows come newest first: the first series is the most recent match.
+    const [shownKey, games] = [...series][0];
+    games.sort((x, y) => (x.game_n ?? 0) - (y.game_n ?? 0));
+    const first = games[0];
+    const notes: string[] = [];
+    const others = [...series.values()].slice(1, 4).map((g) => g[0]);
+
+    if (series.size > 1)
+      notes.push(
+        `${series.size} séries correspondent ; affichage de la plus récente (${seriesLabel(first)}, ${displayTeam(first.blue_team ?? "?")} – ${displayTeam(first.red_team ?? "?")}). ` +
+          "Précise la compétition, la saison ou la phase pour une autre.",
+      );
+
+    const gameNumbers = games.flatMap((g) => (g.game_n == null ? [] : [g.game_n]));
+    const pick = input.game == null ? first : games.find((g) => g.game_n === input.game);
+    const vs = `${displayTeam(first.blue_team ?? "?")} – ${displayTeam(first.red_team ?? "?")}`;
+
+    const followUpsFor = (except: number | null) =>
+      [
+        ...gameNumbers.filter((n) => n !== except).slice(0, 3).map((n) => `Timeline de la game ${n} de ${vs}, ${seriesLabel(first).replace(" · ", " ")}`),
+        ...others.map((o) => `Timeline de ${displayTeam(o.blue_team ?? "?")} – ${displayTeam(o.red_team ?? "?")}, ${seriesLabel(o).replace(" · ", " ")}`),
+      ].slice(0, 4);
+
+    const base = { game_id: pick?.game_id ?? 0, series_games: games.length, series: shownKey };
+
+    if (!pick)
+      return {
+        title: `${vs} — ${seriesLabel(first)}`,
+        facts:
+          `${seriesPhrase(first).replace(/^./, (c) => c.toUpperCase())} (${vs}) s'est jouée en ${games.length} partie${games.length > 1 ? "s" : ""} ` +
+          `(victoire${games.length > 1 ? "s" : ""} : ${games.map((g) => displayTeam(g.winner ?? "?")).join(", ")}) : il n'y a pas de game ${input.game}.`,
+        sources: [{ label: `Leaguepedia — ${first.tournament_page}`, url: wikiUrl(first.tournament_page) }],
+        followUps: followUpsFor(null),
+        totals: { ...base, timeline: "no_such_game" },
+        notes,
+      };
+
+    if (input.game == null && games.length > 1) notes.push(`Numéro de game non précisé : game ${pick.game_n} affichée (la série en compte ${games.length}).`);
+
+    const title = `${displayTeam(pick.blue_team ?? "?")} – ${displayTeam(pick.red_team ?? "?")} — ${seriesLabel(pick)}${pick.game_n ? ` · game ${pick.game_n}` : ""}`;
+    const result = `${displayTeam(pick.winner ?? "?")} gagne${pick.length_s ? ` en ${clock(pick.length_s)}` : ""}`;
+
+    if (!pick.riot_key || pick.has_timeline !== 1)
+      return {
+        title,
+        facts:
+          `Game ${pick.game_n ?? "?"} de ${seriesPhrase(pick)} : ${result}. Pas de timeline pour cette partie : ` +
+          (pick.riot_key ? "les données Riot publiées par Leaguepedia n'en contiennent pas." : "Leaguepedia ne publie pas ses données Riot (aucune pour la LPL)."),
+        sources: gameSources(pick),
+        followUps: followUpsFor(pick.game_n),
+        totals: { ...base, timeline: "absent" },
+        notes,
+      };
+
+    const load = await loadTimeline(pick.riot_key);
+
+    if (load.status !== "ok") {
+      const why = {
+        missing: "le fichier Riot de la partie est introuvable dans le stockage",
+        unconfigured: "le stockage des timelines n'est pas configuré sur ce serveur",
+        error: "la lecture du stockage a échoué",
+      }[load.status];
+
+      return {
+        title,
+        facts: `Game ${pick.game_n ?? "?"} de ${seriesPhrase(pick)} : ${result}. Timeline indisponible pour le moment (${why}).`,
+        sources: gameSources(pick),
+        followUps: followUpsFor(pick.game_n),
+        totals: { ...base, timeline: load.status },
+        trace: [{ status: "error", title: `Timeline ${pick.riot_key} : ${why}`, detail: load.status === "error" ? load.message : undefined }],
+        notes,
+      };
+    }
+
+    const view = timelineView(pick, load.timeline);
+    const at = (min: number) => view.gold.find((g) => Math.abs(g.s - min * 60) <= 30)?.diff ?? "n/d";
+    const fb = view.events.find((e) => e.kind === "first_blood");
+
+    return {
+      title,
+      timeline: view,
+      facts: timelineFacts(pick, view),
+      sources: [...gameSources(pick), RIOT_DATA_SOURCE],
+      followUps: followUpsFor(pick.game_n),
+      totals: {
+        ...base,
+        timeline: "ok",
+        blue: view.blue,
+        red: view.red,
+        winner: view.winner ? (view.winner === "blue" ? view.blue : view.red) : "n/d",
+        version: view.version,
+        duration_s: view.durationS ?? "n/d",
+        gold_diff_10: at(10),
+        gold_diff_15: at(15),
+        first_blood: fb ? (fb.side === "blue" ? view.blue : view.red) : "n/d",
+        events: view.events.length,
+      },
+      trace: [
+        {
+          status: "ok",
+          title: `Timeline ${pick.riot_key} (match-v${view.version}) lue depuis ${SOURCE_LABEL[load.source]} en ${load.ms} ms`,
+          detail: `${view.gold.length} points d'or, ${view.events.length} événements clés. Lecture serveur, en lecture seule : aucune clé n'est envoyée au navigateur.`,
+        },
+      ],
+      notes,
+    };
+  },
+  normalize: (db, input) => {
+    const a = input.teamA ? resolveTeam(db, input.teamA) : null;
+    const b = input.teamB ? resolveTeam(db, input.teamB) : null;
+
+    if ((input.teamA && !a) || (input.teamB && !b)) return null;
+
+    // A single team in teamB only is the same question.
+    return { ...input, teamA: a?.team ?? b?.team ?? null, teamB: a ? (b?.team ?? null) : null };
+  },
+};
+
 // Registry ----------------------------------------------------------------------------
 
 function bind<I extends ToolInput>(def: ToolDef<I>, db: DatabaseSync, input: I, call: (input: I) => ToolCall): BoundTool {
@@ -1384,6 +1760,8 @@ export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
       return bind(ingameLeaderboard, db, LeaderboardInput.parse(call.input), (input) => ({ tool: call.tool, input }));
     case "team_ingame_stats":
       return bind(teamIngameStats, db, TeamIngameInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "game_timeline":
+      return bind(gameTimeline, db, GameTimelineInput.parse(call.input), (input) => ({ tool: call.tool, input }));
   }
 }
 
@@ -1397,6 +1775,7 @@ export const aiTools = {
   player_ingame_stats: tool({ description: playerIngameStats.description, inputSchema: PlayerIngameInput }),
   ingame_leaderboard: tool({ description: ingameLeaderboard.description, inputSchema: LeaderboardInput }),
   team_ingame_stats: tool({ description: teamIngameStats.description, inputSchema: TeamIngameInput }),
+  game_timeline: tool({ description: gameTimeline.description, inputSchema: GameTimelineInput }),
 };
 
 /** Maps an LLM tool call onto database names (aliases, team shorthands...); null when a name is unknown. */
@@ -1446,6 +1825,12 @@ export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof 
 
     case "team_ingame_stats": {
       const input = teamIngameStats.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "game_timeline": {
+      const input = gameTimeline.normalize(db, call.input);
 
       return input && { tool: call.toolName, input };
     }

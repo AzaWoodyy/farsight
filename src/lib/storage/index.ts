@@ -39,8 +39,10 @@ export class FsStore implements ObjectStore {
     this.label = `fs:${root}`;
   }
 
+  // turbopackIgnore: the root is chosen at runtime (local cache in development);
+  // without it the tracer would ship the whole project with the /api/ask function.
   private path(key: string) {
-    return resolve(this.root, checkKey(key));
+    return resolve(/*turbopackIgnore: true*/ this.root, checkKey(key));
   }
 
   async get(key: string) {
@@ -63,7 +65,7 @@ export class FsStore implements ObjectStore {
   }
 
   async list(prefix: string) {
-    const dir = resolve(this.root, checkKey(prefix.replace(/\/$/, "") || "."));
+    const dir = resolve(/*turbopackIgnore: true*/ this.root, checkKey(prefix.replace(/\/$/, "") || "."));
 
     if (!existsSync(dir)) return [];
 
@@ -169,7 +171,7 @@ const decodeXml = (s: string) =>
   s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 
 /** The R2 settings from the environment, or null when any of them is missing. */
-export function r2ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): R2Config | null {
+export function r2ConfigFromEnv(env: Record<string, string | undefined> = process.env): R2Config | null {
   const accountId = env.R2_ACCOUNT_ID || "";
   const bucket = env.R2_BUCKET || "";
   const accessKeyId = env.R2_ACCESS_KEY_ID || "";
@@ -178,6 +180,23 @@ export function r2ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): R2Config 
   if (!accountId || !bucket || !accessKeyId || !secretAccessKey) return null;
 
   return { accountId, bucket, accessKeyId, secretAccessKey, endpoint: env.R2_ENDPOINT || undefined };
+}
+
+/**
+ * The read-only R2 settings the app uses at runtime (the game timeline tool):
+ * the same account and bucket, with an Object Read only token of its own
+ * (R2_READ_*). The read-write R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY of
+ * ingestion are never read here, so a deployment cannot hold a write key by
+ * accident. Null when any of them is missing.
+ */
+export function r2ReadConfigFromEnv(env: Record<string, string | undefined> = process.env): R2Config | null {
+  return r2ConfigFromEnv({
+    R2_ACCOUNT_ID: env.R2_ACCOUNT_ID,
+    R2_BUCKET: env.R2_BUCKET,
+    R2_ACCESS_KEY_ID: env.R2_READ_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY: env.R2_READ_SECRET_ACCESS_KEY,
+    R2_ENDPOINT: env.R2_ENDPOINT,
+  });
 }
 
 /** R2 when it is configured, null otherwise. */

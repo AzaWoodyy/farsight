@@ -28,8 +28,8 @@ export const VIEWS = [
   "v_ingame_coverage",
 ] as const;
 
-/** What typed tools may read: the views plus small lookup tables (champion icons...). */
-export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "players"] as const;
+/** What typed tools may read: the views plus small lookup tables (champion icons, a game's Riot key...). */
+export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "players", "game_riot"] as const;
 
 export const MAX_ROWS = 200;
 

@@ -82,6 +82,9 @@ CREATE TABLE tournament_results (
   PRIMARY KEY (tournament_id, team_id)) WITHOUT ROWID;
 CREATE TABLE games (
   id INTEGER PRIMARY KEY, tournament_id INT NOT NULL,
+  -- from the ScoreboardGames GameId "<page>_<tab>_<match>_<game>": the tab of the tournament page
+  -- (Finals, Semifinals, Week 3...), the match's number in that tab, the game's number in the match
+  tab TEXT, match_n INT, game_n INT,
   blue_team_id INT, red_team_id INT, winner_side INT, length_s INT, patch TEXT, played_at INT,
   -- end-of-game objective counts from Leaguepedia scoreboards (every league)
   blue_dragons INT, red_dragons INT, blue_barons INT, red_barons INT, blue_towers INT, red_towers INT,
@@ -89,7 +92,9 @@ CREATE TABLE games (
 -- Games with Riot JSON on Leaguepedia (none for the LPL): the source of the two tables below.
 CREATE TABLE game_riot (
   game_id INTEGER PRIMARY KEY, riot_key TEXT NOT NULL, stats_page TEXT NOT NULL, json_version INT NOT NULL,
-  has_timeline INT NOT NULL);
+  has_timeline INT NOT NULL,
+  -- 1 when Riot team 100 is the Leaguepedia red side (side 2), 0 when it is blue
+  side_swapped INT NOT NULL);
 -- Per player, computed at ingestion from the Riot JSON (scripts/data/ingame.ts has the definitions).
 CREATE TABLE game_player_stats (
   game_id INT NOT NULL, player_id INT NOT NULL,
@@ -238,8 +243,16 @@ for (const r of load("results", Rows)) {
 }
 
 // Games -------------------------------------------------------------------------
+
+/** Tab, match and game numbers of a ScoreboardGames GameId ("<page>_Finals_1_3"), null when it has another shape. */
+function gameSlot(page: string, gameId: string): { tab: string; match: number; game: number } | null {
+  const m = gameId.startsWith(`${page}_`) ? /^(.+)_(\d+)_(\d+)$/.exec(gameId.slice(page.length + 1)) : null;
+
+  return m ? { tab: m[1], match: Number(m[2]), game: Number(m[3]) } : null;
+}
+
 const gameId = new Map<string, number>();
-const insGame = db.prepare(`INSERT INTO games VALUES (${Array(20).fill("?").join(",")})`);
+const insGame = db.prepare(`INSERT INTO games VALUES (${Array(23).fill("?").join(",")})`);
 const insDraft = db.prepare("INSERT OR IGNORE INTO game_draft VALUES (?,?,?,?,?)");
 let skippedGames = 0;
 
@@ -256,8 +269,9 @@ for (const g of load("games", Rows)) {
   const id = gameId.size + 1;
   gameId.set(key, id);
   const date = text(g.Date);
+  const slot = gameSlot(page, key);
   insGame.run(
-    id, tid, team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
+    id, tid, slot?.tab ?? null, slot?.match ?? null, slot?.game ?? null, team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
     date ? Math.floor(Date.parse(`${date.replace(" ", "T")}Z`) / 1000) : null,
     int(g.D1), int(g.D2), int(g.Ba1), int(g.Ba2), int(g.To1), int(g.To2),
     int(g.H1), int(g.H2), int(g.V1), int(g.V2), int(g.I1), int(g.I2),
@@ -421,7 +435,7 @@ for (const c of Object.values(dd.champion.data)) {
   if (id != null) championIdByKey.set(Number(c.key), id);
 }
 
-const insRiot = db.prepare("INSERT INTO game_riot VALUES (?,?,?,?,?)");
+const insRiot = db.prepare("INSERT INTO game_riot VALUES (?,?,?,?,?,?)");
 const PLAYER_STATS = 36;
 const insPlayerStats = db.prepare(`INSERT OR IGNORE INTO game_player_stats VALUES (${Array(PLAYER_STATS).fill("?").join(",")})`);
 const insTeamStats = db.prepare(`INSERT OR IGNORE INTO game_team_stats VALUES (${Array(19).fill("?").join(",")})`);
@@ -493,7 +507,7 @@ for (const line of ingame.values()) {
 
   doneGames.add(gid);
   ingameCounts.games++;
-  insRiot.run(gid, line.key, line.statsPage, line.version, line.hasTimeline ? 1 : 0);
+  insRiot.run(gid, line.key, line.statsPage, line.version, line.hasTimeline ? 1 : 0, swapped ? 1 : 0);
 
   const stats = line.players.map((p) => ({ p, l: matched.get(p.pid)! }));
 
@@ -547,7 +561,8 @@ CREATE VIEW v_tournament_results AS
   JOIN teams tm ON tm.id = r.team_id;
 CREATE VIEW v_games AS
   SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
-         l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch, g.length_s,
+         l.name AS league, l.short_name AS league_short, t.year, g.tab, g.match_n, g.game_n,
+         g.played_at, g.patch, g.length_s,
          b.name AS blue_team, r.name AS red_team,
          CASE g.winner_side WHEN 1 THEN b.name WHEN 2 THEN r.name END AS winner,
          g.blue_dragons, g.red_dragons, g.blue_barons, g.red_barons, g.blue_towers, g.red_towers,

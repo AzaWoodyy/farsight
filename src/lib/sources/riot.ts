@@ -55,7 +55,7 @@ export function decodeRawGame(body: Uint8Array): RawGame {
 }
 
 /** One game's Riot JSON from a store (local cache or R2), or null when the store does not have it. */
-export async function loadRawGame(store: ObjectStore, key: string): Promise<RawGame | null> {
+export async function loadRawGame(store: Pick<ObjectStore, "get">, key: string): Promise<RawGame | null> {
   const body = await store.get(rawGameKey(key));
 
   return body ? decodeRawGame(body) : null;

@@ -5,7 +5,7 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const ROOT = resolve(import.meta.dirname, "../..");
 export const RAW_DIR = resolve(ROOT, "data/raw");
