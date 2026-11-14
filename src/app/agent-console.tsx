@@ -290,7 +290,7 @@ function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   const last = lastIndex < 0 ? undefined : STEPS[lastIndex];
   const current = last && steps.get(last)?.state === "done" ? (STEPS[lastIndex + 1] ?? last) : last;
   const retrying = current === "execute" && steps.get("execute")?.entries.some((e) => e.status === "fix");
-  const label = !current ? "Je lis ta question…" : retrying ? "Première piste vide, je reformule…" : PROGRESS[current];
+  const label = !current ? "Je lis ta question…" : retrying ? "Je réessaie autrement…" : PROGRESS[current];
 
   return (
     <p className="mt-6 flex items-center gap-2 text-sm">
