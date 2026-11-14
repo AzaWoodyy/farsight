@@ -179,16 +179,41 @@ release v3 n'en a pas. Deux façons d'amorcer :
 
 ## Réglages du projet Vercel
 
-- Framework : Next.js. Commande d'installation : `bun install`. Commande de
-  build : celle par défaut (`bun run build`, qui lance `data:pull`) ; ne pas
-  la remplacer par `next build`. Version de Node : 24.x.
-- Variables d'environnement :
-  - `DATA_GITHUB_TOKEN` (Production **et** Preview, type Sensitive) : le
-    token en lecture seule décrit plus bas. Sans lui, le build échoue.
-  - `DATA_RELEASE` : facultatif, épingle une release (retour arrière).
-  - `OPENROUTER_API_KEY` (Production) : la clé dédiée (voir plus bas). Sans
-    elle, l'agent reste en mode déterministe.
-  - `OPENROUTER_MODEL` : facultatif.
+Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
+
+- Framework `nextjs`, installation `bun install --frozen-lockfile`, build
+  `bun run build` (lance `data:pull`, ne pas la remplacer par `next build`).
+  Node 24.x vient de `engines.node` dans `package.json`.
+- Région des fonctions `cdg1` (Paris). Le plan Hobby n'en autorise qu'une.
+- `git.deploymentEnabled: false` : même si le dépôt est connecté au projet,
+  un push ne déploie rien. Les déploiements passent par le CLI
+  (`vercel deploy`, puis `vercel deploy --prod`). Supprimer la clé le jour où
+  les déploiements depuis Git sont voulus.
+- `/api/ask` : `maxDuration = 90` (dans la route). Au pire cinq appels LLM de
+  15 s ; le défaut de Vercel est 300 s.
+
+`.vercelignore` : le CLI ne lit pas `.gitignore`. Sans ce fichier,
+`vercel deploy` enverrait `.env` et `data/` (cache brut compris).
+
+### Variables d'environnement
+
+| Variable | Rôle | Secret | Utilisée au | Environnements |
+|---|---|---|---|---|
+| `DATA_GITHUB_TOKEN` | télécharge la release de données (`data:pull`) | oui, Sensitive | build | Production, Preview |
+| `OPENROUTER_API_KEY` | clé OpenRouter dédiée et plafonnée ; absente, l'agent reste déterministe | oui, Sensitive | runtime | Production (Preview : voir plus bas) |
+| `OPENROUTER_MODEL` | modèle (défaut `anthropic/claude-haiku-5.5`) | non | runtime | facultatif |
+| `DATA_RELEASE` | épingle une release `data-*` (retour arrière) | non | build | facultatif |
+| `DATA_REPO`, `DATA_GITHUB_API` | dépôt et API des releases (défauts corrects) | non | build | ne pas définir |
+| `DATABASE_PATH` | chemin de la base | non | runtime | **ne pas définir** sur Vercel |
+| `R2_*`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) | — | — | ne pas définir |
+
+`VERCEL`, `VERCEL_GIT_REPO_OWNER` et `VERCEL_GIT_REPO_SLUG` sont fournies par
+Vercel. Sans intégration Git, les deux dernières sont vides et `data:pull` lit
+`AzaWoodyy/lol-esports-agent`.
+
+Preview : sans `OPENROUTER_API_KEY` en Preview, les déploiements de preview
+répondent en mode déterministe et ne consomment pas de crédit. L'y ajouter
+seulement pour tester le LLM avant la production.
 
 ## À faire à la main
 
@@ -211,7 +236,7 @@ release v3 n'en a pas. Deux façons d'amorcer :
    `data-YYYYMMDD` et son `manifest.json`. Le workflow utilise le
    `GITHUB_TOKEN` fourni par Actions (permission `contents: write` déclarée
    dans le fichier), aucun secret à créer.
-4. **Vérifier** : redéployer depuis Git. Le log de build doit afficher
+4. **Vérifier** : `vercel deploy` (preview). Le log de build doit afficher
    `data:pull: installed … from data-YYYYMMDD`.
 
 Pour tester `data:pull` en local : `DATA_GITHUB_TOKEN=$(gh auth token) bun run data:pull --force`
@@ -253,6 +278,11 @@ vercel firewall rules add "ask rate limit" \
 
 Pour vérifier : 16 questions de suite depuis la même IP, la 16ᵉ doit recevoir
 un 429. Le chat affiche alors une erreur.
+
+Deuxième règle, contre un usage soutenu sur la durée (même formulaire) :
+nom `ask hourly cap`, mêmes conditions, `Fixed Window`, `3600` secondes,
+`40` requêtes, clé `IP`, action `Too Many Requests`. Elle laisse une règle
+personnalisée libre sur les 3 du plan Hobby.
 
 ### 2. BotID
 
