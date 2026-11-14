@@ -275,8 +275,8 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
       {answer.table && <TableAnswer table={answer.table} profiles={answer.profiles} />}
-      {answer.timeline && <GameTimeline timeline={answer.timeline} />}
       {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
+      {answer.timeline && <GameTimeline timeline={answer.timeline} />}
       <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
       {answer.notes.map((n) => (
         <p key={n} className="mt-2 text-xs text-warn">
@@ -483,7 +483,7 @@ function TableAnswer({ table, profiles }: { table: NonNullable<Answer["table"]>;
 
   if (!comparison) return <GenericTable table={table} />;
 
-  return <PlayerComparison comparison={comparison} table={<GenericTable table={table} />} />;
+  return <PlayerComparison comparison={comparison} />;
 }
 
 function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {

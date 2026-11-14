@@ -11,8 +11,6 @@ export type Better = "higher" | "lower" | null;
 
 export type ComparedStat = {
   key: string;
-  /** Column name without avg_/total_ affixes ("games", "wins", "gold_diff_10"); derived figures: "winrate", "kda". */
-  base: string;
   label: string;
   values: Pair<number | null>;
   /** Which value wins the row; null for context figures (games) and unknown columns. */
@@ -151,7 +149,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
 
     stats.push({
       key: column,
-      base: baseName(column).base,
       label: total ? `${meaning.label} (total)` : meaning.label,
       values: pair,
       better: total && !totalsComparable ? null : meaning.better,
@@ -170,7 +167,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
   if (games && wins && !byBase.has("winrate") && !byBase.has("win_rate"))
     derived.push({
       key: "derived:winrate",
-      base: "winrate",
       label: "winrate",
       values: both((i) => {
         const g = games.values[i];
@@ -190,7 +186,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
   if (k && d && as && !byBase.has("kda") && k.average === d.average && d.average === as.average)
     derived.push({
       key: "derived:kda",
-      base: "kda",
       label: "KDA",
       values: both((i) => {
         const [kv, dv, av] = [k.values[i], d.values[i], as.values[i]];
@@ -247,18 +242,4 @@ export function formatStat(s: ComparedStat, v: number | null): string {
   const sign = v < 0 ? "−" : s.signed && v > 0 ? "+" : "";
 
   return `${sign}${text}`;
-}
-
-/** Difference of a row as shown: absolute, plus relative when both values are positive. */
-export function formatDelta(s: ComparedStat): string {
-  const [a, b] = s.values;
-
-  if (a == null || b == null) return "n/d";
-
-  const diff = a - b;
-  const abs = formatStat({ ...s, signed: true, percent: false }, diff) + (s.percent ? " pts" : "");
-
-  if (s.percent || s.signed || a <= 0 || b <= 0 || diff === 0) return diff === 0 ? "=" : abs;
-
-  return `${abs} (${diff > 0 ? "+" : "−"}${NUMBER.format(Math.round((Math.abs(diff) / b) * 1000) / 10)} %)`;
 }
