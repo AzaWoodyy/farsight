@@ -297,6 +297,13 @@ const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
     members: ["Fredit BRION", "BRION", "OKSavingsBank BRION", "HANJIN BRION"],
     aliases: ["bro", "brion", "fredit brion", "oksavingsbank brion", "hanjin brion"],
   },
+  // MVP Ozone became Samsung Galaxy Ozone, renamed Samsung Galaxy White in 2014; its sister team was Samsung Galaxy Blue.
+  {
+    team: "Samsung White",
+    members: ["MVP Ozone", "Samsung Ozone", "Samsung White"],
+    aliases: ["ssw", "samsung white", "samsung galaxy white", "ssg white", "samsung ozone", "samsung galaxy ozone", "sso", "mvp ozone"],
+  },
+  { team: "Samsung Blue", members: ["MVP Blue", "Samsung Blue"], aliases: ["ssb", "samsung blue", "samsung galaxy blue", "ssg blue", "mvp blue"] },
   { team: "Nongshim RedForce", members: ["Team Dynamics", "Nongshim RedForce"], aliases: ["ns", "nongshim", "redforce", "team dynamics"] },
 ];
 

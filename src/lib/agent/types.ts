@@ -294,6 +294,37 @@ export type TeamHeadToHead = {
   series: TeamSeries[];
 };
 
+/** One player of a team's roster in a role, over the scope asked. */
+export type RosterPlayer = {
+  player: string;
+  /** "Top", "Jungle", "Mid", "Bot", "Support". */
+  role: string;
+  games: number;
+  wins: number;
+  /** The player with the most games in the role. */
+  starter: boolean;
+  /** Short labels of the tournaments the player played in this role ("Worlds 2014", "OGN Champions · Champions 2014 Summer"). */
+  tournaments: string[];
+  firstPlayed: number | null;
+  lastPlayed: number | null;
+  source: Source;
+};
+
+/** A team's roster over a period (team_roster tool): who played each role, with their games. */
+export type TeamRoster = {
+  team: string;
+  /** The names the team played under in the scope (a renamed team keeps its old name). */
+  names: string[];
+  /** "en LCK en 2015", "en 2014", "" for every season. */
+  scope: string;
+  games: number;
+  wins: number;
+  /** Tournaments of the scope, in play order, with the team's games in each. */
+  tournaments: { label: string; games: number; source: Source }[];
+  /** Ordered Top, Jungle, Mid, Bot, Support; inside a role, most games first. */
+  players: RosterPlayer[];
+};
+
 /** One player's line on a champion: how often and how well they played it. */
 export type ChampionPlayer = {
   player: string;
@@ -340,6 +371,8 @@ export type Answer = {
   versus: VersusView | null;
   /** Two teams' series against each other (head_to_head tool). */
   teams: TeamHeadToHead | null;
+  /** A team's players by role over a period (team_roster tool). */
+  roster: TeamRoster | null;
   /** One champion's profile (champion_event_stats tool). */
   champion: ChampionProfile | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */

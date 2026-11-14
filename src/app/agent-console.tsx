@@ -21,6 +21,7 @@ import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { PlayerComparison } from "./player-comparison";
 import { TeamHeadToHead } from "./team-h2h";
+import { TeamRoster } from "./team-roster";
 import { Versus } from "./versus";
 
 /**
@@ -422,6 +423,8 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (
         <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
+      ) : answer.roster ? (
+        <TeamRoster r={answer.roster} />
       ) : (
         answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}
