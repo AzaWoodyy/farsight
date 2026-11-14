@@ -291,6 +291,25 @@ export type Route =
 const WORLDS = "World Championship";
 
 /**
+ * Two players: the comparison. Every way of setting them against each other ("compare", "vs", "h2h",
+ * "confrontations"…) gets the same answer; such a word settles it, so the LLM router is not asked again.
+ */
+function comparisonRoute(question: string, e: Entities): Route {
+  const [a, b] = e.players;
+  const notes = e.players.length > 2 ? [`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`] : [];
+  const cue = OPPOSE.exec(question)?.[0];
+
+  return {
+    kind: "tool",
+    call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: cue ? 0.95 : 0.9,
+    reason: cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
+    notes,
+    forced: cue != null,
+  };
+}
+
+/**
  * Deterministic intent routing on the resolved entities and a few cues.
  * Returns a typed tool + input, "sql" when no tool covers the question,
  * "missing" when the data is not in the database, or "out_of_scope".
@@ -312,6 +331,9 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
 
+  // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
+  if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
+
   const cue = detectMetric(question);
   const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
 
@@ -332,24 +354,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   const versus = VERSUS.test(question);
 
-  if (e.players.length >= 2) {
-    const [a, b] = e.players;
-
-    if (e.players.length > 2) notes.push(`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`);
-
-    // Every way of setting two players against each other ("compare", "vs", "h2h", "confrontations"…) gets the
-    // same answer; such a word settles it, so the LLM router is not asked again.
-    const cue = OPPOSE.exec(question)?.[0];
-
-    return {
-      kind: "tool",
-      call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, ...period } },
-      confidence: cue ? 0.95 : 0.9,
-      reason: cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
-      notes,
-      forced: cue != null,
-    };
-  }
+  if (e.players.length >= 2) return comparisonRoute(question, e);
 
   if (e.teams.length >= 2)
     return {
