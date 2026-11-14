@@ -636,6 +636,158 @@
         "player"
       ],
       "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null
+        },
+        "totals": {
+          "games_a": 1560,
+          "wins_a": 1042,
+          "games_b": 998,
+          "wins_b": 695,
+          "h2h_games": 146,
+          "h2h_wins_a": 70
+        },
+        "rows": 2
+      }
+    },
+    {
+      "id": "compare-saken-kyeahoo-lec",
+      "question": "comparaison Saken et Kyeahoo en LEC",
+      "tags": [
+        "lec",
+        "comparison",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "SAKEN",
+          "Kyeahoo"
+        ],
+        "league": "LoL EMEA Championship",
+        "rows": 2,
+        "totals": {
+          "games_a": 32,
+          "wins_a": 6,
+          "games_b": 104,
+          "wins_b": 69,
+          "h2h_games": 0
+        }
+      }
+    },
+    {
+      "id": "compare-saken-vs-kyeahoo",
+      "question": "Saken vs Kyeahoo",
+      "tags": [
+        "comparison",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "SAKEN",
+          "Kyeahoo"
+        ],
+        "input": {
+          "league": null
+        },
+        "rows": 2,
+        "totals": {
+          "games_a": 408,
+          "wins_a": 242,
+          "games_b": 400,
+          "wins_b": 215
+        }
+      }
+    },
+    {
+      "id": "compare-chovy-faker-worlds",
+      "question": "compare Chovy et Faker aux Worlds",
+      "tags": [
+        "worlds",
+        "comparison",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Chovy",
+          "Faker"
+        ],
+        "league": "World Championship",
+        "rows": 2,
+        "totals": {
+          "games_a": 100,
+          "wins_a": 63,
+          "games_b": 184,
+          "wins_b": 134,
+          "h2h_games": 9,
+          "h2h_wins_a": 3
+        }
+      }
+    },
+    {
+      "id": "compare-caps-contre-humanoid",
+      "question": "Caps contre Humanoid en LEC",
+      "tags": [
+        "lec",
+        "comparison",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Caps",
+          "Humanoid"
+        ],
+        "league": "LoL EMEA Championship",
+        "rows": 2,
+        "totals": {
+          "games_a": 567,
+          "wins_a": 399,
+          "games_b": 487,
+          "wins_b": 281,
+          "h2h_games": 89,
+          "h2h_wins_a": 54
+        }
+      }
+    },
+    {
+      "id": "compare-kyeahoo-or-saken-en",
+      "question": "Kyeahoo or Saken who is better",
+      "tags": [
+        "comparison",
+        "player",
+        "english"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Kyeahoo",
+          "SAKEN"
+        ],
+        "rows": 2,
+        "totals": {
+          "games_a": 400,
+          "games_b": 408
+        }
+      }
+    },
+    {
+      "id": "players-matchup-faker-chovy",
+      "question": "confrontations Faker contre Chovy",
+      "tags": [
+        "head_to_head",
+        "player"
+      ],
+      "expect": {
         "route": "head_to_head",
         "players": [
           "Faker",
@@ -1371,18 +1523,25 @@
         "relative-time"
       ],
       "expect": {
-        "route": "head_to_head",
+        "route": "player_comparison",
         "players": [
           "Chovy",
           "Faker"
         ],
         "league": "LoL Champions Korea",
         "input": {
-          "kind": "player",
           "yearFrom": 2025,
           "yearTo": 2025
         },
-        "rowsMin": 1
+        "totals": {
+          "games_a": 116,
+          "wins_a": 87,
+          "games_b": 108,
+          "wins_b": 66,
+          "h2h_games": 22,
+          "h2h_wins_a": 13
+        },
+        "rows": 2
       }
     },
     {
@@ -1630,14 +1789,14 @@
       "tags": [
         "paraphrase"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
-        "league": "LoL EMEA Championship",
-        "unread": [
-          "compare"
+        "route": "player_comparison",
+        "players": [
+          "Caps",
+          "Perkz"
         ],
-        "rowsMin": 1
+        "league": "LoL EMEA Championship",
+        "rows": 2
       }
     },
     {
@@ -1920,18 +2079,17 @@
         "relative-time"
       ],
       "expect": {
-        "route": "head_to_head",
+        "route": "player_comparison",
         "players": [
           "Chovy",
           "Faker"
         ],
         "league": "LoL Champions Korea",
         "input": {
-          "kind": "player",
           "yearFrom": 2025,
           "yearTo": 2025
         },
-        "rowsMin": 1
+        "rows": 2
       }
     },
     {

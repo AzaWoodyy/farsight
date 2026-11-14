@@ -18,6 +18,18 @@ const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p
 
 const VERSUS = word("vs\\.?|versus|contre|face [àa]|against|head[- ]to[- ]head|h2h|confrontations?|affrontements?");
 
+/** Asking how two players compare: their statistics side by side (French and English). */
+export const COMPARE = word(
+  "compar(?:er|ez|e|es|aisons?|ing|ed|ison|isons)|vs\\.?|versus|contre|against|face [àa] face|or|ou|" +
+    "who(?:'s| is) (?:the )?better|qui est (?:le |la )?meilleure?|meilleure?s?|better|best|mieux|diff[ée]rences?|differences?",
+);
+
+/** Asking for the games two sides played against each other, not for a comparison. */
+export const MATCHUP = word(
+  "head[- ]to[- ]head|h2h|confrontations?|affrontements?|duels?|rencontres?|l'un contre l'autre|against each other|" +
+    "(?:matchs?|games?|parties|s[ée]ries?) (?:entre|between)",
+);
+
 const STANDINGS = word(
   "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|who won|classements?|standings|podium|sacr[ée]s?|finale",
 );
@@ -268,7 +280,8 @@ function routeTimeline(question: string, e: Entities): Route | null {
 
 export type Route =
   /** `unread`: the words the rules did not understand, when they are enough to put the tool in doubt (confidence lowered to UNSURE). */
-  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[] }
+  /** `forced`: the cue is explicit enough that unread words do not put the tool in doubt (two players and a comparison word). */
+  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[]; forced?: boolean }
   /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
   | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
   /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. `unread`: as above, for an open route. */
@@ -320,14 +333,31 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   const versus = VERSUS.test(question);
 
   if (e.players.length >= 2) {
-    if (e.players.length > 2) notes.push(`Plusieurs joueurs reconnus : seuls ${e.players[0].player} et ${e.players[1].player} sont comparés.`);
+    const [a, b] = e.players;
+
+    if (e.players.length > 2) notes.push(`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`);
+
+    // Explicit matchup words ("confrontations", "h2h") ask for their games against each other.
+    if (MATCHUP.test(question))
+      return {
+        kind: "tool",
+        call: { tool: "head_to_head", input: { kind: "player", sideA: a.player, sideB: b.player, league: e.league, ...period } },
+        confidence: 0.9,
+        reason: "deux joueurs et une confrontation directe demandée → confrontations",
+        notes,
+      };
+
+    // Otherwise two players are compared; a comparison word ("compare", "vs", "contre", "or… who is better")
+    // settles it, so the LLM router is not asked again.
+    const cue = COMPARE.exec(question)?.[0];
 
     return {
       kind: "tool",
-      call: { tool: "head_to_head", input: { kind: "player", sideA: e.players[0].player, sideB: e.players[1].player, league: e.league, ...period } },
-      confidence: 0.9,
-      reason: "deux joueurs → confrontations",
+      call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, ...period } },
+      confidence: cue ? 0.95 : 0.9,
+      reason: cue ? `deux joueurs et une comparaison demandée (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
       notes,
+      forced: cue != null,
     };
   }
 
@@ -429,6 +459,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
   head_to_head: [VERSUS, HISTORY_WORDS, GAME_WORDS],
+  player_comparison: [COMPARE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS],
   champion_event_stats: [
     word(
       "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +
@@ -514,6 +545,9 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
   const { words, share } = unreadWords(question, e, route.call);
 
   if (share < UNREAD_THRESHOLD) return route;
+
+  // Kept for the trace, without lowering the confidence: the rules' pick stands.
+  if (route.forced) return { ...route, unread: words, reason: `${route.reason} ; mots non lus ignorés : ${words.join(", ")}` };
 
   return {
     ...route,
@@ -623,7 +657,7 @@ const UNREAD_RULES =
   "A tool only filters on the arguments of its schema and only returns what its description says. " +
   "If a listed word is a misspelt name or a nickname of a player or a team, call the fitting tool with the correct name. " +
   "If the listed words ask for a filter or a result that no tool has (a stage such as the final, who plays a role or a roster, " +
-  "a comparison of two players' statistics, a ranking of champions or players, personal details...), call no tool: " +
+  "a ranking of champions or players, personal details...), call no tool: " +
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
 /** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */

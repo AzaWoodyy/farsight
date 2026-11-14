@@ -526,7 +526,7 @@ async function format(
     table: out.table ?? null,
     timeline: out.timeline ?? null,
     scoreboard: out.scoreboard ?? null,
-    profiles: [],
+    profiles: plan.tool.call.tool === "player_comparison" ? playerProfiles(db, entities) : [],
     sources: out.sources,
     followUps,
     notes,

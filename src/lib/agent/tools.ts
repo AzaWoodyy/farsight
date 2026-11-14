@@ -75,6 +75,13 @@ export const HeadToHeadInput = z.object({
   ...Period,
 });
 
+export const PlayerComparisonInput = z.object({
+  playerA: z.string().min(1).describe("First player's handle or Leaguepedia page"),
+  playerB: z.string().min(1).describe("Second player's handle or Leaguepedia page"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+});
+
 export const ChampionStatsInput = z.object({
   champion: z.string().min(1).describe("Champion name (Ahri, Lee Sin, Kai'Sa...)"),
   league: League,
@@ -149,6 +156,8 @@ export type PlayerHistoryInput = z.infer<typeof PlayerHistoryInput>;
 export type TeamHistoryInput = z.infer<typeof TeamHistoryInput>;
 
 export type HeadToHeadInput = z.infer<typeof HeadToHeadInput>;
+
+export type PlayerComparisonInput = z.infer<typeof PlayerComparisonInput>;
 
 export type ChampionStatsInput = z.infer<typeof ChampionStatsInput>;
 
@@ -307,6 +316,9 @@ function teamMembers(db: DatabaseSync, team: string): { team: string; members: s
 
 const Text = z.string();
 const NullableText = z.string().nullable();
+
+/** Pages listed in a json_group_array column. */
+const pageList = z.string().nullable().transform((v) => (v ? z.array(z.string()).parse(JSON.parse(v)) : []));
 
 const PlayerHistoryRow = z.object({
   year: YearColumn,
@@ -721,6 +733,149 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
   },
 };
 
+// 3b. Two players compared ------------------------------------------------------------
+
+const ComparisonRow = z.object({
+  player: Text,
+  games: z.number(),
+  wins: z.number(),
+  avg_kills: z.number().nullable(),
+  avg_deaths: z.number().nullable(),
+  avg_assists: z.number().nullable(),
+  avg_gold: z.number().nullable(),
+  avg_cs: z.number().nullable(),
+  avg_damage: z.number().nullable(),
+  avg_vision: z.number().nullable(),
+  avg_gold_diff_15: z.number().nullable(),
+  avg_cs_diff_15: z.number().nullable(),
+  ingame_games: z.number(),
+  pages: pageList,
+});
+
+/** Columns of the comparison table, named as the comparison layout reads them. */
+const COMPARISON_COLUMNS = [
+  "player", "games", "wins", "avg_kills", "avg_deaths", "avg_assists", "avg_gold", "avg_cs", "avg_damage", "avg_vision", "avg_gold_diff_15", "avg_cs_diff_15",
+] as const;
+
+const fr1 = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
+
+/** Scope of both players' games (`p` is v_game_players). */
+function comparisonScope(input: PlayerComparisonInput, params: Params, alias: string): string {
+  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
+
+  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
+}
+
+const playerComparison: ToolDef<PlayerComparisonInput> = {
+  name: "player_comparison",
+  label: "comparaison de deux joueurs",
+  description:
+    "Compares two players' statistics side by side in a competition and period: games, wins, average kills/deaths/assists, gold, CS, " +
+    "damage, vision, gold and CS difference at 15 min, plus their record when they faced each other. Use it for 'compare X and Y', 'X vs Y', " +
+    "'X contre Y', 'X or Y who is better'.",
+  plan: (_db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { a: input.playerA, b: input.playerB });
+
+    return {
+      params,
+      // The stats are filtered on the two players before the join, so the view's own joins stay small.
+      sql: tidy(`WITH st AS (
+  SELECT game_id, player, gold_diff_15, cs_diff_15 FROM v_game_player_stats WHERE player IN (:a, :b)
+), g AS (
+  SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
+         st.gold_diff_15, st.cs_diff_15, (st.game_id IS NOT NULL) AS ingame
+  FROM v_game_players p
+  LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
+  WHERE p.player IN (:a, :b) AND ${comparisonScope(input, params, "p")}
+)
+SELECT player, COUNT(*) AS games, SUM(win) AS wins,
+       ROUND(AVG(kills), 2) AS avg_kills, ROUND(AVG(deaths), 2) AS avg_deaths, ROUND(AVG(assists), 2) AS avg_assists,
+       ROUND(AVG(gold), 0) AS avg_gold, ROUND(AVG(cs), 1) AS avg_cs, ROUND(AVG(damage), 0) AS avg_damage, ROUND(AVG(vision), 1) AS avg_vision,
+       ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
+       SUM(ingame) AS ingame_games, json_group_array(DISTINCT event_page) AS pages
+FROM g GROUP BY player
+ORDER BY player = :a DESC`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    if (input.league)
+      out.push({
+        key: "league",
+        input: { ...input, league: null, yearFrom: null, yearTo: null },
+        note: "Aucune partie des deux joueurs dans cette compétition : comparaison sur toutes les compétitions.",
+        reason: "filtre de compétition retiré",
+      });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(ComparisonRow).parse(sqlRows);
+    const league = leagueShortName(db, input.league);
+    const where = inLeague(league);
+    const params: Params = {};
+
+    Object.assign(params, { a: input.playerA, b: input.playerB });
+
+    // Games where they faced each other, from player A's side.
+    const h2h = selectOne(
+      db,
+      z.object({ games: z.number(), wins_a: z.number().nullable() }),
+      `SELECT COUNT(*) AS games, SUM(p.win) AS wins_a FROM v_game_players p
+       JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team
+       WHERE p.player = :a AND o.player = :b AND ${comparisonScope(input, params, "p")}`,
+      params,
+    ) ?? { games: 0, wins_a: 0 };
+
+    const line = (r: z.infer<typeof ComparisonRow>) => {
+      const kda = r.avg_kills != null && r.avg_deaths && r.avg_assists != null ? `, KDA ${fr1((r.avg_kills + r.avg_assists) / r.avg_deaths)}` : "";
+
+      return `${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}`;
+    };
+
+    const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
+    const winsA = h2h.wins_a ?? 0;
+
+    const facts =
+      `${input.playerA} et ${input.playerB}${where ? ` ${where}` : ""} : ${rows.map(line).join(" ; ")}.` +
+      (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
+      (h2h.games ? ` Face à face : ${h2h.games} parties, ${input.playerA} ${winsA} – ${h2h.games - winsA} ${input.playerB}.` : " Ils ne se sont jamais affrontés dans ce périmètre.") +
+      (rows.some((r) => r.ingame_games < r.games) ? " Écarts à 15 min calculés sur les parties avec données Riot seulement." : "");
+
+    return {
+      title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      table: { columns: [...COMPARISON_COLUMNS], rows: rows.map((r) => COMPARISON_COLUMNS.map((c) => (c === "player" ? r.player : r[c]))) },
+      facts,
+      sources: [
+        { label: `Leaguepedia — ${input.playerA}`, url: wikiUrl(input.playerA) },
+        { label: `Leaguepedia — ${input.playerB}`, url: wikiUrl(input.playerB) },
+        ...eventSources(rows.flatMap((r) => r.pages), 10),
+      ],
+      followUps: [`Confrontations directes ${input.playerA} – ${input.playerB}${where ? ` ${where}` : ""}`, `Résultats de ${input.playerA}${where ? ` ${where}` : " à tous les Worlds"}`],
+      totals: {
+        games_a: rows.find((r) => r.player === input.playerA)?.games ?? 0,
+        games_b: rows.find((r) => r.player === input.playerB)?.games ?? 0,
+        wins_a: rows.find((r) => r.player === input.playerA)?.wins ?? 0,
+        wins_b: rows.find((r) => r.player === input.playerB)?.wins ?? 0,
+        h2h_games: h2h.games,
+        h2h_wins_a: winsA,
+      },
+    };
+  },
+  normalize: (db, input) => {
+    const scope = { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo };
+    const a = resolvePlayer(db, input.playerA, scope);
+    const b = resolvePlayer(db, input.playerB, scope);
+
+    return a && b && a.player !== b.player ? { ...input, playerA: a.player, playerB: b.player } : null;
+  },
+};
+
 // 4. Champion in an event -----------------------------------------------------------
 
 const championEventStats: ToolDef<ChampionStatsInput> = {
@@ -995,9 +1150,6 @@ const coverageNote = (c: { games: number; ingame: number }) =>
   c.ingame < c.games
     ? ` Données in-game disponibles pour ${c.ingame} parties sur ${c.games} (Leaguepedia ne publie pas les données Riot de toutes les parties, aucune en LPL).`
     : "";
-
-/** Pages listed in a json_group_array column. */
-const pageList = z.string().nullable().transform((v) => (v ? z.array(z.string()).parse(JSON.parse(v)) : []));
 
 /** Metrics of the player overview, then the one the question asks about. */
 const PLAYER_OVERVIEW: PlayerMetric[] = ["solo_kills", "penta_kills", "first_bloods", "kills_before_10", "gold_diff", "cs_diff", "wards_placed"];
@@ -1932,6 +2084,7 @@ export const TOOLS = {
   player_event_history: defineTool(PlayerHistoryInput, playerEventHistory),
   team_history: defineTool(TeamHistoryInput, teamHistory),
   head_to_head: defineTool(HeadToHeadInput, headToHead),
+  player_comparison: defineTool(PlayerComparisonInput, playerComparison),
   champion_event_stats: defineTool(ChampionStatsInput, championEventStats),
   tournament_standings: defineTool(StandingsInput, tournamentStandings),
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
