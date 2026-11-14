@@ -46,3 +46,13 @@ B2 (e-mail historique) reste une décision d’Enzo avant publication : aucune r
 ## Périmètre de vérification
 
 Les résultats finaux des commandes et de la CI sont dans la description de PR. Les tests et l’eval ne prouvent pas les appels au modèle de production, les dashboards, les clés R2, le pare-feu distribué, BotID ou le déploiement Vercel. La démo et la production ne sont pas déployées par cette MR. Les cas LLM sont annoncés comme non vérifiés ; les timelines réelles sont exclues de la CI sans secrets, leurs parseurs et le stockage ont des tests synthétiques.
+
+### Vérifications locales finales
+
+Code fonctionnel vérifié à `0a511a9`, permissions finales de workflow à `085c447` : lint sans warnings, typecheck, 83 tests / 333 assertions en ordre normal et aux seeds 2380133667, 0, 1, 42, 2026, 4294967295 ; eval déterministe hors timeline, 97/97 cas entièrement vérifiés (12 autres nécessitent le modèle, 52 assertions ignorées) ; build complet et mesure 143,3 Mo de fonction / 108,8 Mo de base. Les trois rapports copiés ont été comparés octet pour octet aux originaux.
+
+Node 24.22.3 a exécuté le SQL enfant et l’application compilée. Parcours réel `/api/ask` : années 2010 et 2031 → message de couverture ; UI « palmarès LCS depuis 2015 » → 31 éditions de 2015 à 2026, titre correct, note de fusion, sources. Champ HTML limité à 500 caractères, aucune erreur JavaScript observée. [Capture de ce parcours](lcs-2015.png).
+
+Les 832 comptes d’équipes ont été comparés ligne par ligne entre l’ancienne et la nouvelle agrégation : identiques, somme 78 192. La revue indépendante a fermé deux constats sur le contrôle du déploiement (tous les chemins doivent vérifier la CI du SHA checkouté ; permission `actions: read` aussi sur l’appelant réutilisable). Trois passages, aucun constat restant.
+
+L’API GitHub de protection de branche a répondu 403 : le plan actuel demande GitHub Pro ou un dépôt public pour cette fonctionnalité. Aucun réglage n’a été modifié ; `PR checks` reste informatif tant que cette protection ne peut pas être activée. Les validations CI à distance ne remplacent pas la vérification d’un déploiement ; aucun merge ni déploiement n’est autorisé ici.
