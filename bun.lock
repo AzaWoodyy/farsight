@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "lol-esports-agent",
+      "name": "farsight",
       "dependencies": {
         "@ai-sdk/react": "^4",
         "@langfuse/otel": "6.1.1",
