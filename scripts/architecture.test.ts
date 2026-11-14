@@ -31,7 +31,7 @@ test("league cues choose the longest match and preserve all scope names", () => 
   expect(detectLeague("EU LCS 2016").league).toBe("Europe League Championship Series");
 });
 
-test("periods spanning renamings read both leagues in parameterized tool SQL", () => {
+test("periods spanning renamings read both leagues in parameterized tool SQL", async () => {
   const db = new DatabaseSync(":memory:");
 
   try {
@@ -49,6 +49,14 @@ test("periods spanning renamings read both leagues in parameterized tool SQL", (
     expect(eraLeague(league,2016,2016)).toBe("North America League Championship Series");
     const plan = bindTool(db, {tool:"team_history", input:{team:"T1", league, yearFrom:2015,yearTo:null}});
     expect(db.prepare(plan.sql).all(plan.params).map((r) => r.year)).toEqual([2016,2020]);
+    const standings = bindTool(db, {tool:"tournament_standings", input:{league,yearFrom:2015,yearTo:null,split:null,full:false}});
+
+    const out = await standings.format(db, [
+      {year:2016,event_page:"event0",tournament_page:"event0",tournament:"2016",stage:"playoffs",team:"T1",place:"1",place_number:1,prize_usd:null},
+      {year:2020,event_page:"event1",tournament_page:"event1",tournament:"2020",stage:"playoffs",team:"T1",place:"1",place_number:1,prize_usd:null},
+    ]);
+
+    expect(out.title).toBe("Palmarès — LCS 2016–2020");
     expect(leagueMembers("LoL EMEA Championship",2016,2020)).toHaveLength(2);
     expect(leagueMembers("LoL Champions Korea",2014,2020)).toHaveLength(2);
     expect(leagueMembers(league,null,null)).toEqual([league]);

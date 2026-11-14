@@ -934,7 +934,7 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
         : "Aucun vainqueur publié.");
 
     return {
-      title: `Palmarès — ${league}${input.yearFrom != null ? ` ${span([input.yearFrom, input.yearTo ?? input.yearFrom])}` : ""}`,
+      title: `Palmarès — ${league}${hasPeriod(input) ? ` ${yearSpan(editions.map((e) => e.year))}` : ""}`,
       table: { columns: ["Année", "Tournoi", "Vainqueur", "Finaliste"], rows },
       facts,
       sources,
