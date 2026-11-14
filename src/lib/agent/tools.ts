@@ -719,6 +719,8 @@ const ComparisonRow = z.object({
   avg_vision: z.number().nullable(),
   avg_gold_diff_15: z.number().nullable(),
   avg_cs_diff_15: z.number().nullable(),
+  avg_solo_kills: z.number().nullable(),
+  solo_kills: z.number().nullable(),
   ingame_games: z.number(),
   pages: pageList,
 });
@@ -728,6 +730,7 @@ type ComparisonRow = z.infer<typeof ComparisonRow>;
 /** Columns of the comparison tables, named as the comparison layout reads them. */
 const COMPARISON_COLUMNS = [
   "player", "games", "wins", "avg_kills", "avg_deaths", "avg_assists", "avg_gold", "avg_cs", "avg_damage", "avg_vision", "avg_gold_diff_15", "avg_cs_diff_15",
+  "avg_solo_kills",
 ] as const;
 
 const VersusGameRow = z.object({
@@ -776,10 +779,10 @@ const FACED = `EXISTS (SELECT 1 FROM v_game_players o
  */
 function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
   return tidy(`WITH st AS (
-  SELECT game_id, player, gold_diff_15, cs_diff_15 FROM v_game_player_stats WHERE player IN (:a, :b)
+  SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills FROM v_game_player_stats WHERE player IN (:a, :b)
 ), g AS (
   SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
-         st.gold_diff_15, st.cs_diff_15, (st.game_id IS NOT NULL) AS ingame
+         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
   WHERE p.player IN (:a, :b) AND ${comparisonScope(input, params, "p")}${faced ? `\n    AND ${FACED}` : ""}
@@ -788,6 +791,7 @@ SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(kills), 2) AS avg_kills, ROUND(AVG(deaths), 2) AS avg_deaths, ROUND(AVG(assists), 2) AS avg_assists,
        ROUND(AVG(gold), 0) AS avg_gold, ROUND(AVG(cs), 1) AS avg_cs, ROUND(AVG(damage), 0) AS avg_damage, ROUND(AVG(vision), 1) AS avg_vision,
        ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
+       ROUND(AVG(solo_kills), 2) AS avg_solo_kills, SUM(solo_kills) AS solo_kills,
        SUM(ingame) AS ingame_games, json_group_array(DISTINCT event_page) AS pages
 FROM g GROUP BY player
 ORDER BY player = :a DESC`);
@@ -853,7 +857,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   label: "comparaison de deux joueurs",
   description:
     "Sets two players against each other in a competition and period: their statistics in the games they played against each other " +
-    "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min), the list of those games, " +
+    "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min, solo kills), the list of those games, " +
     "and their statistics over every game of the scope. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
     "'X contre Y', 'X or Y who is better', 'head to head', 'h2h', 'confrontations'.",
   plan: (_db, input) => {
@@ -895,7 +899,9 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     const line = (r: ComparisonRow) => {
       const kda = r.avg_kills != null && r.avg_deaths && r.avg_assists != null ? `, KDA ${fr1((r.avg_kills + r.avg_assists) / r.avg_deaths)}` : "";
 
-      return `${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}`;
+      const solo = r.solo_kills == null ? "" : `, ${r.solo_kills} solo kill${r.solo_kills > 1 ? "s" : ""}`;
+
+      return `${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}${solo}`;
     };
 
     const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
@@ -907,7 +913,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
           `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`
         : `${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`) +
       (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
-      ([...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min calculés sur les parties avec données Riot seulement." : "");
+      ([...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
 
     return {
       title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
@@ -936,6 +942,9 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         h2h_games: met,
         h2h_wins_a: winsA,
         h2h_listed: games.length,
+        // The face-to-face when they met, else the scope: what the comparison shows first.
+        solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? "n/d",
+        solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? "n/d",
       },
     };
   },

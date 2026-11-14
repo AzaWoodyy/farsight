@@ -91,7 +91,9 @@ function seed(db: DatabaseSync) {
     INSERT INTO champions VALUES (1,'Azir','https://ddragon.leagueoflegends.com/cdn/img/Azir.png'),(2,'Orianna',NULL);
     INSERT INTO games(id,tournament_id,tab,game_n,blue_team_id,red_team_id,winner_side,played_at)
       VALUES (1,1,'Week 1',1,1,2,1,100),(2,1,'Week 2',1,2,1,1,200),(3,2,'Week 1',1,1,2,1,300),(4,1,'Week 3',1,1,3,1,400);
-    INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0);
+    INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0),(4,'K4','V5 data:K4',5,1,0);
+    -- Riot data for games 1 and 4 only: solo kills average over those.
+    INSERT INTO game_player_stats(game_id,player_id,solo_kills) VALUES (1,1,1),(1,2,0),(4,1,2),(4,3,0);
     -- game 1: Caps wins against Humanoid; game 2: Humanoid wins; game 3 is outside the LEC; game 4: Caps against Elyoya.
     INSERT INTO game_players VALUES
       (1,1,1,1,'Mid',1,1,4,1,6,15000,300,25000,40,NULL),
@@ -135,8 +137,16 @@ test("two players who met: their games against each other first, the scope's sta
     ]);
     expect([v.games[1].a.championIcon, v.games[0].a.championIcon]).toEqual(["https://ddragon.leagueoflegends.com/cdn/img/Azir.png", null]);
 
-    expect(out.totals).toMatchObject({ games_a: 3, wins_a: 2, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1, h2h_listed: 2 });
+    // Solo kills: face to face over their games with Riot data (game 1), globally over games 1 and 4.
+    const solo = (t: { columns: string[]; rows: unknown[][] }) => t.rows.map((r) => r[t.columns.indexOf("avg_solo_kills")]);
+
+    expect(solo(v.h2h!)).toEqual([1, 0]);
+    expect(solo(v.global)).toEqual([1.5, 0]);
+
+    expect(out.totals).toMatchObject({ games_a: 3, wins_a: 2, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1, h2h_listed: 2, solo_kills_a: 1, solo_kills_b: 0 });
     expect(out.facts).toContain("Caps et Humanoid en LEC se sont affrontés sur 2 parties : Caps 1 – 1 Humanoid");
+    expect(out.facts).toContain("face à face, Caps 2 parties, 1 victoires (50 %), KDA 3,3, 1 solo kill ;");
+    expect(out.facts).toContain("Sur toutes leurs parties : Caps 3 parties, 2 victoires (67 %), KDA 6,3, 3 solo kills ;");
   } finally {
     db.close();
   }
@@ -152,7 +162,9 @@ test("two players who never met: the scope's statistics only, and a sentence say
 
     expect(out.versus).toMatchObject({ h2h: null, games: [] });
     expect(out.versus!.global.rows.map((r) => r.slice(0, 3))).toEqual([["Humanoid", 2, 1], ["Elyoya", 1, 0]]);
-    expect(out.totals).toMatchObject({ h2h_games: 0, h2h_listed: 0 });
+    // Never met: the solo kills shown are the scope's.
+    expect(out.versus!.global.rows.map((r) => r[out.versus!.global.columns.indexOf("avg_solo_kills")])).toEqual([0, 0]);
+    expect(out.totals).toMatchObject({ h2h_games: 0, h2h_listed: 0, solo_kills_a: 0, solo_kills_b: 0 });
     expect(out.facts).toContain("Humanoid et Elyoya en LEC ne se sont jamais affrontés.");
   } finally {
     db.close();
