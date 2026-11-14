@@ -51,9 +51,24 @@ const STOPWORDS = new Set(
   ).split(/\s+/),
 );
 
+/** "champ", "champion(s)" and their near typos ("chamion", "champoin"); read only inside a pool phrase. */
+const CHAMP = "champ(?:ion|oin|ino|ian|io|on|in)?s?|champ?ions?|chapions?|chmap(?:ion)?s?|cahmp(?:ion)?s?";
+
+/** "pool" and its near typos ("pol", "poool"); read only next to a champion word. */
+const POOL_WORD = "pools?|pol|poll|poo+ls?|pooll";
+
+/**
+ * A champion pool asked in either order, with "champ" or a near typo: "champion pool", "champ pool",
+ * "champs pool", "championpool", "pool champ", "pool champion", "pool de champions", "pool of champions".
+ */
+export const CHAMPION_POOL = `(?:${CHAMP})[- ]?(?:${POOL_WORD})|(?:${POOL_WORD})[- ](?:(?:de|d'|des|of) ?)?(?:${CHAMP})`;
+
+/** "pool" alone: with a handle and nothing else ("pool Bin") it still asks for a champion pool. */
+const BARE_POOL = /^pools?$/i;
+
 /** Words that make a question about LoL esports even without a known entity. */
 export const LOL_DOMAIN = new RegExp(
-  "(?<![\\p{L}\\p{N}])(?:lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|" +
+  `(?<![\\p{L}\\p{N}])(?:${CHAMPION_POOL}|lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|` +
     `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
   "iu",
 );
@@ -539,7 +554,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       detectMetric(question) != null ||
       LOL_DOMAIN.test(question);
 
-    const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t));
+    const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t) || BARE_POOL.test(t));
 
     if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
   }
