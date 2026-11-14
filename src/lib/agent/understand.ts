@@ -22,7 +22,7 @@ import {
 const LEAGUE_CUES: { league: LeagueName; pattern: RegExp }[] = [
   {
     league: "World Championship",
-    pattern: /\b(worlds?|world championship|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i,
+    pattern: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i,
   },
   { league: "Mid-Season Invitational", pattern: /\b(msi|mid[- ]season invitational)\b/i },
   { league: "LCK Challengers League", pattern: /\b(lck cl|lck challengers)\b/i },
@@ -493,24 +493,22 @@ function detectLeague(question: string) {
   return { league: null, mention: null };
 }
 
-/** "l'an dernier", "cette saison": the year they mean today, or since that year after "depuis" / "since". */
-function relativePeriod(question: string, now: Date) {
-  for (const r of RELATIVE_YEARS) {
+/** "l'an dernier", "cette saison": the years they mean today, and whether one follows "depuis" / "since". */
+function relativeYears(question: string, now: Date) {
+  return RELATIVE_YEARS.flatMap((r) => {
     const m = new RegExp(r.pattern.source, "iu").exec(question);
 
-    if (!m) continue;
-    const year = now.getUTCFullYear() + r.offset;
-
-    return { yearFrom: year, yearTo: /(?:depuis|since)\s+$/i.test(question.slice(0, m.index)) ? null : year };
-  }
-
-  return { yearFrom: null, yearTo: null };
+    return m ? [{ year: now.getUTCFullYear() + r.offset, since: /(?:depuis|since)\s+$/i.test(question.slice(0, m.index)) }] : [];
+  });
 }
 
 function detectPeriod(question: string, now: Date) {
-  const years = [...question.matchAll(YEAR)].map((m) => Number(m[1]));
+  const relative = relativeYears(question, now);
+  const years = [...[...question.matchAll(YEAR)].map((m) => Number(m[1])), ...relative.map((r) => r.year)];
 
-  if (years.length === 0) return relativePeriod(question, now);
+  if (years.length === 0) return { yearFrom: null, yearTo: null };
+
+  if (years.length === 1 && relative.length === 1) return { yearFrom: years[0], yearTo: relative[0].since ? null : years[0] };
   const since = /\b(depuis|since|apr[eè]s|after|from)\s+(20[1-3]\d)\b/i.exec(question);
   const before = /\b(avant|before|until|jusqu'?en)\s+(20[1-3]\d)\b/i.exec(question);
 
@@ -694,7 +692,8 @@ export function maskUnderstood(question: string, e: Entities) {
 
   const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
 
-  for (const m of mentions) if (m) take(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"));
+  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa".
+  for (const m of mentions) if (m) take(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+"), "iu"));
 
   if (e.yearFrom != null || e.yearTo != null) for (const p of [YEAR, ...RELATIVE_YEARS.map((r) => r.pattern)]) take(p);
 
