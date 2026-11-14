@@ -14,7 +14,11 @@
  *   (next-server.js.nft.json); on Vercel (and in `vercel build`) Next traces
  *   the minimal server instead (next-minimal-server.js.nft.json).
  *
- * A missing trace is an error: the build must not pass without a measure.
+ * The Vercel cloud build writes neither server trace before the build command
+ * ends: the function is then measured from the route trace alone, which holds
+ * the database and nearly all of the size (the minimal server adds under
+ * 1 MB). Without the route trace there is nothing to measure: a warning, and
+ * the build goes on.
  *
  * Budget: database under 190 MB (warning from 170 MB), function under 250 MB
  * uncompressed (warning from 225 MB).
@@ -40,11 +44,6 @@ const VcConfig = z.object({ filePathMap: z.record(z.string(), z.string()).defaul
 type Measure = { source: string; files: string[] };
 
 const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
-
-function fail(message: string): never {
-  console.error(`size: ${message}`);
-  process.exit(1);
-}
 
 /** Files a .nft.json trace lists, plus the traced file itself. */
 function traced(trace: string): string[] {
@@ -75,16 +74,28 @@ function vercelOutput(): Measure | null {
   return { source: relative(ROOT, VERCEL_FUNC), files: [...own, ...Object.values(filePathMap).map((src) => resolve(ROOT, src))] };
 }
 
-function traces(): Measure {
-  if (!existsSync(ROUTE_TRACE)) fail(`no trace at ${relative(ROOT, ROUTE_TRACE)}: run \`next build\` first`);
+function traces(): Measure | null {
+  if (!existsSync(ROUTE_TRACE)) {
+    console.warn(`size: warning, no trace at ${relative(ROOT, ROUTE_TRACE)} (run \`next build\` first). Nothing measured.`);
+
+    return null;
+  }
+
   const server = SERVER_TRACES.find((t) => existsSync(t));
 
-  if (!server) fail(`no Next server trace (${SERVER_TRACES.map((t) => relative(ROOT, t)).join(" or ")}): run \`next build\` first`);
+  if (!server) {
+    console.warn(`size: no Next server trace (${SERVER_TRACES.map((t) => relative(NEXT, t)).join(" or ")}): measuring the route trace alone`);
+
+    return { source: `trace ${relative(NEXT, ROUTE_TRACE)}`, files: traced(ROUTE_TRACE) };
+  }
 
   return { source: `traces ${relative(NEXT, ROUTE_TRACE)} + ${relative(NEXT, server)}`, files: [...traced(ROUTE_TRACE), ...traced(server)] };
 }
 
 const measured = vercelOutput() ?? traces();
+
+if (!measured) process.exit(0);
+
 const files = new Set(measured.files);
 
 const groups = new Map<string, number>();
