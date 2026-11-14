@@ -4,6 +4,13 @@ import { z } from "zod";
 import { runAgent } from "@/lib/agent/run";
 import type { AgentUIMessage } from "@/lib/agent/types";
 
+/**
+ * Worst case: five LLM calls (understand, query, two repairs, summary), each
+ * capped at 15 s by LLM_CALL. 90 s covers them and stops a stuck request well
+ * before Vercel's 300 s default.
+ */
+export const maxDuration = 90;
+
 /** The part of the chat request the agent reads: the text parts of the messages. */
 const ChatRequest = z.object({
   messages: z

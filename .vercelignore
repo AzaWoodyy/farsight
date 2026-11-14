@@ -1,0 +1,11 @@
+# The Vercel CLI does not read .gitignore: list here what `vercel deploy`
+# must never upload. Secrets first, then the local data (the build downloads
+# the database with data:pull).
+.env
+.env.*
+!.env.example
+/data/
+/coverage/
+*.pem
+*.tsbuildinfo
+next-env.d.ts
