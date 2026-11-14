@@ -11,7 +11,7 @@ const Sha = z.string().regex(/^[a-f0-9]{64}$/);
 const Asset = z.object({ asset: z.enum(["lol.sqlite.zst", "ingame.jsonl.zst"]), sha256: Sha });
 
 const Snapshot = z.object({
-  repository: z.literal("AzaWoodyy/lol-esports-agent"),
+  repository: z.literal("AzaWoodyy/farsight"),
   tag: z.string().regex(/^data-\d{8}(-\d+)?$/),
   schemaVersion: z.number().int().positive(),
   database: Asset.extend({ uncompressedSha256: Sha }),

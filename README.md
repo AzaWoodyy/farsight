@@ -1,6 +1,6 @@
 # Farsight
 
-Un agent de recherche sur l’esport League of Legends, disponible sur [lolesport.enzoneault.dev](https://lolesport.enzoneault.dev).
+Un agent de recherche sur l’esport League of Legends, disponible sur [farsight.enzoneault.dev](https://farsight.enzoneault.dev).
 
 Pose une question comme « Résultats de Chovy à tous les Worlds », « T1 contre Gen.G en LCK » ou « Qui prend le plus souvent le premier dragon au MSI 2023 ? ». L’interface montre quatre étapes : compréhension des noms et alias, construction d’une requête, exécution avec correction éventuelle, puis tableau triable, synthèse et liens vers les sources. Une timeline montre aussi l’or et les événements d’une partie lorsque la source existe.
 

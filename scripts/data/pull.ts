@@ -10,7 +10,7 @@
  * Environment:
  *   DATA_GITHUB_TOKEN  read-only token on this repository (required to download)
  *   DATA_RELEASE       pinned release tag (same as --release)
- *   DATA_REPO          owner/name (default: the Vercel Git repository, then AzaWoodyy/lol-esports-agent)
+ *   DATA_REPO          owner/name (default: the Vercel Git repository, then AzaWoodyy/farsight)
  *   DATA_GITHUB_API    API base URL (default https://api.github.com)
  *
  * Outside Vercel, a local database with the expected schema is kept as is (it
@@ -43,7 +43,7 @@ const vercelRepo =
     ? `${process.env.VERCEL_GIT_REPO_OWNER}/${process.env.VERCEL_GIT_REPO_SLUG}`
     : null;
 
-const repo = process.env.DATA_REPO || vercelRepo || "AzaWoodyy/lol-esports-agent";
+const repo = process.env.DATA_REPO || vercelRepo || "AzaWoodyy/farsight";
 
 class PullError extends Error {}
 

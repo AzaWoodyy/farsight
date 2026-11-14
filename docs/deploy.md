@@ -1,7 +1,7 @@
 # Déploiement sur Vercel
 
 Projet Vercel séparé (plan Hobby, quotas partagés avec le portfolio), domaine
-`lolesport.enzoneault.dev`. Cette page décrit ce que le code fait déjà et les
+`farsight.enzoneault.dev`. Cette page décrit ce que le code fait déjà et les
 réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 
 ## Ce que contient le déploiement
@@ -127,7 +127,7 @@ Le job lance `lint`, `typecheck` et `test`, déploie, puis vérifie :
   du log. Après un « Data release », ce doit être le tag qui vient d'être
   publié, sinon le job échoue (c'est le cas si `DATA_RELEASE` est épinglée
   sur Vercel) ;
-- que `https://lolesport.enzoneault.dev/` répond 200.
+- que `https://farsight.enzoneault.dev/` répond 200.
 
 La question Chovy n'est pas posée au domaine : `POST /api/ask` est derrière
 BotID, qui refuse un client sans navigateur. Elle est posée à la nouvelle base
@@ -290,7 +290,7 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 
 `VERCEL`, `VERCEL_GIT_REPO_OWNER` et `VERCEL_GIT_REPO_SLUG` sont fournies par
 Vercel. Sans intégration Git, les deux dernières sont vides et `data:pull` lit
-`AzaWoodyy/lol-esports-agent`.
+`AzaWoodyy/farsight`.
 
 Preview : sans `OPENROUTER_API_KEY` en Preview, les déploiements de preview
 répondent en mode déterministe et ne consomment pas de crédit. L'y ajouter
@@ -305,7 +305,7 @@ seulement pour tester le LLM avant la production.
    - nom `lolesport-vercel-data`, propriétaire `AzaWoodyy` ;
    - expiration : un an au plus, noter la date de renouvellement ;
    - **Repository access** → *Only select repositories* →
-     `AzaWoodyy/lol-esports-agent`, et rien d'autre ;
+     `AzaWoodyy/farsight`, et rien d'autre ;
    - **Permissions** → *Repository permissions* → **Contents : Read-only**
      (*Metadata : Read-only* s'ajoute tout seul). Aucune autre permission.
 2. **Vercel** : projet → **Settings** → **Environment Variables** → ajouter
