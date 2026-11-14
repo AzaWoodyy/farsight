@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -1179,12 +1179,25 @@
       "question": "quel joueur a joué le plus de parties aux Worlds",
       "tags": [
         "worlds",
-        "text_to_sql"
+        "lane"
       ],
       "expect": {
-        "route": "sql",
+        "route": "player_leaderboard",
         "league": "World Championship",
-        "rowsMin": 1
+        "input": {
+          "criterion": "games",
+          "role": null
+        },
+        "rowsMin": 2,
+        "totals": {
+          "leader": "Faker",
+          "leader_value": 184,
+          "min_games": 1
+        },
+        "summaryIncludes": [
+          "nombre de parties jouées",
+          "184"
+        ]
       }
     },
     {
@@ -1719,7 +1732,7 @@
         "league": "World Championship",
         "attempts": 2,
         "notes": [
-          "Rien entre 2024 et 2024"
+          "Azir n'a été ni pické ni banni en 2024"
         ],
         "rowsMin": 1
       }
@@ -1777,9 +1790,23 @@
         "paraphrase"
       ],
       "expect": {
-        "route": "sql",
+        "route": "player_leaderboard",
         "league": "LoL EMEA Championship",
-        "rowsMin": 1
+        "input": {
+          "criterion": "kda",
+          "role": null,
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "totals": {
+          "leader": "Upset",
+          "leader_value": 5.8,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "critère KDA",
+          "minimum 10 parties"
+        ]
       }
     },
     {
@@ -1959,16 +1986,25 @@
         "paraphrase",
         "role"
       ],
-      "llm": true,
       "expect": {
-        "route": "missing_data",
+        "route": "player_leaderboard",
         "players": [],
-        "unread": [
-          "meilleur",
-          "midlaner",
-          "monde"
+        "league": "World Championship",
+        "input": {
+          "role": "Mid",
+          "criterion": "kda"
+        },
+        "notes": [
+          "classement sur les Worlds"
         ],
-        "noFigure": true
+        "totals": {
+          "leader": "PawN",
+          "min_games": 20
+        },
+        "summaryIncludes": [
+          "critère KDA",
+          "minimum 20 parties"
+        ]
       }
     },
     {
@@ -1977,16 +2013,25 @@
       "tags": [
         "paraphrase"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "champion_ranking",
         "league": "World Championship",
-        "unread": [
-          "champions",
-          "plus",
-          "bannis"
-        ],
-        "rowsMin": 1
+        "input": {
+          "sort": "bans",
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "role": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Aurora",
+          "leader_bans": 77,
+          "leader_picks": 19,
+          "games": 106
+        },
+        "summaryIncludes": [
+          "Critère : nombre de bans"
+        ]
       }
     },
     {
@@ -2333,16 +2378,20 @@
       "tags": [
         "variant"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "champion_ranking",
         "league": "LoL Champions Korea",
-        "unread": [
-          "champions",
-          "plus",
-          "joués"
-        ],
-        "rowsMin": 1
+        "input": {
+          "sort": "picks",
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "K'Sante",
+          "leader_picks": 199,
+          "games": 482
+        }
       }
     },
     {
@@ -2448,6 +2497,344 @@
         "summaryExcludes": [
           "Aucun outil"
         ]
+      }
+    },
+    {
+      "id": "champ-azir-worlds-2025",
+      "question": "stats d'Azir aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Azir",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rows": 1,
+        "attempts": 1,
+        "totals": {
+          "picks": 14,
+          "bans": 55,
+          "wins": 7,
+          "games": 84,
+          "kda": 3.13,
+          "main_role": "Mid"
+        },
+        "sources": 2,
+        "summaryIncludes": [
+          "14 picks et 55 bans",
+          "KDA 3,13"
+        ]
+      }
+    },
+    {
+      "id": "champ-azir-worlds-2024-absent",
+      "question": "stats d'Azir aux Worlds 2024",
+      "tags": [
+        "worlds",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Azir",
+        "league": "World Championship",
+        "attempts": 2,
+        "notes": [
+          "Azir n'a été ni pické ni banni en 2024 dans cette compétition (qualifications exclues)"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "champ-most-banned-lck-2025",
+      "question": "champions les plus bannis en LCK 2025",
+      "tags": [
+        "lck",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL Champions Korea",
+        "input": {
+          "sort": "bans",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Vi",
+          "leader_bans": 287,
+          "games": 537
+        },
+        "summaryIncludes": [
+          "Vi (82 picks, 287 bans"
+        ]
+      }
+    },
+    {
+      "id": "champ-most-played-lec-2025-en",
+      "question": "most played champions in LEC 2025",
+      "tags": [
+        "lec",
+        "champion",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "sort": "picks",
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "role": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Rell",
+          "leader_picks": 110,
+          "games": 308
+        }
+      }
+    },
+    {
+      "id": "champ-alias-monkeyking-en",
+      "question": "winrate of MonkeyKing in LCK 2023",
+      "tags": [
+        "lck",
+        "champion",
+        "alias",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Wukong",
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "totals": {
+          "picks": 140,
+          "bans": 80,
+          "wins": 65,
+          "games": 488,
+          "main_role": "Jungle"
+        }
+      }
+    },
+    {
+      "id": "champ-alias-ksante",
+      "question": "K'Sante aux Worlds 2023",
+      "tags": [
+        "worlds",
+        "champion",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "K'Sante",
+        "league": "World Championship",
+        "totals": {
+          "picks": 39,
+          "bans": 22,
+          "wins": 19,
+          "games": 110,
+          "main_role": "Top"
+        }
+      }
+    },
+    {
+      "id": "champ-mid-most-played-lck-2024",
+      "question": "champions les plus joués en mid en LCK 2024",
+      "tags": [
+        "lck",
+        "champion",
+        "lane"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL Champions Korea",
+        "input": {
+          "sort": "picks",
+          "role": "Mid"
+        },
+        "totals": {
+          "leader": "Corki",
+          "leader_picks": 169
+        },
+        "summaryIncludes": [
+          "bans et présence tous rôles confondus"
+        ]
+      }
+    },
+    {
+      "id": "lane-best-mids-lec-2025",
+      "question": "meilleurs mids LEC 2025",
+      "tags": [
+        "lec",
+        "lane"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "players": [],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "role": "Mid",
+          "criterion": "kda",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rows": 11,
+        "totals": {
+          "leader": "Poby",
+          "leader_value": 5.66,
+          "leader_games": 25,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "selon le critère KDA",
+          "minimum 10 parties"
+        ]
+      }
+    },
+    {
+      "id": "lane-best-adc-lck-2024-en",
+      "question": "best ADC LCK 2024",
+      "tags": [
+        "lck",
+        "lane",
+        "english"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "role": "Bot",
+          "criterion": "kda"
+        },
+        "totals": {
+          "leader": "Peyz",
+          "leader_value": 8.04,
+          "leader_games": 103
+        }
+      }
+    },
+    {
+      "id": "lane-support-kda-lec-2025-en",
+      "question": "which support has the best KDA in LEC 2025",
+      "tags": [
+        "lec",
+        "lane",
+        "english"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "role": "Support",
+          "criterion": "kda"
+        },
+        "totals": {
+          "leader": "Labrov",
+          "leader_value": 3.61,
+          "leader_games": 73
+        }
+      }
+    },
+    {
+      "id": "lane-jungle-gold-diff-lck-2024",
+      "question": "écart d'or à 15 min des junglers en LCK 2024",
+      "tags": [
+        "lck",
+        "lane",
+        "ingame"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "subject": "player",
+          "metric": "gold_diff",
+          "minute": 15,
+          "role": "Jungle"
+        },
+        "totals": {
+          "leader": "Willer",
+          "leader_value": 161.8
+        }
+      }
+    },
+    {
+      "id": "lane-lpl-adc-no-riot",
+      "question": "meilleurs ADC LPL 2024",
+      "tags": [
+        "lpl",
+        "lane"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "Tencent LoL Pro League",
+        "input": {
+          "role": "Bot",
+          "criterion": "kda"
+        },
+        "totals": {
+          "leader": "Elk",
+          "leader_value": 6.48,
+          "leader_gold_diff_15": "n/d"
+        },
+        "summaryIncludes": [
+          "Écart d'or à 15 min n/d"
+        ]
+      }
+    },
+    {
+      "id": "lane-same-lane-caps-humanoid",
+      "question": "Caps contre Humanoid en LEC",
+      "tags": [
+        "lec",
+        "lane",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Caps",
+          "Humanoid"
+        ],
+        "league": "LoL EMEA Championship",
+        "totals": {
+          "h2h_games": 89,
+          "h2h_wins_a": 54,
+          "h2h_same_lane": 78
+        },
+        "summaryIncludes": [
+          "78 dans la même lane"
+        ]
+      }
+    },
+    {
+      "id": "lane-top-solo-kills-lec-2025",
+      "question": "quel top a le plus de solo kills en LEC 2025",
+      "tags": [
+        "lec",
+        "lane",
+        "ingame"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "teams": [],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "subject": "player",
+          "metric": "solo_kills",
+          "role": "Top"
+        },
+        "rowsMin": 1
       }
     }
   ]
