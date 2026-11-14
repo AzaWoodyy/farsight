@@ -473,6 +473,21 @@ L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou e
 panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
 pour le limiter par IP, la troisième règle personnalisée du firewall est libre.
 
+### 5. Web Analytics
+
+Projet → **Analytics** → **Enable** (inclus dans le plan Hobby, dont le quota
+d'événements est partagé avec le portfolio), puis redéployer : les routes `/_vercel/insights/*`
+n'existent qu'à partir du déploiement suivant. Tant que ce n'est pas fait, le
+script répond 404 et rien n'est compté, sans autre effet pour le visiteur.
+
+`src/app/analytics.tsx` monte le composant de `@vercel/analytics`, en production
+seulement. Le script est servi par le même domaine (la CSP reste en `'self'`),
+injecté en `defer` après l'hydratation. Il ne pose aucun cookie et n'envoie que
+des pages vues : l'URL réduite au chemin (`beforeSend` retire la query string et
+le hash), le référent et l'appareil. Aucun événement personnalisé, donc jamais
+le texte d'une question, qui ne passe que dans le corps de `POST /api/ask`.
+Speed Insights n'est pas installé, comme sur le portfolio.
+
 ## Contrôles avant déploiement
 
 `PR CI` exécute les contrôles sur les PR et main. Deploy ne consomme automatiquement que les runs réussis issus d’un push du dépôt sur main, et ignore un SHA dépassé. Les données de CI sont épinglées dans `ci/data.json` ; leur release est exclue de la rétention. Voir `ci/README.md`. Le CLI Vercel est verrouillé dans le lockfile.
