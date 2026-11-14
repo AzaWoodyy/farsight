@@ -41,10 +41,12 @@ demande (**Actions** → **Data release** → **Run workflow**) :
 1. Restaure `ingame.jsonl.zst` depuis la release précédente si elle a le même
    schéma (résumés in-game déjà calculés).
 2. `bun run data:fetch --riot-budget=90` : tables Cargo complètes (environ 200
-   requêtes, une à la fois, 3 s d'écart, User-Agent explicite, backoff), JSON
-   Riot des seules nouvelles parties (2 par requête, 90 min au plus ; le reste
-   passe à la semaine suivante), puis Data Dragon. Avec les secrets `R2_*`,
-   chaque nouvelle partie est aussi envoyée sur R2.
+   requêtes, une à la fois, 3 s d'écart, User-Agent explicite, backoff), puis
+   les JSON Riot des parties sans résumé : d'abord lus sur R2 (secrets `R2_*`,
+   16 lectures en parallèle, hors budget et sans délai), puis, pour celles que
+   R2 n'a pas, téléchargés depuis le wiki (2 par requête, 90 min au plus ; le
+   reste passe à la semaine suivante) et envoyés sur R2. Le log sépare les
+   compteurs `from R2` et `from the wiki`. Enfin Data Dragon.
 3. `bun run data:build` : `data/lol.sqlite`, fini par
    `journal_mode=DELETE` et `VACUUM`.
 4. `bun run data:package` : contrôles, puis assets de release. Le workflow
@@ -168,8 +170,9 @@ envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
 Le workflow restaure les résumés in-game de la release précédente ; une
 release v3 n'en a pas. Deux façons d'amorcer :
 
-- R2 configuré et `bun run data:sync` fait : le premier workflow v4 lit chaque
-  partie sur R2 au lieu du wiki (environ 30 min pour 28 000 lectures) ;
+- R2 configuré et `bun run data:sync` fait : le premier workflow v4 lit les
+  28 342 parties sur R2 au lieu du wiki (5,9 min mesurées en local le
+  14/11/2026, 16 lectures en parallèle, aucune requête au wiki) ;
 - sans R2 : le workflow télécharge depuis le wiki 90 min par exécution
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
