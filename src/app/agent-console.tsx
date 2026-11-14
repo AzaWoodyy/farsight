@@ -30,6 +30,7 @@ import { Versus } from "./versus";
 const EXAMPLES = [
   { question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
   { question: "Faker contre Chovy", display: "duel de joueurs" },
+  { question: "KC contre MKOI", display: "confrontation d'équipes" },
   { question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
   { question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
   { question: "Meilleurs mids aux Worlds 2026", display: "tableau de joueurs" },
