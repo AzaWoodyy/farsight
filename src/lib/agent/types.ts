@@ -171,6 +171,61 @@ export type TimelineView = {
   events: { s: number; kind: EventKind; side: Side; detail: string | null }[];
 };
 
+/**
+ * Who a compared player is in the question's scope, read from the database (not from the generated SQL):
+ * teams by games played, most played role first.
+ */
+export type PlayerProfile = {
+  player: string;
+  teams: string[];
+  role: string | null;
+};
+
+export type ScoreboardItem = { name: string; iconUrl: string };
+
+/** One player's line of the end-of-game scoreboard; null when Leaguepedia's scoreboard lacks the field. */
+export type ScoreboardPlayer = {
+  side: Side;
+  role: string | null;
+  player: string;
+  champion: string | null;
+  championIcon: string | null;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  gold: number | null;
+  cs: number | null;
+  damage: number | null;
+  vision: number | null;
+  keystone: string | null;
+  keystoneIcon: string | null;
+  /** Final inventory in Leaguepedia's slot order (trinket excluded when the source omits it). */
+  items: ScoreboardItem[];
+};
+
+export type ScoreboardTeam = {
+  name: string;
+  kills: number | null;
+  gold: number | null;
+  towers: number | null;
+  inhibitors: number | null;
+  dragons: number | null;
+  barons: number | null;
+  heralds: number | null;
+  grubs: number | null;
+};
+
+/** End-of-game recap of one game, from Leaguepedia's scoreboard tables (every league, LPL included). */
+export type GameScoreboard = {
+  label: string;
+  durationS: number | null;
+  patch: string | null;
+  winner: Side | null;
+  blue: ScoreboardTeam;
+  red: ScoreboardTeam;
+  players: ScoreboardPlayer[];
+};
+
 export type Answer = {
   title: string;
   summary: string;
@@ -180,6 +235,10 @@ export type Answer = {
   table: { columns: string[]; rows: TableCell[][] } | null;
   /** One game's gold curve and key events (game timeline tool). */
   timeline: TimelineView | null;
+  /** End-of-game scoreboard of the game a question is about (game timeline tool). */
+  scoreboard: GameScoreboard | null;
+  /** Database profile of each player the question names, for comparison layouts. */
+  profiles: PlayerProfile[];
   sources: Source[];
   followUps: string[];
   notes: string[];

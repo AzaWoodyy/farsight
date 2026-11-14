@@ -13,6 +13,7 @@ import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE, llmSignal, wit
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
+import { playerProfiles } from "./tools";
 import { understandQuestion } from "./understand";
 
 const MAX_ATTEMPTS = 3;
@@ -434,6 +435,8 @@ async function format(
       rows: [],
       table: null,
       timeline: null,
+      scoreboard: null,
+      profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
@@ -449,7 +452,7 @@ async function format(
 
     step.done("error", "Requête interrompue ou rejetée");
 
-    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, sources: [], followUps: EXAMPLES, notes, meta };
+    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -462,6 +465,8 @@ async function format(
       rows: [],
       table: null,
       timeline: null,
+      scoreboard: null,
+      profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
@@ -482,6 +487,9 @@ async function format(
       rows: [],
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
       timeline: null,
+      scoreboard: null,
+      // Several named players: the comparison layouts show their team and role next to the generated table.
+      profiles: entities.players.length > 1 ? playerProfiles(db, entities) : [],
       sources: pages.length
         ? pages.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }],
@@ -517,6 +525,8 @@ async function format(
     rows: out.rows ?? [],
     table: out.table ?? null,
     timeline: out.timeline ?? null,
+    scoreboard: out.scoreboard ?? null,
+    profiles: [],
     sources: out.sources,
     followUps,
     notes,

@@ -4,14 +4,18 @@ import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
 import { selectAll, selectOne, type SqlRow } from "../db";
-import { DDRAGON_BASE } from "../sources/ddragon";
+import { DDRAGON_BASE, keystoneIcons } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
 import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
 import {
   type Entities,
+  type GameScoreboard,
   LEAGUE_NAMES,
+  type PlayerProfile,
   type ResultRow,
+  type ScoreboardPlayer,
+  type ScoreboardTeam,
   type Side,
   type Source,
   type TableCell,
@@ -171,6 +175,7 @@ export type ToolOutput = {
   rows?: ResultRow[];
   table?: { columns: string[]; rows: TableCell[][] };
   timeline?: TimelineView;
+  scoreboard?: GameScoreboard;
   trace?: ToolTrace[];
   /** Notes shown under the answer (the game shown when several match...). */
   notes?: string[];
@@ -1540,6 +1545,168 @@ const gameSources = (r: TimelineGameRow): Source[] => [
   { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) },
 ];
 
+const ROLE_ORDER = ["Top", "Jungle", "Mid", "Bot", "Support"];
+
+const ScoreboardGameRow = z.object({
+  patch: NullableText,
+  winner_side: z.number().nullable(),
+  blue_towers: z.number().nullable(),
+  red_towers: z.number().nullable(),
+  blue_inhibitors: z.number().nullable(),
+  red_inhibitors: z.number().nullable(),
+  blue_dragons: z.number().nullable(),
+  red_dragons: z.number().nullable(),
+  blue_barons: z.number().nullable(),
+  red_barons: z.number().nullable(),
+  blue_heralds: z.number().nullable(),
+  red_heralds: z.number().nullable(),
+  blue_void_grubs: z.number().nullable(),
+  red_void_grubs: z.number().nullable(),
+});
+
+const ScoreboardPlayerRow = z.object({
+  side: z.number().nullable(),
+  role: NullableText,
+  player: Text,
+  champion: NullableText,
+  champion_icon: NullableText,
+  kills: z.number().nullable(),
+  deaths: z.number().nullable(),
+  assists: z.number().nullable(),
+  gold: z.number().nullable(),
+  cs: z.number().nullable(),
+  damage: z.number().nullable(),
+  vision: z.number().nullable(),
+  keystone: NullableText,
+});
+
+const ScoreboardItemRow = z.object({ player: Text, item: Text, icon_url: Text });
+
+/** Sum of a team's player values, null when no player has the field (older scoreboards). */
+const teamSum = (players: ScoreboardPlayer[], key: "kills" | "gold") =>
+  players.some((p) => p[key] != null) ? players.reduce((n, p) => n + (p[key] ?? 0), 0) : null;
+
+/**
+ * End-of-game recap of one game, from Leaguepedia's scoreboard tables only (no Riot JSON needed, so
+ * it also covers the LPL). Data Dragon gives the keystone icons; champion and item icons are stored.
+ */
+async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<GameScoreboard | null> {
+  const game = selectOne(
+    db,
+    ScoreboardGameRow,
+    `SELECT patch, winner_side, blue_towers, red_towers, blue_inhibitors, red_inhibitors, blue_dragons, red_dragons,
+            blue_barons, red_barons, blue_heralds, red_heralds, blue_void_grubs, red_void_grubs
+     FROM games WHERE id = :game`,
+    { game: r.game_id },
+  );
+
+  const rows = selectAll(
+    db,
+    ScoreboardPlayerRow,
+    `SELECT p.side, p.role, p.player, p.champion, c.icon_url AS champion_icon,
+            p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision, p.keystone
+     FROM v_game_players p LEFT JOIN champions c ON c.name = p.champion
+     WHERE p.game_id = :game`,
+    { game: r.game_id },
+  );
+
+  if (!game || !rows.length) return null;
+
+  const items = selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
+  // Champion and item icons carry the Data Dragon version the build used: read the keystones from the same one.
+  const version = /\/cdn\/([\d.]+)\//.exec(rows.find((p) => p.champion_icon)?.champion_icon ?? items[0]?.icon_url ?? "")?.[1];
+  const runes = version && rows.some((p) => p.keystone) ? await keystoneIcons(version) : new Map<string, string>();
+  const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
+
+  const players: ScoreboardPlayer[] = rows
+    .flatMap((p): ScoreboardPlayer[] =>
+      p.side === 1 || p.side === 2
+        ? [
+            {
+              side: p.side === 1 ? "blue" : "red",
+              role: p.role,
+              player: p.player,
+              champion: p.champion,
+              championIcon: p.champion_icon,
+              kills: p.kills,
+              deaths: p.deaths,
+              assists: p.assists,
+              gold: p.gold,
+              cs: p.cs,
+              damage: p.damage,
+              vision: p.vision,
+              keystone: p.keystone,
+              keystoneIcon: p.keystone ? (runes.get(p.keystone) ?? null) : null,
+              items: items.flatMap((i) => (i.player === p.player ? [{ name: i.item, iconUrl: i.icon_url }] : [])),
+            },
+          ]
+        : [],
+    )
+    .sort((a, b) => rank(a.role) - rank(b.role));
+
+  const team = (side: Side): ScoreboardTeam => {
+    const own = players.filter((p) => p.side === side);
+    const pick = (blue: number | null, red: number | null) => (side === "blue" ? blue : red);
+
+    return {
+      name: displayTeam((side === "blue" ? r.blue_team : r.red_team) ?? (side === "blue" ? "Bleu" : "Rouge")),
+      kills: teamSum(own, "kills"),
+      gold: teamSum(own, "gold"),
+      towers: pick(game.blue_towers, game.red_towers),
+      inhibitors: pick(game.blue_inhibitors, game.red_inhibitors),
+      dragons: pick(game.blue_dragons, game.red_dragons),
+      barons: pick(game.blue_barons, game.red_barons),
+      heralds: pick(game.blue_heralds, game.red_heralds),
+      grubs: pick(game.blue_void_grubs, game.red_void_grubs),
+    };
+  };
+
+  return {
+    label: `${seriesLabel(r)}${r.game_n ? ` · game ${r.game_n}` : ""}`,
+    durationS: r.length_s,
+    patch: game.patch,
+    winner: game.winner_side === 1 ? "blue" : game.winner_side === 2 ? "red" : null,
+    blue: team("blue"),
+    red: team("red"),
+    players,
+  };
+}
+
+const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.number() });
+
+/**
+ * Teams (by games) and main role of each player the question names, in its competition and period.
+ * Shown by the comparison layouts next to the generated table, which rarely selects them.
+ */
+export function playerProfiles(db: DatabaseSync, entities: Entities): PlayerProfile[] {
+  return entities.players.map((p) => {
+    const params: Params = {};
+
+    Object.assign(params, { player: p.player });
+
+    const league = entities.league ? `AND ${leagueFilter("league", { league: entities.league, yearFrom: entities.yearFrom, yearTo: entities.yearTo }, params)}` : "";
+
+    const rows = selectAll(
+      db,
+      ProfileRow,
+      `SELECT team, role, COUNT(*) AS games FROM v_game_players
+       WHERE player = :player AND stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("year", { yearFrom: entities.yearFrom, yearTo: entities.yearTo }, params)}
+       GROUP BY team, role ORDER BY games DESC`,
+      params,
+    );
+
+    const total = (key: "team" | "role") => {
+      const games = new Map<string, number>();
+
+      for (const r of rows) if (r[key]) games.set(r[key], (games.get(r[key]) ?? 0) + r.games);
+
+      return [...games].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    };
+
+    return { player: p.player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null };
+  });
+}
+
 const SOURCE_LABEL = { cache: "Runtime Cache", r2: "R2", local: "cache local (data/raw/riot)" } as const;
 
 const gameTimeline: ToolDef<GameTimelineInput> = {
@@ -1601,7 +1768,7 @@ ORDER BY g.played_at DESC, g.game_n`,
 
     return out;
   },
-  format: async (_db, input, sqlRows): Promise<ToolOutput> => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(TimelineGameRow).parse(sqlRows);
     const series = new Map<string, TimelineGameRow[]>();
 
@@ -1647,6 +1814,8 @@ ORDER BY g.played_at DESC, g.game_n`,
 
     const title = `${displayTeam(pick.blue_team ?? "?")} – ${displayTeam(pick.red_team ?? "?")} — ${seriesLabel(pick)}${pick.game_n ? ` · game ${pick.game_n}` : ""}`;
     const result = `${displayTeam(pick.winner ?? "?")} gagne${pick.length_s ? ` en ${clock(pick.length_s)}` : ""}`;
+    // The recap comes from the scoreboard tables: shown whether or not the Riot timeline exists.
+    const scoreboard = (await gameScoreboard(db, pick)) ?? undefined;
 
     if (!pick.riot_key || pick.has_timeline !== 1)
       return {
@@ -1656,6 +1825,7 @@ ORDER BY g.played_at DESC, g.game_n`,
           (pick.riot_key ? "les données Riot publiées par Leaguepedia n'en contiennent pas." : "Leaguepedia ne publie pas ses données Riot (aucune pour la LPL)."),
         sources: gameSources(pick),
         followUps: followUpsFor(pick.game_n),
+        scoreboard,
         totals: { ...base, timeline: "absent" },
         notes,
       };
@@ -1674,6 +1844,7 @@ ORDER BY g.played_at DESC, g.game_n`,
         facts: `Game ${pick.game_n ?? "?"} de ${seriesPhrase(pick)} : ${result}. Timeline indisponible pour le moment (${why}).`,
         sources: gameSources(pick),
         followUps: followUpsFor(pick.game_n),
+        scoreboard,
         totals: { ...base, timeline: load.status },
         trace: [{ status: "error", title: `Timeline ${pick.riot_key} : ${why}`, detail: load.status === "error" ? load.message : undefined }],
         notes,
@@ -1687,6 +1858,7 @@ ORDER BY g.played_at DESC, g.game_n`,
     return {
       title,
       timeline: view,
+      scoreboard,
       facts: timelineFacts(pick, view),
       sources: [...gameSources(pick), RIOT_DATA_SOURCE],
       followUps: followUpsFor(pick.game_n),
