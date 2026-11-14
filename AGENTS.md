@@ -25,6 +25,7 @@ These are settled; build toward them. The POC on `main` predates some of them (i
   - Finish every build with `PRAGMA journal_mode=DELETE; VACUUM;`, because a WAL database can fail to open on Vercel's read-only filesystem.
 - **Queries**: typed, parameterized tools for common intents, with guarded text-to-SQL as the fallback. Guarded means read-only, a single statement, an allow-listed table and column set, a forced `LIMIT`, and `prepare()` used as the schema validator.
 - **Hosting**: a separate Vercel project on the Hobby plan, sharing its quotas with the portfolio site. Rate limiting per IP is required.
+  - Production is deployed by the `Deploy` workflow (`vercel deploy --prod` from GitHub Actions, build on Vercel): after each push to `main` and after each successful `Data release` on `main`. The Vercel Git integration stays off (`git.deploymentEnabled: false`); previews are manual. Details in `docs/deploy.md`.
 
 ## Data
 
