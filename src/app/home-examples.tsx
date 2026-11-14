@@ -243,7 +243,7 @@ function TerminalVariant({ onAsk }: AskProps) {
           {shown.length}/{EXAMPLES.length}
         </span>
       </div>
-      <div className="flex items-center gap-2 border-b border-dashed border-line px-3">
+      <div className="flex items-center gap-2 border-b border-dashed border-line px-3 has-[input:focus]:shadow-[inset_0_0_0_1px_var(--accent)]">
         <span aria-hidden className="text-accent">
           /
         </span>
