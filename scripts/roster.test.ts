@@ -23,6 +23,7 @@ const entities = (over: Partial<Entities>): Entities => ({
 const year = (y: number) => ({ yearFrom: y, yearTo: y });
 const SSW = team("Samsung White", "Samsung White", ["Samsung Ozone", "Samsung White"]);
 const T1 = team("SKT", "T1", ["T1", "SK Telecom T1"]);
+const T1_NOW = team("T1", "T1", ["T1", "SK Telecom T1"]);
 const G2 = team("G2", "G2 Esports");
 const FNC = team("Fnatic", "Fnatic");
 const league = (name: LeagueName, short: string): Partial<Entities> => ({ league: name, leagueShort: short, leagueMention: short });
@@ -39,15 +40,28 @@ describe("one team and a roster word: its players by role, decided by the rules"
     ["G2 lineup MSI 2019", entities({ teams: [G2], ...MSI, ...year(2019) })],
     ["who played for Fnatic in 2018", entities({ teams: [FNC], ...year(2018) })],
     ["quels joueurs de SKT en 2015", entities({ teams: [T1], ...year(2015) })],
+    ["T1 roaster 2024", entities({ teams: [T1_NOW], ...year(2024) })],
     ["roster de Fnatic en LEC au Spring 2018", entities({ teams: [FNC], league: "Europe League Championship Series", leagueShort: "EU LCS", leagueMention: "LEC", ...year(2018), split: "Spring" })],
   ])("%s", (q, e) => {
     const route = routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({
       kind: "tool",
-      call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split } },
+      call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split, role: null } },
     });
     expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(route.kind === "tool" && route.unread).toBeUndefined();
+  });
+
+  test.each([
+    ["adc de T1", T1_NOW, "Bot"],
+    ["c'est qui le toplaner de T1 ?", T1_NOW, "Top"],
+    ["who is the jungler of G2", G2, "Jungle"],
+    ["le support actuel de Fnatic", FNC, "Support"],
+  ] as const)("one team and a role: the current roster, that role first (%s)", (q, t, role) => {
+    const route = routeQuestion(q, entities({ teams: [t] }), SCHEMA, COVERAGE);
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_roster", input: { team: t.team, yearFrom: null, yearTo: null, role } } });
     expect(route.kind === "tool" && route.unread).toBeUndefined();
   });
 
@@ -65,6 +79,10 @@ describe("one team and a roster word: its players by role, decided by the rules"
     expect(route("classement worlds 2024", entities({ ...league("World Championship", "Worlds"), ...year(2024) }))).toBe("tournament_standings");
     // A ranking or a metric inside a team is not its roster.
     expect(route("joueur de Fnatic avec le plus de kills en 2018", entities({ teams: [FNC], ...year(2018) }))).toBe("sql");
+    // A role with a team and a history or ranking word keeps its route.
+    expect(route("historique de T1", entities({ teams: [T1] }))).toBe("team_history");
+    expect(route("meilleur adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
+    expect(route("KDA de l'adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
   });
 });
 
@@ -113,7 +131,7 @@ describe("roster of a team on a seeded database", () => {
       expect(resolveTeam(db, "Samsung Galaxy White")).toMatchObject({ team: "Samsung White" });
       expect((await understandQuestion(db, "Samsung White roster 2014", new Date("2026-11-14")))?.result.teams.map((t) => t.team)).toEqual(["Samsung White"]);
 
-      const tool = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: null } });
+      const tool = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: null, role: null } });
 
       expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
       const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
@@ -139,14 +157,14 @@ describe("roster of a team on a seeded database", () => {
       expect(out.sources.map((s) => s.url)).toContain("https://lol.fandom.com/wiki/W14");
 
       // A competition restricts the roster.
-      const worlds = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: "World Championship", yearFrom: 2014, yearTo: 2014, split: null } });
+      const worlds = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: "World Championship", yearFrom: 2014, yearTo: 2014, split: null, role: null } });
       const atWorlds = await worlds.format(db, db.prepare(worlds.sql).all(worlds.params));
 
       expect(atWorlds.roster).toMatchObject({ games: 2, scope: "aux Worlds en 2014", names: ["Samsung White"] });
       expect(atWorlds.roster!.players.map((p) => p.player)).toEqual(["Looper", "DanDy", "PawN", "Imp", "Mata"]);
 
       // A split restricts the roster and its tournaments; an even split of the games gives two starters.
-      const spring = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: "Spring" } });
+      const spring = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: "Spring", role: null } });
 
       expect(guardQuery(db, readSchema(db), spring.sql).ok).toBe(true);
       const inSpring = await spring.format(db, db.prepare(spring.sql).all(spring.params));
@@ -155,8 +173,17 @@ describe("roster of a team on a seeded database", () => {
       expect(inSpring.roster!.tournaments.map((t) => t.label)).toEqual(["Champions 2014 Spring"]);
       expect(inSpring.roster!.players.filter((p) => p.role === "Top").map((p) => [p.player, p.starter])).toEqual([["Homme", true], ["Looper", true]]);
 
+      // Without a period, the current roster: the team's latest season (2015 here), and the role asked comes first.
+      const current = bindTool(db, { tool: "team_roster", input: { team: "SSW", league: null, yearFrom: null, yearTo: null, split: null, role: "Bot" } });
+      const now = await current.format(db, db.prepare(current.sql).all(current.params));
+
+      expect(now.roster).toMatchObject({ games: 1, scope: "en 2015" });
+      expect(now.totals).toMatchObject({ season: 2015, bot: "Imp" });
+      expect(now.facts.startsWith("ADC de Samsung White en 2015 : Imp (1 partie)")).toBe(true);
+      expect(now.notes).toContain("Aucune période précisée : roster de la saison la plus récente de Samsung White (2015).");
+
       // The router model may write an old name: the input carries the team's current one.
-      expect(TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014, split: null })).toMatchObject({ input: { team: "Samsung White" } });
+      expect(TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014, split: null, role: null })).toMatchObject({ input: { team: "Samsung White" } });
     } finally {
       db.close();
     }

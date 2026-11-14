@@ -2068,19 +2068,31 @@
       "question": "c'est qui le toplaner de T1 ?",
       "tags": [
         "paraphrase",
-        "role"
+        "role",
+        "roster"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "team_roster",
         "teams": [
           "T1"
         ],
         "players": [],
-        "unread": [
-          "toplaner"
+        "input": {
+          "yearFrom": null,
+          "yearTo": null,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "season": 2026,
+          "top": "Doran (Choi Hyeon-jun)"
+        },
+        "summaryIncludes": [
+          "Top de T1 en 2026 : Doran"
         ],
-        "rowsMin": 1
+        "notes": [
+          "saison la plus récente de T1 (2026)"
+        ]
       }
     },
     {
@@ -2329,19 +2341,28 @@
       "question": "who is the jungler of G2",
       "tags": [
         "variant",
-        "role"
+        "role",
+        "roster"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "team_roster",
         "teams": [
           "G2 Esports"
         ],
         "players": [],
-        "unread": [
-          "jungler"
-        ],
-        "rowsMin": 1
+        "input": {
+          "yearFrom": null,
+          "yearTo": null,
+          "role": "Jungle"
+        },
+        "unread": [],
+        "totals": {
+          "season": 2026,
+          "jungle": "SkewMond"
+        },
+        "summaryIncludes": [
+          "Jungle de G2 Esports en 2026 : SkewMond"
+        ]
       }
     },
     {
@@ -2349,19 +2370,28 @@
       "question": "adc de T1",
       "tags": [
         "variant",
-        "role"
+        "role",
+        "roster"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "team_roster",
         "teams": [
           "T1"
         ],
         "players": [],
-        "unread": [
-          "adc"
-        ],
-        "rowsMin": 1
+        "input": {
+          "yearFrom": null,
+          "yearTo": null,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "season": 2026,
+          "bot": "Peyz"
+        },
+        "summaryIncludes": [
+          "ADC de T1 en 2026 : Peyz"
+        ]
       }
     },
     {
@@ -3350,6 +3380,33 @@
         "summaryExcludes": [
           "ADC, 13"
         ]
+      }
+    },
+    {
+      "id": "roster-t1-typo-2024",
+      "question": "T1 roaster 2024",
+      "tags": [
+        "roster",
+        "typo"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "T1"
+        ],
+        "input": {
+          "league": null,
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "role": null
+        },
+        "unread": [],
+        "rows": 6,
+        "totals": {
+          "games": 156,
+          "top": "Zeus",
+          "bot": "Gumayusi"
+        }
       }
     }
   ]

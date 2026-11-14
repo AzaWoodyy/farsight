@@ -80,6 +80,7 @@ export const TeamRosterInput = z.object({
   league: League.nullable().describe("Restrict to one competition, null for every competition"),
   ...Period,
   split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Restrict to one split of the season, null for the whole season"),
+  role: z.enum(["Top", "Jungle", "Mid", "Bot", "Support"]).nullable().describe("The role the question asks about (an ADC is Bot), answered first; the whole roster is still shown. null when none"),
 });
 
 export const HeadToHeadInput = z.object({
@@ -721,6 +722,26 @@ function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): 
   return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
 }
 
+/**
+ * Without a period, the roster is the current one: the team's latest season in the scope (in the database,
+ * so a team that stopped playing gets its last season). A period or a split given by the question stays as is.
+ */
+function rosterSeason(db: DatabaseSync, input: TeamRosterInput): TeamRosterInput & { latest: boolean } {
+  if (input.yearFrom != null || input.yearTo != null) return { ...input, latest: false };
+  const params: Params = {};
+  const t = inList("t", teamMembers(db, input.team).members, params);
+  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+
+  const year = selectOne(
+    db,
+    z.object({ year: z.number().nullable() }),
+    `SELECT MAX(g.year) AS year FROM v_games g WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league}`,
+    params,
+  )?.year;
+
+  return year == null ? { ...input, latest: false } : { ...input, yearFrom: year, yearTo: year, latest: true };
+}
+
 /** The team's tournaments of the scope, in play order, with its games and wins in each (a trusted helper query). */
 function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
   const params: Params = {};
@@ -747,8 +768,9 @@ const teamRoster: ToolDef<TeamRosterInput> = {
   description:
     "A team's roster over a period or a competition: every player who played for it, by role (Top, Jungle, Mid, Bot, Support), " +
     "with their games and the tournaments they played. Renamed teams are merged (Samsung Ozone → Samsung White, SK Telecom T1 → T1).",
-  plan: (db, input) => {
+  plan: (db, asked) => {
     const params: Params = {};
+    const input = rosterSeason(db, asked);
 
     return {
       params,
@@ -784,7 +806,8 @@ ORDER BY role, SUM(games) DESC, player`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: (db, asked, sqlRows): ToolOutput => {
+    const input = rosterSeason(db, asked);
     const raw = z.array(RosterRow).parse(sqlRows);
     const { team, members } = teamMembers(db, input.team);
     const league = leagueShortName(db, input.league);
@@ -821,7 +844,16 @@ ORDER BY role, SUM(games) DESC, player`),
     const roleName = (role: string) => ROLE_LABEL_BY_NAME.get(role) ?? role;
     const where = scope ? ` ${scope}` : "";
 
+    const inRole = input.role ? players.filter((p) => p.role === input.role) : [];
+
+    const answer = input.role
+      ? inRole.length
+        ? `${roleName(input.role).replace(/^./, (c) => c.toUpperCase())} de ${team}${where} : ${inRole.map((p) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}${p.starter ? "" : ", remplaçant"})`).join(", ")}. `
+        : `Aucun ${roleName(input.role)} de ${team} aligné${where}. `
+      : "";
+
     let facts =
+      answer +
       `${team}${where} : ${games} parties (${wins} victoires) sur ${events.length} tournoi${events.length > 1 ? "s" : ""}. ` +
       `Joueurs avec le plus de parties à chaque poste : ${starters.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`;
 
@@ -844,7 +876,10 @@ ORDER BY role, SUM(games) DESC, player`),
         tournaments: events.map((e) => ({ label: label({ event: e.event_page, tournament: e.tournament }), games: e.games, source: { label: `Leaguepedia — ${e.event_page}`, url: wikiUrl(e.event_page) } })),
         players,
       },
-      notes: ["Seuls les joueurs alignés en match figurent ici : la base ne contient ni les coachs ni les remplaçants qui n'ont pas joué."],
+      notes: [
+        ...(input.latest ? [`Aucune période précisée : roster de la saison la plus récente de ${team} (${input.yearFrom}).`] : []),
+        "Seuls les joueurs alignés en match figurent ici : la base ne contient ni les coachs ni les remplaçants qui n'ont pas joué.",
+      ],
       facts,
       sources: [
         ...members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
@@ -852,7 +887,7 @@ ORDER BY role, SUM(games) DESC, player`),
         ...starters.map((p) => p.source),
       ],
       followUps: [`Historique de ${team}${where}`, ...starters.slice(0, 2).map((p) => `${p.player}${where}`)].slice(0, 3),
-      totals: { players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
+      totals: { season: input.latest ? (input.yearFrom ?? "n/d") : "asked", players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
     };
   },
   normalize: (db, input) => {
