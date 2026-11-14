@@ -102,11 +102,14 @@ export function AgentConsole() {
   const reply = messages.findLast((m) => m.role === "assistant");
   const steps = new Map<StepName, StepPart>();
   let answer: Answer | null = null;
+  let traceId: string | null = null;
 
   for (const part of reply?.parts ?? []) {
     if (part.type === "data-step") steps.set(part.data.step, part.data);
 
     if (part.type === "data-answer") answer = part.data;
+
+    if (part.type === "data-trace") traceId = part.data.traceId;
   }
 
   return (
@@ -168,6 +171,7 @@ export function AgentConsole() {
             </p>
           )}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
+          {answer && traceId && <Feedback key={traceId} traceId={traceId} />}
         </div>
       )}
     </section>
@@ -284,6 +288,64 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+type Rating = "up" | "down";
+
+const RATINGS: { rating: Rating; label: string }[] = [
+  { rating: "up", label: "[+] oui" },
+  { rating: "down", label: "[-] non" },
+];
+
+/**
+ * Thumbs up / down on the answer, shown only when the question was traced.
+ * The rating goes to /api/feedback with the trace id and nothing else; a
+ * second click replaces the first.
+ */
+function Feedback({ traceId }: { traceId: string }) {
+  const [sent, setSent] = useState<Rating | null>(null);
+  const [state, setState] = useState<"idle" | "sending" | "failed">("idle");
+
+  async function rate(rating: Rating) {
+    setState("sending");
+
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ traceId, rating }),
+      });
+
+      setSent(res.ok ? rating : null);
+      setState(res.ok ? "idle" : "failed");
+    } catch {
+      setSent(null);
+      setState("failed");
+    }
+  }
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
+      <span className="uppercase tracking-widest text-muted">── réponse correcte ?</span>
+      {RATINGS.map(({ rating, label }) => (
+        <button
+          key={rating}
+          type="button"
+          onClick={() => rate(rating)}
+          disabled={state === "sending"}
+          aria-pressed={sent === rating}
+          className={`border px-2 py-1 hover:border-accent hover:text-accent disabled:opacity-40 ${
+            sent === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+      <span role="status" className={state === "failed" ? "text-error" : "text-muted"}>
+        {state === "failed" ? "avis non enregistré, réessaie" : sent ? "merci, avis enregistré" : ""}
+      </span>
     </div>
   );
 }

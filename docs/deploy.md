@@ -283,6 +283,9 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 | `DATABASE_PATH` | chemin de la base | non | runtime | **ne pas définir** sur Vercel |
 | `R2_ACCOUNT_ID`, `R2_BUCKET` | compte et bucket R2 des JSON Riot (timeline d'une partie) | non | runtime | Production, Preview |
 | `R2_READ_ACCESS_KEY_ID`, `R2_READ_SECRET_ACCESS_KEY` | token R2 **Object Read only**, bucket `lolesport-games` seulement | oui, Sensitive | runtime | Production, Preview |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | clés du projet Langfuse (traçage des questions) ; sans les trois variables `LANGFUSE_*` obligatoires, rien n'est tracé | secrète : oui, Sensitive ; publique : non | runtime | Production |
+| `LANGFUSE_BASE_URL` | région du projet Langfuse : `https://cloud.langfuse.com` (UE) | non | runtime | Production |
+| `LANGFUSE_SAMPLE_RATE` | part des questions tracées, de 0 à 1 (défaut 1) | non | runtime | facultatif |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) ; `R2_ENDPOINT` seulement pour la juridiction EU | — | — | ne pas définir |
 
 `VERCEL`, `VERCEL_GIT_REPO_OWNER` et `VERCEL_GIT_REPO_SLUG` sont fournies par
@@ -395,3 +398,46 @@ Sur [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) :
 
 Pour vérifier : le tableau de bord de la clé montre la consommation, et une
 clé plafonnée à 0 $ doit produire la note « quota épuisé » dans la réponse.
+
+### 4. Traçage Langfuse
+
+Projet Langfuse Cloud (plan Hobby : 50 000 unités par mois, 30 jours de
+rétention, 2 utilisateurs), région UE. Dans Vercel, environnement Production :
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` (Sensitive) et
+`LANGFUSE_BASE_URL=https://cloud.langfuse.com`, puis redéployer. Ne pas les
+mettre en Preview : les essais y resteraient hors des traces de production.
+
+Ce qui part chez Langfuse, une trace `answer-question` par question :
+
+- la question (500 caractères au plus), la réponse en une phrase, et une
+  observation par étape : `understand-question` (entités, mentions non
+  résolues, mots non consommés, confiance), `build-query` (route, outil, SQL),
+  `execute-query` (lignes, tentatives, corrections), `format-answer` ;
+- sous l'étape concernée, chaque appel LLM (`extract-entities`, `pick-tool`,
+  `generate-sql`, `repair-sql`, `write-summary`) avec modèle et jetons ;
+- des tags pour filtrer : `empty-result`, `error`, `out-of-scope`,
+  `missing-data`, `no-query`, `sql-fallback`, `self-corrected`, `llm`,
+  `llm-error`, `llm-quota`, `low-confidence`, `unresolved-mention`,
+  `ambiguous-alias` ;
+- le pouce haut ou bas de l'interface, en score booléen `response_rating`
+  (`POST /api/feedback`).
+
+Confidentialité : ni IP, ni cookie, ni en-tête, ni identifiant de visiteur ou
+de session. Les e-mails, adresses IP et numéros de téléphone tapés dans une
+question sont masqués avant l'envoi. Les traces sont lisibles 30 jours.
+
+Unités : 6 par question sans LLM (la trace et 5 observations), 3 de plus par
+appel LLM, 1 par avis. Avec la clé OpenRouter, une question courante en
+consomme 9 (la phrase de synthèse passe par le LLM) et le pire cas 21, soit
+environ 5 500 questions par mois, 2 300 au pire. Au-delà, baisser
+`LANGFUSE_SAMPLE_RATE` (0,5 trace une question sur deux ; une question non
+tracée n'affiche pas les pouces).
+
+Le coût exact facturé par OpenRouter est dans les métadonnées de la trace
+(`llmCostUsd`). Pour que Langfuse chiffre aussi chaque génération, ajouter le
+modèle dans **Settings** → **Models** (motif `anthropic/claude-haiku-5.5`) :
+il ne connaît pas les identifiants OpenRouter.
+
+L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
+panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
+pour le limiter par IP, la troisième règle personnalisée du firewall est libre.

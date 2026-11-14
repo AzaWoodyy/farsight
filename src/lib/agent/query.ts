@@ -572,7 +572,8 @@ function generatedGaps(reply: { sql: string; missing: string[] }): string[] {
   return !reply.sql || ALWAYS_FALSE.test(reply.sql) ? ["la donnée demandée (la requête générée ne lisait aucune donnée réelle)"] : [];
 }
 
-async function askSql(db: DatabaseSync, prompt: string) {
+/** `functionId` names the call in the trace: generating a query, or repairing one. */
+async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sql" | "repair-sql") {
   const llm = getLlm();
 
   if (!llm) return null;
@@ -582,6 +583,7 @@ async function askSql(db: DatabaseSync, prompt: string) {
     output: Output.object({ schema: SqlOutput }),
     instructions: `${SQL_RULES}\nSchema:\n${schemaPrompt(db)}`,
     prompt,
+    telemetry: { functionId },
     maxOutputTokens: LLM_CALL.maxOutputTokens,
     maxRetries: LLM_CALL.maxRetries,
     abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
@@ -654,6 +656,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       prompt:
         `Question: ${question}\nResolved entities: ${entitySummary(entities)}` +
         (unread.length ? `\nWords the rules could not read: ${unread.join(", ")}.${picked}` : ""),
+      telemetry: { functionId: "pick-tool" },
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
@@ -681,7 +684,7 @@ const textToSqlDecider: Decider<BuildInput, BuildResult> = {
   level: "llm",
   name: "text-to-SQL",
   run: async ({ db, question, entities }) => {
-    const reply = await askSql(db, `Question: ${question}\nResolved entities: ${entitySummary(entities)}`);
+    const reply = await askSql(db, `Question: ${question}\nResolved entities: ${entitySummary(entities)}`, "generate-sql");
 
     if (!reply) return null;
     const gaps = generatedGaps(reply);
@@ -744,6 +747,7 @@ const llmCorrector: Decider<CorrectInput, Fix> = {
       `Question: ${question}\nThis query ${problem.kind === "empty" ? "returned no rows" : "was rejected"}:\n${plan.sql}\n` +
         `Parameters: ${JSON.stringify(plan.params)}\nProblem: ${problem.message}\n` +
         "Return a corrected query. Inline the parameter values as literals.",
+      "repair-sql",
     );
 
     // A repair that gives up on real data is no repair.

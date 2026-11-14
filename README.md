@@ -194,6 +194,17 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
   15 minutes, l'agent repasse en mode déterministe, et la réponse le dit dans
   une note.
 
+### Traçage et confidentialité
+
+Avec les variables `LANGFUSE_*` (production uniquement), chaque question est
+une trace [Langfuse](https://langfuse.com) : la question, les quatre étapes,
+les appels LLM et le pouce haut ou bas donné dans l'interface. Elle sert à
+repérer les réponses ratées. Aucune IP, aucun cookie ni identifiant de
+visiteur n'y figure, les e-mails, adresses IP et numéros de téléphone tapés
+dans une question sont masqués, et les traces sont conservées 30 jours (région
+UE). Sans ces variables, en local et dans l'eval, rien n'est envoyé. Détail :
+[docs/deploy.md](docs/deploy.md).
+
 ## Déploiement
 
 Vercel (Hobby), avec la base incluse dans la fonction `/api/ask`, BotID Basic
@@ -219,9 +230,12 @@ src/lib/agent/tools.ts       outils typés (schémas zod, requêtes, corrections
 src/lib/agent/query.ts       routage vers les outils, text-to-SQL, auto-correction
 src/lib/agent/guard.ts       garde-fou de schéma
 src/lib/agent/llm.ts         client OpenRouter
+src/lib/agent/trace.ts       trace Langfuse d'une question : étapes, tags, usage LLM
+src/lib/tracing/             export Langfuse (désactivé sans clés), masquage, score de feedback
 src/app/api/ask/route.ts     flux de messages UI (data parts) pour useChat
+src/app/api/feedback/route.ts  pouce haut ou bas -> score Langfuse
 src/app/                     interface (étapes, tableau triable)
-src/instrumentation-client.ts  BotID côté client (protège POST /api/ask)
+src/instrumentation-client.ts  BotID côté client (protège POST /api/ask et /api/feedback)
 docs/deploy.md               déploiement Vercel et réglages manuels
 eval/questions.json          questions de référence et attentes vérifiables
 scripts/eval.ts              bun run eval

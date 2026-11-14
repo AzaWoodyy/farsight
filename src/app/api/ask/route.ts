@@ -1,8 +1,15 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { checkBotId } from "botid/server";
+import { after } from "next/server";
 import { z } from "zod";
 import { runAgent } from "@/lib/agent/run";
+import { traceQuestion } from "@/lib/agent/trace";
 import type { AgentUIMessage } from "@/lib/agent/types";
+import { flushTracing, startTracing } from "@/lib/tracing/langfuse";
+
+// Registered with the route: a registration made in instrumentation.ts did not reach
+// the module instances this route runs the agent with.
+startTracing();
 
 /**
  * Worst case: five LLM calls (understand, query, two repairs, summary), each
@@ -28,6 +35,10 @@ const ChatRequest = z.object({
  * the text of the last user message is used. Response: a UI message stream
  * with one `data-step` part per step (updated in place, id = step name) and
  * a final `data-answer` part. Requests flagged as bots by BotID get a 403.
+ *
+ * When Langfuse is configured the question is one trace (question, steps,
+ * LLM calls: never the IP, a cookie or a header), and a `data-trace` part
+ * gives its id to the thumbs up / down of the UI.
  */
 export async function POST(req: Request) {
   // BotID Basic, before any model call. Outside Vercel (`bun run dev`, a local
@@ -50,14 +61,28 @@ export async function POST(req: Request) {
 
   if (!question) return Response.json({ error: "question is required" }, { status: 400 });
 
+  // The spans are sent once the answer is fully streamed, outside the response:
+  // a slow or unreachable Langfuse costs the visitor nothing.
+  const answered = Promise.withResolvers<void>();
+  after(() => answered.promise.then(flushTracing));
+
   const stream = createUIMessageStream<AgentUIMessage>({
     execute: async ({ writer }) => {
       writer.write({ type: "start" });
-      await runAgent(question, (event) => {
-        if (event.type === "step")
-          writer.write({ type: "data-step", id: event.part.step, data: event.part });
-        else writer.write({ type: "data-answer", id: "answer", data: event.answer });
-      });
+
+      try {
+        await traceQuestion(question, (traceId) => {
+          if (traceId) writer.write({ type: "data-trace", id: "trace", data: { traceId } });
+
+          return runAgent(question, (event) => {
+            if (event.type === "step") writer.write({ type: "data-step", id: event.part.step, data: event.part });
+            else writer.write({ type: "data-answer", id: "answer", data: event.answer });
+          });
+        });
+      } finally {
+        answered.resolve();
+      }
+
       writer.write({ type: "finish" });
     },
     onError: (err) => {

@@ -27,6 +27,8 @@ These are settled; build toward them. The POC on `main` predates some of them (i
 - **Hosting**: a separate Vercel project on the Hobby plan, sharing its quotas with the portfolio site. Rate limiting per IP is required.
   - Production is deployed by the `Deploy` workflow (`vercel deploy --prod` from GitHub Actions, build on Vercel): after each push to `main` and after each successful `Data release` on `main`. The Vercel Git integration stays off (`git.deploymentEnabled: false`); previews are manual. Details in `docs/deploy.md`.
 
+- **Observability**: Langfuse Cloud (Hobby), one trace per question with one observation per step and the AI SDK's LLM calls, plus a thumbs up / down score (`/api/feedback`). Off without the three `LANGFUSE_*` variables (local, eval). No IP, cookie or visitor identifier in a trace; spans are sent after the response (`after`). Observation names and tags in `src/lib/agent/trace.ts` are what the Langfuse filters target: keep them stable.
+
 ## Data
 
 - Source: Leaguepedia Cargo tables (CC BY-SA 3.0). Every answer cites and links its Leaguepedia pages. Data Dragon provides champion, item and rune names and icons, mapped from Leaguepedia display names (for example Wukong is `MonkeyKing`).

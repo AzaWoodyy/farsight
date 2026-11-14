@@ -7,6 +7,7 @@ import { type DecideOutcome, type Decider, decide, describeAttempts } from "./de
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
 import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE } from "./llm";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
+import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { understandQuestion } from "./understand";
 
@@ -342,6 +343,7 @@ const llmSummary: Decider<SummaryInput, string> = {
         "Garde exactement leurs chiffres et leur périmètre (compétition, éditions, période) : " +
         "n'ajoute aucun chiffre, aucune période (saison, année en cours…) ni aucune interprétation absente des faits.",
       prompt: JSON.stringify({ question, faits: facts }),
+      telemetry: { functionId: "write-summary" },
       maxOutputTokens: 300,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
@@ -528,31 +530,58 @@ async function format(
 
 /**
  * Runs the four steps, emitting each step's progress and the final answer.
+ * Each step is one observation of the question's trace.
  * `now` dates the relative seasons of the question ("l'an dernier"); the eval passes a fixed date.
  */
 export async function runAgent(question: string, emit: Emit, now: Date = new Date()): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
-  const entities = await understand(db, question, emit, now);
+  // The last state of each step, as streamed: what its observation reports.
+  const steps = new Map<StepName, StepPart>();
+
+  const traced: Emit = (event) => {
+    if (event.type === "step") steps.set(event.part.step, event.part);
+    emit(event);
+  };
+
+  const entities = await traceStep(
+    "understand",
+    { question },
+    () => understand(db, question, traced, now),
+    (e) => understandReport(question, e, steps.get("understand")),
+  );
+
   const route = routeQuestion(question, entities, readSchema(db), coverageLookup(db));
   const missing: string[] = [];
-  let rows: SqlRow[] = [];
-  let plan: QueryPlan | null = null;
 
-  const first = await build(db, question, entities, route, emit, notes, missing);
+  const first = await traceStep(
+    "build",
+    { question },
+    () => build(db, question, entities, route, traced, notes, missing),
+    (plan) => buildReport(route, plan, steps.get("build")),
+  );
 
-  if (first) {
-    const result = await execute(db, question, entities, first, emit, notes);
-    rows = result.rows;
-    plan = result.plan;
-  } else {
-    const step = new Step("execute", "Exécution…", emit);
-    step.done("warn", "Rien à exécuter");
-  }
+  const { rows, plan } = await traceStep(
+    "execute",
+    { sql: first?.sql ?? null, params: first?.params ?? {} },
+    async () => {
+      if (first) return execute(db, question, entities, first, traced, notes);
+      new Step("execute", "Exécution…", traced).done("warn", "Rien à exécuter");
 
-  const answer = await format(db, question, entities, route, plan, rows, emit, notes, missing);
+      return { rows: [], plan: null };
+    },
+    (result) => executeReport(result.plan, result.rows.length, steps.get("execute")),
+  );
+
+  const answer = await traceStep(
+    "format",
+    { route: plan?.intent ?? route.kind, rowCount: rows.length },
+    () => format(db, question, entities, route, plan, rows, traced, notes, missing),
+    (a) => formatReport(a, steps.get("format")),
+  );
 
   if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
+  recordOutcome(answer, entities, steps);
   emit({ type: "answer", answer });
 
   return answer;

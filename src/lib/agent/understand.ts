@@ -682,6 +682,7 @@ const llmDecider: Decider<Input, Entities> = {
         "Extract League of Legends esports entities from the user's question. " +
         "Do not translate or correct player or team names; copy them as written.",
       prompt: question,
+      telemetry: { functionId: "extract-entities" },
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),

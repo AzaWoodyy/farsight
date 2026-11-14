@@ -32,7 +32,8 @@ export default function Home() {
         >
           Riot Data Dragon
         </a>
-        . Projet non affilié à Riot Games.
+        . Projet non affilié à Riot Games. Les questions posées sont conservées 30 jours, sans adresse IP ni
+        identifiant, pour améliorer l&apos;agent.
       </footer>
     </main>
   );
