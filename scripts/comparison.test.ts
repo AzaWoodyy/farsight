@@ -143,7 +143,11 @@ test("two players who met: their games against each other first, the scope's sta
     expect(solo(v.h2h!)).toEqual([1, 0]);
     expect(solo(v.global)).toEqual([1.5, 0]);
 
-    expect(out.totals).toMatchObject({ games_a: 3, wins_a: 2, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1, h2h_listed: 2, solo_kills_a: 1, solo_kills_b: 0 });
+    expect(out.totals).toMatchObject({ games_a: 3, wins_a: 2, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1, h2h_listed: 2, solo_kills_a: 1, solo_kills_b: 0, h2h_same_lane: 2 });
+    // Both games against each other were in mid: a lane face-off, said in the answer and drawn per game.
+    expect(v.lanes).toEqual({ same: 2, roles: [{ role: "Mid", games: 2 }] });
+    expect(v.games.map((g) => [g.a.role, g.b.role])).toEqual([["Mid", "Mid"], ["Mid", "Mid"]]);
+    expect(out.facts).toContain("Toutes ces parties se sont jouées dans la même lane (Mid).");
     expect(out.facts).toContain("Caps et Humanoid en LEC se sont affrontés sur 2 parties : Caps 1 – 1 Humanoid");
     expect(out.facts).toContain("face à face, Caps 2 parties, 1 victoires (50 %), KDA 3,3, 1 solo kill ;");
     expect(out.facts).toContain("Sur toutes leurs parties : Caps 3 parties, 2 victoires (67 %), KDA 6,3, 3 solo kills ;");

@@ -184,6 +184,8 @@ export type PlayerProfile = {
 /** One player's line in a game of a two-player comparison. */
 export type VersusSide = {
   team: string | null;
+  /** Role in that game (Top, Jungle, Mid, Bot, Support). */
+  role: string | null;
   champion: string | null;
   championIcon: string | null;
   kills: number | null;
@@ -213,6 +215,8 @@ export type VersusView = {
   global: { columns: string[]; rows: TableCell[][] };
   /** Statistics over their games against each other only; null when they never met in the scope. */
   h2h: { columns: string[]; rows: TableCell[][] } | null;
+  /** Of their games against each other, how many they played in the same role, and in which roles. */
+  lanes: { same: number; roles: { role: string; games: number }[] };
   /** Their games against each other, newest first. */
   games: VersusGame[];
 };
@@ -262,6 +266,37 @@ export type GameScoreboard = {
   players: ScoreboardPlayer[];
 };
 
+/** One player's line on a champion: how often and how well they played it. */
+export type ChampionPlayer = {
+  player: string;
+  /** Team of their latest game on the champion. */
+  team: string | null;
+  games: number;
+  wins: number;
+  /** (kills + assists) / deaths over those games; null when a figure is missing. */
+  kda: number | null;
+};
+
+/** One champion in a competition and period (champion_event_stats tool); null figures are not in the data ("n/d"). */
+export type ChampionProfile = {
+  champion: string;
+  icon: string | null;
+  /** "aux Worlds en 2024", "en LCK", with the period when the question has one. */
+  scope: string;
+  /** Games of the scope, the presence denominator. */
+  games: number;
+  picks: number;
+  bans: number;
+  wins: number;
+  kda: number | null;
+  /** Averages per game played on the champion; `counted` is the number of games that have the figure. */
+  averages: { key: string; label: string; value: number | null; signed?: boolean; counted: number }[];
+  /** Most games on the champion first. */
+  players: ChampionPlayer[];
+  /** Roles it was played in, most games first. */
+  roles: { role: string; games: number }[];
+};
+
 export type Answer = {
   title: string;
   summary: string;
@@ -275,6 +310,10 @@ export type Answer = {
   scoreboard: GameScoreboard | null;
   /** Two players set against each other: statistics, their games against each other (player_comparison tool). */
   versus: VersusView | null;
+  /** One champion's profile (champion_event_stats tool). */
+  champion: ChampionProfile | null;
+  /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */
+  icons: Record<string, string>;
   /** Database profile of each player the question names, for comparison layouts. */
   profiles: PlayerProfile[];
   sources: Source[];

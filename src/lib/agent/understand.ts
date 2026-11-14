@@ -64,7 +64,7 @@ export const LOL_DOMAIN = new RegExp(
  * its own ("Solo aux Worlds") is still resolved.
  */
 const TERM_PHRASES =
-  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
+  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
 
 const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
 
@@ -318,11 +318,34 @@ const CHAMPION_SHORTHANDS = {
   asol: "Aurelion Sol",
   monkeyking: "Wukong",
   nunu: "Nunu & Willump",
+  "nunu et willump": "Nunu & Willump",
+  "nunu and willump": "Nunu & Willump",
+  willump: "Nunu & Willump",
+  jarvan: "Jarvan IV",
+  cho: "Cho'Gath",
+  kog: "Kog'Maw",
+  kha: "Kha'Zix",
+  vel: "Vel'Koz",
+  rek: "Rek'Sai",
+  aurelion: "Aurelion Sol",
+  naut: "Nautilus",
+  kass: "Kassadin",
+  morde: "Mordekaiser",
+  tahm: "Tahm Kench",
+  heca: "Hecarim",
+  blitz: "Blitzcrank",
+  yi: "Master Yi",
+  ez: "Ezreal",
+  gp: "Gangplank",
+  tk: "Tahm Kench",
+  lb: "LeBlanc",
   mundo: "Dr. Mundo",
   kaisa: "Kai'Sa",
   renata: "Renata Glasc",
   xin: "Xin Zhao",
 };
+
+const ROLE_NAMES = new Set(["top", "jungle", "mid", "bot", "support", "adc"]);
 
 type TeamIndex = Map<string, ResolvedTeam & { games: number; curated: boolean }>;
 
@@ -369,7 +392,8 @@ function getIndexes(db: DatabaseSync): Indexes {
       .replace(/^Team\s+/i, "")
       .replace(/\s+(Esports|e-Sports|Gaming|Esport)$/i, "");
 
-    if (normalizeAlias(short).length >= 3) add(short, team, false);
+    // "Top Esports" is not "top": a bare role word names the role (TES and Top Esports still name the team).
+    if (normalizeAlias(short).length >= 3 && !ROLE_NAMES.has(normalizeAlias(short))) add(short, team, false);
   }
 
   for (const [alias, name] of Object.entries(TEAM_SHORTHANDS))

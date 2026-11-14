@@ -10,9 +10,13 @@ import {
   STEPS,
   type StepName,
   type StepPart,
+  type TableCell,
   type TraceStatus,
 } from "@/lib/agent/types";
+import { z } from "zod";
+import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
+import { ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { PlayerComparison } from "./player-comparison";
@@ -20,8 +24,9 @@ import { Versus } from "./versus";
 
 const EXAMPLES = [
   "résultats de Chovy à tous les Worlds",
-  "bilan de 정지훈 aux mondiaux",
-  "Faker au MSI",
+  "stats d'Azir aux Worlds 2025",
+  "champions les plus bannis en LCK 2025",
+  "meilleurs mids LEC 2025",
   "timeline de la game 5 de la finale des Worlds 2024",
 ];
 
@@ -275,10 +280,11 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
         <span className="text-accent">#</span> {answer.title}
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
+      {answer.champion && <ChampionProfileView p={answer.champion} />}
       {answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : (
-        answer.table && <TableAnswer table={answer.table} profiles={answer.profiles} />
+        answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}
       {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
       {answer.timeline && <GameTimeline timeline={answer.timeline} />}
@@ -482,34 +488,103 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
   );
 }
 
-/** A two-player comparison gets its own layouts; any other table stays the generic one. */
-function TableAnswer({ table, profiles }: { table: NonNullable<Answer["table"]>; profiles: Answer["profiles"] }) {
-  const comparison = useMemo(() => detectComparison(table, profiles), [table, profiles]);
+/** The ranking order a tool was asked for, when it has one (champion_ranking): the champion layout's bar. */
+const sortHint = (answer: Answer) => {
+  const input = answer.meta.input;
 
-  if (!comparison) return <GenericTable table={table} />;
+  return input && "sort" in input ? input.sort : undefined;
+};
 
-  return <PlayerComparison comparison={comparison} />;
+/**
+ * A two-player comparison or a champion ranking gets its own layout, detected from the table itself (typed
+ * tool or generated SQL); any other table stays the sortable generic one.
+ */
+function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Answer["table"]> }) {
+  const comparison = useMemo(() => detectComparison(table, answer.profiles), [table, answer.profiles]);
+  const champions = useMemo(() => detectChampionRanking(table, answer.icons, sortHint(answer)), [table, answer]);
+
+  if (comparison) return <PlayerComparison comparison={comparison} />;
+
+  if (champions) return <ChampionRankingView ranking={champions} fallback={<GenericTable table={table} />} />;
+
+  return <GenericTable table={table} />;
 }
 
+const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
+
+const asNumber = (v: TableCell) => z.number().safeParse(v).data ?? null;
+
+/** Headers of the machine-named columns the champion and comparison layouts read, when shown as a plain table. */
+const COLUMN_LABEL = new Map([
+  ["rank", "rang"],
+  ["presence", "présence %"],
+  ["winrate", "% victoires"],
+  ["player", "joueur"],
+  ["games", "parties"],
+  ["wins", "victoires"],
+]);
+
+const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
+
+/** A cell as shown: numbers in French notation (years as written), a missing figure as n/d. */
+const cellText = (v: TableCell, column: string) => {
+  const n = asNumber(v);
+
+  return v == null ? "n/d" : n != null && !YEAR_COLUMN.test(column) ? NUMBER.format(n) : String(v);
+};
+
+/** Any table, sortable by each column (numbers before text, missing figures last). */
 function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+
+  const rows = useMemo(() => {
+    if (!sort) return table.rows;
+
+    return [...table.rows].sort((a, b) => {
+      const [x, y] = [a[sort.col], b[sort.col]];
+
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+
+      const [nx, ny] = [asNumber(x), asNumber(y)];
+
+      if (nx != null && ny != null) return (nx - ny) * sort.dir;
+
+      return String(x).localeCompare(String(y), "fr", { numeric: true }) * sort.dir;
+    });
+  }, [table.rows, sort]);
+
   return (
     <div className="mt-4 overflow-x-auto border border-line">
       <table className="w-full border-collapse text-left text-xs">
         <thead className="border-b border-line">
           <tr>
-            {table.columns.map((c) => (
-              <th key={c} scope="col" className="px-3 py-2 font-normal uppercase tracking-wider text-muted">
-                {c}
-              </th>
-            ))}
+            {table.columns.map((c, i) => {
+              const active = sort?.col === i;
+
+              return (
+                <th key={c} scope="col" className="px-3 py-2 font-normal" aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                  <button
+                    type="button"
+                    // Numbers sort high to low first: a ranking reads from the top.
+                    onClick={() => setSort({ col: i, dir: active ? (sort.dir === 1 ? -1 : 1) : asNumber(table.rows[0]?.[i] ?? null) != null ? -1 : 1 })}
+                    className={`whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : "text-muted"}`}
+                  >
+                    {COLUMN_LABEL.get(c) ?? c}
+                    <span aria-hidden className="ml-1 inline-block w-2">
+                      {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
+                    </span>
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {table.rows.map((r, i) => (
+          {rows.map((r, i) => (
             <tr key={i} className="border-b border-dashed border-line last:border-0">
               {r.map((v, j) => (
-                <td key={j} className="px-3 py-2 tabular-nums">
-                  {v == null ? "—" : String(v)}
+                <td key={j} className={`px-3 py-2 tabular-nums ${v == null ? "text-muted" : ""}`}>
+                  {cellText(v, table.columns[j])}
                 </td>
               ))}
             </tr>

@@ -2,10 +2,11 @@ import { executeGeneratedQuery, SqlTimeoutError } from "../db/generated-query";
 import { periodProblem } from "../domain/years";
 import { leagueMembers, SCOPE_LABEL } from "../domain/leagues";
 import { claimsBeyondFacts } from "./summary";
+import { CHAMPION_COLUMN } from "../champions";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText } from "ai";
 import { z } from "zod";
-import { openDb, readSchema, type SqlRow } from "../db";
+import { openDb, readSchema, selectAll, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
@@ -347,6 +348,25 @@ const llmSummary: Decider<SummaryInput, string> = {
   },
 };
 
+/** Icons of the champions a generated table names, read from the database (same Data Dragon version for all). */
+function championIcons(db: DatabaseSync, columns: string[], raw: SqlRow[]): Record<string, string> {
+  const column = columns.find((c) => CHAMPION_COLUMN.test(c));
+
+  if (!column) return {};
+  const names = [...new Set(raw.flatMap((r) => z.string().safeParse(r[column]).data ?? []))];
+
+  if (!names.length) return {};
+
+  const rows = selectAll(
+    db,
+    z.object({ name: z.string(), icon_url: z.string() }),
+    `SELECT name, icon_url FROM champions WHERE icon_url IS NOT NULL AND name IN (SELECT value FROM json_each(?))`,
+    [JSON.stringify(names)],
+  );
+
+  return Object.fromEntries(rows.map((r) => [r.name, r.icon_url]));
+}
+
 function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null): string {
   if (route.kind === "out_of_scope")
     return (
@@ -437,6 +457,8 @@ async function format(
       timeline: null,
       scoreboard: null,
       versus: null,
+      champion: null,
+      icons: {},
       profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
@@ -453,7 +475,7 @@ async function format(
 
     step.done("error", "Requête interrompue ou rejetée");
 
-    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
+    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, champion: null, icons: {}, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -468,6 +490,8 @@ async function format(
       timeline: null,
       scoreboard: null,
       versus: null,
+      champion: null,
+      icons: {},
       profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
@@ -491,6 +515,9 @@ async function format(
       timeline: null,
       scoreboard: null,
       versus: null,
+      champion: null,
+      // A column of champion names gets the champion layout, with their icons.
+      icons: championIcons(db, columns, raw),
       // Several named players: the comparison layouts show their team and role next to the generated table.
       profiles: entities.players.length > 1 ? playerProfiles(db, entities) : [],
       sources: pages.length
@@ -530,6 +557,8 @@ async function format(
     timeline: out.timeline ?? null,
     scoreboard: out.scoreboard ?? null,
     versus: out.versus ?? null,
+    champion: out.champion ?? null,
+    icons: out.icons ?? {},
     profiles: plan.tool.call.tool === "player_comparison" ? playerProfiles(db, entities) : [],
     sources: out.sources,
     followUps,

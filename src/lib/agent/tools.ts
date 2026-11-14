@@ -1,4 +1,4 @@
-import { leagueMembers } from "../domain/leagues";
+import { LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
 import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
@@ -9,6 +9,8 @@ import { wikiUrl } from "../sources/leaguepedia";
 import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
 import {
+  type ChampionPlayer,
+  type ChampionProfile,
   type Entities,
   type GameScoreboard,
   LEAGUE_NAMES,
@@ -90,6 +92,41 @@ export const ChampionStatsInput = z.object({
   league: League,
   ...Period,
 });
+
+export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda"] as const;
+
+export type ChampionSort = (typeof CHAMPION_SORTS)[number];
+
+export const ChampionRankingInput = z.object({
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+  sort: z
+    .enum(CHAMPION_SORTS)
+    .describe("Ranking order: picks (most played), bans (most banned), presence (picks + bans share of games), winrate or kda (both with a minimum of picks)"),
+  role: z.enum(["Top", "Jungle", "Mid", "Bot", "Support"]).nullable().describe("Only the picks played in this role, null for every role"),
+  minPicks: z.number().int().min(1).max(200).nullable().describe("Minimum picks for winrate and kda rankings, null for the default"),
+});
+
+export type ChampionRankingInput = z.infer<typeof ChampionRankingInput>;
+
+export const PLAYER_CRITERIA = ["kda", "winrate", "games", "kills", "assists", "kp", "dpm", "cspm", "gpm", "vspm"] as const;
+
+export type PlayerCriterion = (typeof PLAYER_CRITERIA)[number];
+
+export const PlayerLeaderboardInput = z.object({
+  role: z.enum(["Top", "Jungle", "Mid", "Bot", "Support"]).nullable().describe("Players of one role only (an ADC is Bot), null for every role"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+  criterion: z
+    .enum(PLAYER_CRITERIA)
+    .describe(
+      "What 'best' means: kda (default), winrate, games (most games), kills or assists (totals), kp (kill participation), " +
+        "dpm (damage per minute), cspm (CS per minute), gpm (gold per minute), vspm (vision score per minute)",
+    ),
+  minGames: z.number().int().min(1).max(200).nullable().describe("Minimum games to be ranked, null for the default"),
+});
+
+export type PlayerLeaderboardInput = z.infer<typeof PlayerLeaderboardInput>;
 
 export const StandingsInput = z.object({
   league: League,
@@ -189,6 +226,9 @@ export type ToolOutput = {
   timeline?: TimelineView;
   scoreboard?: GameScoreboard;
   versus?: VersusView;
+  champion?: ChampionProfile;
+  /** Champion name → icon of every champion the table names. */
+  icons?: Record<string, string>;
   trace?: ToolTrace[];
   /** Notes shown under the answer (the game shown when several match...). */
   notes?: string[];
@@ -743,6 +783,8 @@ const VersusGameRow = z.object({
   stats_page: NullableText,
   team_a: NullableText,
   team_b: NullableText,
+  role_a: NullableText,
+  role_b: NullableText,
   win_a: z.number().nullable(),
   champion_a: NullableText,
   icon_a: NullableText,
@@ -803,7 +845,7 @@ const comparisonTable = (rows: ComparisonRow[]) => ({
 });
 
 /** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
-function versusScope(league: string, input: PlayerComparisonInput): string {
+function scopeLabel(league: string, input: Period): string {
   const { yearFrom: from, yearTo: to } = input;
 
   const period =
@@ -822,7 +864,7 @@ function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame
     db,
     VersusGameRow,
     `SELECT g.played_at, g.league_short, g.year, g.tab, g.game_n, g.tournament_page, r.stats_page,
-            p.team AS team_a, o.team AS team_b, p.win AS win_a,
+            p.team AS team_a, o.team AS team_b, p.role AS role_a, o.role AS role_b, p.win AS win_a,
             p.champion AS champion_a, ca.icon_url AS icon_a, p.kills AS kills_a, p.deaths AS deaths_a, p.assists AS assists_a,
             o.champion AS champion_b, cb.icon_url AS icon_b, o.kills AS kills_b, o.deaths AS deaths_b, o.assists AS assists_b
      FROM v_game_players p
@@ -845,11 +887,43 @@ function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame
       playedAt: r.played_at,
       label: [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab), r.game_n ? `game ${r.game_n}` : ""].filter(Boolean).join(" · "),
       winA: r.win_a == null ? null : r.win_a === 1,
-      a: { team: r.team_a && displayTeam(r.team_a), champion: r.champion_a, championIcon: r.icon_a, kills: r.kills_a, deaths: r.deaths_a, assists: r.assists_a },
-      b: { team: r.team_b && displayTeam(r.team_b), champion: r.champion_b, championIcon: r.icon_b, kills: r.kills_b, deaths: r.deaths_b, assists: r.assists_b },
+      a: { team: r.team_a && displayTeam(r.team_a), role: r.role_a, champion: r.champion_a, championIcon: r.icon_a, kills: r.kills_a, deaths: r.deaths_a, assists: r.assists_a },
+      b: { team: r.team_b && displayTeam(r.team_b), role: r.role_b, champion: r.champion_b, championIcon: r.icon_b, kills: r.kills_b, deaths: r.deaths_b, assists: r.assists_b },
       source: { label: `Leaguepedia — ${page}`, url: wikiUrl(page) },
     };
   });
+}
+
+/** Of their games against each other, those they played in the same role (a lane face-off), by role. */
+function sameLane(db: DatabaseSync, input: PlayerComparisonInput): VersusView["lanes"] {
+  const params: Params = {};
+
+  Object.assign(params, { a: input.playerA, b: input.playerB });
+
+  const roles = selectAll(
+    db,
+    z.object({ role: Text, games: z.number() }),
+    `SELECT p.role, COUNT(*) AS games FROM v_game_players p
+     JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team AND o.player = :b AND o.role = p.role
+     WHERE p.player = :a AND p.role IS NOT NULL AND ${comparisonScope(input, params, "p")}
+     GROUP BY p.role ORDER BY games DESC, p.role`,
+    params,
+  );
+
+  return { same: roles.reduce((n, r) => n + r.games, 0), roles };
+}
+
+/** "dont 12 dans la même lane (Mid)", or why they never faced each other in lane. */
+function laneFacts(lanes: VersusView["lanes"], met: number, profiles: [string | null, string | null], names: [string, string]): string {
+  if (!met) return "";
+
+  if (lanes.same === met) return ` Toutes ces parties se sont jouées dans la même lane (${lanes.roles.map((r) => r.role).join(", ")}).`;
+
+  if (lanes.same) return ` Dont ${lanes.same} dans la même lane (${lanes.roles.map((r) => `${r.role} ${r.games}`).join(", ")}).`;
+
+  const [ra, rb] = profiles;
+
+  return ` Jamais dans la même lane${ra && rb && ra !== rb ? ` (${names[0]} joue ${ra}, ${names[1]} ${rb})` : ""}.`;
 }
 
 const playerComparison: ToolDef<PlayerComparisonInput> = {
@@ -886,7 +960,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   format: (db, input, sqlRows): ToolOutput => {
     const rows = z.array(ComparisonRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
-    const scope = versusScope(league, input);
+    const scope = scopeLabel(league, input);
     const params: Params = {};
 
     Object.assign(params, { a: input.playerA, b: input.playerB });
@@ -895,6 +969,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     const games = faced.length ? versusGames(db, input) : [];
     const met = faced.find((r) => r.player === input.playerA)?.games ?? 0;
     const winsA = faced.find((r) => r.player === input.playerA)?.wins ?? 0;
+    const lanes = met ? sameLane(db, input) : { same: 0, roles: [] };
+    const mainRole = (player: string) => games.find((g) => g.a.role)?.[player === input.playerA ? "a" : "b"].role ?? null;
 
     const line = (r: ComparisonRow) => {
       const kda = r.avg_kills != null && r.avg_deaths && r.avg_assists != null ? `, KDA ${fr1((r.avg_kills + r.avg_assists) / r.avg_deaths)}` : "";
@@ -910,7 +986,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     const facts =
       (met
         ? `${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. ` +
-          `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`
+          `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.` +
+          laneFacts(lanes, met, [mainRole(input.playerA), mainRole(input.playerB)], [input.playerA, input.playerB])
         : `${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`) +
       (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
       ([...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
@@ -925,6 +1002,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         scope,
         global: comparisonTable(rows),
         h2h: met ? comparisonTable(faced) : null,
+        lanes,
         games,
       },
       facts,
@@ -942,6 +1020,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         h2h_games: met,
         h2h_wins_a: winsA,
         h2h_listed: games.length,
+        h2h_same_lane: lanes.same,
         // The face-to-face when they met, else the scope: what the comparison shows first.
         solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? "n/d",
         solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? "n/d",
@@ -959,11 +1038,132 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
 // 4. Champion in an event -----------------------------------------------------------
 
+/** (kills + assists) / deaths, a perfect game counting one death; null without the three figures. */
+const kdaOf = (ka: number | null, deaths: number | null) => (ka == null || deaths == null ? null : Math.round((100 * ka) / Math.max(1, deaths)) / 100);
+
+/** French role names, as the answers write them. */
+export const ROLE_LABEL: Record<(typeof ROLES)[number], string> = { Top: "top", Jungle: "jungle", Mid: "mid", Bot: "ADC", Support: "support" };
+
+/** The players of a role, as the answers name them. */
+const ROLE_PLAYERS: Record<(typeof ROLES)[number], string> = { Top: "toplaners", Jungle: "junglers", Mid: "mids", Bot: "ADC", Support: "supports" };
+
+/** A champion's picks in the scope (`gp` is v_game_players). */
+function championScope(input: ChampionStatsInput, params: Params): string {
+  params.champion = input.champion;
+
+  return `gp.champion = :champion AND ${leagueFilter("gp.league", input, params)} AND gp.stage IN (${COMPETITION_STAGES}) ${periodFilter("gp.year", input, params)}`;
+}
+
+/** End-of-game figures averaged per game on the champion, with the number of games that have them. */
+const CHAMPION_AVERAGES = [
+  { key: "kills", label: "kills", digits: 1 },
+  { key: "deaths", label: "morts", digits: 1 },
+  { key: "assists", label: "assists", digits: 1 },
+  { key: "gold", label: "or", digits: 0 },
+  { key: "cs", label: "CS", digits: 1 },
+  { key: "damage", label: "dégâts", digits: 0 },
+  { key: "vision", label: "score de vision", digits: 1 },
+] as const;
+
+/** In-game figures (Riot data), averaged over the games that have them. */
+const CHAMPION_INGAME = [
+  { key: "gold_diff_15", label: "écart d'or @15", digits: 0 },
+  { key: "cs_diff_15", label: "écart CS @15", digits: 1 },
+] as const;
+
+const Averages = z.record(z.string(), z.number().nullable());
+
+const ChampionPlayerRow = z.object({ player: Text, team: NullableText, games: z.number(), wins: z.number(), ka: z.number().nullable(), deaths: z.number().nullable() });
+
+const roundTo = (n: number | null, digits: number) => (n == null ? null : Math.round(n * 10 ** digits) / 10 ** digits);
+
+/** "12 345", "3,1", "+72", "n/d" */
+export const frNumber = (n: number | null, signedValue = false) =>
+  n == null ? "n/d" : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { maximumFractionDigits: 2 }).replace(/[\u202f\u00a0]/g, " ")}`;
+
+/** Averages, players and roles of a champion in the scope of the question. */
+function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): ChampionProfile {
+  const params: Params = {};
+  const where = championScope(input, params);
+  const ends = CHAMPION_AVERAGES.map((a) => `AVG(gp.${a.key}) AS ${a.key}, COUNT(gp.${a.key}) AS n_${a.key}`).join(", ");
+
+  const totals = selectOne(
+    db,
+    Averages,
+    `SELECT COUNT(*) AS picks, COALESCE(SUM(gp.win), 0) AS wins,
+            SUM(CASE WHEN gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
+            SUM(CASE WHEN gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS kda_deaths, ${ends}
+     FROM v_game_players gp WHERE ${where}`,
+    params,
+  ) ?? {};
+
+  const ingameParams: Params = {};
+
+  const ingame = selectOne(
+    db,
+    Averages,
+    `SELECT ${CHAMPION_INGAME.map((a) => `AVG(gp.${a.key}) AS ${a.key}, COUNT(gp.${a.key}) AS n_${a.key}`).join(", ")}
+     FROM v_game_player_stats gp WHERE ${championScope(input, ingameParams)}`,
+    ingameParams,
+  ) ?? {};
+
+  const players = selectAll(
+    db,
+    ChampionPlayerRow,
+    `SELECT gp.player, gp.team, MAX(gp.played_at) AS last_game, COUNT(*) AS games, SUM(gp.win) AS wins,
+            SUM(CASE WHEN gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
+            SUM(CASE WHEN gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths
+     FROM v_game_players gp WHERE ${where}
+     GROUP BY gp.player ORDER BY games DESC, wins DESC, gp.player LIMIT 5`,
+    params,
+  );
+
+  const roles = selectAll(
+    db,
+    z.object({ role: Text, games: z.number() }),
+    `SELECT gp.role, COUNT(*) AS games FROM v_game_players gp WHERE ${where} AND gp.role IS NOT NULL GROUP BY gp.role ORDER BY games DESC, gp.role`,
+    params,
+  );
+
+  const picks = totals.picks ?? 0;
+
+  return {
+    champion: input.champion,
+    icon,
+    scope,
+    games,
+    picks,
+    bans,
+    wins: totals.wins ?? 0,
+    kda: kdaOf(totals.ka ?? null, totals.kda_deaths ?? null),
+    averages: [
+      ...CHAMPION_AVERAGES.map((a) => ({ key: a.key, label: a.label, value: roundTo(totals[a.key] ?? null, a.digits), counted: totals[`n_${a.key}`] ?? 0 })),
+      ...CHAMPION_INGAME.map((a) => ({ key: a.key, label: a.label, value: roundTo(ingame[a.key] ?? null, a.digits), signed: true, counted: ingame[`n_${a.key}`] ?? 0 })),
+    ],
+    players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
+    roles,
+  };
+}
+
+/** The sentence part of a champion's averages, saying which figures are missing or partial. */
+function averagesFacts(p: ChampionProfile): string {
+  const shown = p.averages.map((a) => `${a.label} ${frNumber(a.value, a.signed)}`).join(", ");
+  const partial = p.averages.filter((a) => a.counted > 0 && a.counted < p.picks);
+  const ingame = p.averages.find((a) => a.key === "gold_diff_15");
+
+  return (
+    `Moyennes par partie : ${shown}.` +
+    (partial.length ? ` Calculés sur une partie des parties seulement (les autres n'ont pas la donnée) : ${partial.map((a) => `${a.label} sur ${a.counted}`).join(", ")}.` : "") +
+    (ingame && ingame.counted === 0 ? " Écarts à 15 min n/d : aucune partie avec données Riot dans ce périmètre." : "")
+  );
+}
+
 const championEventStats: ToolDef<ChampionStatsInput> = {
   name: "champion_event_stats",
   label: "stats d'un champion × compétition",
   description:
-    "A champion's picks, bans, presence and win rate in one competition, edition by edition, with the players who picked it most.",
+    "One champion in one competition and period: picks, bans, presence, win rate, KDA, average kills/deaths/assists, gold, CS, damage, vision " +
+    "and gold/CS difference at 15 min, the players who played it most (games, win rate, KDA), the roles it was played in, and its editions one by one.",
   plan: (_db, input) => {
     const params: Params = {};
 
@@ -1002,7 +1202,13 @@ HAVING COUNT(p.game_id) + COUNT(b.game_id) > 0
 ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
     };
   },
-  relaxations: (input) => (hasPeriod(input) ? [noPeriod(input, "toutes les éditions")] : []),
+  relaxations: (input) => {
+    if (!hasPeriod(input)) return [];
+    const { yearFrom: from, yearTo: to } = input;
+    const when = from != null && from === to ? `en ${from}` : from != null && to != null ? `entre ${from} et ${to}` : from != null ? `depuis ${from}` : `jusqu'en ${to}`;
+
+    return [{ ...noPeriod(input, "toutes les éditions"), note: `${input.champion} n'a été ni pické ni banni ${when} dans cette compétition (qualifications exclues) : affichage de toutes les éditions.` }];
+  },
   format: (db, input, sqlRows): ToolOutput => {
     const raw = z.array(ChampionStatsRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
@@ -1011,23 +1217,26 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
     const bans = sum("bans");
     const wins = sum("wins");
     const games = sum("games");
-    const players = new Map<string, number>();
-
-    for (const r of raw) for (const p of r.players) players.set(p.player, (players.get(p.player) ?? 0) + p.games);
-    const top = [...players].sort((x, y) => y[1] - x[1]).slice(0, 3);
-
-    const facts =
-      `${input.champion} ${inLeague(league)} (${span(raw.map((r) => Number(r.year)))}) : ${picks} picks et ${bans} bans ` +
-      `sur ${games} parties (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
-      `(${pct(wins, picks)} % de victoires).` +
-      (top.length ? ` Joueurs les plus fréquents : ${top.map(([p, n]) => `${p} (${n})`).join(", ")}.` : "");
 
     const icon = selectOne(db, z.object({ icon_url: z.string().nullable() }), "SELECT icon_url FROM champions WHERE name = ?", [
       input.champion,
-    ])?.icon_url;
+    ])?.icon_url ?? null;
+
+    const scope = scopeLabel(league, input);
+    const profile = championProfile(db, input, scope, games, bans, icon);
+    const playerLine = (p: ChampionPlayer) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}, ${pct(p.wins, p.games)} % de victoires, KDA ${frNumber(p.kda)})`;
+
+    const facts =
+      `${input.champion} ${inLeague(league)} (${yearSpan(raw.map((r) => Number(r.year)))}) : ${picks} picks et ${bans} bans ` +
+      `sur ${games} parties (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
+      `(${pct(wins, picks)} % de victoires)` +
+      (picks ? `, KDA ${frNumber(profile.kda)}. ${averagesFacts(profile)}` : ".") +
+      (profile.roles.length ? ` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.` : "") +
+      (profile.players.length ? ` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.` : "");
 
     return {
       title: `${input.champion} — ${league}`,
+      champion: profile,
       table: {
         columns: ["Année", "Tournoi", "Parties", "Picks", "Bans", "Présence %", "V-D", "% victoire", "Joueurs"],
         rows: raw.map((r) => [
@@ -1046,10 +1255,27 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       sources: [
         { label: `Leaguepedia — ${input.champion}`, url: wikiUrl(input.champion) },
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
+        ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [RIOT_DATA_SOURCE] : []),
         { label: "Riot Data Dragon — champions", url: icon ?? `${DDRAGON_BASE}/api/versions.json` },
       ],
-      followUps: top.slice(0, 2).map(([p]) => `Résultats de ${p} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`),
-      totals: { picks, bans, wins, games, events: raw.length },
+      followUps: [
+        `Champions les plus joués ${inLeague(league) || "aux Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`,
+        ...profile.players.slice(0, 2).map((p) => `Résultats de ${p.player} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`),
+      ],
+      totals: {
+        picks,
+        bans,
+        wins,
+        games,
+        events: raw.length,
+        kda: profile.kda ?? "n/d",
+        top_player: profile.players[0]?.player ?? "",
+        top_player_games: profile.players[0]?.games ?? 0,
+        main_role: profile.roles[0]?.role ?? "",
+        avg_gold: profile.averages.find((a) => a.key === "gold")?.value ?? "n/d",
+        avg_damage: profile.averages.find((a) => a.key === "damage")?.value ?? "n/d",
+        gold_diff_15: profile.averages.find((a) => a.key === "gold_diff_15")?.value ?? "n/d",
+      },
     };
   },
   normalize: (db, input) => {
@@ -1057,6 +1283,153 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
 
     return c ? { ...input, champion: c.champion } : null;
   },
+};
+
+// 4b. Champions ranked ------------------------------------------------------------------
+
+const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: string }> = {
+  picks: { title: "les plus joués", criterion: "nombre de picks" },
+  bans: { title: "les plus bannis", criterion: "nombre de bans" },
+  presence: { title: "les plus présents", criterion: "présence, (picks + bans) / parties" },
+  winrate: { title: "au meilleur taux de victoire", criterion: "victoires / picks" },
+  kda: { title: "au meilleur KDA", criterion: "KDA, (kills + assists) / morts" },
+};
+
+/** Columns of the champion ranking table, named as the champion layout reads them. */
+export const CHAMPION_RANKING_COLUMNS = ["rank", "champion", "picks", "bans", "presence", "winrate", "kda"] as const;
+
+const ChampionRankingRow = z.object({
+  champion: Text,
+  icon: NullableText,
+  picks: z.number(),
+  all_picks: z.number(),
+  bans: z.number(),
+  games: z.number(),
+  wins: z.number(),
+  presence: z.number().nullable(),
+  winrate: z.number().nullable(),
+  kda: z.number().nullable(),
+  min_picks: z.number(),
+});
+
+/** Winrate and KDA need enough picks to mean something: 2 % of the scope's games, at least 3. */
+const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
+
+const needsMinPicks = (sort: ChampionSort) => sort === "winrate" || sort === "kda";
+
+/** The games of a ranking's scope, competition and period (`alias` is v_games or v_game_players). */
+function rankingScope(input: { league: string | null } & Period, params: Params, alias: string): string {
+  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
+
+  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
+}
+
+const championRanking: ToolDef<ChampionRankingInput> = {
+  name: "champion_ranking",
+  label: "classement de champions",
+  description:
+    "Ranks the champions of a competition and period: most played (picks), most banned (bans), most present (picks + bans share of games), " +
+    "best win rate or KDA (with a minimum of picks). Each line has picks, bans, presence, win rate and KDA. Optionally one role only " +
+    "('champions les plus joués en mid'). Use it for 'most played / banned / picked champions', 'meta', 'priority picks'.",
+  plan: (_db, input) => {
+    const params: Params = {};
+    const role = input.role ? "gp.role = :role" : "1";
+
+    if (input.role) params.role = input.role;
+
+    if (input.minPicks != null) params.minPicks = input.minPicks;
+    const minPicks = input.minPicks != null ? ":minPicks" : DEFAULT_MIN_PICKS;
+
+    return {
+      params,
+      sql: tidy(`WITH ev AS (
+  SELECT g.game_id FROM v_games g WHERE ${rankingScope(input, params, "g")}
+),
+n AS (SELECT COUNT(*) AS games FROM ev),
+picks AS (
+  SELECT gp.champion, COUNT(*) AS all_picks, SUM(${role}) AS picks,
+         SUM(CASE WHEN ${role} THEN gp.win END) AS wins,
+         SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
+         SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths
+  FROM v_game_players gp WHERE ${rankingScope(input, params, "gp")}
+  GROUP BY gp.champion
+),
+bans AS (
+  SELECT d.champion, COUNT(DISTINCT d.game_id) AS bans FROM v_draft d JOIN ev ON ev.game_id = d.game_id WHERE d.kind = 'ban' GROUP BY d.champion
+),
+lines AS (
+  SELECT c.name AS champion, c.icon_url AS icon, COALESCE(p.picks, 0) AS picks, COALESCE(p.all_picks, 0) AS all_picks,
+         COALESCE(b.bans, 0) AS bans, n.games, COALESCE(p.wins, 0) AS wins,
+         ROUND(100.0 * (COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0)) / MAX(1, n.games), 1) AS presence,
+         CASE WHEN p.picks > 0 THEN ROUND(100.0 * p.wins / p.picks, 1) END AS winrate,
+         CASE WHEN p.picks > 0 AND p.ka IS NOT NULL THEN ROUND(1.0 * p.ka / MAX(1, p.deaths), 2) END AS kda,
+         ${needsMinPicks(input.sort) ? minPicks : "0"} AS min_picks
+  FROM champions c CROSS JOIN n
+  LEFT JOIN picks p ON p.champion = c.name
+  LEFT JOIN bans b ON b.champion = c.name
+  WHERE ${input.role ? "COALESCE(p.picks, 0) > 0" : "COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0) > 0"}
+)
+SELECT * FROM lines
+WHERE picks >= min_picks AND ${input.sort} IS NOT NULL
+ORDER BY ${input.sort} DESC, picks DESC, bans DESC, champion
+LIMIT 20`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (needsMinPicks(input.sort) && input.minPicks !== 1)
+      out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: "Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", reason: "seuil de picks abaissé" });
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(ChampionRankingRow).parse(sqlRows);
+    const league = leagueShortName(db, input.league);
+    const scope = scopeLabel(league, input);
+    const label = CHAMPION_SORT_LABEL[input.sort];
+    const games = rows[0]?.games ?? 0;
+    const minPicks = rows[0]?.min_picks ?? 0;
+    const role = input.role ? ` en ${ROLE_LABEL[input.role]}` : "";
+    const params: Params = {};
+
+    const pages = selectAll(
+      db,
+      z.object({ event_page: Text }),
+      `SELECT DISTINCT g.event_page FROM v_games g WHERE ${rankingScope(input, params, "g")} ORDER BY g.played_at DESC LIMIT 12`,
+      params,
+    ).map((r) => r.event_page);
+
+    const ongoingParams: Params = {};
+    const ongoing = inProgressNote(db, rankingScope(input, ongoingParams, "g"), ongoingParams);
+
+    const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
+      `${i + 1}. ${r.champion} (${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
+      `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
+
+    const facts =
+      `Champions ${label.title}${role} ${scope || "toutes compétitions"} (${games} parties) : ${rows.slice(0, 3).map(line).join(", ")}. ` +
+      `Critère : ${label.criterion}${minPicks ? `, minimum ${minPicks} picks` : ""}.` +
+      (input.role ? ` Picks, victoires et KDA${role} seulement ; bans et présence tous rôles confondus.` : "") +
+      (ongoing ? ` ${ongoing}` : "");
+
+    return {
+      title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
+      table: {
+        columns: [...CHAMPION_RANKING_COLUMNS],
+        rows: rows.map((r, i) => [i + 1, r.champion, r.picks, r.bans, r.presence, r.winrate, r.kda]),
+      },
+      icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
+      facts,
+      sources: [...eventSources(pages, 12), { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` }],
+      followUps: rows.slice(0, 2).map((r) => `Stats de ${r.champion} ${inLeague(league) || "aux Worlds"}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`),
+      totals: { leader: rows[0]?.champion ?? "", leader_value: rows[0]?.[input.sort] ?? 0, leader_picks: rows[0]?.picks ?? 0, leader_bans: rows[0]?.bans ?? 0, rows: rows.length, games, min_picks: minPicks },
+    };
+  },
+  // The router model tends to set a minimum of 1 for "top 5": below 3 picks, the default threshold keeps a winrate meaningful.
+  normalize: (_db, input) => ({ ...input, minPicks: input.minPicks != null && input.minPicks >= 3 ? input.minPicks : null }),
 };
 
 // 5. Standings / roll of honour -------------------------------------------------------
@@ -1526,6 +1899,227 @@ LIMIT 20`),
 
     return valid ? input : null;
   },
+};
+
+/** How recent an edition's last game must be, against the newest game of the database, to count as in progress. */
+const IN_PROGRESS_DAYS = 30;
+
+const DAY_FR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
+/**
+ * Editions of the scope still being played: no champion in their standings yet, and a game within
+ * IN_PROGRESS_DAYS of the newest game of the database (an old group stage without a winner is not one).
+ * The answer then says its figures are those of the games played so far.
+ */
+function inProgressNote(db: DatabaseSync, scope: string, params: Params): string | null {
+  const rows = selectAll(
+    db,
+    z.object({ tournament: NullableText, event_page: Text, games: z.number(), last: z.number() }),
+    `SELECT MIN(g.tournament) AS tournament, g.event_page, COUNT(*) AS games, MAX(g.played_at) AS last FROM v_games g
+     WHERE ${scope} AND g.played_at IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM v_tournament_results r WHERE r.event_page = g.event_page AND r.place_number = 1)
+     GROUP BY g.event_page
+     HAVING MAX(g.played_at) >= (SELECT MAX(played_at) FROM v_games) - ${IN_PROGRESS_DAYS} * 86400`,
+    params,
+  );
+
+  if (!rows.length) return null;
+
+  return rows
+    .map((r) => `${(r.tournament ?? r.event_page).replace(/ (Main Event|Season)$/, "")} en cours : chiffres sur les ${r.games} parties jouées jusqu'au ${DAY_FR.format(new Date(r.last * 1000))}, sans le reste de la compétition.`)
+    .join(" ");
+}
+
+// 7b. Players of a role ranked on an end-of-game criterion -----------------------------------
+
+type CriterionDef = {
+  /** Column header and sentence label. */
+  label: string;
+  /** How the figure is computed, said in the answer. */
+  definition: string;
+  /** Aggregate over the scope, in SQL (columns of the `base` CTE). */
+  sql: string;
+  /** A total (every game counts, no minimum of games by default) rather than a rate or an average. */
+  total?: true;
+  unit?: string;
+};
+
+/** Per-minute figures: over the games that have both the figure and the game's length. */
+const perMinute = (column: string, digits: number) =>
+  `ROUND(60.0 * SUM(CASE WHEN b.length_s > 0 THEN b.${column} END) / SUM(CASE WHEN b.length_s > 0 AND b.${column} IS NOT NULL THEN b.length_s END), ${digits})`;
+
+export const PLAYER_CRITERION_DEFS: Record<PlayerCriterion, CriterionDef> = {
+  kda: { label: "KDA", definition: "(kills + assists) / morts, sur toutes leurs parties", sql: "ROUND(1.0 * SUM(CASE WHEN b.deaths IS NOT NULL THEN b.kills + b.assists END) / MAX(1, SUM(CASE WHEN b.kills IS NOT NULL AND b.assists IS NOT NULL THEN b.deaths END)), 2)" },
+  winrate: { label: "% victoires", definition: "victoires / parties", sql: "ROUND(100.0 * SUM(b.win) / COUNT(*), 1)", unit: " %" },
+  games: { label: "parties", definition: "nombre de parties jouées", sql: "COUNT(*)", total: true },
+  kills: { label: "kills", definition: "total des kills", sql: "SUM(b.kills)", total: true },
+  assists: { label: "assists", definition: "total des assists", sql: "SUM(b.assists)", total: true },
+  kp: {
+    label: "KP %",
+    definition: "participation aux kills, (kills + assists) / kills de l'équipe",
+    sql: "ROUND(100.0 * SUM(CASE WHEN b.team_kills > 0 THEN b.kills + b.assists END) / SUM(CASE WHEN b.team_kills > 0 AND b.kills IS NOT NULL AND b.assists IS NOT NULL THEN b.team_kills END), 1)",
+    unit: " %",
+  },
+  dpm: { label: "DPM", definition: "dégâts aux champions par minute", sql: perMinute("damage", 0) },
+  cspm: { label: "CS/min", definition: "CS par minute", sql: perMinute("cs", 2) },
+  gpm: { label: "or/min", definition: "or gagné par minute", sql: perMinute("gold", 0) },
+  vspm: { label: "vision/min", definition: "score de vision par minute", sql: perMinute("vision", 2) },
+};
+
+/** Every criterion is a column of the table, the ranking one first. */
+const LEADERBOARD_COLUMNS: PlayerCriterion[] = ["kda", "winrate", "kp", "dpm", "cspm", "gpm", "vspm"];
+
+const PlayerLeaderRow = z
+  .object({ player: Text, team: NullableText, games: z.number(), wins: z.number(), gold_diff_15: z.number().nullable(), ingame_games: z.number() })
+  .catchall(z.number().nullable());
+
+/** The scope of the player leaderboard (`alias` is a v_game_players or v_game_player_stats row). */
+function leaderboardScope(input: PlayerLeaderboardInput, params: Params, alias: string): string {
+  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
+  const role = input.role ? `AND ${alias}.role = :role` : "";
+
+  if (input.role) params.role = input.role;
+
+  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${role} ${periodFilter(`${alias}.year`, input, params)}`;
+}
+
+const isInternational = (league: string | null) => LEAGUES.some((l) => l.name === league && l.international);
+
+/** Rates and averages need enough games: 5 in one international event, 10 in one league season, else 20. */
+export function minGamesOfLeaderboard(input: PlayerLeaderboardInput): number {
+  if (input.minGames != null) return input.minGames;
+
+  if (PLAYER_CRITERION_DEFS[input.criterion].total) return 1;
+
+  const oneSeason = input.yearFrom != null && input.yearFrom === input.yearTo;
+
+  if (input.league && oneSeason) return isInternational(input.league) ? 5 : 10;
+
+  return 20;
+}
+
+const playerLeaderboard: ToolDef<PlayerLeaderboardInput> = {
+  name: "player_leaderboard",
+  label: "classement de joueurs",
+  description:
+    "Ranks the players of a competition and period, optionally of one role (top, jungle, mid, ADC/bot, support), on an explicit criterion " +
+    "from the end-of-game stats: KDA (default for 'best'), win rate, games, total kills or assists, kill participation, damage, CS, gold or vision per minute. " +
+    "A minimum of games applies to rates and averages. Use it for 'best mids LEC 2025', 'meilleur jungler', 'top 5 ADC', 'quel support a le meilleur KDA'. " +
+    "For in-game metrics (gold difference at 15, solo kills, first bloods, wards) use ingame_leaderboard.",
+  plan: (_db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { minGames: minGamesOfLeaderboard(input) });
+    const order = PLAYER_CRITERION_DEFS[input.criterion].sql;
+    const stats = [...new Set<PlayerCriterion>([input.criterion, ...LEADERBOARD_COLUMNS])];
+
+    return {
+      params,
+      sql: tidy(`WITH p AS (
+  SELECT p.game_id, p.player, p.team, p.played_at, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision
+  FROM v_game_players p WHERE ${leaderboardScope(input, params, "p")}
+),
+team_kills AS (
+  SELECT t.game_id, t.team, SUM(t.kills) AS team_kills FROM v_game_players t
+  WHERE t.game_id IN (SELECT game_id FROM p) GROUP BY t.game_id, t.team
+),
+lengths AS (SELECT g.game_id, g.length_s FROM v_games g WHERE g.game_id IN (SELECT game_id FROM p)),
+st AS (
+  SELECT s.game_id, s.player, s.gold_diff_15 FROM v_game_player_stats s WHERE ${leaderboardScope(input, params, "s")}
+),
+b AS (
+  SELECT p.*, tk.team_kills, l.length_s, st.gold_diff_15
+  FROM p LEFT JOIN team_kills tk ON tk.game_id = p.game_id AND tk.team = p.team
+  LEFT JOIN lengths l ON l.game_id = p.game_id
+  LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
+)
+SELECT b.player, b.team, MAX(b.played_at) AS last_game, COUNT(*) AS games, SUM(b.win) AS wins,
+       ${stats.map((c) => `${PLAYER_CRITERION_DEFS[c].sql} AS ${c}`).join(",\n       ")},
+       ROUND(AVG(b.gold_diff_15), 0) AS gold_diff_15, COUNT(b.gold_diff_15) AS ingame_games
+FROM b
+GROUP BY b.player
+HAVING COUNT(*) >= :minGames AND ${order} IS NOT NULL
+ORDER BY ${input.criterion} DESC, games DESC, b.player
+LIMIT 20`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (input.minGames == null && minGamesOfLeaderboard(input) > 3)
+      out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(PlayerLeaderRow).parse(sqlRows);
+    const league = leagueShortName(db, input.league);
+    const scope = scopeLabel(league, input);
+    const def = PLAYER_CRITERION_DEFS[input.criterion];
+    const minGames = minGamesOfLeaderboard(input);
+    const who = input.role ? ROLE_PLAYERS[input.role] : "joueurs";
+    const columns = [...new Set<PlayerCriterion>([input.criterion, ...LEADERBOARD_COLUMNS])].filter((c) => c !== "games");
+    const value = (r: z.infer<typeof PlayerLeaderRow>, c: PlayerCriterion) => r[c] ?? null;
+    const ingame = rows.reduce((n, r) => n + r.ingame_games, 0);
+    const all = rows.reduce((n, r) => n + r.games, 0);
+    const params: Params = {};
+
+    const pages = selectAll(
+      db,
+      z.object({ event_page: Text }),
+      `SELECT DISTINCT p.event_page FROM v_game_players p WHERE ${leaderboardScope(input, params, "p")} ORDER BY p.played_at DESC LIMIT 12`,
+      params,
+    ).map((r) => r.event_page);
+
+    const gameParams: Params = {};
+    const ongoing = inProgressNote(db, rankingScope(input, gameParams, "g"), gameParams);
+
+    const line = (r: z.infer<typeof PlayerLeaderRow>, i: number) =>
+      `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`;
+
+    const facts =
+      `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : `Meilleurs ${who}`} ${scope || "toutes compétitions"} selon le critère ${def.label} (${def.definition})` +
+      `${minGames > 1 ? `, minimum ${minGames} parties` : ""} : ${rows.slice(0, 3).map(line).join(" ; ")}. ${rows.length} joueurs classés.` +
+      (ingame === 0
+        ? " Écart d'or à 15 min n/d : aucune partie avec données Riot dans ce périmètre."
+        : ingame < all
+          ? ` Écart d'or à 15 min calculé sur les ${ingame} parties avec données Riot seulement (sur ${all}).`
+          : "") +
+      (ongoing ? ` ${ongoing}` : "");
+
+    return {
+      title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Rang", "Joueur", "Équipe", "Parties", ...columns.map((c) => PLAYER_CRITERION_DEFS[c].label), "Écart or @15"],
+        rows: rows.map((r, i) => [i + 1, r.player, r.team ? displayTeam(r.team) : null, r.games, ...columns.map((c) => value(r, c)), r.gold_diff_15]),
+      },
+      facts,
+      sources: [
+        ...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.player}`, url: wikiUrl(r.player) })),
+        ...eventSources(pages, 12),
+        ...(ingame ? [RIOT_DATA_SOURCE] : []),
+      ],
+      followUps: [
+        ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${scope ? ` ${scope}` : ""}`] : []),
+        ...(input.role ? [`Écart d'or à 15 min des ${who} ${inLeague(league) || "aux Worlds"}`] : []),
+        ...rows.slice(0, 1).map((r) => `Stats in-game de ${r.player}`),
+      ],
+      totals: {
+        leader: rows[0]?.player ?? "",
+        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? "n/d") : "n/d",
+        leader_games: rows[0]?.games ?? 0,
+        rows: rows.length,
+        min_games: minGames,
+        criterion: input.criterion,
+        leader_gold_diff_15: rows[0]?.gold_diff_15 ?? "n/d",
+        in_progress: ongoing ? "yes" : "no",
+      },
+    };
+  },
+  // As for champions: "top 5 supports" is not a minimum of 1 game; below 3, the default minimum stands.
+  normalize: (_db, input) => ({ ...input, minGames: input.minGames != null && input.minGames >= 3 ? input.minGames : null }),
 };
 
 // 8. A team's in-game stats --------------------------------------------------------------
@@ -2167,6 +2761,8 @@ export const TOOLS = {
   head_to_head: defineTool(HeadToHeadInput, headToHead),
   player_comparison: defineTool(PlayerComparisonInput, playerComparison),
   champion_event_stats: defineTool(ChampionStatsInput, championEventStats),
+  champion_ranking: defineTool(ChampionRankingInput, championRanking),
+  player_leaderboard: defineTool(PlayerLeaderboardInput, playerLeaderboard),
   tournament_standings: defineTool(StandingsInput, tournamentStandings),
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
   ingame_leaderboard: defineTool(LeaderboardInput, ingameLeaderboard),

@@ -54,10 +54,27 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
           {v.scope ? ` ${v.scope}` : ""} : statistiques sur toutes leurs parties.
         </p>
       )}
+      {met > 0 && <Lanes v={v} met={met} />}
       <FaceOff c={shown} />
       <ComparisonNote c={shown} />
       {v.games.length > 0 && <Games v={v} />}
     </div>
+  );
+}
+
+/** Whether their games against each other were lane face-offs: same role on both sides. */
+function Lanes({ v, met }: { v: VersusView; met: number }) {
+  const { same, roles } = v.lanes;
+
+  return (
+    <p className="mb-2 text-xs text-muted">
+      même lane :{" "}
+      <span className={same ? "text-foreground" : ""}>
+        {same} partie{same > 1 ? "s" : ""} sur {met}
+      </span>
+      {roles.length > 0 && ` (${roles.map((r) => (roles.length > 1 ? `${r.role} ${r.games}` : r.role)).join(", ")})`}
+      {same === 0 && " : ils ne se sont jamais affrontés au même poste"}
+    </p>
   );
 }
 
@@ -149,7 +166,10 @@ function Side({ s, won }: { s: VersusSide; won: boolean }) {
       <span className="tabular-nums">
         {s.kills ?? "?"}/<span className="text-error">{s.deaths ?? "?"}</span>/{s.assists ?? "?"}
       </span>
-      <span className={`min-w-0 truncate text-[11px] ${won ? "text-foreground" : "text-muted"}`}>{s.team ?? ""}</span>
+      <span className={`min-w-0 truncate text-[11px] ${won ? "text-foreground" : "text-muted"}`}>
+        {s.team ?? ""}
+        {s.role && <span className="ml-1 text-muted">· {s.role}</span>}
+      </span>
     </div>
   );
 }

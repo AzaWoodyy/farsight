@@ -6,9 +6,9 @@ import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
-import { aiTools, type BoundTool, bindTool, type GamePhase, normalizeToolCall, type ToolCall } from "./tools";
+import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
 import { detectMetric, type MetricCue, MINUTE } from "./metrics";
-import { ROLE_CUES as ROLES } from "./roles";
+import { ROLE_CUES as ROLES, roleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
 
@@ -116,10 +116,106 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
 }
 
 const RANKING = word(
-  "le plus|la plus|les plus|le moins|most|meilleure?s?|best|top ?\\d+|classement|leaderboard|record|quels? joueurs?|quelles? [ée]quipes?|which (?:players?|teams?)|qui (?:a|fait|prend|prennent)",
+  "le plus|la plus|les plus|le moins|most|highest|lowest|greatest|meilleure?s?|best|top ?\\d+|classements?|rankings?|leaderboards?|record|quels? joueurs?|quelles? [ée]quipes?|which (?:players?|teams?)|qui (?:a|fait|prend|prennent)",
 );
 
 const TEAM_WORDS = word("[ée]quipes?|teams?");
+
+// Champions and roles ranked ------------------------------------------------------------
+
+/**
+ * A ranking of champions: "champions les plus joués", "most banned champions", "meta", "quel champion a
+ * le meilleur winrate". Not "champion du monde", which is a title.
+ */
+export const CHAMPION_RANKING = word(
+  "champions? (?:les? |la )?(?:plus|moins)|(?:most|least) (?:played|picked|banned|contested|popular|present) champions?|" +
+    "(?:meilleurs?|best|top ?\\d*|strongest|plus forts?) champions?|champions? (?:avec|with|[àa]u?|ayant) (?:la |le |the )?(?:plus|most|meilleure?|best|highest|pire|worst)|" +
+    "classement des champions|champions? ranking|ranking of champions|m[ée]ta|tier ?list|priorit(?:[ée]s?|y)(?: picks?)?|picks? prioritaires?|" +
+    "quels? champions?|quelles? champions?|which champions?|what champions?|" +
+    "(?:les? )?plus (?:jou[ée]s|bann(?:i|is|ies)|pick[ée]s|choisis|contest[ée]s)|(?:most|least) (?:played|picked|banned|contested)",
+);
+
+const NOT_CHAMPION_RANKING = word("champions? (?:du monde|d'europe|de cor[ée]e|de chine|en titre)|world champions?|reigning champions?");
+
+/** What a champion ranking is ordered by, most specific first; "meilleurs champions" means the win rate. */
+export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
+  ["presence", word("pr[ée]sences?|presences?|pr[ée]sents?|present|contest[ée]s?|contested|prioritaires?|priorit[ée]s?|priority|m[ée]ta|tier ?list|picks? (?:et|and|ou|or|\\+|&) bans?|picks?/bans?|pick ?(?:&|et|and) ?ban")],
+  ["bans", word("bann(?:i|is|ie|ies|ed|s)?|bans?|ban ?rates?")],
+  ["kda", word("kda")],
+  ["winrate", word("win ?rates?|taux de victoire|gagnants?|gagnent|victoires?|wins?|winning")],
+  ["picks", word("jou[ée]e?s?|played|pick[ée]e?s?|picks?|picked|choisis|populaires?|popular|pick ?rates?|souvent|often")],
+  ["winrate", word("forts?|strongest|strong|meilleurs?|best|pires?|worst")],
+];
+
+export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
+
+const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
+
+/** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
+const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]to[- ]head|duels?|matchups?");
+
+/** The in-game figures of a champion's profile: metric and minute. */
+const PROFILE_INGAME = new Set(["gold_diff@15", "cs_diff@15"]);
+
+/** "au moins 50 parties", "minimum 20 games", "more than 30 picks": a minimum the question sets itself. */
+const MINIMUM = /(au moins|minimum(?: de)?|min\.?|at least|plus de|more than|over)\s*(\d{1,3})\s*(parties|games|matchs|matches|picks)/iu;
+
+/** The tools' minimum is inclusive: "plus de 50 parties" is 51 or more. */
+const STRICT = /^(?:plus de|more than|over)$/i;
+
+export function minimumOf(question: string, unit: "games" | "picks"): number | null {
+  const m = MINIMUM.exec(question);
+
+  if (!m || (unit === "picks") !== /picks/i.test(m[3])) return null;
+  const n = Number(m[2]) + (STRICT.test(m[1]) ? 1 : 0);
+
+  return n >= 1 && n <= 200 ? n : null;
+}
+
+/** What "best" means for a player ranking, most specific first; KDA when the question does not say. */
+export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
+  ["kda", word("kda")],
+  ["kp", word("kp|kill participation|participation aux kills|participation")],
+  ["dpm", word("d[ée]g[âa]ts|damages?|dpm|dmg")],
+  ["cspm", word("cs ?(?:/|par|per) ?min(?:ute)?|cspm|cs|farm(?:ers?|eurs?|ing)?")],
+  ["gpm", word("gpm|gold|golds|or (?:par|per) minute|d'or")],
+  ["vspm", word("vision|vspm|score de vision")],
+  ["winrate", word("win ?rates?|taux de victoire|victoires?|wins?|gagn\\p{L}*|winning")],
+  ["games", word("(?:le plus de|most|plus de) (?:parties|games|matchs)|(?:le plus|most) jou[ée]|exp[ée]riment[ée]s?|experienced|v[ée]t[ée]rans?|played the most")],
+  ["kills", word("kills?|tueurs?|killers?")],
+  ["assists", word("assists?")],
+];
+
+export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
+
+/** Champions ranked on picks, bans, presence, win rate or KDA, optionally in one role. */
+function championRankingRoute(question: string, e: Entities): Route {
+  const sort = championSortOf(question);
+  const role = roleOf(question);
+
+  return {
+    kind: "tool",
+    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, role, minPicks: minimumOf(question, "picks") } },
+    confidence: 0.9,
+    reason: `classement de champions (tri : ${sort}${role ? `, rôle ${role}` : ""})`,
+    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+  };
+}
+
+/** Players (of a role) ranked on an explicit end-of-game criterion. */
+function playerLeaderboardRoute(question: string, e: Entities): Route {
+  const criterion = playerCriterionOf(question);
+  const role = roleOf(question);
+
+  return {
+    kind: "tool",
+    call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games") } },
+    confidence: 0.85,
+    reason: `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion})`,
+    // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
+    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+  };
+}
 
 const ROLE_CUES = ROLES.map((r) => ({ role: r.role, pattern: word(r.words) }));
 
@@ -185,7 +281,8 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
     };
   }
 
-  if (e.players.length + e.teams.length === 0 && !e.champion && RANKING.test(question)) {
+  // "écart d'or à 15 min des junglers": a role names who is ranked, even without a ranking word.
+  if (e.players.length + e.teams.length === 0 && !e.champion && (RANKING.test(question) || (roleOf(question) && !TEAM_WORDS.test(question)))) {
     const asksTeams = TEAM_WORDS.test(question);
 
     // A team ranking on a metric only players have (or the reverse): text-to-SQL.
@@ -309,6 +406,17 @@ function comparisonRoute(question: string, e: Entities): Route {
   };
 }
 
+/** A champion alone: its stats in the competition (the Worlds when the question names none). */
+function championRoute(e: Entities): Route {
+  return {
+    kind: "tool",
+    call: { tool: "champion_event_stats", input: { champion: e.champion!.champion, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: 0.9,
+    reason: "champion seul → stats du champion dans la compétition",
+    notes: e.league ? [] : ["Aucune compétition précisée : recherche sur les Worlds."],
+  };
+}
+
 /**
  * Deterministic intent routing on the resolved entities and a few cues.
  * Returns a typed tool + input, "sql" when no tool covers the question,
@@ -334,7 +442,30 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
 
+  const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
+
   const cue = detectMetric(question);
+
+  // A champion alone: its profile answers its averages too ("KDA d'Azir", "dégâts de Jinx"), and the gold
+  // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
+  if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.minute ?? 15}`))) return championRoute(e);
+
+  if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) return championRankingRoute(question, e);
+
+  const role = roleOf(question);
+  const ranksPlayers = role != null || PLAYER_WORDS.test(question);
+  // At most one player named (two go to their comparison above), no team or champion; one only with a role ("Caps, meilleur mid ?").
+  const forPlayers = !e.teams.length && !e.champion && (noEntity || (e.players.length === 1 && role != null));
+
+  // Players ranked on an end-of-game criterion; in-game metrics (gold diff, solo kills...) keep their leaderboard.
+  // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a
+  // tournament's standings: only without a role or a player word.
+  if (
+    forPlayers && !cue && (RANKING.test(question) || (ranksPlayers && COMPARE.test(question))) && !TEAM_WORDS.test(question) &&
+    (ranksPlayers || !STANDINGS.test(question)) && (ranksPlayers || PLAYER_CRITERION_CUES.some(([, re]) => re.test(question)))
+  )
+    return playerLeaderboardRoute(question, e);
+
   const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
 
   if (ingame) return ingame;
@@ -370,15 +501,6 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (e.champion && (e.players.length || e.teams.length))
     return { kind: "sql", reason: "champion joué par un joueur ou une équipe précis : pas d'outil typé" };
-
-  if (e.champion)
-    return {
-      kind: "tool",
-      call: { tool: "champion_event_stats", input: { champion: e.champion.champion, league: defaultLeague(), ...period } },
-      confidence: 0.9,
-      reason: "champion seul → stats du champion dans la compétition",
-      notes,
-    };
 
   if (e.players.length === 1) {
     if (e.teams.length) notes.push(`Équipe « ${e.teams[0].mention} » ignorée : historique de ${e.players[0].player} toutes équipes confondues.`);
@@ -454,11 +576,33 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
-  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS],
+  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
   champion_event_stats: [
     word(
       "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +
-        "priorit[ée]|jou[ée]e?s?|played|champion|r[ée]sultats?|results?|bilan|victoires?|d[ée]faites?|wins?|losses|forte?s?|strong|bons?|good|m[ée]ta",
+        "priorit[ée]|jou[ée]e?s?|played|champion|r[ée]sultats?|results?|bilan|victoires?|d[ée]faites?|wins?|losses|forte?s?|strong|bons?|good|m[ée]ta|" +
+        "kda|moyen(?:ne)?s?|averages?|or|gold|golds|cs|farm|d[ée]g[âa]ts|damages?|vision|kills?|morts?|deaths?|assists?|[ée]carts?|diff|" +
+        "joueurs?|players?|meilleurs?|best|qui (?:le )?joue(?:nt)?|who plays?|mains?|onetricks?|r[ôo]les?|postes?|lanes?|sur|on|avec|with",
+    ),
+    ...ROLE_CUES.map((r) => r.pattern),
+  ],
+  champion_ranking: [
+    CHAMPION_RANKING,
+    ...CHAMPION_SORT_CUES.map(([, re]) => re),
+    ...ROLE_CUES.map((r) => r.pattern),
+    word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?"),
+  ],
+  player_leaderboard: [
+    // Roles first: "meilleur top" is a role, not "meilleur" then a stray "top".
+    ...ROLE_CUES.map((r) => r.pattern),
+    RANKING,
+    COMPARE,
+    PLAYER_WORDS,
+    ...PLAYER_CRITERION_CUES.map(([, re]) => re),
+    word(
+      "du monde|in the world|de tous les temps|of all time|all[- ]time|ever|selon|crit[èe]res?|en termes de|in terms of|stats?|statistiques?|" +
+        "jou[ée]e?s?|played|parties|games|matchs|par minute|per minute|au moins|at least|minimum|plus de|more than|over|avec|with|" +
+        "postes?|r[ôo]les?|lanes?|classement|ranking|liste|list",
     ),
   ],
   tournament_standings: [
