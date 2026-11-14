@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   type AgentUIMessage,
   type Answer,
@@ -322,17 +322,17 @@ function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
  * progress, folded once the answer is in. The visitor can still open or close it by hand.
  */
 function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
-  const [open, setOpen] = useState(running);
-  const [wasRunning, setWasRunning] = useState(running);
+  const ref = useRef<HTMLDetailsElement>(null);
 
-  // A run starting opens the trace, a run ending folds it (state adjusted during render, not in an effect).
-  if (running !== wasRunning) {
-    setWasRunning(running);
-    setOpen(running);
-  }
+  // A run starting opens the trace, a run ending folds it. Set on the element after commit and left
+  // uncontrolled otherwise: mirroring the toggle event into state raced with the fold (the browser's
+  // toggle for the opening could land after it and reopen the trace).
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.open = running;
+  }, [running]);
 
   return (
-    <details data-how open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className={`${running ? "mt-4" : "mt-8"} border-t border-dashed border-line pt-4`}>
+    <details ref={ref} data-how className={`${running ? "mt-4" : "mt-8"} border-t border-dashed border-line pt-4`}>
       <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-accent sm:min-h-8">
         <span aria-hidden data-chevron className="inline-block">
           ›
