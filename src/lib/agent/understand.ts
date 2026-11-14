@@ -69,7 +69,8 @@ const STOPWORDS = new Set(
     "what which how montre donne est sont été team équipe equipe historique history " +
     "palmarès palmares classement standings vainqueur vainqueurs gagné gagne won who " +
     "pick picks ban bans présence presence winrate taux victoire victoires défaites " +
-    "confrontation confrontations spring summer winter printemps hiver playoffs split finale finales"
+    "confrontation confrontations spring summer winter printemps hiver playoffs split finale finales " +
+    "game games"
   ).split(/\s+/),
 );
 

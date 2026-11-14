@@ -306,8 +306,7 @@
       "question": "Caps en LEC 2024",
       "tags": [
         "lec",
-        "player",
-        "ambiguous"
+        "player"
       ],
       "expect": {
         "route": "player_event_history",
@@ -315,14 +314,7 @@
           "Caps"
         ],
         "league": "LoL EMEA Championship",
-        "rows": 7,
-        "ambiguity": {
-          "mention": "Caps",
-          "chosen": "Caps",
-          "alternatives": [
-            "caPs"
-          ]
-        }
+        "rows": 7
       }
     },
     {
@@ -434,22 +426,23 @@
     },
     {
       "id": "ambiguous-case",
-      "question": "caPs aux Worlds",
+      "question": "Hybrid au MSI",
       "tags": [
-        "worlds",
+        "msi",
         "ambiguous"
       ],
       "expect": {
         "route": "player_event_history",
         "players": [
-          "caPs"
+          "Hybrid (Glenn Doornenbal)"
         ],
+        "league": "Mid-Season Invitational",
         "rows": 1,
         "ambiguity": {
-          "mention": "caPs",
-          "chosen": "caPs",
+          "mention": "Hybrid",
+          "chosen": "Hybrid (Glenn Doornenbal)",
           "alternatives": [
-            "Caps"
+            "HyBriD (Lee Woo-jin)"
           ]
         }
       }
@@ -478,6 +471,161 @@
         "notes": [
           "désigne plusieurs joueurs"
         ]
+      }
+    },
+    {
+      "id": "identity-case-worlds",
+      "question": "caPs aux Worlds",
+      "tags": [
+        "worlds",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Caps"
+        ],
+        "league": "World Championship",
+        "rows": 9,
+        "totals": {
+          "wins": 55,
+          "losses": 51,
+          "events": 9
+        }
+      }
+    },
+    {
+      "id": "identity-case-msi",
+      "question": "xiaohu au MSI 2016",
+      "tags": [
+        "msi",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Xiaohu"
+        ],
+        "league": "Mid-Season Invitational",
+        "rows": 1,
+        "totals": {
+          "wins": 9,
+          "losses": 5,
+          "events": 1
+        }
+      }
+    },
+    {
+      "id": "identity-case-career",
+      "question": "Xiaohu au MSI",
+      "tags": [
+        "msi",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Xiaohu"
+        ],
+        "league": "Mid-Season Invitational",
+        "rows": 4,
+        "totals": {
+          "wins": 64,
+          "losses": 19,
+          "events": 4,
+          "titles": 3
+        }
+      }
+    },
+    {
+      "id": "identity-case-rookie",
+      "question": "RooKie aux Worlds",
+      "tags": [
+        "worlds",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Rookie"
+        ],
+        "league": "World Championship",
+        "rows": 5,
+        "totals": {
+          "wins": 32,
+          "losses": 23,
+          "events": 5
+        }
+      }
+    },
+    {
+      "id": "identity-renamed-old",
+      "question": "Exakick en LFL",
+      "tags": [
+        "lfl",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "3XA"
+        ],
+        "league": "La Ligue Française",
+        "rows": 20,
+        "totals": {
+          "wins": 142,
+          "losses": 94,
+          "events": 20
+        }
+      }
+    },
+    {
+      "id": "identity-renamed-new",
+      "question": "3XA en LFL",
+      "tags": [
+        "lfl",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "3XA"
+        ],
+        "league": "La Ligue Française",
+        "rows": 20,
+        "totals": {
+          "wins": 142,
+          "losses": 94,
+          "events": 20
+        }
+      }
+    },
+    {
+      "id": "identity-renamed-nalcs",
+      "question": "ZionSpartan en NA LCS",
+      "tags": [
+        "lcs",
+        "player",
+        "identity"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Darshan"
+        ],
+        "league": "North America League Championship Series",
+        "rows": 21,
+        "totals": {
+          "wins": 202,
+          "losses": 205,
+          "events": 21
+        }
       }
     },
     {
@@ -835,7 +983,7 @@
     },
     {
       "id": "out-of-scope-topic",
-      "question": "quelle est la météo à Paris",
+      "question": "quel temps fait-il demain",
       "tags": [
         "out_of_scope"
       ],
