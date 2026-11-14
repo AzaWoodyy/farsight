@@ -114,7 +114,7 @@ n'est pas envoyé au stockage vers lequel GitHub redirige le téléchargement.
 `.github/workflows/deploy.yml` déploie la pointe de `main` en production avec
 le CLI Vercel (`vercel deploy --prod`, build sur Vercel) :
 
-- après chaque push sur `main` (sauf un push qui ne touche que `*.md` ou
+- après le succès de `PR CI` sur le SHA courant de `main` (sauf un push qui ne touche que `*.md` ou
   `docs/`) ;
 - à la fin d'un « Data release » réussi sur `main` (cron ou lancement à la
   main) : le job `deploy` dépend du job `release`, donc un contrôle, une
@@ -472,3 +472,9 @@ début de la question.
 L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
 panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
 pour le limiter par IP, la troisième règle personnalisée du firewall est libre.
+
+## Contrôles avant déploiement
+
+`PR CI` exécute les contrôles sur les PR et main. Deploy ne consomme automatiquement que les runs réussis issus d’un push du dépôt sur main, et ignore un SHA dépassé. Les données de CI sont épinglées dans `ci/data.json` ; leur release est exclue de la rétention. Voir `ci/README.md`. Le CLI Vercel est verrouillé dans le lockfile.
+
+`FEEDBACK_SECRET` (au moins 32 caractères aléatoires) signe les avis ; sans lui les contrôles sont masqués et la route refuse les avis. `LANGFUSE_TRACING_ENVIRONMENT` nomme l’environnement de traçage. Ces valeurs restent dans `.env` localement et dans les variables Vercel en déploiement. Les compteurs IP du code sont par instance : conserver les règles du pare-feu. Aucun changement de dashboard n’est effectué par la MR de nettoyage.

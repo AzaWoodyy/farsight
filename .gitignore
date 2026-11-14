@@ -43,3 +43,5 @@ next-env.d.ts
 
 # local data cache (SQLite + raw Leaguepedia responses)
 /data/
+
+/.ci-data/
