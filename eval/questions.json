@@ -3316,6 +3316,41 @@
           "70 parties"
         ]
       }
+    },
+    {
+      "id": "roster-fnatic-lec-spring-2018",
+      "question": "roster de Fnatic en LEC au Spring 2018",
+      "tags": [
+        "roster",
+        "split"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Fnatic"
+        ],
+        "league": "Europe League Championship Series",
+        "input": {
+          "yearFrom": 2018,
+          "yearTo": 2018,
+          "split": "Spring"
+        },
+        "unread": [],
+        "rows": 6,
+        "totals": {
+          "games": 25,
+          "wins": 20,
+          "events": 2,
+          "top": "SOAZ",
+          "bot": "Rekkles"
+        },
+        "summaryIncludes": [
+          "Bwipo (top, 9)"
+        ],
+        "summaryExcludes": [
+          "ADC, 13"
+        ]
+      }
     }
   ]
 }

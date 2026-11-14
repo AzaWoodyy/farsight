@@ -39,12 +39,13 @@ describe("one team and a roster word: its players by role, decided by the rules"
     ["G2 lineup MSI 2019", entities({ teams: [G2], ...MSI, ...year(2019) })],
     ["who played for Fnatic in 2018", entities({ teams: [FNC], ...year(2018) })],
     ["quels joueurs de SKT en 2015", entities({ teams: [T1], ...year(2015) })],
+    ["roster de Fnatic en LEC au Spring 2018", entities({ teams: [FNC], league: "Europe League Championship Series", leagueShort: "EU LCS", leagueMention: "LEC", ...year(2018), split: "Spring" })],
   ])("%s", (q, e) => {
     const route = routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({
       kind: "tool",
-      call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+      call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split } },
     });
     expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.9);
     expect(route.kind === "tool" && route.unread).toBeUndefined();
@@ -78,7 +79,7 @@ function seed(db: DatabaseSync) {
   const id = (name: string) => Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(name)!.id);
 
   db.prepare(
-    "INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (1,'OGN14Sp','OGN14Sp','Champions 2014 Spring','season',?,2014),(2,'OGN14Su','OGN14Su','Champions 2014 Summer','season',?,2014),(3,'W14','W14','Worlds 2014','main_event',?,2014),(4,'W15','W15','Worlds 2015','main_event',?,2015)",
+    "INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year,split) VALUES (1,'OGN14Sp','OGN14Sp','Champions 2014 Spring','season',?,2014,'Spring'),(2,'OGN14Su','OGN14Su','Champions 2014 Summer','season',?,2014,'Summer'),(3,'W14','W14','Worlds 2014','main_event',?,2014,NULL),(4,'W15','W15','Worlds 2015','main_event',?,2015,NULL)",
   ).run(id("LoL The Champions"), id("LoL The Champions"), id("World Championship"), id("World Championship"));
   db.exec(`
     INSERT INTO teams VALUES (1,'Samsung Ozone'),(2,'Samsung White'),(3,'Samsung Blue'),(4,'Other');
@@ -112,7 +113,7 @@ describe("roster of a team on a seeded database", () => {
       expect(resolveTeam(db, "Samsung Galaxy White")).toMatchObject({ team: "Samsung White" });
       expect((await understandQuestion(db, "Samsung White roster 2014", new Date("2026-11-14")))?.result.teams.map((t) => t.team)).toEqual(["Samsung White"]);
 
-      const tool = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014 } });
+      const tool = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: null } });
 
       expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
       const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
@@ -138,14 +139,24 @@ describe("roster of a team on a seeded database", () => {
       expect(out.sources.map((s) => s.url)).toContain("https://lol.fandom.com/wiki/W14");
 
       // A competition restricts the roster.
-      const worlds = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: "World Championship", yearFrom: 2014, yearTo: 2014 } });
+      const worlds = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: "World Championship", yearFrom: 2014, yearTo: 2014, split: null } });
       const atWorlds = await worlds.format(db, db.prepare(worlds.sql).all(worlds.params));
 
       expect(atWorlds.roster).toMatchObject({ games: 2, scope: "aux Worlds en 2014", names: ["Samsung White"] });
       expect(atWorlds.roster!.players.map((p) => p.player)).toEqual(["Looper", "DanDy", "PawN", "Imp", "Mata"]);
 
+      // A split restricts the roster and its tournaments; an even split of the games gives two starters.
+      const spring = bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: "Spring" } });
+
+      expect(guardQuery(db, readSchema(db), spring.sql).ok).toBe(true);
+      const inSpring = await spring.format(db, db.prepare(spring.sql).all(spring.params));
+
+      expect(inSpring.roster).toMatchObject({ games: 2, scope: "au split Spring en 2014", names: ["Samsung Ozone"] });
+      expect(inSpring.roster!.tournaments.map((t) => t.label)).toEqual(["Champions 2014 Spring"]);
+      expect(inSpring.roster!.players.filter((p) => p.role === "Top").map((p) => [p.player, p.starter])).toEqual([["Homme", true], ["Looper", true]]);
+
       // The router model may write an old name: the input carries the team's current one.
-      expect(TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014 })).toMatchObject({ input: { team: "Samsung White" } });
+      expect(TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014, split: null })).toMatchObject({ input: { team: "Samsung White" } });
     } finally {
       db.close();
     }

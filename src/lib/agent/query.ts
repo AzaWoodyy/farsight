@@ -440,10 +440,10 @@ function rosterRoute(question: string, e: Entities): Route {
 
   return {
     kind: "tool",
-    call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split } },
     confidence: 0.9,
     reason: `une équipe et « ${cue} » → roster par poste`,
-    notes: e.yearFrom == null && e.yearTo == null && !e.league ? ["Aucune période précisée : tous les joueurs de l'histoire de l'équipe."] : [],
+    notes: e.yearFrom == null && e.yearTo == null && !e.league && !e.split ? ["Aucune période précisée : tous les joueurs de l'histoire de l'équipe."] : [],
     forced: true,
   };
 }
@@ -616,7 +616,7 @@ const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]rie
 const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
-  team_roster: [ROSTER, ...ROLE_CUES.map((r) => r.pattern), word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list")],
+  team_roster: [ROSTER, ...ROLE_CUES.map((r) => r.pattern), ...SPLIT_CUES.map((c) => c.pattern), word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list")],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
   player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
   champion_event_stats: [

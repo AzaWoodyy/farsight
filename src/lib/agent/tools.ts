@@ -79,6 +79,7 @@ export const TeamRosterInput = z.object({
   team: z.string().min(1).describe("Team name or shorthand (Samsung White, SKT, G2...)"),
   league: League.nullable().describe("Restrict to one competition, null for every competition"),
   ...Period,
+  split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Restrict to one split of the season, null for the whole season"),
 });
 
 export const HeadToHeadInput = z.object({
@@ -704,12 +705,20 @@ const roleRank = (role: string) => {
   return i < 0 ? ROLE_ORDER.length : i;
 };
 
-/** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league and the period. */
+/** A split of the season ("Spring 2018"): the tournament pages of that split. */
+function splitFilter(column: string, input: TeamRosterInput, params: Params): string {
+  if (!input.split) return "";
+  params.split = input.split;
+
+  return `AND ${column} IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = :split)`;
+}
+
+/** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league, the period and the split. */
 function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): string {
   const t = inList("t", teamMembers(db, input.team).members, params);
   const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
 
-  return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)}`;
+  return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
 }
 
 /** The team's tournaments of the scope, in play order, with its games and wins in each (a trusted helper query). */
@@ -725,6 +734,7 @@ function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
             SUM(CASE WHEN g.winner IN (${t}) THEN 1 ELSE 0 END) AS wins, MIN(g.played_at) AS at
      FROM v_games g
      WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
+       ${splitFilter("g.tournament_page", input, params)}
      GROUP BY g.event_page
      ORDER BY MIN(g.played_at), g.event_page`,
     params,
@@ -759,7 +769,10 @@ ORDER BY role, SUM(games) DESC, player`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "tous les joueurs de son histoire"));
+    if (input.split)
+      out.push({ key: "split", input: { ...input, split: null }, note: `Aucune partie de ${input.team} au split ${input.split} : affichage de toute la saison.`, reason: "filtre de split retiré" });
+
+    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, "tous les joueurs de son histoire"));
 
     if (input.league)
       out.push({
@@ -775,7 +788,7 @@ ORDER BY role, SUM(games) DESC, player`),
     const raw = z.array(RosterRow).parse(sqlRows);
     const { team, members } = teamMembers(db, input.team);
     const league = leagueShortName(db, input.league);
-    const scope = scopeLabel(league, input);
+    const scope = [input.split ? `au split ${input.split}` : "", scopeLabel(league, input)].filter(Boolean).join(" ");
     const events = rosterTournaments(db, input);
     const games = events.reduce((n, e) => n + e.games, 0);
     const wins = events.reduce((n, e) => n + e.wins, 0);
