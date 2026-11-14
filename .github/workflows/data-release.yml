@@ -46,12 +46,6 @@ jobs:
       # Minutes of Riot JSON downloads per run (2 games per request, about 1.5 s per game).
       RIOT_BUDGET_MINUTES: "90"
       KEEP_RELEASES: "4"
-      GH_TOKEN: ${{ github.token }}
-      # Optional: without them, the raw game JSON is not uploaded (summaries still are, in the release).
-      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-      R2_BUCKET: ${{ secrets.R2_BUCKET }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -63,6 +57,8 @@ jobs:
 
       - name: Pick the tag and the previous release
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           base="data-$(date -u +%Y%m%d)"
           tag="$base"
@@ -92,6 +88,11 @@ jobs:
           fi
 
       - name: Fetch Leaguepedia, Riot game JSON and Data Dragon
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: bun run data:fetch --riot-budget="$RIOT_BUDGET_MINUTES"
 
       - name: Build the database
@@ -109,6 +110,7 @@ jobs:
 
       - name: Publish the release
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
           PRERELEASE: ${{ github.ref != 'refs/heads/main' }}
         run: |
@@ -123,13 +125,16 @@ jobs:
 
       - name: Keep the newest data releases only
         env:
+          GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ github.ref != 'refs/heads/main' }}
         run: |
           # Releases of the same kind (published or prerelease) as this run, newest first;
           # everything past KEEP_RELEASES is deleted with its tag.
+          pinned=$(jq -r '.tag' ci/data.json)
           gh release list --exclude-drafts --limit 200 --json tagName,publishedAt,isPrerelease \
             --jq "[.[] | select((.tagName | startswith(\"data-\")) and .isPrerelease == $PRERELEASE)] | sort_by(.publishedAt) | reverse | .[$KEEP_RELEASES:] | .[].tagName" |
           while read -r old; do
+            if [ "$old" = "$pinned" ]; then continue; fi
             echo "deleting $old"
             gh release delete "$old" --cleanup-tag --yes
           done
