@@ -423,8 +423,10 @@ Ce qui part chez Langfuse, une trace `answer-question` par question :
 - le pouce haut ou bas de l'interface, en score booléen `response_rating`
   (`POST /api/feedback`).
 
-Confidentialité : ni IP, ni cookie, ni en-tête, ni identifiant de visiteur ou
-de session. Les e-mails, adresses IP et numéros de téléphone tapés dans une
+Confidentialité : ni IP, ni cookie, ni en-tête, ni empreinte du navigateur.
+Le seul identifiant est celui de la conversation : un UUID aléatoire, gardé en
+mémoire de la page, qui ne permet pas de reconnaître un visiteur d'une visite
+à l'autre. Les e-mails, adresses IP et numéros de téléphone tapés dans une
 question sont masqués avant l'envoi. Les traces sont lisibles 30 jours.
 
 Unités : 6 par question sans LLM (la trace et 5 observations), 1 de plus par
@@ -439,27 +441,33 @@ en somme, dans les métadonnées de la trace (`llmCostUsd`).
 
 #### Comment lire une question dans Langfuse
 
-La page **Tracing** liste les observations, pas les questions : sans filtre,
-chaque question y occupe 5 lignes ou plus.
+Chaque conversation du site est une **session** (un UUID tiré au hasard par
+le navigateur à la première question, changé au rechargement de la page ou
+par « nouvelle conversation »), et chaque question une trace nommée par le
+début de la question.
 
-1. **Une ligne par question** : dans le panneau **Filters**, section
-   **Is Root Observation**, ne garder que **True** (ou **Name** =
-   `answer-question`). Enregistrer ce filtre dans **My Views** pour le
-   retrouver.
-2. **Suivre une question** : cliquer sa ligne. L'onglet **Tree** montre
+1. **Suivre une conversation** : menu **Sessions**, filtre **Environment** =
+   `production` (ou `development` en local). Une ligne par conversation, la
+   plus récente en haut ; cliquer l'identifiant. La vue **Messages** déroule
+   les questions dans l'ordre, avec pour chacune la question, la réponse et
+   les messages échangés avec le LLM.
+2. **Voir tous les appels d'une question** : dans la session, cliquer le
+   titre de la question pour ouvrir sa trace. L'onglet **Tree** montre
    `answer-question`, ses quatre étapes et, sous chacune, ses appels LLM avec
    leur coût ; **Timeline** les montre dans le temps. Cliquer une observation
    affiche son entrée, sa sortie et, dans **Metadata**, le journal de l'étape.
-3. **Trouver les échecs** : toujours avec le filtre racine, section **Tags**,
-   cocher `empty-result`, `error`, `no-query`, `out-of-scope`… ou filtrer
-   **Level** sur `ERROR`. Les avis négatifs : menu **Scores**,
-   `response_rating` = `False`.
-4. **Retrouver une question précise** : chercher son texte dans la barre de
+   Le lien **session** en haut de la trace ramène à la conversation.
+3. **Lister les questions** : menu **Tracing**. Cette page liste les
+   observations, pas les questions : dans **Filters**, section **Is Root
+   Observation**, ne garder que **True** pour avoir une ligne par question
+   (à enregistrer dans **My Views**).
+4. **Trouver les échecs** : avec ce filtre, section **Tags**, cocher
+   `empty-result`, `error`, `no-query`, `out-of-scope`… ou filtrer **Level**
+   sur `ERROR`. Les avis négatifs : menu **Scores**, `response_rating` =
+   `False`.
+5. **Retrouver une question précise** : chercher son texte dans la barre de
    recherche. Chaque observation porte la question en métadonnée
-   (`question`), une ligne isolée dit donc à quelle question elle appartient.
-
-La vue **Sessions** reste vide : une question est une trace à elle seule, et
-aucun identifiant de visite n'est envoyé.
+   (`question`).
 
 L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
 panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;

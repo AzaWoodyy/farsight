@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   type AgentUIMessage,
   type Answer,
@@ -79,6 +79,10 @@ const askFetch: typeof fetch = Object.assign(askFetchImpl, { preconnect: fetch.p
 
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
+  // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
+  // so a reload or "nouvelle conversation" starts another. It groups the traces of the conversation, and
+  // says nothing of the visitor.
+  const sessionId = useRef<string | null>(null);
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/ask", fetch: askFetch }),
@@ -95,7 +99,15 @@ export function AgentConsole() {
     // One question at a time: the agent does not use the chat history.
     setMessages([]);
     setQuestion("");
-    sendMessage({ text });
+    sessionId.current ??= crypto.randomUUID();
+    sendMessage({ text }, { body: { sessionId: sessionId.current } });
+  }
+
+  function restart() {
+    if (running) stop();
+    setMessages([]);
+    setQuestion("");
+    sessionId.current = null;
   }
 
   const asked = messages.findLast((m) => m.role === "user");
@@ -160,10 +172,15 @@ export function AgentConsole() {
 
       {asked && (
         <div className="mt-10">
-          <p className="text-sm">
-            <span className="text-muted">?</span>{" "}
-            {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
-          </p>
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-sm">
+              <span className="text-muted">?</span>{" "}
+              {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
+            </p>
+            <button type="button" onClick={restart} className="shrink-0 text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent">
+              nouvelle conversation
+            </button>
+          </div>
           <Steps steps={steps} running={running} />
           {error && (
             <p role="alert" className="mt-4 text-xs text-error">

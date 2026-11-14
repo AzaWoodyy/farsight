@@ -199,8 +199,9 @@ Uniquement via OpenRouter, configuré par variables d'environnement (voir
 Avec les variables `LANGFUSE_*` (production uniquement), chaque question est
 une trace [Langfuse](https://langfuse.com) : la question, les quatre étapes,
 les appels LLM et le pouce haut ou bas donné dans l'interface. Elle sert à
-repérer les réponses ratées. Aucune IP, aucun cookie ni identifiant de
-visiteur n'y figure, les e-mails, adresses IP et numéros de téléphone tapés
+repérer les réponses ratées. Aucune IP ni cookie n'y figure ; les questions
+d'une même conversation sont regroupées par un identifiant aléatoire, oublié
+au rechargement de la page. Les e-mails, adresses IP et numéros de téléphone tapés
 dans une question sont masqués, et les traces sont conservées 30 jours (région
 UE). Sans ces variables, en local et dans l'eval, rien n'est envoyé. Détail :
 [docs/deploy.md](docs/deploy.md).

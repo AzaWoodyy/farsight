@@ -16,6 +16,9 @@ import {
 import type { Answer, Entities, QueryPlan, StepName, StepPart } from "../src/lib/agent/types";
 import { FEEDBACK_SCORE, flushTracing, langfuseConfig, sampleRate, sendFeedback, startTracing } from "../src/lib/tracing/langfuse";
 
+/** Conversation id as the browser makes it up. */
+const SESSION = "2b6f0cff-4e0f-4e5c-9d2a-6a4b8f3c1d7e";
+
 const QUESTION = "bilan de Chovy et Zzyzx aux Worlds, réponse à jean.dupont@example.com";
 
 const entities: Entities = {
@@ -95,7 +98,7 @@ const model = new MockLanguageModelV4({
 
 /** The question as the route runs it, with one LLM call in the understand step. */
 function runQuestion(outcome: Answer) {
-  return traceQuestion(QUESTION, async (traceId) => {
+  return traceQuestion(QUESTION, SESSION, async (traceId) => {
     const done = new Map<StepName, StepPart>();
 
     await traceStep(
@@ -259,6 +262,14 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(String(attr(generation, "langfuse.observation.input"))).toContain('"role":"user"');
   expect(JSON.parse(String(attr(generation, "langfuse.observation.output")))).toEqual({ role: "assistant", content: '{"players":["Chovy"]}' });
 
+  // The conversation and a readable name are on every observation of the trace.
+  for (const span of spans) {
+    expect(attr(span, "session.id")).toBe(SESSION);
+    expect(attr(span, "langfuse.trace.name")).toBe("bilan de Chovy et Zzyzx aux Worlds, réponse à [masqué]");
+  }
+
+  expect(root.name).toBe(TRACE_NAME);
+
   // Every observation says which question it belongs to.
   for (const span of spans) expect(String(attr(span, "langfuse.trace.metadata.question"))).toContain("bilan de Chovy");
 });
@@ -286,7 +297,7 @@ test("every LLM call of a question hangs in its tree, failures included", async 
     },
   });
 
-  const traceId = await traceQuestion(QUESTION, async (id) => {
+  const traceId = await traceQuestion(QUESTION, null, async (id) => {
     await traceStep(
       "build",
       { question: QUESTION },
@@ -340,7 +351,7 @@ test("every LLM call of a question hangs in its tree, failures included", async 
 test("an exception marks the trace and still reaches the caller", async () => {
   exporter.reset();
 
-  const failed = traceQuestion(QUESTION, async () => {
+  const failed = traceQuestion(QUESTION, null, async () => {
     throw new Error("base illisible");
   });
 

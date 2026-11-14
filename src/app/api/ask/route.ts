@@ -20,6 +20,8 @@ export const maxDuration = 90;
 
 /** The part of the chat request the agent reads: the text parts of the messages. */
 const ChatRequest = z.object({
+  /** Anonymous id of the conversation, made up by the browser; it only groups the traces of one conversation. */
+  sessionId: z.uuid().optional().catch(undefined),
   messages: z
     .array(
       z.object({
@@ -37,8 +39,9 @@ const ChatRequest = z.object({
  * a final `data-answer` part. Requests flagged as bots by BotID get a 403.
  *
  * When Langfuse is configured the question is one trace (question, steps,
- * LLM calls: never the IP, a cookie or a header), and a `data-trace` part
- * gives its id to the thumbs up / down of the UI.
+ * LLM calls: never the IP, a cookie or a header), grouped with the other
+ * questions of the conversation by the optional `sessionId` of the body. A
+ * `data-trace` part gives the trace id to the thumbs up / down of the UI.
  */
 export async function POST(req: Request) {
   // BotID Basic, before any model call. Outside Vercel (`bun run dev`, a local
@@ -71,7 +74,7 @@ export async function POST(req: Request) {
       writer.write({ type: "start" });
 
       try {
-        await traceQuestion(question, (traceId) => {
+        await traceQuestion(question, body.data.sessionId ?? null, (traceId) => {
           if (traceId) writer.write({ type: "data-trace", id: "trace", data: { traceId } });
 
           return runAgent(question, (event) => {

@@ -26,7 +26,7 @@ import { llmStatus } from "./llm";
 import type { Route } from "./query";
 import type { Answer, Entities, QueryPlan, StepName, StepPart, TraceStatus } from "./types";
 
-/** Observation names: stable, they are what Langfuse filters and evaluators target. */
+/** Observation names: stable, they are what Langfuse filters and evaluators target. `TRACE_NAME` is the root observation of every question. */
 export const TRACE_NAME = "answer-question";
 
 export const STEP_SPANS = {
@@ -58,6 +58,9 @@ const DETAIL_MAX = 2000;
 
 /** Langfuse drops a propagated metadata value longer than 200 characters. */
 const QUESTION_MAX = 200;
+
+/** Length of the question excerpt that names a trace in the Langfuse lists. */
+const TRACE_NAME_MAX = 80;
 
 /**
  * The step as the UI showed it, one line of text per entry (status, decision
@@ -235,11 +238,13 @@ export function recordOutcome(answer: Answer, entities: Entities, steps: Map<Ste
 }
 
 /**
- * Runs the agent inside a new trace. `run` receives the trace id when the
+ * Runs the agent inside a new trace. `sessionId` is the anonymous id of the
+ * visitor's conversation, when the browser sent one: Langfuse groups the
+ * questions of a conversation under it. `run` receives the trace id when the
  * question is actually traced (tracing on, and sampled), null otherwise: the
  * UI only offers the thumbs when there is a trace to score.
  */
-export function traceQuestion<T>(question: string, run: (traceId: string | null) => Promise<T>): Promise<T> {
+export function traceQuestion<T>(question: string, sessionId: string | null, run: (traceId: string | null) => Promise<T>): Promise<T> {
   const traced = () =>
     startActiveObservation(
       TRACE_NAME,
@@ -266,7 +271,14 @@ export function traceQuestion<T>(question: string, run: (traceId: string | null)
     );
 
   // The question goes on every observation: any line of the Langfuse table tells which question it belongs to.
-  const shared = { traceName: TRACE_NAME, metadata: { question: maskPersonalData(question).slice(0, QUESTION_MAX) } };
+  const masked = maskPersonalData(question);
+
+  const shared = {
+    // The trace is listed under the start of its question; its root observation keeps the stable name.
+    traceName: masked.length > TRACE_NAME_MAX ? `${masked.slice(0, TRACE_NAME_MAX)}…` : masked,
+    sessionId: sessionId ?? undefined,
+    metadata: { question: masked.slice(0, QUESTION_MAX) },
+  };
 
   // A root context: the trace never hangs under a span of the web framework.
   return context.with(ROOT_CONTEXT, () => propagateAttributes(shared, traced));
