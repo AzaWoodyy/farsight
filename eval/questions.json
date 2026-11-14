@@ -1084,6 +1084,32 @@
       }
     },
     {
+      "id": "common-handle-relative-year",
+      "question": "quelle est la météo à Paris cette année",
+      "tags": [
+        "out_of_scope",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0
+      }
+    },
+    {
+      "id": "common-handle-stat",
+      "question": "KDA de Life",
+      "tags": [
+        "player",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "sql",
+        "players": [
+          "Life"
+        ]
+      }
+    },
+    {
       "id": "timeline-t1-geng-worlds-2024",
       "question": "timeline de T1 vs Gen.G finale Worlds 2024 game 3",
       "tags": [

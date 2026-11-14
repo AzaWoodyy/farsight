@@ -114,6 +114,12 @@ const YEAR = /\b(20[1-3]\d)\b/g;
 
 const blank = (text: string, pattern: RegExp) => text.replace(pattern, (m) => " ".repeat(m.length));
 
+/** Statistics of a game: with a handle that is an everyday word ("KDA de Life"), they make the question about esport. */
+const STAT_WORDS = phrase(
+  "kda|kills?|deaths?|assists?|cs|farm|golds?|d[ée]g[âa]ts|damage|wards?|dragons?|drakes?|barons?|heralds?|nashor|" +
+    "tourelles?|towers?|pentakills?|quadrakills?|win ?rate|keystone|runes?",
+);
+
 /** The question with its stat, game, role and relative-season terms blanked out, for alias lookups ("last" is also a handle). */
 function maskTerms(question: string): string {
   return [TERM_PHRASES, ROLE_PHRASES, ...RELATIVE_YEARS.map((r) => r.pattern)].reduce(blank, question);
@@ -498,7 +504,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       found.champion != null ||
       found.players.some((m) => !isCommonHandle(m)) ||
       detectLeague(question).league != null ||
-      maskTerms(question) !== question ||
+      [TERM_PHRASES, ROLE_PHRASES, STAT_WORDS].some((p) => blank(question, p) !== question) ||
       LOL_DOMAIN.test(question);
 
     const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t));
