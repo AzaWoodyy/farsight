@@ -445,6 +445,7 @@ async function format(
       summary: missingSummary(missing, route),
       rows: [],
       table: null,
+      timeline: null,
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
@@ -461,6 +462,7 @@ async function format(
       summary: emptySummary(entities, route, plan),
       rows: [],
       table: null,
+      timeline: null,
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
@@ -480,6 +482,7 @@ async function format(
       summary: `${raw.length} ligne(s) renvoyée(s) par une requête générée, validée par le garde-fou.`,
       rows: [],
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
+      timeline: null,
       sources: pages.length
         ? pages.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }],
@@ -489,24 +492,32 @@ async function format(
     };
   }
 
-  const out = plan.tool.format(db, raw);
+  const out = await plan.tool.format(db, raw);
   meta.totals = out.totals;
+
+  for (const t of out.trace ?? []) step.add(entry(t));
+  notes.push(...(out.notes ?? []));
   const summary = (await decide({ question, facts: out.facts }, [templateSummary, llmSummary], { threshold: 0.8 }))!;
   step.add(decisionEntry(summary, `Synthèse (${summary.level === "llm" ? "LLM" : "modèle de phrase"})`));
   const followUps = [...new Set([...amb.followUps, ...out.followUps])].slice(0, 4);
-  step.add(
-    entry({
-      status: "ok",
-      title: `Tableau de ${out.rows?.length ?? out.table?.rows.length ?? 0} lignes, ${out.sources.length} sources, ${followUps.length} suites`,
-    }),
+
+  const shown = out.timeline
+    ? `Timeline : ${out.timeline.gold.length} points d'or, ${out.timeline.events.length} événements`
+    : `Tableau de ${out.rows?.length ?? out.table?.rows.length ?? 0} lignes`;
+
+  step.add(entry({ status: "ok", title: `${shown}, ${out.sources.length} sources, ${followUps.length} suites` }));
+
+  step.done(
+    "ok",
+    `${out.timeline ? `${out.timeline.events.length} événements` : `${out.rows?.length ?? out.table?.rows.length ?? 0} lignes`} · ${out.sources.length} sources`,
   );
-  step.done("ok", `${out.rows?.length ?? out.table?.rows.length ?? 0} lignes · ${out.sources.length} sources`);
 
   return {
     title: out.title,
     summary: summary.result,
     rows: out.rows ?? [],
     table: out.table ?? null,
+    timeline: out.timeline ?? null,
     sources: out.sources,
     followUps,
     notes,

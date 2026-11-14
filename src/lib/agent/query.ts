@@ -5,7 +5,7 @@ import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS } from "./guard";
 import { getLlm, LLM_CALL } from "./llm";
-import { aiTools, type BoundTool, bindTool, normalizeToolCall, type ToolCall } from "./tools";
+import { aiTools, type BoundTool, bindTool, type GamePhase, normalizeToolCall, type ToolCall } from "./tools";
 import { detectMetric, type MetricCue } from "./metrics";
 import type { Entities, QueryPlan } from "./types";
 
@@ -213,6 +213,76 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
   return { kind: "sql", reason: `statistique in-game (« ${cue.mention} ») sans outil typé pour ces entités` };
 }
 
+// One game's timeline ------------------------------------------------------------------
+
+/** Words asking for the story of one game rather than a statistic. */
+const TIMELINE = word(
+  "timelines?|chronologie|d[ée]roul[ée](?:ment)?|minute par minute|minute by minute|courbes? d'or|courbes? de l'or|courbes? de gold|" +
+    "graphiques? d'or|gold (?:graph|curve|chart)s?|[ée]volution de l'or|[ée]cart d'or (?:par minute|minute par minute|au fil)|" +
+    "comment s'est (?:pass[ée]e?|d[ée]roul[ée]e?)|how did (?:the )?(?:game|match)|r[ée]sum[ée] de la (?:game|partie)",
+);
+
+/** "game 3", "partie 2", "3e game", "troisième partie". Not "G3": G2 is a team. */
+const GAME_NUMBER = [
+  /(?<![\p{L}\p{N}])(?:game|partie|manche|map)\s*(?:n[°o]\s*)?([1-5])(?![\p{L}\p{N}])/iu,
+  /(?<![\p{L}\p{N}])([1-5])\s*(?:e|ème|eme|er|re|nd|rd|th|st)?\s+(?:game|partie|manche|map)(?![\p{L}\p{N}])/iu,
+];
+
+const ORDINALS: [RegExp, number][] = [
+  [word("premi[èe]re (?:game|partie|manche)|first game"), 1],
+  [word("deuxi[èe]me (?:game|partie|manche)|seconde (?:game|partie|manche)|second game"), 2],
+  [word("troisi[èe]me (?:game|partie|manche)|third game"), 3],
+  [word("quatri[èe]me (?:game|partie|manche)|fourth game"), 4],
+  [word("cinqui[èe]me (?:game|partie|manche)|fifth game|derni[èe]re (?:game|partie|manche) d'un bo5"), 5],
+];
+
+/** Most specific first: "demi-finale" also contains "finale". */
+const PHASES: { phase: GamePhase; pattern: RegExp }[] = [
+  { phase: "third_place", pattern: word("petite finale|(?:match pour la )?(?:3e|troisi[èe]me) place|third[- ]place") },
+  { phase: "semifinal", pattern: word("demi[- ]?finales?|demies?|semi[- ]?finals?|semis") },
+  { phase: "quarterfinal", pattern: word("quarts?(?: de finale)?|quarter[- ]?finals?") },
+  { phase: "final", pattern: word("finales?|finals?|grand[- ]finals?") },
+  { phase: "play_in", pattern: word("play[- ]?ins?") },
+  { phase: "groups", pattern: word("phase de groupes?|groupes?|group stage|groups|swiss|ronde suisse") },
+];
+
+export function gameNumberOf(question: string): number | null {
+  for (const re of GAME_NUMBER) {
+    const m = re.exec(question);
+
+    if (m) return Number(m[1]);
+  }
+
+  return ORDINALS.find(([re]) => re.test(question))?.[1] ?? null;
+}
+
+export const phaseOf = (question: string): GamePhase | null => PHASES.find((p) => p.pattern.test(question))?.phase ?? null;
+
+/** One game's timeline: a timeline cue, or a game number with a team or a competition. */
+function routeTimeline(question: string, e: Entities): Route | null {
+  const game = gameNumberOf(question);
+  const cue = TIMELINE.test(question);
+
+  if (!cue && game == null) return null;
+
+  if (e.players.length || e.champion) return null;
+
+  if (e.teams.length === 0 && !(e.league && e.yearFrom != null)) return null;
+
+  const year = e.yearFrom != null && e.yearFrom === e.yearTo ? e.yearFrom : (e.yearTo ?? e.yearFrom);
+
+  return {
+    kind: "tool",
+    call: {
+      tool: "game_timeline",
+      input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, year, phase: phaseOf(question), game },
+    },
+    confidence: 0.9,
+    reason: cue ? "déroulé d'une partie (timeline, courbe d'or)" : "partie désignée par son numéro dans une série",
+    notes: e.teams.length > 2 ? [`Plus de deux équipes reconnues : seules ${e.teams[0].team} et ${e.teams[1].team} sont retenues.`] : [],
+  };
+}
+
 export type Route =
   | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[] }
   /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
@@ -235,6 +305,11 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
 
   if (nEntities === 0 && !e.league && !LOL_DOMAIN.test(question) && !STANDINGS.test(question))
     return { kind: "out_of_scope", reason: "aucune entité ni notion esport League of Legends dans la question" };
+
+  // Before the in-game metrics: "courbe d'or" or "dragons" in a timeline question are not a statistic.
+  const timeline = schema.v_games?.includes("game_n") ? routeTimeline(question, e) : null;
+
+  if (timeline) return timeline;
 
   const missing = missingConcepts(question, schema);
 

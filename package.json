@@ -25,6 +25,7 @@
   "dependencies": {
     "@ai-sdk/react": "^4",
     "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@vercel/functions": "3.10.5",
     "ai": "^7",
     "aws4fetch": "1.0.20",
     "botid": "1.5.12",

@@ -10,6 +10,8 @@
   --warn: #a16207;
   --error: #b91c1c;
   --fix: #7c3aed;
+  --blue: #1d4ed8;
+  --red: #b91c1c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,6 +25,8 @@
     --warn: #facc15;
     --error: #f87171;
     --fix: #a78bfa;
+    --blue: #60a5fa;
+    --red: #f87171;
   }
 }
 
@@ -36,6 +40,8 @@
   --color-warn: var(--warn);
   --color-error: var(--error);
   --color-fix: var(--fix);
+  --color-blue: var(--blue);
+  --color-red: var(--red);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

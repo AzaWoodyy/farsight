@@ -14,8 +14,8 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
     fichiers tracés de la route et du serveur Next, avertit à partir de 225 Mo
     et fait échouer le build au-delà de 250 Mo (ou si la base dépasse 190 Mo).
     `data/raw` et `data/release` sont exclus du tracé (`next.config.ts`).
-  - Mesuré le 14/11/2026 (schéma v4, 28 327 parties avec stats in-game) :
-    base 98,1 Mo, fonction 131,8 Mo.
+  - Mesuré le 14/11/2026 (schéma v5, 28 327 parties avec stats in-game) :
+    base 98,6 Mo, fonction 132,4 Mo.
   - `DATABASE_PATH` ne doit pas être défini sur Vercel : le fichier tracé est
     `data/lol.sqlite`.
 - **BotID Basic** : `src/instrumentation-client.ts` protège les `POST /api/ask`
@@ -161,9 +161,37 @@ envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
    les quatre mêmes secrets (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
    `R2_SECRET_ACCESS_KEY`). Sans eux le workflow marche, mais n'envoie pas les
    nouvelles parties sur R2.
-6. Vercel : rien pour l'instant, l'app ne lit pas encore le détail par partie.
-   Le jour où une route le lira, ajouter les mêmes variables (Production,
-   Sensitive), de préférence avec un token **Object Read only**.
+6. Vercel : voir « Timeline d'une partie » ci-dessous. Le token d'écriture de
+   l'ingestion ne va jamais sur Vercel.
+
+### Timeline d'une partie (lecture R2 au runtime)
+
+L'outil `game_timeline` (« timeline de T1 vs Gen.G finale Worlds 2024
+game 3 ») trouve la partie dans la base (équipes, compétition, saison,
+phase et numéro de game : colonnes `tab`, `match_n`, `game_n` de `v_games`,
+schéma v5), puis la fonction lit le JSON Riot de cette seule partie sur R2,
+côté serveur, et n'envoie au navigateur que la timeline calculée (écart d'or
+par minute, événements clés). Définitions : `src/lib/sources/timeline.ts`.
+
+- Accès : un token R2 à part, **Object Read only**, limité au bucket, lu
+  uniquement depuis `R2_READ_ACCESS_KEY_ID` / `R2_READ_SECRET_ACCESS_KEY`.
+  L'app ne lit jamais `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` (écriture,
+  ingestion seulement), donc une clé d'écriture ne peut pas servir au runtime.
+- Cache : Vercel Runtime Cache (régional, partagé entre instances, conservé
+  entre déploiements), clé `timeline:v<TIMELINE_FORMAT>:<partie>`, 30 jours ;
+  une partie absente du bucket est mémorisée 1 h. Hors Vercel, cache en
+  mémoire. Une panne du cache ne coûte qu'une lecture R2.
+- Sans variables `R2_READ_*` : en local, lecture du cache `data/raw/riot`
+  s'il existe ; sur Vercel, la réponse donne le résultat de la partie et dit
+  que la timeline est indisponible, sans chiffre inventé.
+- Coût : une lecture R2 (15 à 120 Ko) par partie et par région tous les
+  30 jours au plus, très loin des 10 M de lectures gratuites par mois.
+
+Créer le token (à faire par Enzo) : Cloudflare → **R2 Object Storage** →
+**Manage R2 API Tokens** → **Create API token** → nom
+`lolesport-vercel-read`, permission **Object Read only**, **Apply to specific
+buckets only** → `lolesport-games`, TTL un an au plus. Noter l'*Access Key ID*
+et le *Secret Access Key* (affiché une seule fois).
 
 ### Première release v4
 
@@ -176,6 +204,16 @@ release v3 n'en a pas. Deux façons d'amorcer :
 - sans R2 : le workflow télécharge depuis le wiki 90 min par exécution
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
+
+### Première release v5
+
+Le schéma v5 ajoute `games.tab`, `match_n`, `game_n` et
+`game_riot.side_swapped` (reconstruits depuis le cache brut, sans nouvelle
+requête au wiki). `data:pull` ne prend que les releases du schéma du code :
+tant qu'aucune release v5 n'existe, un build v5 échoue. Une fois le code sur
+`main`, lancer **Data release** une fois avant le premier déploiement v5. Le
+workflow ne restaure pas les résumés in-game d'une release v4 : avec les
+secrets `R2_*` il relit les 28 342 parties sur R2 (environ 6 min).
 
 ## Réglages du projet Vercel
 
@@ -205,7 +243,9 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 | `DATA_RELEASE` | épingle une release `data-*` (retour arrière) | non | build | facultatif |
 | `DATA_REPO`, `DATA_GITHUB_API` | dépôt et API des releases (défauts corrects) | non | build | ne pas définir |
 | `DATABASE_PATH` | chemin de la base | non | runtime | **ne pas définir** sur Vercel |
-| `R2_*`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) | — | — | ne pas définir |
+| `R2_ACCOUNT_ID`, `R2_BUCKET` | compte et bucket R2 des JSON Riot (timeline d'une partie) | non | runtime | Production, Preview |
+| `R2_READ_ACCESS_KEY_ID`, `R2_READ_SECRET_ACCESS_KEY` | token R2 **Object Read only**, bucket `lolesport-games` seulement | oui, Sensitive | runtime | Production, Preview |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) ; `R2_ENDPOINT` seulement pour la juridiction EU | — | — | ne pas définir |
 
 `VERCEL`, `VERCEL_GIT_REPO_OWNER` et `VERCEL_GIT_REPO_SLUG` sont fournies par
 Vercel. Sans intégration Git, les deux dernières sont vides et `data:pull` lit

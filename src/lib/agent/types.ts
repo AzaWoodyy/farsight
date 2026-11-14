@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import type { EventKind } from "../sources/timeline";
 import type { DecisionLevel } from "./decide";
 import type { BoundTool, ToolInput } from "./tools";
 
@@ -120,7 +121,8 @@ export type ToolName =
   | "tournament_standings"
   | "player_ingame_stats"
   | "ingame_leaderboard"
-  | "team_ingame_stats";
+  | "team_ingame_stats"
+  | "game_timeline";
 
 export type Intent = ToolName | "sql";
 
@@ -178,6 +180,23 @@ export type AnswerMeta = {
   attempts: number;
 };
 
+export type Side = "blue" | "red";
+
+/** One game's timeline as the UI draws it (sides are Leaguepedia's: blue = Team1). */
+export type TimelineView = {
+  /** "Worlds 2024 · finale · game 3" */
+  label: string;
+  blue: string;
+  red: string;
+  winner: Side | null;
+  durationS: number | null;
+  /** Riot API version of the source JSON (4 or 5). */
+  version: number;
+  /** Blue gold minus red gold, one point per timeline frame. */
+  gold: { s: number; diff: number }[];
+  events: { s: number; kind: EventKind; side: Side; detail: string | null }[];
+};
+
 export type Answer = {
   title: string;
   summary: string;
@@ -185,6 +204,8 @@ export type Answer = {
   rows: ResultRow[];
   /** Generic table (other typed tools and text-to-SQL fallback). */
   table: { columns: string[]; rows: TableCell[][] } | null;
+  /** One game's gold curve and key events (game timeline tool). */
+  timeline: TimelineView | null;
   sources: Source[];
   followUps: string[];
   notes: string[];
