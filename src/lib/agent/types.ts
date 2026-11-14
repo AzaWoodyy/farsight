@@ -266,6 +266,34 @@ export type GameScoreboard = {
   players: ScoreboardPlayer[];
 };
 
+/** One series (best-of) between two teams. */
+export type TeamSeries = {
+  playedAt: number | null;
+  /** "LEC 2025 · semaine 3", "Worlds 2024 · finale" */
+  label: string;
+  /** Names the teams played under then (a renamed team keeps its old name). */
+  teamA: string;
+  teamB: string;
+  winsA: number;
+  winsB: number;
+  source: Source;
+};
+
+/** Two teams' meetings (head_to_head tool): the series, newest first, and their record. */
+export type TeamHeadToHead = {
+  teamA: string;
+  teamB: string;
+  /** "en LEC", "aux Worlds en 2024", "" for every competition. */
+  scope: string;
+  seriesA: number;
+  seriesB: number;
+  gamesA: number;
+  gamesB: number;
+  /** Every series of the scope (the record counts them all, the list shows the newest MAX first). */
+  seriesCount: number;
+  series: TeamSeries[];
+};
+
 /** One player's line on a champion: how often and how well they played it. */
 export type ChampionPlayer = {
   player: string;
@@ -310,6 +338,8 @@ export type Answer = {
   scoreboard: GameScoreboard | null;
   /** Two players set against each other: statistics, their games against each other (player_comparison tool). */
   versus: VersusView | null;
+  /** Two teams' series against each other (head_to_head tool). */
+  teams: TeamHeadToHead | null;
   /** One champion's profile (champion_event_stats tool). */
   champion: ChampionProfile | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */

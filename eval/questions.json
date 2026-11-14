@@ -196,7 +196,10 @@
         },
         "totals": {
           "wins_a": 78,
-          "wins_b": 73
+          "wins_b": 73,
+          "series": 56,
+          "series_a": 30,
+          "series_b": 26
         },
         "rowsMin": 30,
         "sources": 4
@@ -2964,6 +2967,135 @@
         "summaryIncludes": [
           "finale pas encore publiée"
         ]
+      }
+    },
+    {
+      "id": "h2h-kc-mkoi-lec",
+      "question": "h2h kc et mkoi en lec",
+      "tags": [
+        "lec",
+        "head_to_head",
+        "alias"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "Karmine Corp",
+          "Movistar KOI"
+        ],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "kind": "team"
+        },
+        "unread": [],
+        "totals": {
+          "series": 16,
+          "series_a": 11,
+          "series_b": 5,
+          "wins_a": 25,
+          "wins_b": 16
+        },
+        "summaryIncludes": [
+          "16 séries",
+          "11 gagnées par Karmine Corp"
+        ]
+      }
+    },
+    {
+      "id": "h2h-kc-mkoi",
+      "question": "h2h kc et mkoi",
+      "tags": [
+        "head_to_head",
+        "alias"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "Karmine Corp",
+          "Movistar KOI"
+        ],
+        "input": {
+          "kind": "team",
+          "league": null
+        },
+        "totals": {
+          "series": 17,
+          "series_a": 12,
+          "series_b": 5,
+          "wins_a": 27,
+          "wins_b": 16
+        }
+      }
+    },
+    {
+      "id": "h2h-g2-vs-fnatic",
+      "question": "G2 vs Fnatic",
+      "tags": [
+        "head_to_head",
+        "english"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "G2 Esports",
+          "Fnatic"
+        ],
+        "input": {
+          "kind": "team",
+          "league": null
+        },
+        "totals": {
+          "series": 60,
+          "series_a": 36,
+          "series_b": 24,
+          "wins_a": 78,
+          "wins_b": 52
+        }
+      }
+    },
+    {
+      "id": "h2h-t1-geng-worlds",
+      "question": "T1 contre Gen.G aux Worlds",
+      "tags": [
+        "worlds",
+        "head_to_head"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Gen.G"
+        ],
+        "league": "World Championship",
+        "totals": {
+          "series": 5,
+          "series_a": 2,
+          "series_b": 3,
+          "wins_a": 6,
+          "wins_b": 8
+        }
+      }
+    },
+    {
+      "id": "team-history-kc",
+      "question": "palmarès de KC",
+      "tags": [
+        "team"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "Karmine Corp"
+        ],
+        "input": {
+          "league": null
+        },
+        "totals": {
+          "events": 35,
+          "wins": 307,
+          "losses": 183,
+          "titles": 7
+        }
       }
     }
   ]

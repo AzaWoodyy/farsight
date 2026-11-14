@@ -275,7 +275,29 @@ const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
     members: ["DAMWON Gaming", "DWG KIA", "Dplus KIA", "Dplus Kia"],
     aliases: ["dk", "dwg", "damwon", "dwg kia", "dplus", "dplus kia"],
   },
-  { team: "Gen.G", members: ["Gen.G", "Samsung Galaxy"], aliases: ["gen.g", "geng", "gen g", "ssg", "samsung galaxy"] },
+  { team: "Gen.G", members: ["Gen.G", "Samsung Galaxy"], aliases: ["gen.g", "geng", "gen g", "gen", "ssg", "samsung galaxy"] },
+  {
+    team: "Movistar KOI",
+    members: ["MAD Lions", "MAD Lions KOI", "Movistar KOI"],
+    aliases: ["mkoi", "koi", "mdk", "mad", "mad lions", "madlions", "mad lions koi", "movistar koi"],
+  },
+  { team: "GIANTX", members: ["Excel Esports", "GIANTX"], aliases: ["gx", "giantx", "excel", "xl", "excel esports"] },
+  {
+    team: "DRX",
+    members: ["Longzhu Gaming", "Kingzone DragonX", "DragonX", "DRX", "Kiwoom DRX"],
+    aliases: ["drx", "kingzone", "kz", "kingzone dragonx", "dragonx", "longzhu", "kiwoom drx"],
+  },
+  {
+    team: "DN SOOPers",
+    members: ["Afreeca Freecs", "Kwangdong Freecs", "DN Freecs", "DN SOOPers"],
+    aliases: ["dns", "dn soopers", "soopers", "dnf", "dn freecs", "kdf", "kwangdong", "kwangdong freecs", "afreeca", "afreeca freecs", "afs"],
+  },
+  {
+    team: "HANJIN BRION",
+    members: ["Fredit BRION", "BRION", "OKSavingsBank BRION", "HANJIN BRION"],
+    aliases: ["bro", "brion", "fredit brion", "oksavingsbank brion", "hanjin brion"],
+  },
+  { team: "Nongshim RedForce", members: ["Team Dynamics", "Nongshim RedForce"], aliases: ["ns", "nongshim", "redforce", "team dynamics"] },
 ];
 
 const TEAM_SHORTHANDS = {
@@ -284,6 +306,7 @@ const TEAM_SHORTHANDS = {
   kt: "KT Rolster",
   g2: "G2 Esports",
   fnc: "Fnatic",
+  sk: "SK Gaming",
   tl: "Team Liquid",
   c9: "Cloud9",
   edg: "EDward Gaming",
@@ -301,11 +324,6 @@ const TEAM_SHORTHANDS = {
   "100t": "100 Thieves",
   tsm: "TSM",
   clg: "Counter Logic Gaming",
-  drx: "DRX",
-  ns: "Nongshim RedForce",
-  kdf: "Kwangdong Freecs",
-  bro: "OKSavingsBank BRION",
-  mdk: "Movistar KOI",
   bds: "Team BDS",
   th: "Team Heretics",
 };
