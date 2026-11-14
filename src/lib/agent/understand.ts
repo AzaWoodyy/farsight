@@ -5,6 +5,7 @@ import { normalizeAlias } from "../aliases";
 import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL } from "./llm";
+import { ROLE_WORDS } from "./roles";
 import {
   type Ambiguity,
   type Entities,
@@ -50,7 +51,7 @@ const LEAGUE_CUES: { league: LeagueName; pattern: RegExp }[] = [
 const OUT_OF_SCOPE =
   /\b(ljl|pcs|vcs|cblol|lla|tcl|lco|lcl|opl|lms|lst|lck cl? ?vietnam|valorant|vct|dota ?2?|counter[- ]strike|cs ?go|cs2|overwatch|fortnite|teamfight tactics|tft|wild rift|rocket league|fifa)\b/i;
 
-const SPLIT_CUES: { split: Split; pattern: RegExp }[] = [
+export const SPLIT_CUES: { split: Split; pattern: RegExp }[] = [
   { split: "Spring", pattern: /\b(spring|printemps)\b/i },
   { split: "Summer", pattern: /\bsummer\b|\b(?:split|saison) d['’ ]?[ée]t[ée](?![\p{L}])/iu },
   { split: "Winter", pattern: /\b(winter|hiver)\b/i },
@@ -80,9 +81,33 @@ const STOPWORDS = new Set(
 const TERM_PHRASES =
   /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
 
-/** The question with its stat and game terms blanked out, for alias lookups. */
+const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
+
+/** Role words are never entity aliases either: "adc" and "mid" are also player handles. */
+const ROLE_PHRASES = phrase(ROLE_WORDS);
+
+/**
+ * Seasons named relative to today ("l'an dernier", "this season"), as an
+ * offset in years. A LoL season is a calendar year.
+ */
+const RELATIVE_YEARS = [
+  {
+    offset: -1,
+    pattern: phrase("l['’ ]?an (?:dernier|pass[ée])|(?:l['’ ]?ann[ée]e|(?:la )?saison) (?:derni[èe]re|pass[ée]e|pr[ée]c[ée]dente)|(?:last|previous) (?:year|season)"),
+  },
+  {
+    offset: 0,
+    pattern: phrase("cette (?:ann[ée]e|saison)|(?:l['’ ]?ann[ée]e|(?:la )?saison) (?:en cours|actuelle)|(?:this|current) (?:year|season)"),
+  },
+];
+
+const YEAR = /\b(20[1-3]\d)\b/g;
+
+const blank = (text: string, pattern: RegExp) => text.replace(pattern, (m) => " ".repeat(m.length));
+
+/** The question with its stat, game, role and relative-season terms blanked out, for alias lookups ("last" is also a handle). */
 function maskTerms(question: string): string {
-  return question.replace(TERM_PHRASES, (m) => " ".repeat(m.length));
+  return [TERM_PHRASES, ROLE_PHRASES, ...RELATIVE_YEARS.map((r) => r.pattern)].reduce(blank, question);
 }
 
 /** True when a mention only occurs inside a stat or game term of the question. */
@@ -108,8 +133,23 @@ type AliasHit = z.infer<typeof AliasHit>;
 
 const CountRow = z.object({ n: z.number() });
 
+/**
+ * Nicknames that designate one player without doubt, by normalized alias and
+ * Leaguepedia page. Only read when no alias of the database matches.
+ */
+const NICKNAMES = new Map([
+  ["goat", "Faker"],
+  ["thegoat", "Faker"],
+  ["unkillabledemonking", "Faker"],
+  ["demonking", "Faker"],
+  ["hideonbush", "Faker"],
+  ["claps", "Caps"],
+]);
+
 function lookupAlias(db: DatabaseSync, mention: string): AliasHit[] {
-  return selectAll(
+  const alias = normalizeAlias(mention);
+
+  const hits = selectAll(
     db,
     AliasHit,
     `SELECT p.id, p.page AS player, a.raw, p.ign, p.real_name, p.native_name,
@@ -117,7 +157,20 @@ function lookupAlias(db: DatabaseSync, mention: string): AliasHit[] {
      FROM player_aliases a JOIN players p ON p.id = a.player_id
      WHERE a.alias = ?
      ORDER BY games DESC`,
-    [normalizeAlias(mention)],
+    [alias],
+  );
+
+  const nickname = NICKNAMES.get(alias);
+
+  if (hits.length || !nickname) return hits;
+
+  return selectAll(
+    db,
+    AliasHit,
+    `SELECT p.id, p.page AS player, ? AS raw, p.ign, p.real_name, p.native_name,
+            (SELECT COUNT(*) FROM game_players g WHERE g.player_id = p.id) AS games
+     FROM players p WHERE p.page = ?`,
+    [mention, nickname],
   );
 }
 
@@ -440,10 +493,24 @@ function detectLeague(question: string) {
   return { league: null, mention: null };
 }
 
-function detectPeriod(question: string) {
-  const years = [...question.matchAll(/\b(20[1-3]\d)\b/g)].map((m) => Number(m[1]));
+/** "l'an dernier", "cette saison": the year they mean today, or since that year after "depuis" / "since". */
+function relativePeriod(question: string, now: Date) {
+  for (const r of RELATIVE_YEARS) {
+    const m = new RegExp(r.pattern.source, "iu").exec(question);
 
-  if (years.length === 0) return { yearFrom: null, yearTo: null };
+    if (!m) continue;
+    const year = now.getUTCFullYear() + r.offset;
+
+    return { yearFrom: year, yearTo: /(?:depuis|since)\s+$/i.test(question.slice(0, m.index)) ? null : year };
+  }
+
+  return { yearFrom: null, yearTo: null };
+}
+
+function detectPeriod(question: string, now: Date) {
+  const years = [...question.matchAll(YEAR)].map((m) => Number(m[1]));
+
+  if (years.length === 0) return relativePeriod(question, now);
   const since = /\b(depuis|since|apr[eè]s|after|from)\s+(20[1-3]\d)\b/i.exec(question);
   const before = /\b(avant|before|until|jusqu'?en)\s+(20[1-3]\d)\b/i.exec(question);
 
@@ -479,13 +546,16 @@ function leagueShort(db: DatabaseSync, league: string | null): string | null {
 function buildEntities(
   db: DatabaseSync,
   question: string,
+  now: Date,
   mentions: Mentions,
   overrides: Partial<Pick<Entities, "league" | "yearFrom" | "yearTo">> = {},
 ): Entities {
   const rulesLeague = detectLeague(question);
-  const rulesPeriod = detectPeriod(question);
-  const yearFrom = overrides.yearFrom !== undefined ? overrides.yearFrom : rulesPeriod.yearFrom;
-  const yearTo = overrides.yearTo !== undefined ? overrides.yearTo : rulesPeriod.yearTo;
+  const rulesPeriod = detectPeriod(question, now);
+  // A period the rules read (written years, or a relative season resolved against `now`) is kept: the LLM does not know today's date.
+  const dated = rulesPeriod.yearFrom != null || rulesPeriod.yearTo != null;
+  const yearFrom = overrides.yearFrom !== undefined && !dated ? overrides.yearFrom : rulesPeriod.yearFrom;
+  const yearTo = overrides.yearTo !== undefined && !dated ? overrides.yearTo : rulesPeriod.yearTo;
   const league = eraLeague(overrides.league !== undefined ? overrides.league : rulesLeague.league, yearTo);
   const players: ResolvedPlayer[] = [];
   const unresolved: string[] = [];
@@ -514,14 +584,14 @@ function buildEntities(
   };
 }
 
-type Input = { db: DatabaseSync; question: string };
+type Input = { db: DatabaseSync; question: string; now: Date };
 
 /** Level 1: regex + alias tables. Confident when every entity is found without doubt. */
 const rulesDecider: Decider<Input, Entities> = {
   level: "rules",
   name: "regex + alias",
-  run: ({ db, question }) => {
-    const entities = buildEntities(db, question, detectMentions(db, question));
+  run: ({ db, question, now }) => {
+    const entities = buildEntities(db, question, now, detectMentions(db, question));
     const n = entities.players.length + entities.teams.length + (entities.champion ? 1 : 0);
     let confidence = entities.outOfScope ? 0.9 : n === 0 ? (entities.league ? 0.8 : 0.2) : n <= 2 ? 0.9 : 0.6;
 
@@ -561,7 +631,7 @@ const LlmEntities = z.object({
 const llmDecider: Decider<Input, Entities> = {
   level: "llm",
   name: "OpenRouter",
-  run: async ({ db, question }) => {
+  run: async ({ db, question, now }) => {
     const llm = getLlm();
 
     if (!llm) return null;
@@ -583,6 +653,7 @@ const llmDecider: Decider<Input, Entities> = {
     const entities = buildEntities(
       db,
       question,
+      now,
       // The LLM may still copy a term's word as a name ("solo" in "solo kills").
       { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, champion: output.champion ? resolveChampion(db, output.champion) : null },
       { league: output.league, yearFrom: output.yearFrom, yearTo: output.yearTo },
@@ -599,6 +670,33 @@ const llmDecider: Decider<Input, Entities> = {
   },
 };
 
-export function understandQuestion(db: DatabaseSync, question: string) {
-  return decide({ db, question }, [rulesDecider, llmDecider], { threshold: 0.8 });
+/** `now` dates the relative seasons of the question ("l'an dernier"); tests pass a fixed date. */
+export function understandQuestion(db: DatabaseSync, question: string, now: Date = new Date()) {
+  return decide({ db, question, now }, [rulesDecider, llmDecider], { threshold: 0.8 });
+}
+
+/**
+ * What the understand step read in the question, blanked out: entity
+ * mentions, the competition, years and relative seasons. `read` counts
+ * them, one per mention.
+ */
+export function maskUnderstood(question: string, e: Entities) {
+  let read = 0;
+  let rest = question;
+
+  const take = (pattern: RegExp) => {
+    rest = rest.replace(pattern, (m) => {
+      read++;
+
+      return " ".repeat(m.length);
+    });
+  };
+
+  const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
+
+  for (const m of mentions) if (m) take(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"));
+
+  if (e.yearFrom != null || e.yearTo != null) for (const p of [YEAR, ...RELATIVE_YEARS.map((r) => r.pattern)]) take(p);
+
+  return { rest, read };
 }

@@ -103,7 +103,7 @@ export function metricLabel(def: MetricDef, minute: Minute | null): string {
 const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "iu");
 
 /** At N minutes: "à 15 min", "at 10", "15 minutes", "@20". */
-const MINUTE = /(?:\b(?:à|a|at|@)\s*(10|15|20)\b|\b(10|15|20)\s*(?:min(?:ute)?s?\b|'))/iu;
+export const MINUTE = /(?:\b(?:à|a|at|@)\s*(10|15|20)\b|\b(10|15|20)\s*(?:min(?:ute)?s?\b|'))/iu;
 
 export function detectMinute(question: string): Minute | null {
   const n = Number(MINUTE.exec(question)?.slice(1).find(Boolean));

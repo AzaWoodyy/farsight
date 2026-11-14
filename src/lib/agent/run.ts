@@ -83,9 +83,9 @@ function ambiguityNotes(question: string, entities: Entities) {
 }
 
 // 1. Understand ---------------------------------------------------------------
-async function understand(db: DatabaseSync, question: string, emit: Emit) {
+async function understand(db: DatabaseSync, question: string, emit: Emit, now: Date) {
   const step = new Step("understand", "Analyse de la question…", emit);
-  const decision = (await understandQuestion(db, question))!;
+  const decision = (await understandQuestion(db, question, now))!;
   const entities = decision.result;
 
   const lines = [
@@ -434,6 +434,7 @@ async function format(
     totals: {},
     ambiguities: amb.ambiguities,
     attempts: plan?.attempt ?? 0,
+    unread: route.kind === "tool" || route.kind === "sql" ? (route.unread ?? []) : [],
   };
 
   if (missing.length) {
@@ -525,11 +526,14 @@ async function format(
   };
 }
 
-/** Runs the four steps, emitting each step's progress and the final answer. */
-export async function runAgent(question: string, emit: Emit): Promise<Answer> {
+/**
+ * Runs the four steps, emitting each step's progress and the final answer.
+ * `now` dates the relative seasons of the question ("l'an dernier"); the eval passes a fixed date.
+ */
+export async function runAgent(question: string, emit: Emit, now: Date = new Date()): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
-  const entities = await understand(db, question, emit);
+  const entities = await understand(db, question, emit, now);
   const route = routeQuestion(question, entities, readSchema(db), coverageLookup(db));
   const missing: string[] = [];
   let rows: SqlRow[] = [];
