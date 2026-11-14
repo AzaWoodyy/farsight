@@ -29,6 +29,7 @@ import { z } from "zod";
 import { type Json, JsonSchema } from "../../src/lib/json";
 import { DB_ASSET, MANIFEST_ASSET, Manifest, SIDE_FILES, TAG_PREFIX, corruption, sha256File, usabilityProblems } from "./artifact";
 import { DB_FILE, SCHEMA_VERSION } from "./scope";
+import { planPull } from "./pull-plan";
 
 const args = process.argv.slice(2);
 const force = args.includes("--force");
@@ -235,25 +236,20 @@ async function main() {
 
   if (localProblems && !localUsable) log(`local ${basename(DB_FILE)} not usable: ${localProblems.join("; ")}`);
 
-  if (localUsable && !onVercel && !pinned && !force) {
-    log(`keeping local ${DB_FILE} (schema v${SCHEMA_VERSION}); --force replaces it with the latest release`);
+  const plan = planPull({
+    local: localProblems == null ? "absent" : localUsable ? "usable" : "unusable",
+    onVercel, token: Boolean(token), pinned, force,
+  });
+
+  if (plan.kind === "keep_local") {
+    log(plan.reason === "offline_build"
+      ? `keeping local ${DB_FILE} (schema v${SCHEMA_VERSION}); --force replaces it with the latest release`
+      : `DATA_GITHUB_TOKEN is not set: keeping local ${DB_FILE} (schema v${SCHEMA_VERSION}) without comparing it to the latest release`);
 
     return;
   }
 
-  // A local `vercel build` sets VERCEL=1 too; a cloud build never has a local file.
-  if (localUsable && !token && !pinned && !force) {
-    log(`DATA_GITHUB_TOKEN is not set: keeping local ${DB_FILE} (schema v${SCHEMA_VERSION}) without comparing it to the latest release`);
-
-    return;
-  }
-
-  if (!token)
-    throw new PullError(
-      onVercel
-        ? "DATA_GITHUB_TOKEN is not set on this Vercel project (see docs/deploy.md)"
-        : `no usable local database and DATA_GITHUB_TOKEN is not set: run \`bun run data:build\`, or set the token to download a release`,
-    );
+  if (plan.kind === "fail") throw new PullError(plan.message);
 
   const { release, manifest } = await resolveRelease();
   log(`${pinned ? "pinned" : "latest"} release ${release.tag_name}: schema v${manifest.schema_version}, built ${manifest.created_at}`);
