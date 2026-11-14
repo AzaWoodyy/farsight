@@ -67,3 +67,20 @@ describe("playerIdentity", () => {
     expect(canonical("Gaethan")).toEqual({ page: "Gaethan", via: "unknown" });
   });
 });
+
+
+describe("verified scoreboard-only identities", () => {
+  test("case variants share one player even without a Players or redirect row", () => {
+    const resolve = playerIdentity([], []);
+    expect(resolve("GeekGoneMad")).toEqual({ page: "GeekGoneMAD", via: "case" });
+    expect(resolve("GeekGoneMAD")).toEqual({ page: "GeekGoneMAD", via: "page" });
+    expect(resolve("minde")).toEqual({ page: "Minde", via: "case" });
+    expect(resolve("Minde")).toEqual({ page: "Minde", via: "page" });
+  });
+
+  test("a real distinct page still wins over a case-only fallback", () => {
+    const resolve = playerIdentity(["GeekGoneMad", "minde"], []);
+    expect(resolve("GeekGoneMad")).toEqual({ page: "GeekGoneMad", via: "page" });
+    expect(resolve("minde")).toEqual({ page: "minde", via: "page" });
+  });
+});

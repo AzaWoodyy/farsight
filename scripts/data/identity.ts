@@ -19,6 +19,15 @@ export type Resolution = {
 
 type Redirect = { name: string; page: string };
 
+// These scoreboard-only handles have no Players/PlayerRedirects row. The
+// matching historical rosters were checked before merging the two spellings:
+// https://lol.fandom.com/wiki/Team_Tempest (William Lyall, including the
+// GeekGoneMad roster of NA LCS 2014 Spring Prequalifier 1) and
+// https://lol.fandom.com/wiki/NA_LCS/2014_Season/Spring_Promotion/Qualifiers/WellPlayed_2/Team_Rosters
+// https://lol.fandom.com/wiki/EU_LCS/2014_Season/Spring_Promotion/Qualifiers/WellPlayed_2
+// (Minde, the single bleiz eSPORTS support across all four scoreboards).
+const VERIFIED_SCOREBOARD_PAGES = ["GeekGoneMAD", "Minde"] as const;
+
 const fold = (s: string) => s.toLowerCase();
 
 function index(entries: Iterable<[string, string]>) {
@@ -37,7 +46,7 @@ function index(entries: Iterable<[string, string]>) {
  */
 export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redirect>): (link: string) => Resolution {
   const rows = [...redirects];
-  const known = new Set([...pages, ...rows.map((r) => r.page)]);
+  const known = new Set([...pages, ...rows.map((r) => r.page), ...VERIFIED_SCOREBOARD_PAGES]);
   const pageByCase = index([...known].map((p) => [fold(p), p]));
   const byName = index(rows.map((r) => [r.name, r.page]));
   const byNameCase = index(rows.map((r) => [fold(r.name), r.page]));
