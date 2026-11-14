@@ -283,6 +283,9 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 | `DATABASE_PATH` | chemin de la base | non | runtime | **ne pas définir** sur Vercel |
 | `R2_ACCOUNT_ID`, `R2_BUCKET` | compte et bucket R2 des JSON Riot (timeline d'une partie) | non | runtime | Production, Preview |
 | `R2_READ_ACCESS_KEY_ID`, `R2_READ_SECRET_ACCESS_KEY` | token R2 **Object Read only**, bucket `lolesport-games` seulement | oui, Sensitive | runtime | Production, Preview |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | clés du projet Langfuse (traçage des questions) ; sans les trois variables `LANGFUSE_*` obligatoires, rien n'est tracé | secrète : oui, Sensitive ; publique : non | runtime | Production |
+| `LANGFUSE_BASE_URL` | région du projet Langfuse : `https://cloud.langfuse.com` (UE) | non | runtime | Production |
+| `LANGFUSE_SAMPLE_RATE` | part des questions tracées, de 0 à 1 (défaut 1) | non | runtime | facultatif |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) ; `R2_ENDPOINT` seulement pour la juridiction EU | — | — | ne pas définir |
 
 `VERCEL`, `VERCEL_GIT_REPO_OWNER` et `VERCEL_GIT_REPO_SLUG` sont fournies par
@@ -395,3 +398,77 @@ Sur [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) :
 
 Pour vérifier : le tableau de bord de la clé montre la consommation, et une
 clé plafonnée à 0 $ doit produire la note « quota épuisé » dans la réponse.
+
+### 4. Traçage Langfuse
+
+Projet Langfuse Cloud (plan Hobby : 50 000 unités par mois, 30 jours de
+rétention, 2 utilisateurs), région UE. Dans Vercel, environnement Production :
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` (Sensitive) et
+`LANGFUSE_BASE_URL=https://cloud.langfuse.com`, puis redéployer. Ne pas les
+mettre en Preview : les essais y resteraient hors des traces de production.
+
+Ce qui part chez Langfuse, une trace `answer-question` par question :
+
+- la question (500 caractères au plus), la réponse en une phrase, et une
+  observation par étape : `understand-question` (entités, mentions non
+  résolues, mots non consommés, confiance), `build-query` (route, outil, SQL),
+  `execute-query` (lignes, tentatives, corrections), `format-answer` ;
+- sous l'étape concernée, chaque appel LLM (`extract-entities`, `pick-tool`,
+  `generate-sql`, `repair-sql`, `write-summary`) en une génération : messages,
+  modèle, jetons et coût ;
+- des tags pour filtrer : `empty-result`, `error`, `out-of-scope`,
+  `missing-data`, `no-query`, `sql-fallback`, `self-corrected`, `llm`,
+  `llm-error`, `llm-quota`, `low-confidence`, `unresolved-mention`,
+  `ambiguous-alias` ;
+- le pouce haut ou bas de l'interface, en score booléen `response_rating`
+  (`POST /api/feedback`).
+
+Confidentialité : ni IP, ni cookie, ni en-tête, ni empreinte du navigateur.
+Le seul identifiant est celui de la conversation : un UUID aléatoire, gardé en
+mémoire de la page, qui ne permet pas de reconnaître un visiteur d'une visite
+à l'autre. Les e-mails, adresses IP et numéros de téléphone tapés dans une
+question sont masqués avant l'envoi. Les traces sont lisibles 30 jours.
+
+Unités : 6 par question sans LLM (la trace et 5 observations), 1 de plus par
+appel LLM, 1 par avis. Avec la clé OpenRouter, une question courante en
+consomme 7 (la phrase de synthèse passe par le LLM) et le pire cas 12, soit
+environ 7 000 questions par mois, 4 000 au pire. Au-delà, baisser
+`LANGFUSE_SAMPLE_RATE` (0,5 trace une question sur deux ; une question non
+tracée n'affiche pas les pouces).
+
+Le coût est celui qu'OpenRouter facture : il figure sur chaque génération et,
+en somme, dans les métadonnées de la trace (`llmCostUsd`).
+
+#### Comment lire une question dans Langfuse
+
+Chaque conversation du site est une **session** (un UUID tiré au hasard par
+le navigateur à la première question, changé au rechargement de la page ou
+par « nouvelle conversation »), et chaque question une trace nommée par le
+début de la question.
+
+1. **Suivre une conversation** : menu **Sessions**, filtre **Environment** =
+   `production` (ou `development` en local). Une ligne par conversation, la
+   plus récente en haut ; cliquer l'identifiant. La vue **Messages** déroule
+   les questions dans l'ordre, avec pour chacune la question, la réponse et
+   les messages échangés avec le LLM.
+2. **Voir tous les appels d'une question** : dans la session, cliquer le
+   titre de la question pour ouvrir sa trace. L'onglet **Tree** montre
+   `answer-question`, ses quatre étapes et, sous chacune, ses appels LLM avec
+   leur coût ; **Timeline** les montre dans le temps. Cliquer une observation
+   affiche son entrée, sa sortie et, dans **Metadata**, le journal de l'étape.
+   Le lien **session** en haut de la trace ramène à la conversation.
+3. **Lister les questions** : menu **Tracing**. Cette page liste les
+   observations, pas les questions : dans **Filters**, section **Is Root
+   Observation**, ne garder que **True** pour avoir une ligne par question
+   (à enregistrer dans **My Views**).
+4. **Trouver les échecs** : avec ce filtre, section **Tags**, cocher
+   `empty-result`, `error`, `no-query`, `out-of-scope`… ou filtrer **Level**
+   sur `ERROR`. Les avis négatifs : menu **Scores**, `response_rating` =
+   `False`.
+5. **Retrouver une question précise** : chercher son texte dans la barre de
+   recherche. Chaque observation porte la question en métadonnée
+   (`question`).
+
+L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
+panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
+pour le limiter par IP, la troisième règle personnalisée du firewall est libre.

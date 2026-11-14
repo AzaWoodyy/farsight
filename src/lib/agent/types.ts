@@ -219,5 +219,7 @@ export type AgentUIMessage = UIMessage<
   {
     step: StepPart;
     answer: Answer;
+    /** Sent before the steps when the question is traced: the id the thumbs up / down score points to. */
+    trace: { traceId: string };
   }
 >;

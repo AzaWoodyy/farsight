@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   type AgentUIMessage,
   type Answer,
@@ -79,6 +79,10 @@ const askFetch: typeof fetch = Object.assign(askFetchImpl, { preconnect: fetch.p
 
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
+  // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
+  // so a reload or "nouvelle conversation" starts another. It groups the traces of the conversation, and
+  // says nothing of the visitor.
+  const sessionId = useRef<string | null>(null);
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/ask", fetch: askFetch }),
@@ -95,18 +99,29 @@ export function AgentConsole() {
     // One question at a time: the agent does not use the chat history.
     setMessages([]);
     setQuestion("");
-    sendMessage({ text });
+    sessionId.current ??= crypto.randomUUID();
+    sendMessage({ text }, { body: { sessionId: sessionId.current } });
+  }
+
+  function restart() {
+    if (running) stop();
+    setMessages([]);
+    setQuestion("");
+    sessionId.current = null;
   }
 
   const asked = messages.findLast((m) => m.role === "user");
   const reply = messages.findLast((m) => m.role === "assistant");
   const steps = new Map<StepName, StepPart>();
   let answer: Answer | null = null;
+  let traceId: string | null = null;
 
   for (const part of reply?.parts ?? []) {
     if (part.type === "data-step") steps.set(part.data.step, part.data);
 
     if (part.type === "data-answer") answer = part.data;
+
+    if (part.type === "data-trace") traceId = part.data.traceId;
   }
 
   return (
@@ -157,10 +172,15 @@ export function AgentConsole() {
 
       {asked && (
         <div className="mt-10">
-          <p className="text-sm">
-            <span className="text-muted">?</span>{" "}
-            {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
-          </p>
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-sm">
+              <span className="text-muted">?</span>{" "}
+              {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
+            </p>
+            <button type="button" onClick={restart} className="shrink-0 text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent">
+              nouvelle conversation
+            </button>
+          </div>
           <Steps steps={steps} running={running} />
           {error && (
             <p role="alert" className="mt-4 text-xs text-error">
@@ -168,6 +188,7 @@ export function AgentConsole() {
             </p>
           )}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
+          {answer && traceId && <Feedback key={traceId} traceId={traceId} />}
         </div>
       )}
     </section>
@@ -284,6 +305,64 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+type Rating = "up" | "down";
+
+const RATINGS: { rating: Rating; label: string }[] = [
+  { rating: "up", label: "[+] oui" },
+  { rating: "down", label: "[-] non" },
+];
+
+/**
+ * Thumbs up / down on the answer, shown only when the question was traced.
+ * The rating goes to /api/feedback with the trace id and nothing else; a
+ * second click replaces the first.
+ */
+function Feedback({ traceId }: { traceId: string }) {
+  const [sent, setSent] = useState<Rating | null>(null);
+  const [state, setState] = useState<"idle" | "sending" | "failed">("idle");
+
+  async function rate(rating: Rating) {
+    setState("sending");
+
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ traceId, rating }),
+      });
+
+      setSent(res.ok ? rating : null);
+      setState(res.ok ? "idle" : "failed");
+    } catch {
+      setSent(null);
+      setState("failed");
+    }
+  }
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
+      <span className="uppercase tracking-widest text-muted">── réponse correcte ?</span>
+      {RATINGS.map(({ rating, label }) => (
+        <button
+          key={rating}
+          type="button"
+          onClick={() => rate(rating)}
+          disabled={state === "sending"}
+          aria-pressed={sent === rating}
+          className={`border px-2 py-1 hover:border-accent hover:text-accent disabled:opacity-40 ${
+            sent === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+      <span role="status" className={state === "failed" ? "text-error" : "text-muted"}>
+        {state === "failed" ? "avis non enregistré, réessaie" : sent ? "merci, avis enregistré" : ""}
+      </span>
     </div>
   );
 }
