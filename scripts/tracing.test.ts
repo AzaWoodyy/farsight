@@ -214,7 +214,7 @@ test("a question is one trace: root, step observations and the LLM generation", 
   const root = named(TRACE_NAME);
   const understand = named(STEP_SPANS.understand);
   const execute = named(STEP_SPANS.execute);
-  const generation = spans.find((s) => attr(s, "gen_ai.operation.name") === "chat")!;
+  const generation = named("extract-entities");
 
   // One trace, started from scratch, whose id is the one the UI scores.
   expect(traceId).toBe(root.spanContext().traceId);
@@ -249,16 +249,92 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(String(attr(execute, "langfuse.observation.output"))).toContain('"rowCount":0,"attempts":2');
   expect(meta(execute, "retries")).toBe(1);
 
-  // The LLM call: a generation under its step, with model and tokens.
-  expect(attr(generation, "gen_ai.request.model")).toBe("anthropic/claude-haiku-5.5");
-  expect(attr(generation, "gen_ai.usage.input_tokens")).toBe(412);
-  expect(attr(generation, "gen_ai.usage.output_tokens")).toBe(38);
-  expect(spans.some((s) => attr(s, "gen_ai.agent.name") === "extract-entities")).toBe(true);
+  // The LLM call: one generation, directly under its step, named after the call.
+  expect(spans).toHaveLength(4);
+  expect(generation.parentSpanContext?.spanId).toBe(understand.spanContext().spanId);
+  expect(attr(generation, "langfuse.observation.type")).toBe("generation");
+  expect(attr(generation, "langfuse.observation.model.name")).toBe("anthropic/claude-haiku-5.5");
+  expect(JSON.parse(String(attr(generation, "langfuse.observation.usage_details")))).toEqual({ input: 412, output: 38 });
+  expect(JSON.parse(String(attr(generation, "langfuse.observation.cost_details")))).toEqual({ total: 0.00061 });
+  expect(String(attr(generation, "langfuse.observation.input"))).toContain('"role":"user"');
+  expect(JSON.parse(String(attr(generation, "langfuse.observation.output")))).toEqual({ role: "assistant", content: '{"players":["Chovy"]}' });
 
-  let parent = generation.parentSpanContext?.spanId;
+  // Every observation says which question it belongs to.
+  for (const span of spans) expect(String(attr(span, "langfuse.trace.metadata.question"))).toContain("bilan de Chovy");
+});
 
-  while (parent && parent !== understand.spanContext().spanId) parent = spans.find((s) => s.spanContext().spanId === parent)?.parentSpanContext?.spanId;
-  expect(parent).toBe(understand.spanContext().spanId);
+test("every LLM call of a question hangs in its tree, failures included", async () => {
+  exporter.reset();
+
+  /** Answers with a tool call, as the router does. */
+  const router = new MockLanguageModelV4({
+    provider: "openrouter",
+    modelId: "anthropic/claude-haiku-5.5",
+    doGenerate: async () => ({
+      content: [{ type: "tool-call", toolCallId: "call_1", toolName: "team_history", input: '{"team":"T1"}' }],
+      finishReason: { unified: "tool-calls", raw: "tool_calls" },
+      usage: { inputTokens: { total: 900, noCache: 900, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 20, text: 20, reasoning: 0 } },
+      warnings: [],
+    }),
+  });
+
+  const broken = new MockLanguageModelV4({
+    provider: "openrouter",
+    modelId: "anthropic/claude-haiku-5.5",
+    doGenerate: async () => {
+      throw new Error("clé refusée");
+    },
+  });
+
+  const traceId = await traceQuestion(QUESTION, async (id) => {
+    await traceStep(
+      "build",
+      { question: QUESTION },
+      async () => {
+        await generateText({ model: router, prompt: QUESTION, telemetry: { functionId: "pick-tool" } });
+        await generateText({ model, prompt: QUESTION, telemetry: { functionId: "generate-sql" } });
+
+        return null;
+      },
+      () => ({ output: {}, metadata: {}, level: "DEFAULT" }),
+    );
+
+    await traceStep(
+      "execute",
+      { sql: plan.sql, params: plan.params },
+      async () => {
+        await generateText({ model: broken, prompt: QUESTION, maxRetries: 0, telemetry: { functionId: "repair-sql" } }).catch(() => null);
+
+        return plan;
+      },
+      (p) => executeReport(p, 0, undefined),
+    );
+
+    return id;
+  });
+
+  await flushTracing();
+  const spans = exporter.getFinishedSpans();
+  const idOf = (name: string) => spans.find((s) => s.name === name)!.spanContext().spanId;
+  const under = (parent: string) => spans.filter((s) => s.parentSpanContext?.spanId === idOf(parent)).map((s) => s.name);
+  const levels = (name: string) => spans.filter((s) => s.name === name).map((s) => attr(s, "langfuse.observation.level") ?? "DEFAULT");
+
+  // One trace, one root, nothing outside the tree.
+  expect(new Set(spans.map((s) => s.spanContext().traceId))).toEqual(new Set([traceId!]));
+  expect(spans.filter((s) => !s.parentSpanContext).map((s) => s.name)).toEqual([TRACE_NAME]);
+  expect(under(TRACE_NAME).toSorted()).toEqual([STEP_SPANS.build, STEP_SPANS.execute]);
+
+  // Two calls in the build step, then the failed repair under the execute step.
+  expect(under(STEP_SPANS.build)).toEqual(["pick-tool", "generate-sql"]);
+  expect(levels("pick-tool")).toEqual(["DEFAULT"]);
+  expect(under(STEP_SPANS.execute)).toEqual(["repair-sql"]);
+  expect(levels("repair-sql")).toEqual(["ERROR"]);
+  expect(attr(spans.find((s) => s.name === "repair-sql")!, "langfuse.observation.status_message")).toContain("clé refusée");
+
+  // A tool call is kept on the assistant message.
+  const picked = spans.findLast((s) => s.name === "pick-tool")!;
+
+  expect(JSON.parse(String(attr(picked, "langfuse.observation.output"))).tool_calls[0].function).toEqual({ name: "team_history", arguments: '{"team":"T1"}' });
 });
 
 test("an exception marks the trace and still reaches the caller", async () => {

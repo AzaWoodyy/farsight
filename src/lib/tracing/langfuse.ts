@@ -12,7 +12,6 @@
  */
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { setLangfuseTracerProvider } from "@langfuse/tracing";
-import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { type Context, context } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
@@ -26,7 +25,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { registerTelemetry } from "ai";
 import { z } from "zod";
-import { usageCollector } from "../agent/trace";
+import { llmTelemetry } from "../agent/trace";
 import { maskPersonalData } from "./mask";
 
 /** Name of the thumbs up / down score, after the signal it records. */
@@ -119,7 +118,7 @@ export function startTracing(exporter?: SpanExporter): boolean {
   // Spans nest through the active context, which needs a context manager.
   context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
   setLangfuseTracerProvider(provider);
-  registerTelemetry(new LangfuseVercelAiSdkIntegration({ tracer: provider.getTracer("ai") }), usageCollector);
+  registerTelemetry(llmTelemetry);
 
   return true;
 }

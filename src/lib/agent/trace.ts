@@ -1,8 +1,8 @@
 /**
  * What the agent reports to Langfuse: one trace per question (`answer-question`),
  * one observation per step, and the tags and metadata that single out the
- * failures. The AI SDK integration adds a generation under the step that made
- * each LLM call.
+ * failures. `llmTelemetry` adds one generation per LLM call, under the step
+ * that made it.
  *
  * Nothing here knows whether tracing is on: without a registered provider
  * (src/lib/tracing/langfuse.ts) every observation is a no-op.
@@ -10,11 +10,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type LangfuseAgent,
+  type LangfuseGeneration,
   LangfuseOtelSpanAttributes,
   type LangfuseSpan,
   type LangfuseSpanAttributes,
   propagateAttributes,
   startActiveObservation,
+  startObservation,
 } from "@langfuse/tracing";
 import { context, ROOT_CONTEXT } from "@opentelemetry/api";
 import type { LanguageModelCallEndEvent, Telemetry } from "ai";
@@ -45,13 +47,17 @@ export type StepInput = { question: string } | { sql: string | null; params: Que
 /** LLM usage of one question, summed over its calls. */
 type Usage = { calls: number; errors: number; inputTokens: number; outputTokens: number; costUsd: number };
 
-type Scope = { root: LangfuseAgent; usage: Usage };
+/** The question being traced: its root observation, its LLM usage and its LLM calls still waiting for an answer. */
+type Scope = { root: LangfuseAgent; usage: Usage; calls: Map<string, LangfuseGeneration> };
 
 const scope = new AsyncLocalStorage<Scope>();
 
 const LEVELS: Record<TraceStatus, Level> = { ok: "DEFAULT", fix: "DEFAULT", warn: "WARNING", error: "ERROR" };
 
 const DETAIL_MAX = 2000;
+
+/** Langfuse drops a propagated metadata value longer than 200 characters. */
+const QUESTION_MAX = 200;
 
 /**
  * The step as the UI showed it, one line of text per entry (status, decision
@@ -240,7 +246,9 @@ export function traceQuestion<T>(question: string, run: (traceId: string | null)
       (root) => {
         root.update({ input: question });
 
-        return scope.run({ root, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 } }, async () => {
+        const current: Scope = { root, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 }, calls: new Map() };
+
+        return scope.run(current, async () => {
           try {
             return await run(root.otelSpan.isRecording() ? root.traceId : null);
           } catch (err) {
@@ -248,38 +256,108 @@ export function traceQuestion<T>(question: string, run: (traceId: string | null)
             root.update({ level: "ERROR", statusMessage: err instanceof Error ? err.message : String(err) });
 
             throw err;
+          } finally {
+            // A call the SDK never closed (aborted, timed out) still ends inside its trace.
+            for (const callId of current.calls.keys()) failGeneration(current, callId, "appel LLM interrompu");
           }
         });
       },
       { asType: "agent" },
     );
 
+  // The question goes on every observation: any line of the Langfuse table tells which question it belongs to.
+  const shared = { traceName: TRACE_NAME, metadata: { question: maskPersonalData(question).slice(0, QUESTION_MAX) } };
+
   // A root context: the trace never hangs under a span of the web framework.
-  return context.with(ROOT_CONTEXT, () => propagateAttributes({ traceName: TRACE_NAME }, traced));
+  return context.with(ROOT_CONTEXT, () => propagateAttributes(shared, traced));
 }
 
 /** What OpenRouter bills for one call, as its provider metadata reports it. */
 const OpenRouterCost = z.object({ openrouter: z.object({ usage: z.object({ cost: z.number() }) }) });
 
+/** A failed call as the AI SDK reports it: the call it belongs to, and the error when there is one. */
+const FailedCall = z.object({ callId: z.string(), error: z.instanceof(Error).optional().catch(undefined) });
+
+/** Name of an LLM call nobody named: every call of the agent passes its own `functionId`. */
+const UNNAMED_CALL = "call-llm";
+
+/** The model's answer as one assistant message, tool calls included, so Langfuse renders it as a conversation. */
+function assistantMessage(content: LanguageModelCallEndEvent["content"]) {
+  const text = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+
+  const toolCalls = content.flatMap((part) =>
+    part.type === "tool-call" ? [{ id: part.toolCallId, type: "function", function: { name: part.toolName, arguments: JSON.stringify(part.input) } }] : [],
+  );
+
+  return { role: "assistant", content: text, tool_calls: toolCalls.length ? toolCalls : undefined };
+}
+
+/** Ends a generation that got no answer. */
+function failGeneration(current: Scope, callId: string, message: string) {
+  current.calls.get(callId)?.update({ level: "ERROR", statusMessage: message }).end();
+  current.calls.delete(callId);
+}
+
 /**
- * AI SDK telemetry integration that sums the LLM usage of the current
- * question: it tells whether a question went through the LLM, and at what cost.
+ * AI SDK telemetry integration: each model call of the current question is
+ * one Langfuse generation, named after the call (`functionId`) and nested
+ * under the step that makes it, with its messages, model, tokens and the cost
+ * OpenRouter billed. The SDK's own retry of a call stays inside its generation;
+ * a query repair is a call of its own (`repair-sql`). Calls made outside a
+ * question are not traced.
  */
-export const usageCollector: Telemetry = {
-  onLanguageModelCallEnd(event: LanguageModelCallEndEvent) {
-    const usage = scope.getStore()?.usage;
+export const llmTelemetry: Telemetry = {
+  onLanguageModelCallStart(event) {
+    const current = scope.getStore();
 
-    if (!usage) return;
-    const cost = OpenRouterCost.safeParse(event.providerMetadata);
+    if (!current) return;
 
-    usage.calls += 1;
-    usage.inputTokens += event.usage.inputTokens ?? 0;
-    usage.outputTokens += event.usage.outputTokens ?? 0;
-    usage.costUsd += cost.success ? cost.data.openrouter.usage.cost : 0;
+    current.calls.set(
+      event.callId,
+      startObservation(
+        event.functionId ?? UNNAMED_CALL,
+        {
+          model: event.modelId,
+          input: [...(event.instructions ? [{ role: "system", content: event.instructions }] : []), ...event.messages],
+          modelParameters: event.maxOutputTokens == null ? undefined : { maxOutputTokens: event.maxOutputTokens },
+          metadata: { provider: event.provider, tools: (event.tools ?? []).length },
+        },
+        { asType: "generation" },
+      ),
+    );
   },
-  onError() {
-    const usage = scope.getStore()?.usage;
+  onLanguageModelCallEnd(event) {
+    const current = scope.getStore();
 
-    if (usage) usage.errors += 1;
+    if (!current) return;
+    const cost = OpenRouterCost.safeParse(event.providerMetadata);
+    const input = event.usage.inputTokens ?? 0;
+    const output = event.usage.outputTokens ?? 0;
+
+    current.usage.calls += 1;
+    current.usage.inputTokens += input;
+    current.usage.outputTokens += output;
+    current.usage.costUsd += cost.success ? cost.data.openrouter.usage.cost : 0;
+
+    current.calls
+      .get(event.callId)
+      ?.update({
+        output: assistantMessage(event.content),
+        usageDetails: { input, output },
+        costDetails: cost.success ? { total: cost.data.openrouter.usage.cost } : undefined,
+        metadata: { finishReason: event.finishReason },
+      })
+      .end();
+    current.calls.delete(event.callId);
+  },
+  onError(event) {
+    const current = scope.getStore();
+
+    if (!current) return;
+    const failed = FailedCall.safeParse(event);
+
+    current.usage.errors += 1;
+
+    if (failed.success) failGeneration(current, failed.data.callId, failed.data.error?.message ?? "appel LLM en échec");
   },
 };

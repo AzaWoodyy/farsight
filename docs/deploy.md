@@ -414,7 +414,8 @@ Ce qui part chez Langfuse, une trace `answer-question` par question :
   résolues, mots non consommés, confiance), `build-query` (route, outil, SQL),
   `execute-query` (lignes, tentatives, corrections), `format-answer` ;
 - sous l'étape concernée, chaque appel LLM (`extract-entities`, `pick-tool`,
-  `generate-sql`, `repair-sql`, `write-summary`) avec modèle et jetons ;
+  `generate-sql`, `repair-sql`, `write-summary`) en une génération : messages,
+  modèle, jetons et coût ;
 - des tags pour filtrer : `empty-result`, `error`, `out-of-scope`,
   `missing-data`, `no-query`, `sql-fallback`, `self-corrected`, `llm`,
   `llm-error`, `llm-quota`, `low-confidence`, `unresolved-mention`,
@@ -426,17 +427,39 @@ Confidentialité : ni IP, ni cookie, ni en-tête, ni identifiant de visiteur ou
 de session. Les e-mails, adresses IP et numéros de téléphone tapés dans une
 question sont masqués avant l'envoi. Les traces sont lisibles 30 jours.
 
-Unités : 6 par question sans LLM (la trace et 5 observations), 3 de plus par
+Unités : 6 par question sans LLM (la trace et 5 observations), 1 de plus par
 appel LLM, 1 par avis. Avec la clé OpenRouter, une question courante en
-consomme 9 (la phrase de synthèse passe par le LLM) et le pire cas 21, soit
-environ 5 500 questions par mois, 2 300 au pire. Au-delà, baisser
+consomme 7 (la phrase de synthèse passe par le LLM) et le pire cas 12, soit
+environ 7 000 questions par mois, 4 000 au pire. Au-delà, baisser
 `LANGFUSE_SAMPLE_RATE` (0,5 trace une question sur deux ; une question non
 tracée n'affiche pas les pouces).
 
-Le coût exact facturé par OpenRouter est dans les métadonnées de la trace
-(`llmCostUsd`). Pour que Langfuse chiffre aussi chaque génération, ajouter le
-modèle dans **Settings** → **Models** (motif `anthropic/claude-haiku-5.5`) :
-il ne connaît pas les identifiants OpenRouter.
+Le coût est celui qu'OpenRouter facture : il figure sur chaque génération et,
+en somme, dans les métadonnées de la trace (`llmCostUsd`).
+
+#### Comment lire une question dans Langfuse
+
+La page **Tracing** liste les observations, pas les questions : sans filtre,
+chaque question y occupe 5 lignes ou plus.
+
+1. **Une ligne par question** : dans le panneau **Filters**, section
+   **Is Root Observation**, ne garder que **True** (ou **Name** =
+   `answer-question`). Enregistrer ce filtre dans **My Views** pour le
+   retrouver.
+2. **Suivre une question** : cliquer sa ligne. L'onglet **Tree** montre
+   `answer-question`, ses quatre étapes et, sous chacune, ses appels LLM avec
+   leur coût ; **Timeline** les montre dans le temps. Cliquer une observation
+   affiche son entrée, sa sortie et, dans **Metadata**, le journal de l'étape.
+3. **Trouver les échecs** : toujours avec le filtre racine, section **Tags**,
+   cocher `empty-result`, `error`, `no-query`, `out-of-scope`… ou filtrer
+   **Level** sur `ERROR`. Les avis négatifs : menu **Scores**,
+   `response_rating` = `False`.
+4. **Retrouver une question précise** : chercher son texte dans la barre de
+   recherche. Chaque observation porte la question en métadonnée
+   (`question`), une ligne isolée dit donc à quelle question elle appartient.
+
+La vue **Sessions** reste vide : une question est une trace à elle seule, et
+aucun identifiant de visite n'est envoyé.
 
 L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
 panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
