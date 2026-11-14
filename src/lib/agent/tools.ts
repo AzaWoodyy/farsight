@@ -918,6 +918,9 @@ const RIOT_DATA_SOURCE: Source = {
   url: wikiUrl("Special:CargoTables/PostgameJsonMetadata"),
 };
 
+/** "2024", or "2019–2024". */
+const yearSpan = (years: number[]) => (years.length && Math.min(...years) === Math.max(...years) ? String(years[0]) : span(years));
+
 const signed = (n: number | null) => (n == null ? "n/d" : `${n > 0 ? "+" : ""}${n}`);
 const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
 
@@ -1067,7 +1070,7 @@ ORDER BY is_total, first_game`),
       quadra_kills: `${val("quadra_kills") ?? "n/d"} quadrakills`,
       triple_kills: `${val("triple_kills") ?? "n/d"} triple kills`,
       double_kills: `${val("double_kills") ?? "n/d"} double kills`,
-      first_bloods: fb == null ? "first bloods n/d" : `${fb} first bloods (${pct(fb, total.games)} % des parties)`,
+      first_bloods: fb == null ? "first bloods n/d" : `${fb} first blood${fb > 1 ? "s" : ""} (${pct(fb, total.games)} % des parties)`,
       kills_before_10: `${val("kills_before_10") ?? "n/d"} kills avant 10 min`,
       gold_diff: `un écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min face à son adversaire direct`,
       cs_diff: `un écart de CS moyen de ${signed(val("cs_diff"))} à ${minute} min`,
@@ -1082,7 +1085,7 @@ ORDER BY is_total, first_game`),
     };
 
     const facts =
-      `${input.player}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${span(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), ` +
+      `${input.player}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), ` +
       `sur ${total.games} parties avec données in-game : ${metrics.map((m) => parts[m]).join(", ")}.` +
       coverageNote(cov);
 
@@ -1209,7 +1212,7 @@ LIMIT 20`),
     const who = input.subject === "team" ? "Équipe" : "Joueur";
     const minGames = minGamesOf(input);
     const years = selectAll(db, z.object({ year: z.number().nullable() }), `SELECT DISTINCT s.year FROM v_games s WHERE ${scope} AND s.has_ingame`, params).flatMap((r) => (r.year == null ? [] : [r.year]));
-    const scopeLabel = [inLeague(league), span(years) ? `(${span(years)})` : ""].filter(Boolean).join(" ");
+    const scopeLabel = [inLeague(league), years.length ? `(${yearSpan(years)})` : ""].filter(Boolean).join(" ");
     const roleLabel = input.role ? ` (rôle ${input.role})` : "";
 
     const facts =
@@ -1316,7 +1319,7 @@ ORDER BY is_total, first_game`),
     const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE (s.blue_team IN (${t}) OR s.red_team IN (${t})) AND ${ingameScope(input, params)}`, params);
 
     const facts =
-      `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${span(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
+      `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
       `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? "n/d"} % des parties, première tourelle ${val("first_tower") ?? "n/d"} %, ` +
       `premier dragon ${val("first_dragon") ?? "n/d"} %, premier héraut ${val("first_herald") ?? "n/d"} %, premier baron ${val("first_baron") ?? "n/d"} %, ` +
       `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? "n/d"} kills avant 10 min et ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +

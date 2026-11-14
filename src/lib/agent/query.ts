@@ -129,7 +129,15 @@ const ROLE_CUES = [
 ] as const;
 
 /** Leagues of the scope (short names), period words aside: "la LPL", "le MSI 2024". */
-const scopeOf = (e: Entities) => (e.leagueShort ? (e.leagueShort === "Worlds" ? "les Worlds" : `la ${e.leagueShort}`) : "cette compétition");
+function scopeOf(e: Entities): string {
+  const short = e.leagueShort;
+
+  if (!short) return "cette compétition";
+
+  if (short === "Worlds" || short.endsWith("Masters")) return `les ${short}`;
+
+  return short === "MSI" ? "le MSI" : `la ${short}`;
+}
 
 /**
  * In-game questions (Riot data): the typed in-game tools, or "missing" when
