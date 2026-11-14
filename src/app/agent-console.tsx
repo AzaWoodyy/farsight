@@ -37,11 +37,49 @@ type SortKey = "year" | "team" | "place" | "record" | "winrate";
 
 const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 
+/** What the chat shows for a failed POST /api/ask, by HTTP status. */
+function httpErrorMessage(status: number): string {
+  if (status === 429) return "Trop de questions, réessaie dans quelques minutes.";
+
+  if (status === 403) return "Requête refusée par la protection anti-robots. Recharge la page, puis réessaie.";
+
+  if (status === 400) return "Question invalide : écris une question, puis réessaie.";
+
+  if (status === 504) return "L'agent a mis trop de temps à répondre. Réessaie, ou pose une question plus simple.";
+
+  if (status >= 500) return `Le serveur n'a pas pu répondre (HTTP ${status}). Réessaie dans un instant.`;
+
+  return `La requête a échoué (HTTP ${status}).`;
+}
+
+/**
+ * fetch for the chat transport: a non-2xx answer (a 429 from the firewall
+ * rate limit, a 403 from BotID…) becomes a readable error instead of the
+ * raw response body the transport would show.
+ */
+async function askFetchImpl(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let res: Response;
+
+  try {
+    res = await fetch(input, init);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new Error("Connexion impossible : vérifie ta connexion, puis réessaie.");
+  }
+
+  if (!res.ok) throw new Error(httpErrorMessage(res.status));
+
+  return res;
+}
+
+// The transport wants `typeof fetch`, which also carries `preconnect`.
+const askFetch: typeof fetch = Object.assign(askFetchImpl, { preconnect: fetch.preconnect });
+
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
-    transport: new DefaultChatTransport({ api: "/api/ask" }),
+    transport: new DefaultChatTransport({ api: "/api/ask", fetch: askFetch }),
   });
 
   const running = status === "submitted" || status === "streaming";
@@ -122,7 +160,11 @@ export function AgentConsole() {
             {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
           </p>
           <Steps steps={steps} running={running} />
-          {error && <p className="mt-4 text-xs text-error">Requête échouée : {error.message}</p>}
+          {error && (
+            <p role="alert" className="mt-4 text-xs text-error">
+              <span aria-hidden>xx</span> {error.message}
+            </p>
+          )}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
         </div>
       )}
