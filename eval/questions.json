@@ -1859,14 +1859,13 @@
       ],
       "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "series",
         "teams": [
           "T1",
           "Bilibili Gaming"
         ],
         "unread": [
-          "stomp",
-          "finale"
+          "stomp"
         ],
         "rowsMin": 1
       }
@@ -4430,6 +4429,314 @@
         "summaryIncludes": [
           "Support de FunPlus Phoenix "
         ]
+      }
+    },
+    {
+      "id": "series-worlds-2025-final-en",
+      "question": "Final worlds 2025",
+      "tags": [
+        "series",
+        "worlds",
+        "regression"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "final",
+          "league": "World Championship",
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "teamA": null
+        },
+        "totals": {
+          "team_a": "T1",
+          "team_b": "KT Rolster",
+          "wins_a": 3,
+          "wins_b": 2,
+          "score": "3-2",
+          "best_of": 5,
+          "series": 1,
+          "games": 5
+        },
+        "unread": [],
+        "attempts": 1,
+        "summaryIncludes": [
+          "T1 bat KT Rolster 3-2",
+          "BO5",
+          "Game 5 : T1 (rouge)"
+        ],
+        "summaryExcludes": [
+          "Regional",
+          "Top Esports"
+        ]
+      }
+    },
+    {
+      "id": "series-worlds-2025-finale",
+      "question": "Finale des Worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "final",
+          "yearFrom": 2025
+        },
+        "totals": {
+          "team_a": "T1",
+          "team_b": "KT Rolster",
+          "wins_a": 3,
+          "wins_b": 2,
+          "score": "3-2",
+          "best_of": 5,
+          "series": 1,
+          "games": 5
+        },
+        "unread": [],
+        "summaryIncludes": [
+          "T1 bat KT Rolster 3-2"
+        ]
+      }
+    },
+    {
+      "id": "series-worlds-2025-grande-finale",
+      "question": "grande finale worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "final"
+        },
+        "totals": {
+          "team_a": "T1",
+          "team_b": "KT Rolster",
+          "wins_a": 3,
+          "wins_b": 2,
+          "score": "3-2",
+          "best_of": 5,
+          "series": 1,
+          "games": 5
+        },
+        "unread": []
+      }
+    },
+    {
+      "id": "series-worlds-2025-semis",
+      "question": "demi-finales worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "semifinal"
+        },
+        "totals": {
+          "series": 2,
+          "games": 7,
+          "team_a": "KT Rolster",
+          "team_b": "Gen.G",
+          "score": "3-1",
+          "best_of": 5
+        },
+        "unread": [],
+        "summaryIncludes": [
+          "T1 3-0 Top Esports"
+        ]
+      }
+    },
+    {
+      "id": "series-worlds-2025-semis-en",
+      "question": "semis worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "semifinal"
+        },
+        "totals": {
+          "series": 2,
+          "games": 7
+        },
+        "unread": []
+      }
+    },
+    {
+      "id": "series-worlds-2025-quarters",
+      "question": "quarters worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "quarterfinal"
+        },
+        "totals": {
+          "series": 4,
+          "games": 16,
+          "team_a": "Gen.G",
+          "team_b": "Hanwha Life Esports",
+          "score": "3-1"
+        },
+        "unread": []
+      }
+    },
+    {
+      "id": "series-worlds-2025-quarts",
+      "question": "quarts de finale des Worlds 2025",
+      "tags": [
+        "series",
+        "worlds"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "World Championship",
+        "input": {
+          "phase": "quarterfinal"
+        },
+        "totals": {
+          "series": 4,
+          "games": 16
+        },
+        "unread": [],
+        "summaryIncludes": [
+          "T1 3-2 Anyone's Legend"
+        ]
+      }
+    },
+    {
+      "id": "series-msi-2024-semis-double-elim",
+      "question": "demi-finales MSI 2024",
+      "tags": [
+        "series",
+        "msi"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "Mid-Season Invitational",
+        "input": {
+          "phase": "semifinal",
+          "league": "Mid-Season Invitational",
+          "yearFrom": 2024
+        },
+        "totals": {
+          "series": 2,
+          "games": 9,
+          "team_a": "Gen.G",
+          "team_b": "Bilibili Gaming",
+          "score": "3-1"
+        },
+        "unread": [],
+        "notes": [
+          "double élimination"
+        ],
+        "summaryIncludes": [
+          "Bilibili Gaming 3-2 T1"
+        ]
+      }
+    },
+    {
+      "id": "series-lck-2024-t1-geng-final",
+      "question": "T1 vs Gen.G finale LCK 2024",
+      "tags": [
+        "series",
+        "lck",
+        "teams"
+      ],
+      "expect": {
+        "route": "series",
+        "teams": [
+          "T1",
+          "Gen.G"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "phase": "final",
+          "teamA": "T1",
+          "teamB": "Gen.G",
+          "league": "LoL Champions Korea",
+          "yearFrom": 2024
+        },
+        "totals": {
+          "series": 1,
+          "games": 5,
+          "team_a": "Gen.G",
+          "team_b": "T1",
+          "score": "3-2",
+          "best_of": 5
+        },
+        "unread": [],
+        "summaryIncludes": [
+          "Gen.G bat T1 3-2"
+        ]
+      }
+    },
+    {
+      "id": "series-worlds-2025-final-wrong-team",
+      "question": "finale de G2 aux worlds 2025",
+      "tags": [
+        "series",
+        "worlds",
+        "relaxation"
+      ],
+      "expect": {
+        "route": "series",
+        "teams": [
+          "G2 Esports"
+        ],
+        "league": "World Championship",
+        "input": {
+          "phase": "final",
+          "teamA": null
+        },
+        "totals": {
+          "team_a": "T1",
+          "team_b": "KT Rolster",
+          "wins_a": 3,
+          "wins_b": 2,
+          "score": "3-2",
+          "best_of": 5,
+          "series": 1,
+          "games": 5
+        },
+        "attempts": 2,
+        "notes": [
+          "G2 Esports n'a pas joué de finale"
+        ]
+      }
+    },
+    {
+      "id": "series-standings-kept",
+      "question": "Classement des Worlds 2025",
+      "tags": [
+        "series",
+        "worlds",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": {
+          "full": true
+        },
+        "unread": []
       }
     }
   ]

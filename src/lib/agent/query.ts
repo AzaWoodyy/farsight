@@ -358,8 +358,8 @@ const ORDINALS: [RegExp, number][] = [
 /** Most specific first: "demi-finale" also contains "finale". */
 const PHASES: { phase: GamePhase; pattern: RegExp }[] = [
   { phase: "third_place", pattern: word("petite finale|(?:match pour la )?(?:3e|troisi[èe]me) place|third[- ]place") },
-  { phase: "semifinal", pattern: word("demi[- ]?finales?|demies?|semi[- ]?finals?|semis") },
-  { phase: "quarterfinal", pattern: word("quarts?(?: de finale)?|quarter[- ]?finals?") },
+  { phase: "semifinal", pattern: word("demi[- ]?finales?|demi[- ]?finals?|demies?|demis?|semi[- ]?finales?|semi[- ]?finals?|semis?") },
+  { phase: "quarterfinal", pattern: word("quarts?(?: de finale)?|quarter[- ]?finals?|quarters?") },
   { phase: "final", pattern: word("finales?|finals?|grand[- ]finals?") },
   { phase: "play_in", pattern: word("play[- ]?ins?") },
   { phase: "groups", pattern: word("phase de groupes?|groupes?|group stage|groups|swiss|ronde suisse") },
@@ -399,6 +399,43 @@ function routeTimeline(question: string, e: Entities): Route | null {
     confidence: 0.9,
     reason: cue ? "déroulé d'une partie (timeline, courbe d'or)" : "partie désignée par son numéro dans une série",
     notes: e.teams.length > 2 ? [`Plus de deux équipes reconnues : seules ${e.teams[0].team} et ${e.teams[1].team} sont retenues.`] : [],
+  };
+}
+
+// Series (best-of) of a phase ------------------------------------------------------------
+
+/** Words asking for the standings of a competition, not its series: "classement des Worlds 2025" keeps the standings. */
+const STANDINGS_ONLY = word("palmar[eè]s|classements?|standings|podiums?|rankings?|tableau final|final standings|placements?");
+
+/** Words of a series: its score, its winner, its games and drafts. */
+const SERIES_WORDS = word(
+  "bo ?[135]|best[- ]of ?[135]?|s[ée]ries?|scores?|r[ée]sultats?|results?|qui a gagn[ée]|who won|vainqueurs?|gagnants?|winners?|gagn[ée]e?s?|won|" +
+    "remport[ée]e?s?|perdu|lost|d[ée]tails?|picks?|bans?|drafts?|champions?|games?|parties|matchs?|grande|grand|petite",
+);
+
+/**
+ * A stage of a competition ("finale des Worlds 2025", "Final worlds 2025", "demi-finales MSI 2024", "quarts LCK 2024") or a match
+ * named by its stage ("T1 vs Gen.G finale LCK 2024"): its series as best-of units. Needs a competition or a team, no player or
+ * champion; a game number or a timeline cue went to the game's timeline before. In-game metrics, pools, rosters and standings
+ * words keep their own route.
+ */
+function routeSeries(question: string, e: Entities): Route | null {
+  const phase = phaseOf(question);
+
+  if (!phase || e.players.length || e.champion) return null;
+
+  if (e.teams.length === 0 && !e.league) return null;
+
+  if (STANDINGS_ONLY.test(question) || POOL.test(question) || ROSTER.test(question) || detectMetric(question) || UNSUPPORTED.test(maskUnderstood(question, e).rest)) return null;
+
+  const notes = e.teams.length > 2 ? [`Plus de deux équipes reconnues : seules ${e.teams[0].team} et ${e.teams[1].team} sont retenues.`] : [];
+
+  return {
+    kind: "tool",
+    call: { tool: "series", input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, phase } },
+    confidence: 0.9,
+    reason: `phase de compétition (« ${PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0]} ») → séries en BO`,
+    notes,
   };
 }
 
@@ -519,6 +556,12 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   const missing = missingConcepts(question, schema);
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
+
+  // A stage of a competition, or a match named by its stage, before the head-to-head and the standings:
+  // "Final worlds 2025" is the Worlds final, not a tournament whose name holds "Finals".
+  const series = routeSeries(question, e);
+
+  if (series) return series;
 
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
@@ -721,6 +764,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_ingame_stats: [MINUTE, INGAME_WORDS],
   team_ingame_stats: [MINUTE, INGAME_WORDS, TEAM_WORDS],
   ingame_leaderboard: [MINUTE, RANKING, INGAME_WORDS, TEAM_WORDS, word("souvent|often")],
+  series: [...PHASES.map((p) => p.pattern), SERIES_WORDS, VERSUS, OPPOSE, GAME_WORDS, ...SPLIT_CUES.map((c) => c.pattern)],
   game_timeline: [TIMELINE, ...GAME_NUMBER, ...ORDINALS.map(([pattern]) => pattern), ...PHASES.map((p) => p.pattern), VERSUS, GAME_WORDS],
 };
 
@@ -827,6 +871,8 @@ const SQL_RULES =
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
   "A role is one of 'Top', 'Jungle', 'Mid', 'Bot', 'Support' (an ADC is 'Bot'). " +
   `Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under ${MAX_ROWS} rows. ` +
+  "A stage of the bracket (final, semifinal, quarterfinal) is v_games.tab ('Finals', 'Semifinals', 'Quarterfinals'), never a tournament name: " +
+  "a tournament named 'Regional Finals' is a regional qualifier, not the final of the international event. " +
   "If the answer needs data that no listed column holds (for example MVP awards or summoner spells), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
   "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
@@ -900,7 +946,7 @@ const UNREAD_RULES =
   " The rule-based router matched the names but could not read the words listed below, so its pick is in doubt: check it against those words. " +
   "A tool only filters on the arguments of its schema and only returns what its description says. " +
   "If a listed word is a misspelt name or a nickname of a player or a team, call the fitting tool with the correct name. " +
-  "If the listed words ask for a filter or a result that no tool has (a stage such as the final, who plays a role or a roster, " +
+  "If the listed words ask for a filter or a result that no tool has (who plays a role or a roster, " +
   "a ranking of champions or players, personal details...), call no tool: " +
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
