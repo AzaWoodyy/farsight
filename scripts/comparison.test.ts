@@ -20,13 +20,15 @@ const SCHEMA = { v_games: ["game_id"], v_game_player_stats: ["penta_kills"] };
 const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }) };
 const LEC = ["LoL EMEA Championship", "LEC"] as const;
 
+const FAKER_CHOVY = entities([player("Faker"), player("Chovy")]);
+
 test.each([
   ["comparaison Saken et Kyeahoo en LEC", entities([player("Saken", "SAKEN"), player("Kyeahoo")], ...LEC), "SAKEN", "Kyeahoo"],
   ["Saken vs Kyeahoo", entities([player("Saken", "SAKEN"), player("Kyeahoo")]), "SAKEN", "Kyeahoo"],
   ["compare Chovy et Faker aux Worlds", entities([player("Chovy"), player("Faker")], "World Championship", "Worlds"), "Chovy", "Faker"],
   ["Caps contre Humanoid en LEC", entities([player("Caps"), player("Humanoid")], ...LEC), "Caps", "Humanoid"],
   ["Kyeahoo or Saken who is better", entities([player("Kyeahoo"), player("Saken", "SAKEN")]), "Kyeahoo", "SAKEN"],
-  ["Faker face à face avec Chovy, qui est le meilleur ?", entities([player("Faker"), player("Chovy")]), "Faker", "Chovy"],
+  ["Faker face à face avec Chovy, qui est le meilleur ?", FAKER_CHOVY, "Faker", "Chovy"],
 ])("%s → comparison, decided by the rules", (question, e, a, b) => {
   const route = routeQuestion(question, e, SCHEMA, NO_COVERAGE);
 
@@ -35,9 +37,33 @@ test.each([
   expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
 });
 
-test("explicit matchup words keep the games two players played against each other", () => {
-  for (const q of ["confrontations Faker contre Chovy", "Faker Chovy head to head", "h2h Faker Chovy", "matchs entre Faker et Chovy"])
-    expect(routeQuestion(q, entities([player("Faker"), player("Chovy")]), SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head", input: { kind: "player" } } });
+// Every word opposing two players gives the same answer, whatever its case: one case per variant.
+test.each([
+  "Faker Chovy head to head",
+  "Faker Chovy HEAD TO HEAD",
+  "Faker Chovy head-to-head",
+  "Faker Chovy Head-To-Head",
+  "Faker Chovy head 2 head",
+  "Faker Chovy HEAD 2 HEAD",
+  "h2h Faker Chovy",
+  "H2H Faker Chovy",
+  "confrontations Faker Chovy",
+  "CONFRONTATIONS Faker Chovy",
+  "matchs entre Faker et Chovy",
+  "Matchs Entre Faker et Chovy",
+  "Faker face-à-face Chovy",
+  "Faker Face-À-Face Chovy",
+  "Faker face à face Chovy",
+  "Faker vs Chovy",
+  "Faker VS Chovy",
+  "Faker contre Chovy",
+  "Faker or Chovy",
+  "Faker ou Chovy, le meilleur ?",
+])("%s → the same comparison, decided by the rules", (question) => {
+  const route = routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+
+  expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison", input: { playerA: "Faker", playerB: "Chovy" } } });
+  expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
 });
 
 test("two teams still route to their head-to-head, a metric to text-to-SQL", () => {
@@ -47,42 +73,84 @@ test("two teams still route to their head-to-head, a metric to text-to-SQL", () 
   expect(routeQuestion("compare les dégâts de Chovy et Faker", entities([player("Chovy"), player("Faker")]), SCHEMA, NO_COVERAGE)).toMatchObject({ kind: "sql" });
 });
 
-test("the comparison reads both players' averages in the scope and their record against each other", async () => {
+/** LEC 2024: Caps (G2) and Humanoid (Fnatic) meet twice; Caps also plays MAD Lions (Elyoya) once, and once in the LCK. */
+function seed(db: DatabaseSync) {
+  createSchema(db);
+  createQuerySchema(db);
+  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
+  const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+  const lck = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL Champions Korea'").get()!.id);
+
+  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024), (2,'LCK24','LCK24','season',?,2024)").run(lec, lck);
+  db.exec(`
+    INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic'),(3,'MAD Lions');
+    INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'Elyoya');
+    INSERT INTO champions VALUES (1,'Azir','https://ddragon.leagueoflegends.com/cdn/img/Azir.png'),(2,'Orianna',NULL);
+    INSERT INTO games(id,tournament_id,tab,game_n,blue_team_id,red_team_id,winner_side,played_at)
+      VALUES (1,1,'Week 1',1,1,2,1,100),(2,1,'Week 2',1,2,1,1,200),(3,2,'Week 1',1,1,2,1,300),(4,1,'Week 3',1,1,3,1,400);
+    INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0);
+    -- game 1: Caps wins against Humanoid; game 2: Humanoid wins; game 3 is outside the LEC; game 4: Caps against Elyoya.
+    INSERT INTO game_players VALUES
+      (1,1,1,1,'Mid',1,1,4,1,6,15000,300,25000,40,NULL),
+      (1,2,2,2,'Mid',2,0,1,4,2,12000,280,18000,30,NULL),
+      (2,1,1,2,'Mid',2,0,2,3,1,11000,270,NULL,NULL,NULL),
+      (2,2,2,1,'Mid',1,1,5,0,5,14000,310,22000,36,NULL),
+      (3,1,1,1,'Mid',NULL,1,9,0,9,16000,320,30000,50,NULL),
+      (4,1,1,1,'Mid',NULL,1,6,0,6,16000,330,28000,44,NULL),
+      (4,3,3,2,'Jungle',NULL,0,0,3,1,9000,180,9000,60,NULL);
+  `);
+}
+
+const compare = (db: DatabaseSync, playerA: string, playerB: string) =>
+  bindTool(db, { tool: "player_comparison", input: { playerA, playerB, league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+
+test("two players who met: their games against each other first, the scope's statistics, and the list of games", async () => {
   const db = new DatabaseSync(":memory:");
 
   try {
-    createSchema(db);
-    createQuerySchema(db);
-    LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-    const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
-    const lck = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL Champions Korea'").get()!.id);
-
-    db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024), (2,'LCK24','LCK24','season',?,2024)").run(lec, lck);
-    db.exec(`
-      INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic');
-      INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid');
-      INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side) VALUES (1,1,1,2,1),(2,1,2,1,1),(3,2,1,2,1);
-      -- game 1: Caps wins against Humanoid; game 2: Humanoid wins; game 3 is outside the LEC.
-      INSERT INTO game_players VALUES
-        (1,1,1,1,'Mid',NULL,1,4,1,6,15000,300,25000,40,NULL),
-        (1,2,2,2,'Mid',NULL,0,1,4,2,12000,280,18000,30,NULL),
-        (2,1,1,2,'Mid',NULL,0,2,3,1,11000,270,NULL,NULL,NULL),
-        (2,2,2,1,'Mid',NULL,1,5,0,5,14000,310,22000,36,NULL),
-        (3,1,1,1,'Mid',NULL,1,9,0,9,16000,320,30000,50,NULL);
-    `);
-
-    const tool = bindTool(db, { tool: "player_comparison", input: { playerA: "Caps", playerB: "Humanoid", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
-    const sql = db.prepare(tool.sql);
-    const out = await tool.format(db, sql.all(tool.params));
+    seed(db);
+    const tool = compare(db, "Caps", "Humanoid");
+    const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+    const v = out.versus!;
 
     // Typed queries go through the same guard as generated ones.
     expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
-    expect(out.table!.columns.slice(0, 4)).toEqual(["player", "games", "wins", "avg_kills"]);
-    expect(out.table!.rows.map((r) => r.slice(0, 5))).toEqual([["Caps", 2, 1, 3, 2], ["Humanoid", 2, 1, 3, 2]]);
+
+    // Face to face: games 1 and 2 only.
+    expect(v.h2h!.rows.map((r) => r.slice(0, 5))).toEqual([["Caps", 2, 1, 3, 2], ["Humanoid", 2, 1, 3, 2]]);
     // Null damage on one game: the average reads the known one only.
-    expect(out.table!.rows[0][out.table!.columns.indexOf("avg_damage")]).toBe(25000);
-    expect(out.totals).toMatchObject({ games_a: 2, wins_a: 1, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1 });
-    expect(out.facts).toContain("Face à face : 2 parties, Caps 1 – 1 Humanoid.");
+    expect(v.h2h!.rows[0][v.h2h!.columns.indexOf("avg_damage")]).toBe(25000);
+
+    // Scope (LEC): Caps also has game 4, never the LCK game 3.
+    expect(v.global.rows.map((r) => r.slice(0, 3))).toEqual([["Caps", 3, 2], ["Humanoid", 2, 1]]);
+    expect(out.table).toEqual(v.global);
+
+    // Newest first; the game's own page when it has Riot data, else the tournament page.
+    expect(v.games.map((g) => [g.label, g.winA, g.a.team, g.a.champion, g.a.kills, g.b.team, g.b.champion, g.b.deaths, g.source.url])).toEqual([
+      ["LEC 2024 · semaine 2 · game 1", false, "G2 Esports", "Orianna", 2, "Fnatic", "Azir", 0, "https://lol.fandom.com/wiki/LEC24"],
+      ["LEC 2024 · semaine 1 · game 1", true, "G2 Esports", "Azir", 4, "Fnatic", "Orianna", 4, "https://lol.fandom.com/wiki/V5_data%3AK1"],
+    ]);
+    expect([v.games[1].a.championIcon, v.games[0].a.championIcon]).toEqual(["https://ddragon.leagueoflegends.com/cdn/img/Azir.png", null]);
+
+    expect(out.totals).toMatchObject({ games_a: 3, wins_a: 2, games_b: 2, wins_b: 1, h2h_games: 2, h2h_wins_a: 1, h2h_listed: 2 });
+    expect(out.facts).toContain("Caps et Humanoid en LEC se sont affrontés sur 2 parties : Caps 1 – 1 Humanoid");
+  } finally {
+    db.close();
+  }
+});
+
+test("two players who never met: the scope's statistics only, and a sentence saying so", async () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+    const tool = compare(db, "Humanoid", "Elyoya");
+    const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+
+    expect(out.versus).toMatchObject({ h2h: null, games: [] });
+    expect(out.versus!.global.rows.map((r) => r.slice(0, 3))).toEqual([["Humanoid", 2, 1], ["Elyoya", 1, 0]]);
+    expect(out.totals).toMatchObject({ h2h_games: 0, h2h_listed: 0 });
+    expect(out.facts).toContain("Humanoid et Elyoya en LEC ne se sont jamais affrontés.");
   } finally {
     db.close();
   }

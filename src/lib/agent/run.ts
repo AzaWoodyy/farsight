@@ -436,6 +436,7 @@ async function format(
       table: null,
       timeline: null,
       scoreboard: null,
+      versus: null,
       profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
@@ -452,7 +453,7 @@ async function format(
 
     step.done("error", "Requête interrompue ou rejetée");
 
-    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
+    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -466,6 +467,7 @@ async function format(
       table: null,
       timeline: null,
       scoreboard: null,
+      versus: null,
       profiles: [],
       sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
@@ -488,6 +490,7 @@ async function format(
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
       timeline: null,
       scoreboard: null,
+      versus: null,
       // Several named players: the comparison layouts show their team and role next to the generated table.
       profiles: entities.players.length > 1 ? playerProfiles(db, entities) : [],
       sources: pages.length
@@ -526,6 +529,7 @@ async function format(
     table: out.table ?? null,
     timeline: out.timeline ?? null,
     scoreboard: out.scoreboard ?? null,
+    versus: out.versus ?? null,
     profiles: plan.tool.call.tool === "player_comparison" ? playerProfiles(db, entities) : [],
     sources: out.sources,
     followUps,

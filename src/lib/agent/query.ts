@@ -18,15 +18,15 @@ const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p
 
 const VERSUS = word("vs\\.?|versus|contre|face [àa]|against|head[- ]to[- ]head|h2h|confrontations?|affrontements?");
 
-/** Asking how two players compare: their statistics side by side (French and English). */
-export const COMPARE = word(
-  "compar(?:er|ez|e|es|aisons?|ing|ed|ison|isons)|vs\\.?|versus|contre|against|face [àa] face|or|ou|" +
-    "who(?:'s| is) (?:the )?better|qui est (?:le |la )?meilleure?|meilleure?s?|better|best|mieux|diff[ée]rences?|differences?",
-);
-
-/** Asking for the games two sides played against each other, not for a comparison. */
-export const MATCHUP = word(
-  "head[- ]to[- ]head|h2h|confrontations?|affrontements?|duels?|rencontres?|l'un contre l'autre|against each other|" +
+/**
+ * Words that set two sides against each other, in French and English (case-insensitive). With two
+ * players they all give the same answer, the comparison: their games against each other when there
+ * are some, their statistics in the scope, and the list of those games.
+ */
+export const OPPOSE = word(
+  "compar(?:er|ez|e|es|aisons?|ing|ed|ison|isons)|vs\\.?|versus|contre|against|face[- ][àa][- ]face|or|ou|" +
+    "who(?:'s| is) (?:the )?better|qui est (?:le |la )?meilleure?|meilleure?s?|better|best|mieux|diff[ée]rences?|differences?|" +
+    "head[- ]?(?:to|2)[- ]?head|h2h|confrontations?|affrontements?|duels?|rencontres?|l'un contre l'autre|against each other|" +
     "(?:matchs?|games?|parties|s[ée]ries?) (?:entre|between)",
 );
 
@@ -280,7 +280,7 @@ function routeTimeline(question: string, e: Entities): Route | null {
 
 export type Route =
   /** `unread`: the words the rules did not understand, when they are enough to put the tool in doubt (confidence lowered to UNSURE). */
-  /** `forced`: the cue is explicit enough that unread words do not put the tool in doubt (two players and a comparison word). */
+  /** `forced`: the cue is explicit enough that unread words do not put the tool in doubt (two players and an opposing word). */
   | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[]; forced?: boolean }
   /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
   | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
@@ -337,25 +337,15 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
     if (e.players.length > 2) notes.push(`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`);
 
-    // Explicit matchup words ("confrontations", "h2h") ask for their games against each other.
-    if (MATCHUP.test(question))
-      return {
-        kind: "tool",
-        call: { tool: "head_to_head", input: { kind: "player", sideA: a.player, sideB: b.player, league: e.league, ...period } },
-        confidence: 0.9,
-        reason: "deux joueurs et une confrontation directe demandée → confrontations",
-        notes,
-      };
-
-    // Otherwise two players are compared; a comparison word ("compare", "vs", "contre", "or… who is better")
-    // settles it, so the LLM router is not asked again.
-    const cue = COMPARE.exec(question)?.[0];
+    // Every way of setting two players against each other ("compare", "vs", "h2h", "confrontations"…) gets the
+    // same answer; such a word settles it, so the LLM router is not asked again.
+    const cue = OPPOSE.exec(question)?.[0];
 
     return {
       kind: "tool",
       call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, ...period } },
       confidence: cue ? 0.95 : 0.9,
-      reason: cue ? `deux joueurs et une comparaison demandée (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
+      reason: cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
       notes,
       forced: cue != null,
     };
@@ -458,8 +448,8 @@ const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]rie
 const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
-  head_to_head: [VERSUS, HISTORY_WORDS, GAME_WORDS],
-  player_comparison: [COMPARE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS],
+  head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
+  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS],
   champion_event_stats: [
     word(
       "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +

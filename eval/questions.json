@@ -652,9 +652,13 @@
           "games_b": 998,
           "wins_b": 695,
           "h2h_games": 146,
-          "h2h_wins_a": 70
+          "h2h_wins_a": 70,
+          "h2h_listed": 146
         },
-        "rows": 2
+        "rows": 2,
+        "summaryIncludes": [
+          "146 parties"
+        ]
       }
     },
     {
@@ -703,8 +707,13 @@
           "games_a": 408,
           "wins_a": 242,
           "games_b": 400,
-          "wins_b": 215
-        }
+          "wins_b": 215,
+          "h2h_games": 0,
+          "h2h_listed": 0
+        },
+        "summaryIncludes": [
+          "ne se sont jamais affrontés"
+        ]
       }
     },
     {
@@ -784,22 +793,56 @@
       "id": "players-matchup-faker-chovy",
       "question": "confrontations Faker contre Chovy",
       "tags": [
-        "head_to_head",
+        "comparison",
         "player"
       ],
       "expect": {
-        "route": "head_to_head",
+        "route": "player_comparison",
         "players": [
           "Faker",
           "Chovy"
         ],
         "input": {
-          "kind": "player",
+          "playerA": "Faker",
+          "playerB": "Chovy",
           "league": null
         },
+        "rows": 2,
         "totals": {
-          "wins_a": 70,
-          "wins_b": 76
+          "games_a": 1560,
+          "games_b": 998,
+          "h2h_games": 146,
+          "h2h_wins_a": 70,
+          "h2h_listed": 146
+        }
+      }
+    },
+    {
+      "id": "players-matchup-head-2-head",
+      "question": "Faker Chovy head 2 head",
+      "tags": [
+        "comparison",
+        "player",
+        "english"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null
+        },
+        "rows": 2,
+        "totals": {
+          "games_a": 1560,
+          "games_b": 998,
+          "h2h_games": 146,
+          "h2h_wins_a": 70,
+          "h2h_listed": 146
         }
       }
     },
@@ -1539,7 +1582,8 @@
           "games_b": 108,
           "wins_b": 66,
           "h2h_games": 22,
-          "h2h_wins_a": 13
+          "h2h_wins_a": 13,
+          "h2h_listed": 22
         },
         "rows": 2
       }

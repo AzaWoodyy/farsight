@@ -21,6 +21,8 @@ import {
   type TableCell,
   type TimelineView,
   type TraceStatus,
+  type VersusGame,
+  type VersusView,
 } from "./types";
 import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
 import {
@@ -68,7 +70,8 @@ export const TeamHistoryInput = z.object({
 });
 
 export const HeadToHeadInput = z.object({
-  kind: z.enum(["team", "player"]),
+  // Two players go to player_comparison, which also lists their games against each other.
+  kind: z.enum(["team"]),
   sideA: z.string().min(1),
   sideB: z.string().min(1),
   league: League.nullable(),
@@ -185,6 +188,7 @@ export type ToolOutput = {
   table?: { columns: string[]; rows: TableCell[][] };
   timeline?: TimelineView;
   scoreboard?: GameScoreboard;
+  versus?: VersusView;
   trace?: ToolTrace[];
   /** Notes shown under the answer (the game shown when several match...). */
   notes?: string[];
@@ -625,34 +629,10 @@ const headToHead: ToolDef<HeadToHeadInput> = {
   name: "head_to_head",
   label: "confrontations",
   description:
-    "Games between two teams, or between two players on opposing teams, tournament by tournament (wins of each side).",
+    "Games between two teams, tournament by tournament (wins of each side). For two players, use player_comparison.",
   plan: (db, input) => {
     const params: Params = {};
     const filters: string[] = [];
-
-    if (input.kind === "player") {
-      params.a = input.sideA;
-      params.b = input.sideB;
-
-      if (input.league) {
-        filters.push(`AND ${leagueFilter("a.league", input, params)}`);
-
-      }
-
-      return {
-        params,
-        sql: tidy(`SELECT a.year, a.league_short, a.event_page, MIN(a.tournament) AS tournament,
-       SUM(a.win) AS wins_a, COUNT(*) - SUM(a.win) AS wins_b
-FROM v_game_players a
-JOIN v_game_players b ON b.game_id = a.game_id AND b.team <> a.team
-WHERE a.player = :a AND b.player = :b
-  AND a.stage IN (${COMPETITION_STAGES})
-  ${filters.join(" ")}
-  ${periodFilter("a.year", input, params)}
-GROUP BY a.year, a.event_page
-ORDER BY a.year, MIN(a.played_at), a.event_page`),
-      };
-    }
 
     const A = inList("a", teamMembers(db, input.sideA).members, params);
     const B = inList("b", teamMembers(db, input.sideB).members, params);
@@ -693,8 +673,8 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
   },
   format: (db, input, sqlRows): ToolOutput => {
     const raw = z.array(HeadToHeadRow).parse(sqlRows);
-    const a = input.kind === "team" ? teamMembers(db, input.sideA) : { team: input.sideA, members: [input.sideA] };
-    const b = input.kind === "team" ? teamMembers(db, input.sideB) : { team: input.sideB, members: [input.sideB] };
+    const a = teamMembers(db, input.sideA);
+    const b = teamMembers(db, input.sideB);
     const winsA = raw.reduce((n, r) => n + Number(r.wins_a), 0);
     const winsB = raw.reduce((n, r) => n + Number(r.wins_b), 0);
     const league = leagueShortName(db, input.league);
@@ -702,7 +682,7 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     const leader = winsA === winsB ? "à égalité" : `avantage ${winsA > winsB ? a.team : b.team}`;
 
     const facts =
-      `${[`${a.team} – ${b.team}${input.kind === "player" ? " (équipes adverses)" : ""}`, inLeague(league)].filter(Boolean).join(" ")} : ` +
+      `${[`${a.team} – ${b.team}`, inLeague(league)].filter(Boolean).join(" ")} : ` +
       `${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois (${span(raw.map((r) => Number(r.year)))}), ${leader}. ` +
       `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`;
 
@@ -717,23 +697,14 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
         ...[...a.members, ...b.members].map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
       ],
-      followUps:
-        input.kind === "team"
-          ? [`Historique de ${a.team}`, `Historique de ${b.team}`]
-          : [`Résultats de ${a.team} à tous les Worlds`, `Résultats de ${b.team} à tous les Worlds`],
+      followUps: [`Historique de ${a.team}`, `Historique de ${b.team}`],
       totals: { wins_a: winsA, wins_b: winsB, events: raw.length },
     };
   },
-  normalize: (db, input) => {
-    if (input.kind === "team") return resolveTeam(db, input.sideA) && resolveTeam(db, input.sideB) ? input : null;
-    const a = resolvePlayer(db, input.sideA);
-    const b = resolvePlayer(db, input.sideB);
-
-    return a && b ? { ...input, sideA: a.player, sideB: b.player } : null;
-  },
+  normalize: (db, input) => (resolveTeam(db, input.sideA) && resolveTeam(db, input.sideB) ? input : null),
 };
 
-// 3b. Two players compared ------------------------------------------------------------
+// 3b. Two players set against each other ----------------------------------------------
 
 const ComparisonRow = z.object({
   player: Text,
@@ -752,43 +723,66 @@ const ComparisonRow = z.object({
   pages: pageList,
 });
 
-/** Columns of the comparison table, named as the comparison layout reads them. */
+type ComparisonRow = z.infer<typeof ComparisonRow>;
+
+/** Columns of the comparison tables, named as the comparison layout reads them. */
 const COMPARISON_COLUMNS = [
   "player", "games", "wins", "avg_kills", "avg_deaths", "avg_assists", "avg_gold", "avg_cs", "avg_damage", "avg_vision", "avg_gold_diff_15", "avg_cs_diff_15",
 ] as const;
 
+const VersusGameRow = z.object({
+  played_at: z.number().nullable(),
+  league_short: Text,
+  year: z.number().nullable(),
+  tab: NullableText,
+  game_n: z.number().nullable(),
+  tournament_page: Text,
+  stats_page: NullableText,
+  team_a: NullableText,
+  team_b: NullableText,
+  win_a: z.number().nullable(),
+  champion_a: NullableText,
+  icon_a: NullableText,
+  kills_a: z.number().nullable(),
+  deaths_a: z.number().nullable(),
+  assists_a: z.number().nullable(),
+  champion_b: NullableText,
+  icon_b: NullableText,
+  kills_b: z.number().nullable(),
+  deaths_b: z.number().nullable(),
+  assists_b: z.number().nullable(),
+});
+
+/** Most games listed under the comparison (Faker and Chovy met 146 times). */
+const MAX_VERSUS_GAMES = 200;
+
 const fr1 = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
 
-/** Scope of both players' games (`p` is v_game_players). */
+/** Scope of both players' games (`alias` is a v_game_players row). */
 function comparisonScope(input: PlayerComparisonInput, params: Params, alias: string): string {
   const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
 
   return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
 }
 
-const playerComparison: ToolDef<PlayerComparisonInput> = {
-  name: "player_comparison",
-  label: "comparaison de deux joueurs",
-  description:
-    "Compares two players' statistics side by side in a competition and period: games, wins, average kills/deaths/assists, gold, CS, " +
-    "damage, vision, gold and CS difference at 15 min, plus their record when they faced each other. Use it for 'compare X and Y', 'X vs Y', " +
-    "'X contre Y', 'X or Y who is better'.",
-  plan: (_db, input) => {
-    const params: Params = {};
+/** The other player of the pair, for a row of either: they faced each other when they were on opposing teams. */
+const FACED = `EXISTS (SELECT 1 FROM v_game_players o
+    WHERE o.game_id = p.game_id AND o.team <> p.team AND o.player = CASE p.player WHEN :a THEN :b ELSE :a END)`;
 
-    Object.assign(params, { a: input.playerA, b: input.playerB });
-
-    return {
-      params,
-      // The stats are filtered on the two players before the join, so the view's own joins stay small.
-      sql: tidy(`WITH st AS (
+/**
+ * Both players' statistics, one row each (player A first). `faced`: only the games where they played
+ * against each other. The in-game stats are filtered on the two players before the join, so the view's
+ * own joins stay small.
+ */
+function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
+  return tidy(`WITH st AS (
   SELECT game_id, player, gold_diff_15, cs_diff_15 FROM v_game_player_stats WHERE player IN (:a, :b)
 ), g AS (
   SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
          st.gold_diff_15, st.cs_diff_15, (st.game_id IS NOT NULL) AS ingame
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
-  WHERE p.player IN (:a, :b) AND ${comparisonScope(input, params, "p")}
+  WHERE p.player IN (:a, :b) AND ${comparisonScope(input, params, "p")}${faced ? `\n    AND ${FACED}` : ""}
 )
 SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(kills), 2) AS avg_kills, ROUND(AVG(deaths), 2) AS avg_deaths, ROUND(AVG(assists), 2) AS avg_assists,
@@ -796,8 +790,79 @@ SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
        SUM(ingame) AS ingame_games, json_group_array(DISTINCT event_page) AS pages
 FROM g GROUP BY player
-ORDER BY player = :a DESC`),
+ORDER BY player = :a DESC`);
+}
+
+const comparisonTable = (rows: ComparisonRow[]) => ({
+  columns: [...COMPARISON_COLUMNS],
+  rows: rows.map((r) => COMPARISON_COLUMNS.map((c) => (c === "player" ? r.player : r[c]))),
+});
+
+/** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
+function versusScope(league: string, input: PlayerComparisonInput): string {
+  const { yearFrom: from, yearTo: to } = input;
+
+  const period =
+    from != null && from === to ? `en ${from}` : from != null && to != null ? `entre ${from} et ${to}` : from != null ? `depuis ${from}` : to != null ? `jusqu'en ${to}` : "";
+
+  return [inLeague(league), period].filter(Boolean).join(" ");
+}
+
+/** Their games against each other, newest first, with each player's champion and K/D/A. */
+function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame[] {
+  const params: Params = {};
+
+  Object.assign(params, { a: input.playerA, b: input.playerB });
+
+  const rows = selectAll(
+    db,
+    VersusGameRow,
+    `SELECT g.played_at, g.league_short, g.year, g.tab, g.game_n, g.tournament_page, r.stats_page,
+            p.team AS team_a, o.team AS team_b, p.win AS win_a,
+            p.champion AS champion_a, ca.icon_url AS icon_a, p.kills AS kills_a, p.deaths AS deaths_a, p.assists AS assists_a,
+            o.champion AS champion_b, cb.icon_url AS icon_b, o.kills AS kills_b, o.deaths AS deaths_b, o.assists AS assists_b
+     FROM v_game_players p
+     JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team AND o.player = :b
+     JOIN v_games g ON g.game_id = p.game_id
+     LEFT JOIN game_riot r ON r.game_id = p.game_id
+     LEFT JOIN champions ca ON ca.name = p.champion
+     LEFT JOIN champions cb ON cb.name = o.champion
+     WHERE p.player = :a AND ${comparisonScope(input, params, "p")}
+     ORDER BY g.played_at DESC
+     LIMIT ${MAX_VERSUS_GAMES}`,
+    params,
+  );
+
+  return rows.map((r) => {
+    // The game's own page when Leaguepedia has its Riot data, else the tournament page.
+    const page = r.stats_page ?? r.tournament_page;
+
+    return {
+      playedAt: r.played_at,
+      label: [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab), r.game_n ? `game ${r.game_n}` : ""].filter(Boolean).join(" · "),
+      winA: r.win_a == null ? null : r.win_a === 1,
+      a: { team: r.team_a && displayTeam(r.team_a), champion: r.champion_a, championIcon: r.icon_a, kills: r.kills_a, deaths: r.deaths_a, assists: r.assists_a },
+      b: { team: r.team_b && displayTeam(r.team_b), champion: r.champion_b, championIcon: r.icon_b, kills: r.kills_b, deaths: r.deaths_b, assists: r.assists_b },
+      source: { label: `Leaguepedia — ${page}`, url: wikiUrl(page) },
     };
+  });
+}
+
+const playerComparison: ToolDef<PlayerComparisonInput> = {
+  name: "player_comparison",
+  label: "comparaison de deux joueurs",
+  description:
+    "Sets two players against each other in a competition and period: their statistics in the games they played against each other " +
+    "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min), the list of those games, " +
+    "and their statistics over every game of the scope. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
+    "'X contre Y', 'X or Y who is better', 'head to head', 'h2h', 'confrontations'.",
+  plan: (_db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { a: input.playerA, b: input.playerB });
+
+    // Every game of the scope: it decides whether there is anything to compare (the relaxations run on it).
+    return { params, sql: comparisonSql(input, params, false) };
   },
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
@@ -817,53 +882,60 @@ ORDER BY player = :a DESC`),
   format: (db, input, sqlRows): ToolOutput => {
     const rows = z.array(ComparisonRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
-    const where = inLeague(league);
+    const scope = versusScope(league, input);
     const params: Params = {};
 
     Object.assign(params, { a: input.playerA, b: input.playerB });
 
-    // Games where they faced each other, from player A's side.
-    const h2h = selectOne(
-      db,
-      z.object({ games: z.number(), wins_a: z.number().nullable() }),
-      `SELECT COUNT(*) AS games, SUM(p.win) AS wins_a FROM v_game_players p
-       JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team
-       WHERE p.player = :a AND o.player = :b AND ${comparisonScope(input, params, "p")}`,
-      params,
-    ) ?? { games: 0, wins_a: 0 };
+    const faced = selectAll(db, ComparisonRow, comparisonSql(input, params, true), params);
+    const games = faced.length ? versusGames(db, input) : [];
+    const met = faced.find((r) => r.player === input.playerA)?.games ?? 0;
+    const winsA = faced.find((r) => r.player === input.playerA)?.wins ?? 0;
 
-    const line = (r: z.infer<typeof ComparisonRow>) => {
+    const line = (r: ComparisonRow) => {
       const kda = r.avg_kills != null && r.avg_deaths && r.avg_assists != null ? `, KDA ${fr1((r.avg_kills + r.avg_assists) / r.avg_deaths)}` : "";
 
       return `${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}`;
     };
 
     const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
-    const winsA = h2h.wins_a ?? 0;
+    const pair = `${input.playerA} et ${input.playerB}${scope ? ` ${scope}` : ""}`;
 
     const facts =
-      `${input.playerA} et ${input.playerB}${where ? ` ${where}` : ""} : ${rows.map(line).join(" ; ")}.` +
+      (met
+        ? `${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. ` +
+          `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`
+        : `${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`) +
       (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
-      (h2h.games ? ` Face à face : ${h2h.games} parties, ${input.playerA} ${winsA} – ${h2h.games - winsA} ${input.playerB}.` : " Ils ne se sont jamais affrontés dans ce périmètre.") +
-      (rows.some((r) => r.ingame_games < r.games) ? " Écarts à 15 min calculés sur les parties avec données Riot seulement." : "");
+      ([...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min calculés sur les parties avec données Riot seulement." : "");
 
     return {
       title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
-      table: { columns: [...COMPARISON_COLUMNS], rows: rows.map((r) => COMPARISON_COLUMNS.map((c) => (c === "player" ? r.player : r[c]))) },
+      // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
+      table: comparisonTable(rows),
+      versus: {
+        playerA: input.playerA,
+        playerB: input.playerB,
+        scope,
+        global: comparisonTable(rows),
+        h2h: met ? comparisonTable(faced) : null,
+        games,
+      },
       facts,
       sources: [
         { label: `Leaguepedia — ${input.playerA}`, url: wikiUrl(input.playerA) },
         { label: `Leaguepedia — ${input.playerB}`, url: wikiUrl(input.playerB) },
         ...eventSources(rows.flatMap((r) => r.pages), 10),
       ],
-      followUps: [`Confrontations directes ${input.playerA} – ${input.playerB}${where ? ` ${where}` : ""}`, `Résultats de ${input.playerA}${where ? ` ${where}` : " à tous les Worlds"}`],
+      followUps: [`Résultats de ${input.playerA}${scope ? ` ${scope}` : " à tous les Worlds"}`, `Résultats de ${input.playerB}${scope ? ` ${scope}` : " à tous les Worlds"}`],
       totals: {
         games_a: rows.find((r) => r.player === input.playerA)?.games ?? 0,
         games_b: rows.find((r) => r.player === input.playerB)?.games ?? 0,
         wins_a: rows.find((r) => r.player === input.playerA)?.wins ?? 0,
         wins_b: rows.find((r) => r.player === input.playerB)?.wins ?? 0,
-        h2h_games: h2h.games,
+        h2h_games: met,
         h2h_wins_a: winsA,
+        h2h_listed: games.length,
       },
     };
   },

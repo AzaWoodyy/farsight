@@ -46,6 +46,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
     table: null,
     timeline: null,
     scoreboard: null,
+    versus: null,
     profiles: [],
     sources: [],
     followUps: [],

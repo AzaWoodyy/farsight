@@ -9,11 +9,18 @@ export function PlayerComparison({ comparison }: { comparison: Comparison }) {
   return (
     <div className="mt-4">
       <FaceOff c={comparison} />
-      <p className="mt-2 text-[11px] text-muted">
-        <span aria-hidden>*</span> calculé par la page à partir des colonnes renvoyées
-        {comparison.players.some((p) => p.profile) ? " · équipes et rôle lus dans la base, sur la compétition et la période de la question" : ""}
-      </p>
+      <ComparisonNote c={comparison} />
     </div>
+  );
+}
+
+/** What the page computed itself, and where the teams and roles come from. */
+export function ComparisonNote({ c }: { c: Comparison }) {
+  return (
+    <p className="mt-2 text-[11px] text-muted">
+      <span aria-hidden>*</span> calculé par la page à partir des colonnes renvoyées
+      {c.players.some((p) => p.profile) ? " · équipes et rôle lus dans la base, sur la compétition et la période de la question" : ""}
+    </p>
   );
 }
 
@@ -58,7 +65,7 @@ function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
   );
 }
 
-function FaceOff({ c }: { c: Comparison }) {
+export function FaceOff({ c }: { c: Comparison }) {
   const [a, b] = c.players;
 
   return (
