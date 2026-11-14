@@ -115,29 +115,33 @@ export function loadIngame(file = INGAME_FILE): Map<string, IngameLine> {
   return out;
 }
 
-function append(line: IngameLine, index: Map<string, IngameLine>) {
-  appendFileSync(INGAME_FILE, `${JSON.stringify(line)}\n`);
-  index.set(line.key, line);
-}
-
 // --- Download -----------------------------------------------------------------
 
 export type RiotFetchOptions = {
-  /** Stop going to the wiki after this many minutes (null: no limit). */
+  /** Stop going to the wiki after this many minutes (null: no limit). Reads from R2 do not count. */
   budgetMinutes: number | null;
-  /** Also write each new raw game to this store (R2), when configured. */
+  /** The R2 store, when configured: read before the wiki, and written with each game downloaded from the wiki. */
   remote: ObjectStore | null;
   /** Recompute every summary from the raw JSON, even current ones. */
   rederive: boolean;
+  /** Overrides for tests: the local cache, the summaries file and the wiki client. */
+  local?: ObjectStore;
+  ingameFile?: string;
+  fetchPages?: typeof wikiPages;
 };
 
 export type RiotFetchCounts = {
   listed: number;
   current: number;
-  derived: number;
-  downloaded: number;
+  /** Summaries computed from the raw JSON already in the local cache. */
+  from_cache: number;
+  /** Games read from R2 (no wiki request). */
+  from_r2: number;
+  /** Games downloaded from the wiki. */
+  from_wiki: number;
   missing: number;
   invalid: number;
+  r2_errors: number;
   uploaded: number;
   upload_errors: number;
   left: number;
@@ -145,16 +149,26 @@ export type RiotFetchCounts = {
 
 const recent = (iso: string) => Date.now() - Date.parse(iso) < MISSING_RETRY_DAYS * 86400_000;
 
-function summarize(raw: RawGame, index: Map<string, IngameLine>, counts: RiotFetchCounts) {
+/** Parallel reads from R2: no wiki involved, so no throttle; enough to hide the latency, few enough to stay polite. */
+const R2_CONCURRENCY = 16;
+
+type Summaries = { file: string; index: Map<string, IngameLine> };
+
+function append(line: IngameLine, summaries: Summaries) {
+  appendFileSync(summaries.file, `${JSON.stringify(line)}\n`);
+  summaries.index.set(line.key, line);
+}
+
+function summarize(raw: RawGame, summaries: Summaries, counts: RiotFetchCounts) {
   try {
-    append(summarizeGame(raw), index);
+    append(summarizeGame(raw), summaries);
 
     return true;
   } catch (err) {
     counts.invalid++;
     append(
       { status: "invalid", key: raw.key, gameId: raw.gameId, checkedAt: new Date().toISOString(), reason: err instanceof Error ? err.message.slice(0, 300) : String(err) },
-      index,
+      summaries,
     );
 
     return false;
@@ -181,9 +195,9 @@ const MAX_OUTAGE_PAUSES = 6;
 type Downloaded = { row: RiotGameRow; result: RawGame | { missing: string } | { invalid: string } | null };
 
 /** Stats + timeline pages of a few games in one request; `null` for a game the wiki did not serve this time. */
-async function download(rows: RiotGameRow[]): Promise<Downloaded[]> {
+async function download(rows: RiotGameRow[], fetchPages: typeof wikiPages): Promise<Downloaded[]> {
   const titles = rows.flatMap((r) => [r.StatsPage, ...(r.TimelinePage ? [r.TimelinePage] : [])]);
-  const pages = await wikiPages(titles);
+  const pages = await fetchPages(titles);
 
   return rows.map((row): Downloaded => {
     const stats = pages.get(row.StatsPage);
@@ -219,18 +233,65 @@ async function download(rows: RiotGameRow[]): Promise<Downloaded[]> {
   });
 }
 
+/** Reads the games of `todo` from R2, in parallel. Returns the ones R2 does not have, in their original order. */
+async function readFromR2(todo: RiotGameRow[], remote: ObjectStore, local: ObjectStore, summaries: Summaries, counts: RiotFetchCounts): Promise<RiotGameRow[]> {
+  const queue = [...todo];
+  const absent = new Set<string>();
+  const started = Date.now();
+  let seen = 0;
+
+  async function worker() {
+    for (let row = queue.shift(); row; row = queue.shift()) {
+      const key = rawGameKey(row.Key);
+      let body: Uint8Array | null = null;
+
+      try {
+        body = await remote.get(key);
+      } catch (err) {
+        counts.r2_errors++;
+
+        if (counts.r2_errors <= 5) console.warn(`  riot: R2 read of ${key} failed (${err instanceof Error ? err.message : String(err)}), falling back to the wiki`);
+      }
+
+      const raw = readRaw(body);
+
+      if (body && raw) {
+        await local.put(key, body, RAW_GAME_CONTENT_TYPE);
+
+        if (summarize(raw, summaries, counts)) counts.from_r2++;
+      } else absent.add(row.Key);
+
+      if (++seen % 2000 === 0) console.log(`  riot R2 ${seen}/${todo.length} · ${counts.from_r2} read · ${((Date.now() - started) / 60_000).toFixed(1)} min`);
+    }
+  }
+
+  await Promise.all(Array.from({ length: R2_CONCURRENCY }, worker));
+  console.log(
+    `riot: ${counts.from_r2} games read from ${remote.label} in ${((Date.now() - started) / 60_000).toFixed(1)} min, ${absent.size} not there` +
+      (counts.r2_errors ? `, ${counts.r2_errors} read errors` : ""),
+  );
+
+  return todo.filter((r) => absent.has(r.Key));
+}
+
 /**
  * Brings ingame.jsonl up to date with `rows`: cached raw JSON first (no
- * network), then R2 when configured, then the wiki, a few games per request,
- * until done or out of budget.
+ * network), then R2 when configured (parallel, before the wiki budget starts),
+ * then the wiki, a few games per request, until done or out of budget.
  */
 export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions): Promise<RiotFetchCounts> {
-  const local = localRiotStore();
-  const index = loadIngame();
-  const counts: RiotFetchCounts = { listed: rows.length, current: 0, derived: 0, downloaded: 0, missing: 0, invalid: 0, uploaded: 0, upload_errors: 0, left: 0 };
-  const deadline = opts.budgetMinutes == null ? Infinity : Date.now() + opts.budgetMinutes * 60_000;
+  const local = opts.local ?? localRiotStore();
+  const fetchPages = opts.fetchPages ?? wikiPages;
+  const file = opts.ingameFile ?? INGAME_FILE;
+  const summaries: Summaries = { file, index: loadIngame(file) };
+  const index = summaries.index;
+
+  const counts: RiotFetchCounts = {
+    listed: rows.length, current: 0, from_cache: 0, from_r2: 0, from_wiki: 0, missing: 0, invalid: 0, r2_errors: 0, uploaded: 0, upload_errors: 0, left: 0,
+  };
+
   const cached = new Set(await local.list("games"));
-  const todo: RiotGameRow[] = [];
+  let todo: RiotGameRow[] = [];
 
   // 1. No network: current summaries, and raw JSON already in the local cache.
   for (const row of rows) {
@@ -247,7 +308,7 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       const raw = readRaw(await local.get(key));
 
       if (raw) {
-        if (summarize(raw, index, counts)) counts.derived++;
+        if (summarize(raw, summaries, counts)) counts.from_cache++;
         continue;
       }
     }
@@ -261,11 +322,17 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   }
 
   console.log(
-    `riot: ${rows.length} games with Riot JSON in scope, ${counts.current} up to date, ${counts.derived} derived from the cache, ` +
-      `${todo.length} to download (${GAMES_PER_REQUEST} per request)`,
+    `riot: ${rows.length} games with Riot JSON in scope, ${counts.current} up to date, ${counts.from_cache} derived from the local cache, ` +
+      `${todo.length} to fetch${opts.remote ? ` (${opts.remote.label} first)` : ""}`,
   );
 
-  // 2. R2, then the wiki.
+  // 2. R2: parallel reads, no wiki request, outside the wiki budget.
+  if (opts.remote && todo.length) todo = await readFromR2(todo, opts.remote, local, summaries, counts);
+
+  // 3. The wiki, throttled and time-boxed.
+  if (todo.length) console.log(`riot: ${todo.length} games to download from the wiki (${GAMES_PER_REQUEST} per request)`);
+
+  const deadline = opts.budgetMinutes == null ? Infinity : Date.now() + opts.budgetMinutes * 60_000;
   const started = Date.now();
   const total = todo.length;
   const retried = new Set<string>();
@@ -295,26 +362,11 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       break;
     }
 
-    const batch: RiotGameRow[] = [];
-
-    while (todo.length && batch.length < GAMES_PER_REQUEST) {
-      const row = todo.shift()!;
-      const remote = opts.remote ? readRaw(await opts.remote.get(rawGameKey(row.Key)).catch(() => null)) : null;
-
-      if (remote) {
-        await local.put(rawGameKey(row.Key), encodeRawGame(remote), RAW_GAME_CONTENT_TYPE);
-
-        if (summarize(remote, index, counts)) counts.derived++;
-        done++;
-      } else batch.push(row);
-    }
-
-    if (!batch.length) continue;
-
+    const batch = todo.splice(0, GAMES_PER_REQUEST);
     let downloaded: Downloaded[];
 
     try {
-      downloaded = await download(batch);
+      downloaded = await download(batch, fetchPages);
       failures = 0;
     } catch (err) {
       // The wiki is down or refusing us: pause, then try again; give up after a long outage.
@@ -343,13 +395,13 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       if ("missing" in result || "invalid" in result) {
         const status = "missing" in result ? "missing" : "invalid";
         counts[status]++;
-        append({ status, key: row.Key, gameId: row.GameId, checkedAt: new Date().toISOString(), reason: "missing" in result ? result.missing : result.invalid }, index);
+        append({ status, key: row.Key, gameId: row.GameId, checkedAt: new Date().toISOString(), reason: "missing" in result ? result.missing : result.invalid }, summaries);
         continue;
       }
 
       await store(result, encodeRawGame(result));
-      counts.downloaded++;
-      summarize(result, index, counts);
+      counts.from_wiki++;
+      summarize(result, summaries, counts);
     }
 
     if (done - lastLog >= 100 || !todo.length) {
@@ -357,11 +409,16 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       const perGame = (Date.now() - started) / Math.max(1, done);
       const eta = (todo.length * perGame) / 3_600_000;
       console.log(
-        `  riot ${done}/${total} (${batch[0].League}) · ${counts.downloaded} downloaded, ${counts.missing} missing, ${counts.invalid} invalid · ` +
+        `  riot wiki ${done}/${total} (${batch[0].League}) · ${counts.from_wiki} downloaded, ${counts.missing} missing, ${counts.invalid} invalid · ` +
           `${(perGame / 1000).toFixed(2)} s/game, about ${eta.toFixed(1)} h left · ${cargoStats.requests} requests · ${new Date().toISOString().slice(11, 16)} UTC`,
       );
     }
   }
+
+  console.log(
+    `riot: done · ${counts.current} up to date, ${counts.from_cache} from the local cache, ${counts.from_r2} from R2, ${counts.from_wiki} from the wiki ` +
+      `(${counts.missing} missing, ${counts.invalid} invalid, ${counts.left} left for the next run)`,
+  );
 
   return counts;
 }

@@ -7,10 +7,12 @@ name: Data release
 # which data:pull ignores unless DATA_RELEASE pins it.
 #
 # Cargo tables are fetched in full (about 200 requests). Riot game JSON is
-# incremental: the previous release's in-game summaries are restored first,
-# so only new games are downloaded (time-boxed by --riot-budget; a backlog is
-# picked up by the next runs). When the R2_* secrets exist, each new game's
-# raw JSON is also uploaded to the R2 bucket.
+# incremental: the previous release's in-game summaries are restored first;
+# every game still without a summary is read from the R2 bucket (R2_* secrets,
+# 16 parallel reads, about 6 min for the 28,000 games, outside the wiki budget),
+# and only the games R2 does not have are downloaded from the wiki (throttled,
+# time-boxed by --riot-budget; a backlog is picked up by the next runs) and
+# uploaded to R2.
 #
 # Only the 4 newest data releases are kept (and the 4 newest prereleases).
 

@@ -11,8 +11,9 @@
  *
  * Riot game JSON (stats + timeline, one wiki request per game) is downloaded
  * for every game listed in `PostgameJsonMetadata` that has no summary yet:
- * cached as one object per game under data/raw/riot (and uploaded to R2 when
- * R2_* is set), summarized into data/raw/ingame.jsonl. The first catch-up is
+ * read from R2 first when R2_* is set (parallel, outside --riot-budget), else
+ * downloaded from the wiki and uploaded to R2; cached as one object per game
+ * under data/raw/riot, summarized into data/raw/ingame.jsonl. The first catch-up is
  * about 15 000 games (8-9 h at 2 s per request) and resumes where it stopped.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
@@ -273,7 +274,7 @@ async function riot(opts: CargoOptions) {
   const list = await fetchRiotGameList(opts);
   save("riot_games", list);
   const remote = remoteStoreFromEnv();
-  console.log(`riot: raw JSON cached locally${remote ? `, uploaded to ${remote.label}` : " (R2 not configured: no upload)"}`);
+  console.log(`riot: raw JSON cached locally${remote ? `, read from and uploaded to ${remote.label}` : " (R2 not configured: wiki only, no upload)"}`);
   const counts = await fetchRiotGames(list, { budgetMinutes: riotBudget, remote, rederive });
 
   return Object.fromEntries(Object.entries(counts).map(([k, v]) => [`riot_${k}`, v]));
