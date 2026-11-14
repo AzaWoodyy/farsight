@@ -32,8 +32,8 @@ function index(entries: Iterable<[string, string]>) {
 /**
  * Builds `canonical(link)` from the player pages and their redirects. In
  * order: the exact page, a page at another case, a redirect name, a redirect
- * name at another case. A step that points to several pages never merges:
- * two players who share a handle stay apart.
+ * name at another case. The first step that points to several pages stops
+ * the search: two players who share a handle stay apart.
  */
 export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redirect>): (link: string) => Resolution {
   const rows = [...redirects];
@@ -51,8 +51,12 @@ export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redi
       { via: "redirect", found: byNameCase.get(fold(link)) },
     ] as const;
 
-    for (const { via, found } of steps) if (found?.size === 1) return { page: [...found][0], via };
+    for (const { via, found } of steps) {
+      if (found?.size === 1) return { page: [...found][0], via };
 
-    return { page: link, via: steps.some((s) => s.found) ? "ambiguous" : "unknown" };
+      if (found) return { page: link, via: "ambiguous" };
+    }
+
+    return { page: link, via: "unknown" };
   };
 }

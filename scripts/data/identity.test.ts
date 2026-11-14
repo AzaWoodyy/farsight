@@ -46,6 +46,12 @@ describe("playerIdentity", () => {
     expect(canonical("viper")).toEqual({ page: "viper", via: "ambiguous" });
   });
 
+  test("two pages at another case are not passed over for a redirect", () => {
+    const twoPages = playerIdentity(["Foo", "FOO", "Other"], [{ name: "foo", page: "Other" }]);
+
+    expect(twoPages("foo")).toEqual({ page: "foo", via: "ambiguous" });
+  });
+
   test("the exact redirect name wins over the same name at another case", () => {
     expect(canonical("Ghost")).toEqual({ page: "Ghost (Jang Yong-jun)", via: "redirect" });
     expect(canonical("GHOST")).toEqual({ page: "Ghost (Hwang Sung-min)", via: "redirect" });
