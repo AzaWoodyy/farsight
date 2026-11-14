@@ -5,13 +5,19 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const ROOT = resolve(import.meta.dirname, "../..");
 export const RAW_DIR = resolve(ROOT, "data/raw");
 
 /** One JSON file per raw Leaguepedia response, keyed by URL hash. */
 export const CARGO_CACHE_DIR = resolve(RAW_DIR, "cargo");
+
+/** Riot game JSON (stats + timeline), one gzip object per game: the local object store. */
+export const RIOT_CACHE_DIR = resolve(RAW_DIR, "riot");
+
+/** One line per game with Riot JSON: its in-game summary, or why there is none (append-only). */
+export const INGAME_FILE = resolve(RAW_DIR, "ingame.jsonl");
 
 /** One JSON file per Data Dragon response. */
 export const DDRAGON_CACHE_DIR = resolve(RAW_DIR, "ddragon");
@@ -26,6 +32,7 @@ export const DATASETS = [
   "players",
   "redirects",
   "ddragon",
+  "riot_games",
   "runs",
 ] as const;
 

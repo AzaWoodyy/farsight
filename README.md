@@ -36,6 +36,10 @@ bun run data:build            # data/raw -> data/lol.sqlite (~68 Mo, quelques se
 bun run dev                   # http://localhost:3000
 ```
 
+Au lieu de `data:fetch` + `data:build`, `bun run data:pull` télécharge la
+dernière base publiée (il faut `DATA_GITHUB_TOKEN`, voir
+[docs/deploy.md](docs/deploy.md)).
+
 En ligne de commande, sans serveur :
 
 ```bash
@@ -77,7 +81,9 @@ Deux commandes, dans `scripts/data/` :
     (`public/icons/item-fallback.svg`) ; le décompte par origine d'icône est
     gardé dans `ingest_runs`.
 
-`data/` n'est jamais commité.
+`data/` n'est jamais commité. La base versionnée est publiée en release
+GitHub par le workflow « Data release », et `data:pull` la récupère au build
+(voir [docs/deploy.md](docs/deploy.md)).
 
 ### Agent
 
@@ -188,7 +194,9 @@ manuels : [docs/deploy.md](docs/deploy.md).
 ## Structure
 
 ```
-scripts/data/                data:fetch (sources -> data/raw) et data:build (-> SQLite)
+scripts/data/                data:fetch (sources -> data/raw), data:build (-> SQLite),
+                             data:package (contrôles + assets de release), data:pull (release -> data/)
+.github/workflows/           data-release.yml : ingestion hebdo et release data-YYYYMMDD
 scripts/ask.ts               agent en CLI
 src/lib/sources/             clients Leaguepedia (Cargo) et Data Dragon
 src/lib/db/                  accès SQLite en lecture seule

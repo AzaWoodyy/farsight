@@ -6,6 +6,16 @@ import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type Entities, LEAGUE_NAMES, type ResultRow, type Source, type TableCell, type ToolName } from "./types";
 import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
+import {
+  PLAYER_METRIC_DEFS,
+  PLAYER_METRICS,
+  type PlayerMetric,
+  TEAM_METRIC_DEFS,
+  TEAM_METRICS,
+  type TeamMetric,
+  metricColumn,
+  metricLabel,
+} from "./metrics";
 
 /**
  * Typed tools: one parameterized query per frequent intent, each with a zod
@@ -61,6 +71,47 @@ export const StandingsInput = z.object({
   full: z.boolean().describe("true: every placement of the event(s); false: champion and finalist of each event"),
 });
 
+const MinuteInput = z
+  .union([z.literal(10), z.literal(15), z.literal(20)])
+  .nullable()
+  .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
+
+const ROLES = ["Top", "Jungle", "Mid", "Bot", "Support"] as const;
+
+export const PlayerIngameInput = z.object({
+  player: z.string().min(1).describe("Player handle or Leaguepedia page"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition with in-game data"),
+  ...Period,
+  metric: z.enum(PLAYER_METRICS).nullable().describe("The metric the question is about, shown first; null for the overview"),
+  minute: MinuteInput,
+});
+
+export const LeaderboardInput = z.object({
+  subject: z.enum(["player", "team"]),
+  metric: z.enum([...new Set([...PLAYER_METRICS, ...TEAM_METRICS])]).describe(
+    "Player metrics: solo_kills, penta_kills, quadra_kills, triple_kills, double_kills, first_bloods, kills_before_10, gold_diff, cs_diff, xp_diff, gold, cs, xp, wards_placed, wards_killed, control_wards, plates. " +
+      "Team metrics: first_blood, first_tower, first_dragon, first_herald, first_baron, gold_diff, kills_before_10, plates.",
+  ),
+  minute: MinuteInput,
+  league: League.nullable(),
+  ...Period,
+  role: z.enum(ROLES).nullable().describe("Players of one role only"),
+  minGames: z.number().int().min(1).max(200).nullable().describe("Minimum games for averages and rates, null for the default"),
+});
+
+export const TeamIngameInput = z.object({
+  team: z.string().min(1).describe("Team name or shorthand (T1, Gen.G, G2...)"),
+  league: League.nullable(),
+  ...Period,
+  minute: MinuteInput,
+});
+
+export type PlayerIngameInput = z.infer<typeof PlayerIngameInput>;
+
+export type LeaderboardInput = z.infer<typeof LeaderboardInput>;
+
+export type TeamIngameInput = z.infer<typeof TeamIngameInput>;
+
 export type PlayerHistoryInput = z.infer<typeof PlayerHistoryInput>;
 
 export type TeamHistoryInput = z.infer<typeof TeamHistoryInput>;
@@ -77,7 +128,10 @@ export type ToolCall =
   | { tool: "team_history"; input: TeamHistoryInput }
   | { tool: "head_to_head"; input: HeadToHeadInput }
   | { tool: "champion_event_stats"; input: ChampionStatsInput }
-  | { tool: "tournament_standings"; input: StandingsInput };
+  | { tool: "tournament_standings"; input: StandingsInput }
+  | { tool: "player_ingame_stats"; input: PlayerIngameInput }
+  | { tool: "ingame_leaderboard"; input: LeaderboardInput }
+  | { tool: "team_ingame_stats"; input: TeamIngameInput };
 
 export type ToolInput = ToolCall["input"];
 
@@ -856,6 +910,440 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
   normalize: (_db, input) => input,
 };
 
+// In-game stats (Riot JSON on Leaguepedia, not the LPL) ------------------------------
+
+/** Where the in-game numbers come from, cited with every in-game answer. */
+const RIOT_DATA_SOURCE: Source = {
+  label: "Leaguepedia — données Riot des parties (PostgameJsonMetadata)",
+  url: wikiUrl("Special:CargoTables/PostgameJsonMetadata"),
+};
+
+/** "2024", or "2019–2024". */
+const yearSpan = (years: number[]) => (years.length && Math.min(...years) === Math.max(...years) ? String(years[0]) : span(years));
+
+const signed = (n: number | null) => (n == null ? "n/d" : `${n > 0 ? "+" : ""}${n}`);
+const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
+
+/** SQL aggregate of a metric column: totals for counts, averages, percentages for 0/1 flags. */
+function aggregateSql(aggregate: "sum" | "avg" | "rate", column: string): string {
+  if (aggregate === "sum") return `SUM(${column})`;
+
+  if (aggregate === "rate") return `ROUND(100.0 * AVG(${column}), 1)`;
+
+  // Gold and XP in whole units, the rest (CS, wards, plates) to one decimal.
+  return `ROUND(AVG(${column}), ${/gold|xp/.test(column) ? 0 : 1})`;
+}
+
+/** Shared WHERE clause of the in-game tools (`s` is the stats view). */
+function ingameScope(input: { league: string | null } & Period, params: Params): string {
+  const parts = [`s.stage IN (${COMPETITION_STAGES})`];
+
+  if (input.league) {
+    parts.push("s.league = :league");
+    params.league = input.league;
+  }
+
+  return `${parts.join(" AND ")} ${periodFilter("s.year", input, params)}`;
+}
+
+/** Games of the scope, and how many of them have Riot data. */
+function coverage(db: DatabaseSync, sql: string, params: Params) {
+  return selectOne(db, z.object({ games: z.number(), ingame: z.number() }), sql, params) ?? { games: 0, ingame: 0 };
+}
+
+const coverageNote = (c: { games: number; ingame: number }) =>
+  c.ingame < c.games
+    ? ` Données in-game disponibles pour ${c.ingame} parties sur ${c.games} (Leaguepedia ne publie pas les données Riot de toutes les parties, aucune en LPL).`
+    : "";
+
+/** Pages listed in a json_group_array column. */
+const pageList = z.string().nullable().transform((v) => (v ? z.array(z.string()).parse(JSON.parse(v)) : []));
+
+/** Metrics of the player overview, then the one the question asks about. */
+const PLAYER_OVERVIEW: PlayerMetric[] = ["solo_kills", "penta_kills", "first_bloods", "kills_before_10", "gold_diff", "cs_diff", "wards_placed"];
+
+const PLAYER_COLUMN_LABELS: Record<PlayerMetric, string> = {
+  solo_kills: "Solo kills",
+  penta_kills: "Pentakills",
+  quadra_kills: "Quadrakills",
+  triple_kills: "Triple kills",
+  double_kills: "Double kills",
+  first_bloods: "First bloods",
+  kills_before_10: "Kills < 10 min",
+  gold_diff: "Écart or",
+  cs_diff: "Écart CS",
+  xp_diff: "Écart XP",
+  gold: "Or",
+  cs: "CS",
+  xp: "XP",
+  wards_placed: "Wards / partie",
+  wards_killed: "Wards détruites / partie",
+  control_wards: "Control wards / partie",
+  plates: "Plaques",
+};
+
+/** The metric the question asks about first, then the overview. */
+const playerMetricsOf = (input: PlayerIngameInput): PlayerMetric[] =>
+  input.metric ? [input.metric, ...PLAYER_OVERVIEW.filter((m) => m !== input.metric)] : PLAYER_OVERVIEW;
+
+const IngameRow = z
+  .object({ year: z.number().nullable(), league_short: z.string().nullable(), games: z.number(), wins: z.number(), pages: pageList, stats_page: z.string().nullable() })
+  .catchall(z.number().nullable());
+
+// 6. A player's in-game stats -----------------------------------------------------------
+
+const playerIngameStats: ToolDef<PlayerIngameInput> = {
+  name: "player_ingame_stats",
+  label: "stats in-game d'un joueur",
+  description:
+    "A player's in-game stats from the Riot game data, season by season: solo kills, multi-kills, first bloods, kills before 10 min, " +
+    "gold/CS/XP and their difference with the lane opponent at 10/15/20 min, wards, plates. Not available for the LPL.",
+  plan: (_db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { player: input.player });
+
+    const cols = playerMetricsOf(input)
+      .map((m) => `${aggregateSql(PLAYER_METRIC_DEFS[m].aggregate, `s.${metricColumn(PLAYER_METRIC_DEFS[m], input.minute)}`)} AS ${m}`)
+      .join(",\n         ");
+
+    const scope = ingameScope(input, params);
+
+    return {
+      params,
+      sql: tidy(`WITH base AS (
+  SELECT * FROM v_game_player_stats s
+  WHERE s.player = :player AND ${scope}
+)
+SELECT 0 AS is_total, s.year, s.league_short, MIN(s.played_at) AS first_game, COUNT(*) AS games, SUM(s.win) AS wins,
+       ${cols},
+       json_group_array(DISTINCT s.event_page) AS pages, MAX(s.stats_page) AS stats_page
+FROM base s GROUP BY s.year, s.league_short
+UNION ALL
+SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
+       ${cols},
+       NULL, NULL
+FROM base s
+HAVING COUNT(*) > 0
+ORDER BY is_total, first_game`),
+    };
+  },
+  relaxations: (input, entities) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    if (input.league)
+      out.push({
+        key: "league",
+        input: { ...input, league: null },
+        note: "Aucune partie avec données in-game dans cette compétition : affichage de toutes les compétitions.",
+        reason: "filtre de compétition retiré",
+      });
+    const resolved = entities.players.find((p) => p.player === input.player || p.otherCandidates.includes(input.player));
+
+    for (const other of resolved ? [resolved.player, ...resolved.otherCandidates] : [])
+      if (other !== input.player)
+        out.push({ key: `player:${other}`, input: { ...input, player: other }, note: `« ${resolved!.mention} » désigne aussi ${other} : stats de ${other}.`, reason: `alias homonyme essayé : ${other}` });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const all = z.array(IngameRow).parse(sqlRows);
+    const total = all[all.length - 1];
+    const rows = all.slice(0, -1);
+    const metrics = playerMetricsOf(input);
+    const league = leagueShortName(db, input.league);
+    const num = (r: z.infer<typeof IngameRow>, m: PlayerMetric) => (r[m] == null ? null : Number(r[m]));
+    const params: Params = {};
+
+    Object.assign(params, { player: input.player });
+
+    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_game_players s JOIN v_games g USING (game_id) WHERE s.player = :player AND ${ingameScope(input, params)}`, params);
+    const minute = input.minute ?? 15;
+    const val = (m: PlayerMetric) => num(total, m);
+    const fb = val("first_bloods");
+
+    const parts: Record<PlayerMetric, string> = {
+      solo_kills: `${val("solo_kills") ?? "n/d"} solo kills`,
+      penta_kills: `${val("penta_kills") ?? "n/d"} pentakill${(val("penta_kills") ?? 0) > 1 ? "s" : ""}`,
+      quadra_kills: `${val("quadra_kills") ?? "n/d"} quadrakills`,
+      triple_kills: `${val("triple_kills") ?? "n/d"} triple kills`,
+      double_kills: `${val("double_kills") ?? "n/d"} double kills`,
+      first_bloods: fb == null ? "first bloods n/d" : `${fb} first blood${fb > 1 ? "s" : ""} (${pct(fb, total.games)} % des parties)`,
+      kills_before_10: `${val("kills_before_10") ?? "n/d"} kills avant 10 min`,
+      gold_diff: `un écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min face à son adversaire direct`,
+      cs_diff: `un écart de CS moyen de ${signed(val("cs_diff"))} à ${minute} min`,
+      xp_diff: `un écart d'XP moyen de ${signed(val("xp_diff"))} à ${minute} min`,
+      gold: `${val("gold") ?? "n/d"} d'or en moyenne à ${minute} min`,
+      cs: `${val("cs") ?? "n/d"} CS en moyenne à ${minute} min`,
+      xp: `${val("xp") ?? "n/d"} XP en moyenne à ${minute} min`,
+      wards_placed: `${val("wards_placed") ?? "n/d"} wards posées par partie`,
+      wards_killed: `${val("wards_killed") ?? "n/d"} wards détruites par partie`,
+      control_wards: `${val("control_wards") ?? "n/d"} control wards achetées par partie`,
+      plates: `${val("plates") ?? "n/d"} plaques de tourelle`,
+    };
+
+    const facts =
+      `${input.player}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), ` +
+      `sur ${total.games} parties avec données in-game : ${metrics.map((m) => parts[m]).join(", ")}.` +
+      coverageNote(cov);
+
+    const pages = rows.flatMap((r) => r.pages);
+    const statsPages = rows.flatMap((r) => r.stats_page ?? []).slice(-3);
+
+    return {
+      title: `${input.player} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Année", "Compétition", "Parties", "V-D", ...metrics.map((m) => (PLAYER_METRIC_DEFS[m].snapshot ? `${PLAYER_COLUMN_LABELS[m]} @${minute}` : PLAYER_COLUMN_LABELS[m]))],
+        rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...metrics.map((m) => num(r, m))]),
+      },
+      facts,
+      sources: [
+        { label: `Leaguepedia — ${input.player}`, url: wikiUrl(input.player) },
+        ...eventSources(pages, 10),
+        ...statsPages.map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) })),
+        RIOT_DATA_SOURCE,
+      ],
+      followUps: [
+        input.league ? `Joueurs avec le plus de solo kills ${inLeague(league)}` : "Joueurs avec le plus de solo kills aux Worlds",
+        `Résultats de ${input.player} ${input.league ? inLeague(league) : "aux Worlds"}`,
+      ],
+      totals: {
+        games: total.games,
+        coverage_games: cov.games,
+        // n/d: no game of the scope has this metric (no timeline, or no plate events before match-v5).
+        ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? "n/d"])),
+      },
+    };
+  },
+  normalize: (db, input) => {
+    const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+
+    return p ? { ...input, player: p.player } : null;
+  },
+};
+
+// 7. Leaderboard on an in-game metric --------------------------------------------------
+
+const LeaderRow = z.object({ name: z.string(), team: z.string().nullable(), games: z.number(), counted: z.number(), total: z.number().nullable(), average: z.number().nullable() });
+
+function leaderboardMetric(input: LeaderboardInput) {
+  if (input.subject === "team") {
+    const key = TEAM_METRICS.find((m) => m === input.metric) ?? "first_blood";
+
+    return { def: TEAM_METRIC_DEFS[key], key };
+  }
+
+  const key = PLAYER_METRICS.find((m) => m === input.metric) ?? "solo_kills";
+
+  return { def: PLAYER_METRIC_DEFS[key], key };
+}
+
+/** Averages and rates need enough games to mean something. */
+function minGamesOf(input: LeaderboardInput): number {
+  if (input.minGames != null) return input.minGames;
+
+  if (leaderboardMetric(input).def.aggregate === "sum") return 1;
+
+  const oneSeason = input.yearFrom != null && input.yearFrom === input.yearTo;
+
+  return input.league && oneSeason ? 5 : 15;
+}
+
+const ingameLeaderboard: ToolDef<LeaderboardInput> = {
+  name: "ingame_leaderboard",
+  label: "classement sur une stat in-game",
+  description:
+    "Ranks players (or teams) of a competition and period on one in-game metric from the Riot game data: solo kills, pentakills, first bloods, " +
+    "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference. Not available for the LPL.",
+  plan: (_db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { minGames: minGamesOf(input) });
+
+    const { def } = leaderboardMetric(input);
+    const column = `s.${metricColumn(def, input.minute)}`;
+    const view = input.subject === "team" ? "v_game_team_stats" : "v_game_player_stats";
+    const name = input.subject === "team" ? "s.team" : "s.player";
+    const filters = [ingameScope(input, params)];
+
+    if (input.subject === "player" && input.role) {
+      filters.push("AND s.role = :role");
+      params.role = input.role;
+    }
+
+    const value = def.aggregate === "sum" ? "total" : "average";
+    const average = def.aggregate === "rate" ? `100.0 * AVG(${column})` : `AVG(${column})`;
+
+    return {
+      params,
+      sql: tidy(`SELECT ${name} AS name, ${input.subject === "team" ? "NULL" : "s.team"} AS team, MAX(s.played_at) AS last_game,
+       COUNT(*) AS games, COUNT(${column}) AS counted, SUM(${column}) AS total, ROUND(${average}, 2) AS average
+FROM ${view} s
+WHERE ${filters.join(" ")}
+GROUP BY ${name}
+HAVING COUNT(${column}) >= :minGames${def.aggregate === "sum" ? ` AND SUM(${column}) > 0` : ""}
+ORDER BY ${value} DESC, games ASC, name
+LIMIT 20`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (input.minGames == null && minGamesOf(input) > 3)
+      out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(LeaderRow).parse(sqlRows);
+    const { def } = leaderboardMetric(input);
+    const label = metricLabel(def, input.minute);
+    const league = leagueShortName(db, input.league);
+    const params: Params = {};
+    const scope = ingameScope(input, params);
+    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${scope}`, params);
+    const pages = selectAll(db, z.object({ event_page: z.string() }), `SELECT DISTINCT s.event_page FROM v_games s WHERE ${scope} AND s.has_ingame ORDER BY s.played_at DESC LIMIT 12`, params).map((r) => r.event_page);
+    const value = (r: z.infer<typeof LeaderRow>) => (def.aggregate === "sum" ? (r.total ?? 0) : round1(r.average));
+    const unit = def.aggregate === "rate" ? " %" : "";
+    const who = input.subject === "team" ? "Équipe" : "Joueur";
+    const minGames = minGamesOf(input);
+    const years = selectAll(db, z.object({ year: z.number().nullable() }), `SELECT DISTINCT s.year FROM v_games s WHERE ${scope} AND s.has_ingame`, params).flatMap((r) => (r.year == null ? [] : [r.year]));
+    const scopeLabel = [inLeague(league), years.length ? `(${yearSpan(years)})` : ""].filter(Boolean).join(" ");
+    const roleLabel = input.role ? ` (rôle ${input.role})` : "";
+
+    const facts =
+      `${def.aggregate === "sum" ? "Total de" : def.aggregate === "rate" ? "Part des parties avec" : "Moyenne par partie de"} ${label}${roleLabel} ${scopeLabel} : ` +
+      rows.slice(0, 3).map((r, i) => `${i + 1}. ${displayTeam(r.name)} (${value(r)}${unit}, ${r.games} parties)`).join(", ") +
+      `. ${cov.ingame} parties avec données in-game${def.aggregate === "sum" ? "" : `, minimum ${minGames} parties par ${input.subject === "team" ? "équipe" : "joueur"}`}.` +
+      coverageNote(cov);
+
+    return {
+      title: `Classement — ${label}${roleLabel}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Rang", who, ...(input.subject === "player" ? ["Équipe (dernière)"] : []), "Parties", def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne", ...(def.aggregate === "sum" ? ["Par partie"] : [])],
+        rows: rows.map((r, i) => [
+          i + 1,
+          displayTeam(r.name),
+          ...(input.subject === "player" ? [r.team ? displayTeam(r.team) : null] : []),
+          r.games,
+          value(r),
+          ...(def.aggregate === "sum" ? [Math.round((100 * (r.total ?? 0)) / Math.max(1, r.counted)) / 100] : []),
+        ]),
+      },
+      facts,
+      sources: [
+        ...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.name}`, url: wikiUrl(r.name) })),
+        ...eventSources(pages, 12),
+        RIOT_DATA_SOURCE,
+      ],
+      followUps: rows.slice(0, 2).map((r) => (input.subject === "team" ? `Stats in-game de ${displayTeam(r.name)}` : `Stats in-game de ${r.name}`)),
+      totals: { leader: rows[0] ? displayTeam(rows[0].name) : "", leader_value: rows[0] ? (value(rows[0]) ?? 0) : 0, rows: rows.length, ingame_games: cov.ingame },
+    };
+  },
+  normalize: (_db, input) => {
+    const valid = input.subject === "team" ? TEAM_METRICS.some((m) => m === input.metric) : PLAYER_METRICS.some((m) => m === input.metric);
+
+    return valid ? input : null;
+  },
+};
+
+// 8. A team's in-game stats --------------------------------------------------------------
+
+const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "gold_diff", "kills_before_10", "plates"];
+
+const TEAM_COLUMN_LABELS: Record<TeamMetric, string> = {
+  first_blood: "First blood %",
+  first_tower: "1re tour %",
+  first_dragon: "1er dragon %",
+  first_herald: "1er héraut %",
+  first_baron: "1er baron %",
+  gold_diff: "Écart or",
+  kills_before_10: "Kills < 10 min",
+  plates: "Plaques / partie",
+};
+
+const teamIngameStats: ToolDef<TeamIngameInput> = {
+  name: "team_ingame_stats",
+  label: "stats in-game d'une équipe",
+  description:
+    "A team's in-game profile from the Riot game data, season by season: first blood, first tower, dragon, herald and baron rates, " +
+    "team gold difference at 10/15/20 min, turret plates. Renamed teams are merged. Not available for the LPL.",
+  plan: (db, input) => {
+    const params: Params = {};
+    const t = inList("t", teamMembers(db, input.team).members, params);
+    const cols = TEAM_OVERVIEW.map((m) => `${aggregateSql(TEAM_METRIC_DEFS[m].aggregate, `s.${metricColumn(TEAM_METRIC_DEFS[m], input.minute)}`)} AS ${m}`).join(",\n         ");
+    const scope = ingameScope(input, params);
+
+    return {
+      params,
+      sql: tidy(`WITH base AS (
+  SELECT * FROM v_game_team_stats s WHERE s.team IN (${t}) AND ${scope}
+)
+SELECT 0 AS is_total, s.year, s.league_short, MIN(s.played_at) AS first_game, COUNT(*) AS games, SUM(s.win) AS wins,
+       ${cols},
+       json_group_array(DISTINCT s.event_page) AS pages, MAX(s.stats_page) AS stats_page
+FROM base s GROUP BY s.year, s.league_short
+UNION ALL
+SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
+       ${cols},
+       NULL, NULL
+FROM base s
+HAVING COUNT(*) > 0
+ORDER BY is_total, first_game`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    if (input.league)
+      out.push({ key: "league", input: { ...input, league: null }, note: "Aucune partie avec données in-game dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const all = z.array(IngameRow).parse(sqlRows);
+    const total = all[all.length - 1];
+    const rows = all.slice(0, -1);
+    const { team, members } = teamMembers(db, input.team);
+    const league = leagueShortName(db, input.league);
+    const minute = input.minute ?? 15;
+    const val = (m: TeamMetric) => (total[m] == null ? null : Number(total[m]));
+    const params: Params = {};
+    const t = inList("t", members, params);
+    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE (s.blue_team IN (${t}) OR s.red_team IN (${t})) AND ${ingameScope(input, params)}`, params);
+
+    const facts =
+      `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
+      `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? "n/d"} % des parties, première tourelle ${val("first_tower") ?? "n/d"} %, ` +
+      `premier dragon ${val("first_dragon") ?? "n/d"} %, premier héraut ${val("first_herald") ?? "n/d"} %, premier baron ${val("first_baron") ?? "n/d"} %, ` +
+      `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? "n/d"} kills avant 10 min et ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +
+      coverageNote(cov);
+
+    return {
+      title: `${team} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Année", "Compétition", "Parties", "V-D", ...TEAM_OVERVIEW.map((m) => (m === "gold_diff" ? `Écart or @${minute}` : TEAM_COLUMN_LABELS[m]))],
+        rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...TEAM_OVERVIEW.map((m) => (r[m] == null ? null : Number(r[m])))]),
+      },
+      facts,
+      sources: [
+        ...members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
+        ...eventSources(rows.flatMap((r) => r.pages), 10),
+        RIOT_DATA_SOURCE,
+      ],
+      followUps: [`Historique de ${team}`, `Équipes qui prennent le plus souvent le first blood ${input.league ? inLeague(league) : "aux Worlds"}`],
+      totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? "n/d"])) },
+    };
+  },
+  normalize: (db, input) => (resolveTeam(db, input.team) ? input : null),
+};
+
 // Registry ----------------------------------------------------------------------------
 
 function bind<I extends ToolInput>(def: ToolDef<I>, db: DatabaseSync, input: I, call: (input: I) => ToolCall): BoundTool {
@@ -890,6 +1378,12 @@ export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
       return bind(championEventStats, db, ChampionStatsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
     case "tournament_standings":
       return bind(tournamentStandings, db, StandingsInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "player_ingame_stats":
+      return bind(playerIngameStats, db, PlayerIngameInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "ingame_leaderboard":
+      return bind(ingameLeaderboard, db, LeaderboardInput.parse(call.input), (input) => ({ tool: call.tool, input }));
+    case "team_ingame_stats":
+      return bind(teamIngameStats, db, TeamIngameInput.parse(call.input), (input) => ({ tool: call.tool, input }));
   }
 }
 
@@ -900,6 +1394,9 @@ export const aiTools = {
   head_to_head: tool({ description: headToHead.description, inputSchema: HeadToHeadInput }),
   champion_event_stats: tool({ description: championEventStats.description, inputSchema: ChampionStatsInput }),
   tournament_standings: tool({ description: tournamentStandings.description, inputSchema: StandingsInput }),
+  player_ingame_stats: tool({ description: playerIngameStats.description, inputSchema: PlayerIngameInput }),
+  ingame_leaderboard: tool({ description: ingameLeaderboard.description, inputSchema: LeaderboardInput }),
+  team_ingame_stats: tool({ description: teamIngameStats.description, inputSchema: TeamIngameInput }),
 };
 
 /** Maps an LLM tool call onto database names (aliases, team shorthands...); null when a name is unknown. */
@@ -931,6 +1428,24 @@ export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof 
 
     case "tournament_standings": {
       const input = tournamentStandings.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "player_ingame_stats": {
+      const input = playerIngameStats.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "ingame_leaderboard": {
+      const input = ingameLeaderboard.normalize(db, call.input);
+
+      return input && { tool: call.toolName, input };
+    }
+
+    case "team_ingame_stats": {
+      const input = teamIngameStats.normalize(db, call.input);
 
       return input && { tool: call.toolName, input };
     }

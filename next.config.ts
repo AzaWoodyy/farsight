@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 
-// data/ is not committed: a Vercel build without the file would deploy an
-// agent that cannot open its database. Fail the build instead.
+// data/ is not committed: `bun run build` downloads it first (data:pull). A
+// Vercel build that skipped that step would deploy an agent that cannot open
+// its database, so fail the build instead.
 if (process.env.VERCEL === "1" && !existsSync("data/lol.sqlite"))
-  throw new Error("data/lol.sqlite is missing: run `bun run data:build` before `vercel build` (see docs/deploy.md).");
+  throw new Error("data/lol.sqlite is missing: the build command must run `bun run data:pull` first (see docs/deploy.md).");
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
@@ -14,6 +15,13 @@ const nextConfig: NextConfig = {
   // cannot see it: ship it inside the /api/ask function (read-only).
   outputFileTracingIncludes: {
     "/api/ask": ["./data/lol.sqlite"],
+  },
+  // The ingestion cache (data/raw: Cargo responses, Riot game JSON) and release
+  // assets are never read at runtime, but the tracer picks up the cache files a
+  // shared module can write: keep them out, or a local `vercel build` with a
+  // full cache would ship gigabytes.
+  outputFileTracingExcludes: {
+    "/api/ask": ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"],
   },
   turbopack: {
     rules: {

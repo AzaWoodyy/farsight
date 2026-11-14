@@ -117,7 +117,10 @@ export type ToolName =
   | "team_history"
   | "head_to_head"
   | "champion_event_stats"
-  | "tournament_standings";
+  | "tournament_standings"
+  | "player_ingame_stats"
+  | "ingame_leaderboard"
+  | "team_ingame_stats";
 
 export type Intent = ToolName | "sql";
 

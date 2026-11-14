@@ -2,17 +2,20 @@
 
 Projet Vercel séparé (plan Hobby, quotas partagés avec le portfolio), domaine
 `lolesport.enzoneault.dev`. Cette page décrit ce que le code fait déjà et les
-réglages à faire à la main dans les dashboards Vercel et OpenRouter. Rien de
-tout cela n'est automatisé.
+réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 
 ## Ce que contient le déploiement
 
 - **Fonction `/api/ask`** (Node 24, `engines.node` dans `package.json`) : la
   base `data/lol.sqlite` est ajoutée au bundle par `outputFileTracingIncludes`
   (`next.config.ts`), puis ouverte en lecture seule (`src/lib/db/index.ts`).
-  - Taille mesurée sur le build local : base 67,8 Mo, bundle d'environ 101 Mo
-    au total (fichiers tracés de la route et du serveur Next). La limite de
-    Vercel est de 250 Mo décompressés.
+  - Budget : base sous 190 Mo, fonction sous 250 Mo décompressés (limite de
+    Vercel). `bun run size`, lancé à la fin de `bun run build`, additionne les
+    fichiers tracés de la route et du serveur Next, avertit à partir de 225 Mo
+    et fait échouer le build au-delà de 250 Mo (ou si la base dépasse 190 Mo).
+    `data/raw` et `data/release` sont exclus du tracé (`next.config.ts`).
+  - Mesuré le 14/11/2026 (schéma v4, 28 327 parties avec stats in-game) :
+    base 98,1 Mo, fonction 131,8 Mo.
   - `DATABASE_PATH` ne doit pas être défini sur Vercel : le fichier tracé est
     `data/lol.sqlite`.
 - **BotID Basic** : `src/instrumentation-client.ts` protège les `POST /api/ask`
@@ -27,31 +30,189 @@ tout cela n'est automatisé.
 
 ## Construire et déployer
 
-`data/` n'est pas commité, donc un build Vercel lancé depuis Git n'a pas la
-base. `next.config.ts` fait alors échouer le build (`VERCEL=1` sans
-`data/lol.sqlite`) au lieu de déployer un agent sans données. Il faut donc
-construire en local et envoyer le build :
+`data/` n'est pas commité. La base versionnée vit dans les releases GitHub
+du dépôt, et le build la télécharge avant `next build`.
+
+### Publication : workflow « Data release »
+
+`.github/workflows/data-release.yml` tourne chaque lundi à 05:23 UTC et à la
+demande (**Actions** → **Data release** → **Run workflow**) :
+
+1. Restaure `ingame.jsonl.zst` depuis la release précédente si elle a le même
+   schéma (résumés in-game déjà calculés).
+2. `bun run data:fetch --riot-budget=90` : tables Cargo complètes (environ 200
+   requêtes, une à la fois, 3 s d'écart, User-Agent explicite, backoff), JSON
+   Riot des seules nouvelles parties (2 par requête, 90 min au plus ; le reste
+   passe à la semaine suivante), puis Data Dragon. Avec les secrets `R2_*`,
+   chaque nouvelle partie est aussi envoyée sur R2.
+3. `bun run data:build` : `data/lol.sqlite`, fini par
+   `journal_mode=DELETE` et `VACUUM`.
+4. `bun run data:package` : contrôles, puis assets de release. Le workflow
+   s'arrête sans rien publier si l'un d'eux échoue :
+   - `integrity_check`, `foreign_key_check`, mode de journal `delete`, aucun
+     fichier `-wal`/`-shm`, `user_version` égal à `SCHEMA_VERSION` ;
+   - toutes les tables et vues `v_*` lues par l'app présentes et lisibles,
+     aucune ligne orpheline, au moins une partie dans chacune des 19 ligues ;
+   - taille sous 190 Mo (avertissement dès 170 Mo), et au moins 98 % des
+     parties, et des parties avec stats in-game, de la release précédente
+     (garde contre une ingestion partielle).
+5. Release `data-YYYYMMDD` (`-2`, `-3`… si le tag existe déjà) avec trois
+   assets :
+   - `lol.sqlite.zst` : la base compressée en zstd niveau 19 (environ 19 Mo
+     pour 68 Mo) ;
+   - `ingame.jsonl.zst` : les résumés in-game, une ligne par partie, relus
+     par l'exécution suivante ;
+   - `manifest.json` : version du schéma, date, commit, taille et sha256 de
+     la base et des assets, nombre de parties (dont avec stats in-game), de
+     ligues, de tournois, de joueurs et d'équipes, version Data Dragon.
+6. Supprime les releases `data-*` au-delà des 4 plus récentes (tags compris),
+   séparément pour les releases publiées et les prereleases.
+
+Lancé depuis une autre branche que `main`, le workflow publie une
+**prerelease**, que `data:pull` ignore sauf si `DATA_RELEASE` l'épingle. Le
+cron ne tourne que sur la branche par défaut.
+
+### Téléchargement : `bun run data:pull`
+
+Le script `build` lance `bun run data:pull && next build`. `data:pull` :
+
+- choisit la release : celle de `DATA_RELEASE` (ou `--release=`), sinon la
+  plus récente release publiée `data-*` dont le manifeste a le
+  `SCHEMA_VERSION` du code. Une release d'un autre schéma est ignorée, donc
+  publier une base v4 ne casse pas les builds de code v3 ;
+- télécharge l'asset, vérifie sa taille et son sha256, le décompresse,
+  vérifie le sha256 et la taille de la base, son `user_version`, son mode de
+  journal et `quick_check`, puis remplace `data/lol.sqlite` d'un coup
+  (renommage). Au moindre écart il s'arrête avec un message et le code 1, et
+  laisse l'éventuelle base existante intacte ;
+- sur Vercel (`VERCEL=1`), saute le téléchargement si la base locale a déjà
+  le sha256 de la release ;
+- hors Vercel, garde une base locale au bon schéma sans rien télécharger (elle
+  peut venir d'un `data:build` plus récent). `--force` la remplace. Sans token,
+  une base locale utilisable est aussi gardée avec `VERCEL=1` (cas d'un
+  `vercel build` local) ; sans base utilisable et sans token, il s'arrête et
+  propose `data:build`.
+
+Le token n'est lu que depuis `DATA_GITHUB_TOKEN`, n'est jamais affiché, et
+n'est pas envoyé au stockage vers lequel GitHub redirige le téléchargement.
+
+`next.config.ts` garde un garde-fou : un build Vercel sans
+`data/lol.sqlite` échoue au lieu de déployer un agent sans données.
+
+### Revenir à une base précédente
+
+Définir `DATA_RELEASE=data-YYYYMMDD` sur Vercel, puis redéployer. Supprimer
+la variable pour revenir à la plus récente.
+
+### Sans release (dépannage)
 
 ```bash
 bun run data:fetch            # met à jour le cache brut si besoin
 bun run data:build            # data/lol.sqlite
-vercel build --prod
+vercel build --prod           # sans DATA_GITHUB_TOKEN, data:pull garde la base locale
 vercel deploy --prebuilt --prod
 ```
 
-Le job planifié (ajout des nouvelles parties, reconstruction mensuelle) et la
-publication d'un fichier versionné restent à faire.
+## Données in-game (JSON Riot, R2)
+
+Les stats in-game viennent des JSON Riot que Leaguepedia héberge (pages
+`V4 data:…`/`V5 data:…` et leur `/Timeline`, listées par la table Cargo
+`PostgameJsonMetadata`) : environ 28 300 parties du périmètre, **aucune en
+LPL**. L'ingestion calcule les stats agrégées (golds, CS et XP à 10/15/20 min
+et écarts avec l'adversaire direct, kills avant 10 min, solo kills, first
+blood, multi-kills, wards, plaques, premiers objectifs) et les met en SQL. Le
+JSON brut de chaque partie (stats + timeline minute par minute) reste hors
+SQL : un objet gzip par partie, `games/<RiotPlatformGameId>.json.gz`, dans le
+cache local `data/raw/riot` et dans un bucket R2.
+
+Volumes : 28 342 objets, de 15 à 120 Ko chacun (1,2 Go au total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
+lectures par mois).
+
+### Premier rattrapage (local, une fois)
+
+```bash
+LEAGUEPEDIA_DELAY_MS=2000 nohup caffeinate -i bun run data:fetch > data/catchup.log 2>&1 &
+```
+
+Environ 8 h (7 h 55 le 13/11/2026 : 14 150 requêtes, 2 parties par requête,
+une requête toutes les 2 s, aucune page manquante). Reprenable :
+relancer la même commande reprend là où le processus s'est arrêté. Ensuite
+`bun run data:build`, puis, une fois R2 configuré, `bun run data:sync` pour
+envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
+
+### Configurer R2 (à faire par Enzo)
+
+1. Cloudflare → **R2 Object Storage** → activer R2 (offre gratuite ; Cloudflare
+   demande un moyen de paiement, rien n'est facturé sous les quotas gratuits).
+2. **Create bucket** : nom `lolesport-games`, emplacement automatique (ou
+   juridiction EU, voir `R2_ENDPOINT`), classe Standard. Laisser l'accès
+   public désactivé.
+3. **Manage R2 API Tokens** → **Create API token** : permission
+   **Object Read & Write**, limitée au bucket `lolesport-games`, sans
+   expiration ou un an au plus. Noter l'*Access Key ID* et le *Secret Access
+   Key* (affiché une seule fois) et l'*Account ID*.
+4. En local, dans `.env` (jamais commité) : `R2_ACCOUNT_ID`, `R2_BUCKET`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (et `R2_ENDPOINT` seulement pour
+   la juridiction EU). Vérifier avec `bun run data:sync --dry-run`, puis
+   lancer `bun run data:sync`.
+5. GitHub → dépôt → **Settings** → **Secrets and variables** → **Actions** :
+   les quatre mêmes secrets (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`). Sans eux le workflow marche, mais n'envoie pas les
+   nouvelles parties sur R2.
+6. Vercel : rien pour l'instant, l'app ne lit pas encore le détail par partie.
+   Le jour où une route le lira, ajouter les mêmes variables (Production,
+   Sensitive), de préférence avec un token **Object Read only**.
+
+### Première release v4
+
+Le workflow restaure les résumés in-game de la release précédente ; une
+release v3 n'en a pas. Deux façons d'amorcer :
+
+- R2 configuré et `bun run data:sync` fait : le premier workflow v4 lit chaque
+  partie sur R2 au lieu du wiki (environ 30 min pour 28 000 lectures) ;
+- sans R2 : le workflow télécharge depuis le wiki 90 min par exécution
+  (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
+  chaque release intermédiaire est utilisable, avec une couverture partielle.
 
 ## Réglages du projet Vercel
 
-- Framework : Next.js. Commande d'installation : `bun install`. Version de
-  Node : 24.x.
-- Variables d'environnement, en Production uniquement :
-  - `OPENROUTER_API_KEY` : la clé dédiée (voir plus bas). Sans elle, l'agent
-    reste en mode déterministe.
+- Framework : Next.js. Commande d'installation : `bun install`. Commande de
+  build : celle par défaut (`bun run build`, qui lance `data:pull`) ; ne pas
+  la remplacer par `next build`. Version de Node : 24.x.
+- Variables d'environnement :
+  - `DATA_GITHUB_TOKEN` (Production **et** Preview, type Sensitive) : le
+    token en lecture seule décrit plus bas. Sans lui, le build échoue.
+  - `DATA_RELEASE` : facultatif, épingle une release (retour arrière).
+  - `OPENROUTER_API_KEY` (Production) : la clé dédiée (voir plus bas). Sans
+    elle, l'agent reste en mode déterministe.
   - `OPENROUTER_MODEL` : facultatif.
 
 ## À faire à la main
+
+### 0. Base de données : token, variable Vercel, première release
+
+1. **Token GitHub** : [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+   (*Fine-grained token*) :
+   - nom `lolesport-vercel-data`, propriétaire `AzaWoodyy` ;
+   - expiration : un an au plus, noter la date de renouvellement ;
+   - **Repository access** → *Only select repositories* →
+     `AzaWoodyy/lol-esports-agent`, et rien d'autre ;
+   - **Permissions** → *Repository permissions* → **Contents : Read-only**
+     (*Metadata : Read-only* s'ajoute tout seul). Aucune autre permission.
+2. **Vercel** : projet → **Settings** → **Environment Variables** → ajouter
+   `DATA_GITHUB_TOKEN` avec ce token, environnements *Production* et
+   *Preview*, case *Sensitive* cochée. Ne le mettre ni dans le dépôt, ni dans
+   `.env` commité, ni dans un ticket.
+3. **Première release** : une fois le workflow sur `main`, **Actions** →
+   **Data release** → **Run workflow** sur `main`. Vérifier la release
+   `data-YYYYMMDD` et son `manifest.json`. Le workflow utilise le
+   `GITHUB_TOKEN` fourni par Actions (permission `contents: write` déclarée
+   dans le fichier), aucun secret à créer.
+4. **Vérifier** : redéployer depuis Git. Le log de build doit afficher
+   `data:pull: installed … from data-YYYYMMDD`.
+
+Pour tester `data:pull` en local : `DATA_GITHUB_TOKEN=$(gh auth token) bun run data:pull --force`
+(le token reste dans la commande, pas dans un fichier).
 
 ### 1. Règle de rate limit du firewall Vercel
 

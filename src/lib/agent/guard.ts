@@ -23,6 +23,9 @@ export const VIEWS = [
   "v_game_players",
   "v_draft",
   "v_player_items",
+  "v_game_player_stats",
+  "v_game_team_stats",
+  "v_ingame_coverage",
 ] as const;
 
 /** What typed tools may read: the views plus small lookup tables (champion icons...). */

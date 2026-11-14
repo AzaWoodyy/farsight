@@ -1,11 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { readSchema } from "../db";
+import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS } from "./guard";
 import { getLlm, LLM_CALL } from "./llm";
 import { aiTools, type BoundTool, bindTool, normalizeToolCall, type ToolCall } from "./tools";
+import { detectMetric, type MetricCue } from "./metrics";
 import type { Entities, QueryPlan } from "./types";
 
 // Rules router ----------------------------------------------------------------------
@@ -39,10 +40,10 @@ const LOL_DOMAIN = word(
  * views switches the detection off by itself.
  */
 const DATA_CONCEPTS = [
-  { label: "les pentakills et autres multi-kills", pattern: word("penta ?kills?|quadra ?kills?|triple ?kills?|multi ?kills?"), view: "v_game_players", column: "pentakills" },
-  { label: "les solo kills", pattern: word("solo ?kills?"), view: "v_game_players", column: "solo_kills" },
-  { label: "le first blood", pattern: word("first ?blood|premier sang"), view: "v_game_players", column: "first_blood" },
-  { label: "les wards posées ou détruites", pattern: word("wards?"), view: "v_game_players", column: "wards_placed" },
+  { label: "les pentakills et autres multi-kills", pattern: word("penta ?kills?|quadra ?kills?|triple ?kills?|multi ?kills?"), view: "v_game_player_stats", column: "penta_kills" },
+  { label: "les solo kills", pattern: word("solo ?kills?"), view: "v_game_player_stats", column: "solo_kills" },
+  { label: "le first blood", pattern: word("first ?blood|premier sang"), view: "v_game_player_stats", column: "first_blood_kill" },
+  { label: "les wards posées ou détruites", pattern: word("wards?"), view: "v_game_player_stats", column: "wards_placed" },
   {
     label: "les objectifs par partie (dragons, barons, hérauts, tourelles, inhibiteurs)",
     pattern: word("dragons?|drakes?|barons?|nashor|h[ée]rauts?|heralds?|towers?|tourelles?|inhibiteurs?|inhibitors?|grubs?|larves?|atakhans?"),
@@ -58,10 +59,164 @@ export function missingConcepts(question: string, schema: Record<string, string[
   return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [c.label] : []));
 }
 
+/** Games of a scope and how many have in-game (Riot) data. */
+export type Coverage = { games: number; ingame: number };
+
+/** Coverage lookups for the router, read from v_ingame_coverage and v_games. */
+export type CoverageLookup = {
+  league: (league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+  player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+};
+
+const CoverageRow = z.object({ games: z.number().nullable(), ingame: z.number().nullable() });
+
+const period = (col: string, yearFrom: number | null, yearTo: number | null, params: (string | number)[]) => {
+  let sql = "";
+
+  if (yearFrom != null) {
+    sql += ` AND ${col} >= ?`;
+    params.push(yearFrom);
+  }
+
+  if (yearTo != null) {
+    sql += ` AND ${col} <= ?`;
+    params.push(yearTo);
+  }
+
+  return sql;
+};
+
+/** Coverage read from the database (league and period, or one player's games). */
+export function coverageLookup(db: DatabaseSync): CoverageLookup {
+  const read = (sql: string, params: (string | number)[]): Coverage => {
+    const row = selectOne(db, CoverageRow, sql, params);
+
+    return { games: row?.games ?? 0, ingame: row?.ingame ?? 0 };
+  };
+
+  return {
+    league: (league, yearFrom, yearTo) => {
+      const params: (string | number)[] = [];
+      const where = league ? (params.push(league), "league = ?") : "1";
+
+      return read(`SELECT SUM(games) AS games, SUM(ingame_games) AS ingame FROM v_ingame_coverage WHERE ${where}${period("year", yearFrom, yearTo, params)}`, params);
+    },
+    player: (player, league, yearFrom, yearTo) => {
+      const params: (string | number)[] = [player];
+      const where = league ? (params.push(league), " AND p.league = ?") : "";
+
+      return read(
+        `SELECT COUNT(*) AS games, SUM(g.has_ingame) AS ingame FROM v_game_players p JOIN v_games g ON g.game_id = p.game_id
+         WHERE p.player = ?${where}${period("p.year", yearFrom, yearTo, params)}`,
+        params,
+      );
+    },
+  };
+}
+
+const RANKING = word(
+  "le plus|la plus|les plus|le moins|most|meilleure?s?|best|top ?\\d+|classement|leaderboard|record|quels? joueurs?|quelles? [ée]quipes?|which (?:players?|teams?)|qui (?:a|fait|prend|prennent)",
+);
+
+const TEAM_WORDS = word("[ée]quipes?|teams?");
+
+const ROLE_CUES = [
+  { role: "Support", pattern: word("supports?") },
+  { role: "Mid", pattern: word("mid ?laners?|mids") },
+  { role: "Jungle", pattern: word("junglers?|jungles") },
+  { role: "Bot", pattern: word("adcs?|bot ?laners?|ad carr(?:y|ies)") },
+  { role: "Top", pattern: word("top ?laners?|toplaners?") },
+] as const;
+
+/** Leagues of the scope (short names), period words aside: "la LPL", "le MSI 2024". */
+function scopeOf(e: Entities): string {
+  const short = e.leagueShort;
+
+  if (!short) return "cette compétition";
+
+  if (short === "Worlds" || short.endsWith("Masters")) return `les ${short}`;
+
+  return short === "MSI" ? "le MSI" : `la ${short}`;
+}
+
+/**
+ * In-game questions (Riot data): the typed in-game tools, or "missing" when
+ * the scope has no in-game data at all (the LPL, older seasons, some events).
+ */
+function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: CoverageLookup): Route | null {
+  const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
+  const league = e.league;
+  const what = `les statistiques in-game (${cue.mention})`;
+
+  if (league && coverage.league(league, e.yearFrom, e.yearTo).ingame === 0)
+    return {
+      kind: "missing",
+      concepts: [`${what} pour ${scopeOf(e)}`],
+      reason: `aucune partie de ${e.leagueShort ?? league} ${e.yearFrom ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
+      coverage: true,
+    };
+
+  if (e.players.length === 1 && e.teams.length === 0 && !e.champion) {
+    const p = e.players[0].player;
+
+    if (!cue.player) return { kind: "sql", reason: `métrique d'équipe (« ${cue.mention} ») demandée pour un joueur` };
+
+    if (coverage.player(p, league, e.yearFrom, e.yearTo).ingame === 0)
+      return {
+        kind: "missing",
+        concepts: [`${what} de ${p}${league ? ` en ${e.leagueShort}` : ""}`],
+        reason: `aucune partie de ${p} avec données Riot dans ce périmètre`,
+        coverage: true,
+      };
+
+    return {
+      kind: "tool",
+      call: { tool: "player_ingame_stats", input: { player: p, league, ...period, metric: cue.player, minute: cue.minute } },
+      confidence: 0.9,
+      reason: `statistique in-game d'un joueur (« ${cue.mention} »)`,
+      notes: [],
+    };
+  }
+
+  if (e.teams.length === 1 && e.players.length === 0 && !e.champion) {
+    if (!cue.team) return { kind: "sql", reason: `métrique individuelle (« ${cue.mention} ») demandée pour une équipe` };
+
+    return {
+      kind: "tool",
+      call: { tool: "team_ingame_stats", input: { team: e.teams[0].team, league, ...period, minute: cue.minute } },
+      confidence: 0.85,
+      reason: `profil in-game d'une équipe (« ${cue.mention} »)`,
+      notes: [],
+    };
+  }
+
+  if (e.players.length + e.teams.length === 0 && !e.champion && RANKING.test(question)) {
+    const asksTeams = TEAM_WORDS.test(question);
+
+    // A team ranking on a metric only players have (or the reverse): text-to-SQL.
+    if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: `classement sur « ${cue.mention} » sans outil typé` };
+    const team = asksTeams || cue.player == null;
+    const metric = team ? cue.team : cue.player;
+
+    if (!metric) return null;
+    const role = team ? null : (ROLE_CUES.find((r) => r.pattern.test(question))?.role ?? null);
+
+    return {
+      kind: "tool",
+      call: { tool: "ingame_leaderboard", input: { subject: team ? "team" : "player", metric, minute: cue.minute, league, ...period, role, minGames: null } },
+      confidence: 0.85,
+      reason: `classement sur une statistique in-game (« ${cue.mention} »)`,
+      notes: league ? [] : ["Aucune compétition précisée : classement sur toutes les compétitions avec données in-game."],
+    };
+  }
+
+  return { kind: "sql", reason: `statistique in-game (« ${cue.mention} ») sans outil typé pour ces entités` };
+}
+
 export type Route =
   | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[] }
-  /** The question needs data the database does not hold: answered without a query. */
-  | { kind: "missing"; concepts: string[]; reason: string }
+  /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
+  | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
   /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. */
   | { kind: "sql"; reason: string; open?: boolean }
   | { kind: "out_of_scope"; reason: string };
@@ -73,7 +228,7 @@ const WORLDS = "World Championship";
  * Returns a typed tool + input, "sql" when no tool covers the question,
  * "missing" when the data is not in the database, or "out_of_scope".
  */
-export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>): Route {
+export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
   if (e.outOfScope)
     return { kind: "out_of_scope", reason: `« ${e.outOfScope} » n'est pas dans le périmètre (Worlds, MSI, LCK, LPL, LEC, LCS, LFL…)` };
   const nEntities = e.players.length + e.teams.length + (e.champion ? 1 : 0);
@@ -84,6 +239,11 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
   const missing = missingConcepts(question, schema);
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
+
+  const cue = schema.v_game_player_stats ? detectMetric(question) : null;
+  const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
+
+  if (ingame) return ingame;
 
   if (UNSUPPORTED.test(question))
     return { kind: "sql", reason: `métrique ou classement non couvert par les outils typés (« ${UNSUPPORTED.exec(question)![0]} »)` };
@@ -190,10 +350,16 @@ export function schemaPrompt(db: DatabaseSync): string {
 
 const SQL_RULES =
   "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
+  "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
+  "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
+  "first_blood_kill/assist/victim, double to penta kills, wards, control_wards, plates) and v_game_team_stats (one row per team and game: first_* objectives as 0/1, " +
+  "team gold and gold difference at 10/15/20, kills_10/15/20, plates). v_ingame_coverage gives games and ingame_games per league and year: " +
+  "the LPL (Tencent LoL Pro League) has none. If the question needs in-game stats for a scope whose ingame_games is 0, set `missing`. " +
+  "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
   "Use only these views and columns (no other table). " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
   "Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under 200 rows. " +
-  "If the answer needs data that no listed column holds (for example pentakills, first blood, MVP awards, objectives per game), " +
+  "If the answer needs data that no listed column holds (for example MVP awards or summoner spells), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
   "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
 
@@ -274,7 +440,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       toolChoice: "auto",
       instructions:
         "Pick the one tool that answers the League of Legends esports question exactly, with its arguments. " +
-        "If no tool answers it exactly (other metrics such as kills, gold, durations, or open rankings), call no tool.",
+        "If no tool answers it exactly (other metrics such as end-of-game kills, durations, objective counts, or open rankings), call no tool.",
       prompt: `Question: ${question}\nResolved entities: ${entitySummary(entities)}`,
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
