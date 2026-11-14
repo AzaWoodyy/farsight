@@ -65,6 +65,57 @@ describe("one team and a roster word: its players by role, decided by the rules"
     expect(route.kind === "tool" && route.unread).toBeUndefined();
   });
 
+  const FPX = team("fpx", "FunPlus Phoenix");
+  const WORLDS = league("World Championship", "Worlds");
+
+  test.each([
+    ...["top", "toplaner", "toplane", "top lane", "top laner"].map((w) => [w, "Top"] as const),
+    ...["jg", "jgl", "jungle", "jungler"].map((w) => [w, "Jungle"] as const),
+    ...["mid", "midlaner", "midlane", "mid lane"].map((w) => [w, "Mid"] as const),
+    ...["adc", "bot", "botlaner", "botlane", "ad carry"].map((w) => [w, "Bot"] as const),
+    ...["support", "supp", "sup"].map((w) => [w, "Support"] as const),
+  ])("one team and a role word, in either order, with or without « de », a year or a competition (%s)", (w, role) => {
+    const cases: [string, Entities][] = [
+      [`${w} fpx 2019`, entities({ teams: [FPX], ...year(2019) })],
+      [`${w} de fpx 2019`, entities({ teams: [FPX], ...year(2019) })],
+      [`fpx ${w} 2019`, entities({ teams: [FPX], ...year(2019) })],
+      [`${w} fpx`, entities({ teams: [FPX] })],
+      [`fpx ${w}`, entities({ teams: [FPX] })],
+      [`${w} de fpx aux worlds 2019`, entities({ teams: [FPX], ...WORLDS, ...year(2019) })],
+      [`fpx ${w} worlds 2019`, entities({ teams: [FPX], ...WORLDS, ...year(2019) })],
+    ];
+
+    for (const [q, e] of cases) {
+      const route = routeQuestion(q, e, SCHEMA, COVERAGE);
+
+      expect({ q, route }).toMatchObject({
+        q,
+        route: { kind: "tool", call: { tool: "team_roster", input: { team: "FunPlus Phoenix", league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, role } } },
+      });
+      expect({ q, unread: route.kind === "tool" ? route.unread : null }).toEqual({ q, unread: undefined });
+    }
+  });
+
+  test("short role words stay rankings, teams and metrics where they were", () => {
+    const route = (q: string, e: Entities) => {
+      const r = routeQuestion(q, e, SCHEMA, COVERAGE);
+
+      return r.kind === "tool" ? r.call.tool : r.kind;
+    };
+
+    const TES = team("Top Esports", "Top Esports");
+
+    expect(route("top 5 de T1", entities({ teams: [T1_NOW] }))).not.toBe("team_roster");
+    expect(route("Top Esports 2019", entities({ teams: [TES], ...year(2019) }))).toBe("team_history");
+    expect(route("KDA du top de fpx 2019", entities({ teams: [FPX], ...year(2019) }))).not.toBe("team_roster");
+    expect(route("kills du jg de fpx", entities({ teams: [FPX] }))).not.toBe("team_roster");
+    expect(route("meilleur top de fpx", entities({ teams: [FPX] }))).not.toBe("team_roster");
+    expect(route("champion pool du top de fpx", entities({ teams: [FPX] }))).toBe("champion_pool");
+    expect(route("top 5 kda LCK 2024", entities({ ...league("LoL Champions Korea", "LCK"), ...year(2024) }))).toBe("player_leaderboard");
+    expect(route("comparaison des mid au worlds 2026", entities({ ...WORLDS, ...year(2026) }))).toBe("player_leaderboard");
+    expect(route("top de Top Esports 2019", entities({ teams: [TES], ...year(2019) }))).toBe("team_roster");
+  });
+
   test("the other rules are kept", () => {
     const route = (q: string, e: Entities) => {
       const r = routeQuestion(q, e, SCHEMA, COVERAGE);

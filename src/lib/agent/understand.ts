@@ -8,7 +8,7 @@ import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
-import { ROLE_WORDS } from "./roles";
+import { ROLE_WORDS, SHORT_ROLE_MENTION } from "./roles";
 import {
   type Ambiguity,
   type Entities,
@@ -543,6 +543,9 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
     if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
   }
+
+  // Next to a team, "top", "sup" or "jg" name its player at that role ("top fpx 2019"), not the handle Top or Sup.
+  if (found.teams.length) found.players = found.players.filter((m) => !SHORT_ROLE_MENTION.test(m));
 
   // Keep the order of the question (it decides sides in a head-to-head).
   const pos = (m: string) => question.indexOf(m);
