@@ -143,11 +143,37 @@ function linesQuery(where: string, joinTournaments: boolean): CargoQuery {
   };
 }
 
+/**
+ * The player rows and redirects behind scoreboard links. A link is what the
+ * scoreboard says, not always a player page: an older handle ("ZionSpartan"
+ * for Darshan) only exists as a `PlayerRedirects.AllName`, so links are
+ * resolved by name first, then the pages they lead to are fetched with the
+ * links themselves. `data:build` merges on these rows (scripts/data/identity.ts).
+ */
 async function fetchPlayers(links: string[], opts: CargoOptions) {
   const players: CargoRow[] = [];
   const redirects: CargoRow[] = [];
+  const resolved = new Set<string>();
 
-  for (const [i, batch] of chunks(links, 150).entries()) {
+  for (const batch of chunks(links, 150)) {
+    const rows = await cargoQuery(
+      {
+        tables: "PlayerRedirects",
+        fields: ["PlayerRedirects.AllName=AllName", "PlayerRedirects.OverviewPage=Page"],
+        where: cargoIn("PlayerRedirects.AllName", batch),
+      },
+      opts,
+    );
+
+    for (const r of rows) resolved.add(String(r.Page));
+  }
+
+  // Links first: their batches (and cached responses) stay the same when a page is added.
+  const known = new Set(links);
+  const pages = [...links, ...[...resolved].filter((p) => !known.has(p))];
+  console.log(`  players: ${links.length} links, ${pages.length - links.length} more pages found by name (${progress()})`);
+
+  for (const [i, batch] of chunks(pages, 150).entries()) {
     players.push(
       ...(await cargoQuery(
         {
@@ -173,7 +199,7 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
       )),
     );
 
-    if (i % 10 === 9) console.log(`  players ${(i + 1) * 150}/${links.length} (${progress()})`);
+    if (i % 10 === 9) console.log(`  players ${(i + 1) * 150}/${pages.length} (${progress()})`);
   }
 
   return { players, redirects };
@@ -399,14 +425,24 @@ async function incrementalFetch() {
 
   console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines`);
 
+  // Links to look up: spellings never seen before, and older links that no
+  // player page or redirect name covers (fetched before links were resolved by name).
   const known = new Set(previous.players.map((p) => String(p.Page)));
   const lineLinks = new Set(previous.lines.map(linkOf));
 
-  const newLinks = [...new Set(lines.flatMap((line) => {
-    const l = linkOf(line);
+  const covered = new Set([
+    ...previous.players.map((p) => String(p.Page).toLowerCase()),
+    ...previous.redirects.map((r) => String(r.AllName).toLowerCase()),
+  ]);
 
-    return l && !known.has(l) && !lineLinks.has(l) ? [l] : [];
-  }))];
+  const newLinks = [...new Set([
+    ...lines.flatMap((line) => {
+      const l = linkOf(line);
+
+      return l && !known.has(l) && !lineLinks.has(l) ? [l] : [];
+    }),
+    ...[...lineLinks].filter((l) => l && !covered.has(l.toLowerCase())),
+  ])];
 
   const { players, redirects } = await fetchPlayers(newLinks, fresh);
   console.log(`new players: ${newLinks.length} (${players.length} with a Players row)`);
