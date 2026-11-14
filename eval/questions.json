@@ -3571,6 +3571,671 @@
           "top": "Taliyah"
         }
       }
+    },
+    {
+      "id": "role-fpx-2019-top",
+      "question": "top fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Top de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-toplaner",
+      "question": "toplaner fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Top de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-toplane",
+      "question": "toplane de fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Top de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-fpx-top",
+      "question": "fpx top 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Top de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-top-worlds",
+      "question": "top de fpx aux worlds 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": "World Championship",
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Top"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Top de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-jg",
+      "question": "jg fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Jungle"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Jungle de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-jungle",
+      "question": "jungle de fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Jungle"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Jungle de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-fpx-jungler",
+      "question": "fpx jungler 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Jungle"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Jungle de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-mid",
+      "question": "mid fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Mid"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Mid de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-midlaner",
+      "question": "midlaner de fpx en 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Mid"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Mid de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-fpx-midlane",
+      "question": "fpx midlane 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Mid"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Mid de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-adc",
+      "question": "adc fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "ADC de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-bot",
+      "question": "bot de fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "ADC de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-botlaner",
+      "question": "botlaner fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "ADC de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-ad-carry",
+      "question": "ad carry de FunPlus Phoenix 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "ADC de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-fpx-adc-worlds",
+      "question": "fpx adc worlds 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": "World Championship",
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Bot"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "ADC de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-support",
+      "question": "support fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Support"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Support de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-supp",
+      "question": "supp de fpx 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Support"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Support de FunPlus Phoenix "
+        ]
+      }
+    },
+    {
+      "id": "role-fpx-2019-fpx-sup",
+      "question": "fpx sup 2019",
+      "tags": [
+        "variant",
+        "role",
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "FunPlus Phoenix"
+        ],
+        "players": [],
+        "input": {
+          "team": "FunPlus Phoenix",
+          "league": null,
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "role": "Support"
+        },
+        "unread": [],
+        "totals": {
+          "top": "GimGoon",
+          "jungle": "Tian",
+          "mid": "Doinb",
+          "bot": "Lwx",
+          "support": "Crisp"
+        },
+        "summaryIncludes": [
+          "Support de FunPlus Phoenix "
+        ]
+      }
     }
   ]
 }

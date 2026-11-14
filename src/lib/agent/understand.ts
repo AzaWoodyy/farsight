@@ -8,7 +8,7 @@ import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
-import { ROLE_WORDS } from "./roles";
+import { ROLE_WORDS, SHORT_ROLE_MENTION } from "./roles";
 import {
   type Ambiguity,
   type Entities,
@@ -544,6 +544,9 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
     if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
   }
 
+  // Next to a team, "top", "sup" or "jg" name its player at that role ("top fpx 2019"), not the handle Top or Sup.
+  if (found.teams.length) found.players = found.players.filter((m) => !SHORT_ROLE_MENTION.test(m));
+
   // Keep the order of the question (it decides sides in a head-to-head).
   const pos = (m: string) => question.indexOf(m);
   found.players.sort((a, b) => pos(a) - pos(b));
@@ -740,8 +743,9 @@ export function maskUnderstood(question: string, e: Entities) {
 
   const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
 
-  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa".
-  for (const m of mentions) if (m) take(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+"), "iu"));
+  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa". Whole words only: "TL" is not the one in "botlaner".
+  for (const m of mentions)
+    if (m) take(new RegExp(`(?<![\\p{L}\\p{N}])${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+")}(?![\\p{L}\\p{N}])`, "iu"));
 
   if (e.yearFrom != null || e.yearTo != null) for (const p of [YEAR, ...RELATIVE_YEARS.map((r) => r.pattern)]) take(p);
 

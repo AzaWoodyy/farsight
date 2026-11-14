@@ -8,7 +8,7 @@ import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
 import { detectMetric, type MetricCue, MINUTE } from "./metrics";
-import { ROLE_CUES as ROLES, roleOf } from "./roles";
+import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
 
@@ -450,7 +450,7 @@ function teamsRoute(question: string, e: Entities): Route {
 /** One team's roster over the period or competition asked (every competition when none is named). */
 function rosterRoute(question: string, e: Entities): Route {
   const cue = ROSTER.exec(question)?.[0];
-  const role = roleOf(question);
+  const role = teamRoleOf(maskUnderstood(question, e).rest);
 
   return {
     kind: "tool",
@@ -531,10 +531,12 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   if (!e.champion && !detectMetric(question) && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
 
   // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
-  // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?"): the roster, that role first.
-  const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(question) && !detectMetric(question);
+  // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?", "top fpx 2019", "jg de G2"): the roster, that role first.
+  // Read without the entities and years: "top 2019" is the top of 2019, not a "top N" ranking, and "Top Esports" is a team.
+  const rest = maskUnderstood(question, e).rest;
+  const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !detectMetric(question);
 
-  if (oneTeam && (ROSTER.test(question) || (roleOf(question) && !RANKING.test(question) && !COMPARE.test(question) && !HISTORY_WORDS.test(question) && !UNSUPPORTED.test(question))))
+  if (oneTeam && (ROSTER.test(question) || (teamRoleOf(rest) && !RANKING.test(rest) && !COMPARE.test(question) && !HISTORY_WORDS.test(question) && !UNSUPPORTED.test(rest))))
     return rosterRoute(question, e);
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
@@ -665,7 +667,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   team_history: [HISTORY_WORDS],
   team_roster: [
     ROSTER,
-    ...ROLE_CUES.map((r) => r.pattern),
+    ...TEAM_ROLE_CUES.map((r) => word(r.words)),
     ...SPLIT_CUES.map((c) => c.pattern),
     word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
   ],
