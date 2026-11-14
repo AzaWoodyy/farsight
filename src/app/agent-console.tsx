@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
@@ -8,29 +7,14 @@ import { HomeExamples } from "./home-examples";
 
 // The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
 // itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
-// focuses the field or asks a question, whichever comes first.
-const loadAnswerView = () => import("./answer-view");
+// focuses the field or asks a question, whichever comes first. Kept in state rather than behind next/dynamic:
+// a Suspense boundary held each answer back about 300 ms after the stream had ended.
+type Modules = { chat: typeof import("./chat-engine"); views: typeof import("./answer-view") };
 
-const loadChat = () => import("./chat-engine");
+let loading: Promise<Modules> | null = null;
 
-const preload = () => {
-  void loadChat();
-  void loadAnswerView();
-};
-
-const ChatEngine = dynamic(() => loadChat().then((m) => m.ChatEngine));
-
-// On a slow connection the answer can arrive before its views: say so instead of an empty space.
-const AnswerView = dynamic(() => loadAnswerView().then((m) => m.AnswerView), {
-  loading: () => (
-    <p role="status" className="mt-6 flex items-center gap-2 text-sm">
-      <Spinner />
-      Je mets la réponse en forme…
-    </p>
-  ),
-});
-
-const Feedback = dynamic(() => loadAnswerView().then((m) => m.Feedback));
+const loadModules = () =>
+  (loading ??= Promise.all([import("./chat-engine"), import("./answer-view")]).then(([chat, views]) => ({ chat, views })));
 
 const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
@@ -68,8 +52,10 @@ export function AgentConsole() {
   const [first, setFirst] = useState<{ text: string; sessionId: string } | null>(null);
   const [{ messages, status, error }, setChatState] = useState<ChatState>(IDLE);
   const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
-  const loading = first != null && messages.length === 0 && !error;
-  const running = loading || status === "submitted" || status === "streaming";
+  const waiting = first != null && messages.length === 0 && !error;
+  const running = waiting || status === "submitted" || status === "streaming";
+  const [modules, setModules] = useState<Modules | null>(null);
+  const preload = useCallback(() => void loadModules().then(setModules), []);
 
   useEffect(() => {
     const idle = () => ("requestIdleCallback" in window ? requestIdleCallback(preload) : setTimeout(preload, 200));
@@ -78,7 +64,7 @@ export function AgentConsole() {
     else window.addEventListener("load", idle, { once: true });
 
     return () => window.removeEventListener("load", idle);
-  }, []);
+  }, [preload]);
 
   function ask(q: string) {
     const text = q.trim();
@@ -117,11 +103,11 @@ export function AgentConsole() {
     if (part.type === "data-trace") trace = part.data;
   }
 
-  const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : loading ? first.text : undefined;
+  const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : waiting ? first.text : undefined;
 
   return (
     <section>
-      {first && <ChatEngine controls={chat} onChange={onChatChange} first={first} />}
+      {first && modules && <modules.chat.ChatEngine controls={chat} onChange={onChatChange} first={first} />}
       {askedText ? (
         <h1 className="sr-only">{askedText}</h1>
       ) : (
@@ -223,8 +209,9 @@ export function AgentConsole() {
               <span aria-hidden>xx</span> {error.message}
             </p>
           )}
-          {answer && <AnswerView answer={answer} onAsk={ask} />}
-          {answer && trace && <Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
+          {/* The chat and the views load together: an answer always has its views. */}
+          {answer && modules && <modules.views.AnswerView answer={answer} onAsk={ask} />}
+          {answer && trace && modules && <modules.views.Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
         </div>
       )}
     </section>
