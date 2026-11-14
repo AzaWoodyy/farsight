@@ -5,6 +5,7 @@ import { normalizeAlias } from "../aliases";
 import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL } from "./llm";
+import { COMMON_WORDS } from "./common-words";
 import { ROLE_WORDS } from "./roles";
 import {
   type Ambiguity,
@@ -72,6 +73,13 @@ const STOPWORDS = new Set(
     "confrontation confrontations spring summer winter printemps hiver playoffs split finale finales " +
     "game games"
   ).split(/\s+/),
+);
+
+/** Words that make a question about LoL esports even without a known entity. */
+export const LOL_DOMAIN = new RegExp(
+  "(?<![\\p{L}\\p{N}])(?:lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|" +
+    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
+  "iu",
 );
 
 /**
@@ -413,6 +421,13 @@ export function resolveChampion(db: DatabaseSync, mention: string): ResolvedCham
 
 // Mentions ----------------------------------------------------------------------
 
+/** A handle that is an everyday word, or three Latin characters or fewer. */
+function isCommonHandle(mention: string): boolean {
+  const alias = normalizeAlias(mention);
+
+  return /^[a-z0-9]{1,3}$/.test(alias) || COMMON_WORDS.has(alias);
+}
+
 type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null };
 
 /**
@@ -472,6 +487,23 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         span.forEach((k) => used.add(k));
       }
     }
+  }
+
+  // A handle that is also an everyday word ("Paris", "Life") or very short
+  // ("Bin") names a player in a question about esport, or when the question
+  // says nothing else ("résultats de Knight"): not in "la météo à Paris".
+  if (found.players.some(isCommonHandle)) {
+    const esport =
+      found.teams.length > 0 ||
+      found.champion != null ||
+      found.players.some((m) => !isCommonHandle(m)) ||
+      detectLeague(question).league != null ||
+      maskTerms(question) !== question ||
+      LOL_DOMAIN.test(question);
+
+    const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t));
+
+    if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
   }
 
   // Keep the order of the question (it decides sides in a head-to-head).

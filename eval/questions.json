@@ -983,13 +983,104 @@
     },
     {
       "id": "out-of-scope-topic",
-      "question": "quel temps fait-il demain",
+      "question": "quelle est la météo à Paris",
       "tags": [
         "out_of_scope"
       ],
       "expect": {
         "route": "out_of_scope",
         "rows": 0
+      }
+    },
+    {
+      "id": "common-handle-meaning-of-life",
+      "question": "what is the meaning of life",
+      "tags": [
+        "out_of_scope",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0
+      }
+    },
+    {
+      "id": "common-handle-short",
+      "question": "quelle est la météo aujourd'hui",
+      "tags": [
+        "out_of_scope",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0
+      }
+    },
+    {
+      "id": "common-handle-league",
+      "question": "Paris aux Worlds",
+      "tags": [
+        "player",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Paris"
+        ],
+        "league": "World Championship",
+        "rows": 0
+      }
+    },
+    {
+      "id": "common-handle-player-word",
+      "question": "résultats du joueur Paris en EU Masters",
+      "tags": [
+        "player",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Paris"
+        ],
+        "league": "European Masters",
+        "rows": 5,
+        "totals": {
+          "wins": 9,
+          "losses": 15
+        }
+      }
+    },
+    {
+      "id": "common-handle-alone",
+      "question": "résultats de Knight",
+      "tags": [
+        "player",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Knight (Zhuo Ding)"
+        ],
+        "rows": 6
+      }
+    },
+    {
+      "id": "common-handle-three-letters",
+      "question": "Uzi aux Worlds",
+      "tags": [
+        "player",
+        "common_handle"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Uzi (Jian Zi-Hao)"
+        ],
+        "league": "World Championship",
+        "rows": 6
       }
     },
     {

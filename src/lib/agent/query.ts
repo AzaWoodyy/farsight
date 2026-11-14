@@ -7,9 +7,9 @@ import { allowedSchema, VIEWS } from "./guard";
 import { getLlm, LLM_CALL } from "./llm";
 import { aiTools, type BoundTool, bindTool, type GamePhase, normalizeToolCall, type ToolCall } from "./tools";
 import { detectMetric, type MetricCue, MINUTE } from "./metrics";
-import { ROLE_CUES as ROLES, ROLE_WORDS } from "./roles";
+import { ROLE_CUES as ROLES } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
-import { maskUnderstood, SPLIT_CUES } from "./understand";
+import { LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
 
 // Rules router ----------------------------------------------------------------------
 
@@ -27,12 +27,6 @@ const UNSUPPORTED = word(
     "dragons?|drakes?|barons?|heralds?|nashor|towers?|tourelles?|dur[ée]e|duration|plus longue?s?|plus courte?s?|" +
     "moyenne|average|first blood|premier sang|patch|items?|objets?|runes?|keystone|sorts?|build|" +
     "le plus de|most|quel joueur|quels joueurs|which players?|quelle [ée]quipe|which team|top \\d+",
-);
-
-/** Words that make a question about LoL esports even without a known entity. */
-const LOL_DOMAIN = word(
-  "lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|" +
-    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS}`,
 );
 
 /**
