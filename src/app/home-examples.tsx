@@ -39,7 +39,7 @@ function ExampleRow({ example, onAsk }: AskProps & { example: Example }) {
     <button
       type="button"
       onClick={() => onAsk(example.question)}
-      className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:min-h-10"
+      className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:pointer-fine:min-h-10"
     >
       <span aria-hidden className="text-accent">
         &gt;
@@ -78,18 +78,24 @@ function AllExamples({ onAsk }: AskProps) {
 
 const noSubscribe = () => () => {};
 
-// One random example per category, drawn once per page load: a refresh draws again.
+// The static page ships the first example of each category, readable while the scripts load. On hydration
+// they are replaced by one random example per category (a refresh draws again), unless the page took long
+// enough to hydrate that the visitor may already be reading them, or about to tap one.
+const FIRST = CATEGORIES.map(() => 0);
+
+const SWAP_BEFORE_MS = 1500;
+
 let loadPicks: number[] | null = null;
 
 const randomPicks = () =>
-  (loadPicks ??= CATEGORIES.map((c) => Math.floor(Math.random() * byCategory(c).length)));
+  (loadPicks ??=
+    performance.now() < SWAP_BEFORE_MS ? CATEGORIES.map((c) => Math.floor(Math.random() * byCategory(c).length)) : FIRST);
 
-// The static page cannot know the draw: it ships the rows hidden (same height, no layout shift).
-const noPicks = () => null;
+const staticPicks = () => FIRST;
 
 /** One example per category, drawn at random on each load and again on demand; the full list stays one click away. */
 export function HomeExamples({ onAsk }: AskProps) {
-  const loaded = useSyncExternalStore(noSubscribe, randomPicks, noPicks);
+  const loaded = useSyncExternalStore(noSubscribe, randomPicks, staticPicks);
   const [drawn, setDrawn] = useState<number[] | null>(null);
   const [draw, setDraw] = useState(0);
   const [all, setAll] = useState(false);
@@ -99,7 +105,7 @@ export function HomeExamples({ onAsk }: AskProps) {
     setDrawn(
       CATEGORIES.map((c, i) => {
         const n = byCategory(c).length;
-        const shown = picks?.[i] ?? 0;
+        const shown = picks[i];
 
         // Another example than the one shown, when the category has more than one.
         return n < 2 ? 0 : (shown + 1 + Math.floor(Math.random() * (n - 1))) % n;
@@ -114,15 +120,15 @@ export function HomeExamples({ onAsk }: AskProps) {
       <ul className="mt-2 grid gap-x-10 text-sm md:grid-cols-2">
         {CATEGORIES.map((c, i) => (
           <li
-            key={`${c}-${draw}-${picks ? "drawn" : "static"}`}
-            className={picks ? "ex-in pt-3" : "invisible pt-3"}
+            key={`${c}-${draw}`}
+            className={draw ? "ex-in pt-3" : "pt-3"}
             style={{ animationDelay: `${i * 40}ms` }}
           >
             <p className={HEADING}>
               <span aria-hidden>── </span>
               {c}
             </p>
-            <ExampleRow example={byCategory(c)[picks?.[i] ?? 0]} onAsk={onAsk} />
+            <ExampleRow example={byCategory(c)[picks[i]]} onAsk={onAsk} />
           </li>
         ))}
       </ul>
@@ -130,7 +136,7 @@ export function HomeExamples({ onAsk }: AskProps) {
         <button
           type="button"
           onClick={reshuffle}
-          className="press inline-flex min-h-11 items-center gap-2 border border-line px-3 hover:border-accent hover:text-accent sm:min-h-9"
+          className="press inline-flex min-h-11 items-center gap-2 border border-line px-3 hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
         >
           <span aria-hidden className="text-accent">
             ↻
@@ -141,7 +147,7 @@ export function HomeExamples({ onAsk }: AskProps) {
           type="button"
           aria-expanded={all}
           onClick={() => setAll((v) => !v)}
-          className="press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-muted hover:border-accent hover:text-accent sm:min-h-9"
+          className="press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-muted hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
         >
           {all ? "Masquer la liste" : `Tous les exemples (${EXAMPLES.length})`}
         </button>

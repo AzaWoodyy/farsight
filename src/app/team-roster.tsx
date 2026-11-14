@@ -70,10 +70,10 @@ export function TeamRoster({ r }: { r: View }) {
       </p>
 
       <h3 className="mt-6 text-xs uppercase tracking-widest text-muted">── tournois</h3>
-      <ul className="mt-2 space-y-1 text-xs">
+      <ul className="mt-2 space-y-1 text-xs leading-6">
         {r.tournaments.map((t) => (
           <li key={t.source.url} className="flex gap-3">
-            <a href={t.source.url} target="_blank" rel="noreferrer" title={t.source.label} className="underline decoration-line underline-offset-2 hover:text-accent">
+            <a href={t.source.url} target="_blank" rel="noreferrer" title={t.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
               {t.label}
             </a>
             <span className="text-muted tabular-nums">
@@ -94,7 +94,7 @@ function PlayerRow({ p, label }: { p: RosterPlayer; label: string }) {
         <span className={p.starter ? "text-accent" : "text-muted"} aria-hidden="true">
           {p.starter ? "● " : "○ "}
         </span>
-        <a href={p.source.url} target="_blank" rel="noreferrer" title={p.source.label} translate="no" className={`underline decoration-line underline-offset-2 hover:text-accent ${p.starter ? "font-semibold" : ""}`}>
+        <a href={p.source.url} target="_blank" rel="noreferrer" title={p.source.label} translate="no" className={`tap underline decoration-line underline-offset-2 hover:text-accent ${p.starter ? "font-semibold" : ""}`}>
           {p.player}
         </a>
         <span className="sr-only">{p.starter ? " (titulaire)" : " (remplaçant)"}</span>

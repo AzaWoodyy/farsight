@@ -69,7 +69,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
           type="button"
           onClick={() => setAsTable(!asTable)}
           aria-pressed={asTable}
-          className="border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
+          className="tap border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
         >
           {asTable ? "vue champions" : "vue tableau"}
         </button>
@@ -297,7 +297,7 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
         title={title}
         onClick={() => toggle(key)}
         aria-label={`trier par ${label}`}
-        className={`${className} whitespace-nowrap hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+        className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
       >
         {label}
         <span aria-hidden className="ml-0.5 inline-block w-2">
@@ -328,7 +328,7 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
             type="button"
             onClick={() => setAsTable(!asTable)}
             aria-pressed={asTable}
-            className="border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
+            className="tap border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]"
           >
             {asTable ? "vue champions" : "vue tableau"}
           </button>

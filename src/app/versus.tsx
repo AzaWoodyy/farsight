@@ -40,7 +40,7 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
               type="button"
               onClick={() => setTab(t.id)}
               aria-pressed={tab === t.id}
-              className={`border px-2 py-0.5 transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+              className={`tap border px-2 py-0.5 transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
                 tab === t.id ? "border-accent text-accent" : "border-dashed border-line text-muted"
               }`}
             >
@@ -85,7 +85,9 @@ function Games({ v }: { v: VersusView }) {
   return (
     <div className="mt-6">
       <h3 className="text-xs uppercase tracking-widest text-muted">── leurs parties face à face</h3>
-      <div className="mt-2 overflow-x-auto border border-line">
+      {/* relative: the sr-only "source" header is absolutely positioned; without a positioned scroller it is laid
+          out against the page and widens it (horizontal scroll on phones). */}
+      <div className="relative mt-2 overflow-x-auto border border-line">
         <table className="w-full min-w-[720px] border-collapse text-left text-xs">
           <thead className="border-b border-line text-[11px] text-muted">
             <tr>
@@ -121,7 +123,7 @@ function Games({ v }: { v: VersusView }) {
           type="button"
           onClick={() => setAll(!all)}
           aria-expanded={all}
-          className="mt-2 border border-dashed border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
+          className="tap mt-2 border border-dashed border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
         >
           {all ? `afficher les ${FIRST_GAMES} dernières` : `afficher les ${v.games.length} parties`}
         </button>
@@ -145,7 +147,7 @@ function GameRow({ g, v }: { g: VersusGame; v: VersusView }) {
       </td>
       <td className="px-3 py-1.5 whitespace-nowrap">{winner ? <span className="text-accent">{winner}</span> : <span className="text-muted">—</span>}</td>
       <td className="px-3 py-1.5">
-        <a href={g.source.url} target="_blank" rel="noreferrer" title={g.source.label} className="underline decoration-line underline-offset-2 hover:text-accent">
+        <a href={g.source.url} target="_blank" rel="noreferrer" title={g.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
           source
         </a>
       </td>

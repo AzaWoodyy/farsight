@@ -65,7 +65,7 @@ export function TeamHeadToHead({ v, byTournament }: { v: View; byTournament: Rea
           type="button"
           onClick={() => setAll(!all)}
           aria-expanded={all}
-          className="mt-2 border border-dashed border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          className="tap mt-2 border border-dashed border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
         >
           {all ? `afficher les ${FIRST_SERIES} dernières` : `afficher les ${v.series.length} séries`}
         </button>
@@ -109,7 +109,7 @@ function SeriesRow({ s }: { s: TeamSeries }) {
       </td>
       <td className="whitespace-nowrap px-3 py-1.5">{winner ? <span className="text-accent">{winner}</span> : <span className="text-muted">n/d</span>}</td>
       <td className="px-3 py-1.5">
-        <a href={s.source.url} target="_blank" rel="noreferrer" title={s.source.label} className="underline decoration-line underline-offset-2 hover:text-accent">
+        <a href={s.source.url} target="_blank" rel="noreferrer" title={s.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
           source
         </a>
       </td>
