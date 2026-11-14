@@ -425,18 +425,24 @@ async function incrementalFetch() {
 
   console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines`);
 
-  // Links no player page or redirect name covers yet: new players, and older
-  // links fetched before links were resolved by name.
+  // Links to look up: spellings never seen before, and older links that no
+  // player page or redirect name covers (fetched before links were resolved by name).
+  const known = new Set(previous.players.map((p) => String(p.Page)));
+  const lineLinks = new Set(previous.lines.map(linkOf));
+
   const covered = new Set([
     ...previous.players.map((p) => String(p.Page).toLowerCase()),
     ...previous.redirects.map((r) => String(r.AllName).toLowerCase()),
   ]);
 
-  const newLinks = [...new Set([...previous.lines, ...lines].flatMap((line) => {
-    const l = linkOf(line);
+  const newLinks = [...new Set([
+    ...lines.flatMap((line) => {
+      const l = linkOf(line);
 
-    return l && !covered.has(l.toLowerCase()) ? [l] : [];
-  }))];
+      return l && !known.has(l) && !lineLinks.has(l) ? [l] : [];
+    }),
+    ...[...lineLinks].filter((l) => l && !covered.has(l.toLowerCase())),
+  ])];
 
   const { players, redirects } = await fetchPlayers(newLinks, fresh);
   console.log(`new players: ${newLinks.length} (${players.length} with a Players row)`);
