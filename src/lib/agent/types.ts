@@ -171,6 +171,97 @@ export type TimelineView = {
   events: { s: number; kind: EventKind; side: Side; detail: string | null }[];
 };
 
+/**
+ * Who a compared player is in the question's scope, read from the database (not from the generated SQL):
+ * teams by games played, most played role first.
+ */
+export type PlayerProfile = {
+  player: string;
+  teams: string[];
+  role: string | null;
+};
+
+/** One player's line in a game of a two-player comparison. */
+export type VersusSide = {
+  team: string | null;
+  champion: string | null;
+  championIcon: string | null;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+};
+
+/** A game the two compared players played against each other. */
+export type VersusGame = {
+  playedAt: number | null;
+  /** "LEC 2024 · Summer Playoffs · game 2" */
+  label: string;
+  /** Player A won the game; null when the result is unknown. */
+  winA: boolean | null;
+  a: VersusSide;
+  b: VersusSide;
+  source: Source;
+};
+
+/** Two players set against each other (player_comparison tool). Tables use the comparison layout's column names. */
+export type VersusView = {
+  playerA: string;
+  playerB: string;
+  /** "en LEC", "aux Worlds", "" for every competition, with the period when the question has one. */
+  scope: string;
+  /** Statistics over every game of the scope. */
+  global: { columns: string[]; rows: TableCell[][] };
+  /** Statistics over their games against each other only; null when they never met in the scope. */
+  h2h: { columns: string[]; rows: TableCell[][] } | null;
+  /** Their games against each other, newest first. */
+  games: VersusGame[];
+};
+
+export type ScoreboardItem = { name: string; iconUrl: string };
+
+/** One player's line of the end-of-game scoreboard; null when Leaguepedia's scoreboard lacks the field. */
+export type ScoreboardPlayer = {
+  side: Side;
+  role: string | null;
+  player: string;
+  champion: string | null;
+  championIcon: string | null;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  gold: number | null;
+  cs: number | null;
+  damage: number | null;
+  vision: number | null;
+  keystone: string | null;
+  keystoneIcon: string | null;
+  /** Final inventory in Leaguepedia's slot order (trinket excluded when the source omits it). */
+  items: ScoreboardItem[];
+};
+
+export type ScoreboardTeam = {
+  name: string;
+  kills: number | null;
+  gold: number | null;
+  towers: number | null;
+  inhibitors: number | null;
+  dragons: number | null;
+  barons: number | null;
+  heralds: number | null;
+  grubs: number | null;
+};
+
+/** End-of-game recap of one game, from Leaguepedia's scoreboard tables (every league, LPL included). */
+export type GameScoreboard = {
+  label: string;
+  durationS: number | null;
+  patch: string | null;
+  winner: Side | null;
+  blue: ScoreboardTeam;
+  red: ScoreboardTeam;
+  players: ScoreboardPlayer[];
+};
+
 export type Answer = {
   title: string;
   summary: string;
@@ -180,6 +271,12 @@ export type Answer = {
   table: { columns: string[]; rows: TableCell[][] } | null;
   /** One game's gold curve and key events (game timeline tool). */
   timeline: TimelineView | null;
+  /** End-of-game scoreboard of the game a question is about (game timeline tool). */
+  scoreboard: GameScoreboard | null;
+  /** Two players set against each other: statistics, their games against each other (player_comparison tool). */
+  versus: VersusView | null;
+  /** Database profile of each player the question names, for comparison layouts. */
+  profiles: PlayerProfile[];
   sources: Source[];
   followUps: string[];
   notes: string[];

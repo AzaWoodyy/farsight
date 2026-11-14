@@ -18,6 +18,18 @@ const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p
 
 const VERSUS = word("vs\\.?|versus|contre|face [àa]|against|head[- ]to[- ]head|h2h|confrontations?|affrontements?");
 
+/**
+ * Words that set two sides against each other, in French and English (case-insensitive). With two
+ * players they all give the same answer, the comparison: their games against each other when there
+ * are some, their statistics in the scope, and the list of those games.
+ */
+export const OPPOSE = word(
+  "compar(?:er|ez|e|es|aisons?|ing|ed|ison|isons)|vs\\.?|versus|contre|against|face[- ][àa][- ]face|or|ou|" +
+    "who(?:'s| is) (?:the )?better|qui est (?:le |la )?meilleure?|meilleure?s?|better|best|mieux|diff[ée]rences?|differences?|" +
+    "head[- ]?(?:to|2)[- ]?head|h2h|confrontations?|affrontements?|duels?|rencontres?|l'un contre l'autre|against each other|" +
+    "(?:matchs?|games?|parties|s[ée]ries?) (?:entre|between)",
+);
+
 const STANDINGS = word(
   "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|who won|classements?|standings|podium|sacr[ée]s?|finale",
 );
@@ -268,7 +280,8 @@ function routeTimeline(question: string, e: Entities): Route | null {
 
 export type Route =
   /** `unread`: the words the rules did not understand, when they are enough to put the tool in doubt (confidence lowered to UNSURE). */
-  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[] }
+  /** `forced`: the cue is explicit enough that unread words do not put the tool in doubt (two players and an opposing word). */
+  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[]; forced?: boolean }
   /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
   | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
   /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. `unread`: as above, for an open route. */
@@ -276,6 +289,25 @@ export type Route =
   | { kind: "out_of_scope"; reason: string };
 
 const WORLDS = "World Championship";
+
+/**
+ * Two players: the comparison. Every way of setting them against each other ("compare", "vs", "h2h",
+ * "confrontations"…) gets the same answer; such a word settles it, so the LLM router is not asked again.
+ */
+function comparisonRoute(question: string, e: Entities): Route {
+  const [a, b] = e.players;
+  const notes = e.players.length > 2 ? [`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`] : [];
+  const cue = OPPOSE.exec(question)?.[0];
+
+  return {
+    kind: "tool",
+    call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: cue ? 0.95 : 0.9,
+    reason: cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
+    notes,
+    forced: cue != null,
+  };
+}
 
 /**
  * Deterministic intent routing on the resolved entities and a few cues.
@@ -299,6 +331,9 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
 
+  // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
+  if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
+
   const cue = detectMetric(question);
   const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
 
@@ -319,17 +354,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   const versus = VERSUS.test(question);
 
-  if (e.players.length >= 2) {
-    if (e.players.length > 2) notes.push(`Plusieurs joueurs reconnus : seuls ${e.players[0].player} et ${e.players[1].player} sont comparés.`);
-
-    return {
-      kind: "tool",
-      call: { tool: "head_to_head", input: { kind: "player", sideA: e.players[0].player, sideB: e.players[1].player, league: e.league, ...period } },
-      confidence: 0.9,
-      reason: "deux joueurs → confrontations",
-      notes,
-    };
-  }
+  if (e.players.length >= 2) return comparisonRoute(question, e);
 
   if (e.teams.length >= 2)
     return {
@@ -428,7 +453,8 @@ const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]rie
 const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
-  head_to_head: [VERSUS, HISTORY_WORDS, GAME_WORDS],
+  head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
+  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS],
   champion_event_stats: [
     word(
       "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +
@@ -514,6 +540,9 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
   const { words, share } = unreadWords(question, e, route.call);
 
   if (share < UNREAD_THRESHOLD) return route;
+
+  // Kept for the trace, without lowering the confidence: the rules' pick stands.
+  if (route.forced) return { ...route, unread: words, reason: `${route.reason} ; mots non lus ignorés : ${words.join(", ")}` };
 
   return {
     ...route,
@@ -623,7 +652,7 @@ const UNREAD_RULES =
   "A tool only filters on the arguments of its schema and only returns what its description says. " +
   "If a listed word is a misspelt name or a nickname of a player or a team, call the fitting tool with the correct name. " +
   "If the listed words ask for a filter or a result that no tool has (a stage such as the final, who plays a role or a roster, " +
-  "a comparison of two players' statistics, a ranking of champions or players, personal details...), call no tool: " +
+  "a ranking of champions or players, personal details...), call no tool: " +
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
 /** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */

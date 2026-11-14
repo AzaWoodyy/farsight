@@ -12,7 +12,11 @@ import {
   type StepPart,
   type TraceStatus,
 } from "@/lib/agent/types";
+import { detectComparison } from "@/lib/comparison";
+import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
+import { PlayerComparison } from "./player-comparison";
+import { Versus } from "./versus";
 
 const EXAMPLES = [
   "résultats de Chovy à tous les Worlds",
@@ -271,7 +275,12 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
         <span className="text-accent">#</span> {answer.title}
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
-      {answer.table && <GenericTable table={answer.table} />}
+      {answer.versus ? (
+        <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
+      ) : (
+        answer.table && <TableAnswer table={answer.table} profiles={answer.profiles} />
+      )}
+      {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
       {answer.timeline && <GameTimeline timeline={answer.timeline} />}
       <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
       {answer.notes.map((n) => (
@@ -471,6 +480,15 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
       </table>
     </div>
   );
+}
+
+/** A two-player comparison gets its own layouts; any other table stays the generic one. */
+function TableAnswer({ table, profiles }: { table: NonNullable<Answer["table"]>; profiles: Answer["profiles"] }) {
+  const comparison = useMemo(() => detectComparison(table, profiles), [table, profiles]);
+
+  if (!comparison) return <GenericTable table={table} />;
+
+  return <PlayerComparison comparison={comparison} />;
 }
 
 function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
