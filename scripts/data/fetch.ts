@@ -381,7 +381,7 @@ async function incrementalFetch() {
 
   // The tournament list is one request: always refresh it.
   const tournaments = await cargoQuery(tournamentsQuery, fresh);
-  const leagueByName = new Map(LEAGUES.map((l) => [l.name, l]));
+  const leagueByName = new Map<string, (typeof LEAGUES)[number]>(LEAGUES.map((l) => [l.name, l]));
   const recent: string[] = [];
   const eventPages = new Set<string>();
 

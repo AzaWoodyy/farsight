@@ -29,8 +29,9 @@ const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 export const Manifest = z.object({
   /** Version of this manifest's own shape. */
   format: z.literal(1),
-  tag: z.string().startsWith(TAG_PREFIX),
+  tag: z.string().regex(/^data-\d{8}(?:-\d+)?$/),
   schema_version: z.number().int().positive(),
+  derive_version: z.number().int().positive().optional(),
   created_at: z.string(),
   /** Commit whose ingestion code built the file. */
   commit: z.string(),
@@ -81,7 +82,22 @@ export type DbFacts = {
   journalMode: string;
   counts: Manifest["counts"];
   ddragonVersion: string | null;
+  deriveVersion: number | null;
+  staleDerive: number;
 };
+
+/** A release must contain summaries derived by one definition of the stats. */
+export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "staleDerive">, expected: number): string[] {
+  const problems: string[] = [];
+
+  if (facts.deriveVersion !== expected)
+    problems.push(`build derive_version is ${facts.deriveVersion}, expected ${expected}: rebuild with current ingestion code`);
+
+  if (facts.staleDerive > 0)
+    problems.push(`${facts.staleDerive} summaries use an older DERIVE_VERSION: rerun data:fetch to recompute them from the raw cache`);
+
+  return problems;
+}
 
 /** Reads the version, journal mode and headline counts of a database, read-only. */
 export function readFacts(path: string): DbFacts {
@@ -91,7 +107,12 @@ export function readFacts(path: string): DbFacts {
     const schemaVersion = selectOne(db, z.object({ user_version: z.number() }), "PRAGMA user_version")?.user_version ?? 0;
     const journalMode = selectOne(db, z.object({ journal_mode: z.string() }), "PRAGMA journal_mode")?.journal_mode ?? "";
     const details = selectOne(db, z.object({ details: z.string().nullable() }), "SELECT details FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1")?.details;
-    const ddragon = details ? z.object({ ddragon_version: z.string().optional() }).safeParse(JSON.parse(details)) : null;
+
+    const metadata = details ? z.object({
+      ddragon_version: z.string().optional(),
+      derive_version: z.number().optional(),
+      ingame: z.object({ stale_derive: z.number().optional() }).optional(),
+    }).safeParse(JSON.parse(details)) : null;
 
     return {
       schemaVersion,
@@ -104,7 +125,9 @@ export function readFacts(path: string): DbFacts {
         teams: count(db, "SELECT COUNT(*) AS n FROM teams"),
         ingame_games: schemaVersion >= 4 ? count(db, "SELECT COUNT(*) AS n FROM game_riot") : undefined,
       },
-      ddragonVersion: ddragon?.success ? (ddragon.data.ddragon_version ?? null) : null,
+      ddragonVersion: metadata?.success ? (metadata.data.ddragon_version ?? null) : null,
+      deriveVersion: metadata?.success ? (metadata.data.derive_version ?? null) : null,
+      staleDerive: metadata?.success ? (metadata.data.ingame?.stale_derive ?? 0) : 0,
     };
   } finally {
     db.close();
