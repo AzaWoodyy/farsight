@@ -17,7 +17,7 @@ export default function OpenGraphImage() {
   return new ImageResponse(
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 72, background, color: foreground }}>
       <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-        <Mark fg={foreground} accent={accent} size={88} />
+        <Mark fg={foreground} accent={accent} lane={muted} size={88} />
         <div style={{ fontSize: 64, letterSpacing: -1 }}>{SITE.name}</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>

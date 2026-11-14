@@ -23,14 +23,17 @@ import { PlayerComparison } from "./player-comparison";
 import { TeamHeadToHead } from "./team-h2h";
 import { Versus } from "./versus";
 
-/** Home examples: each one is answered by a typed tool, without the LLM (checked with `bun run ask`). */
+/**
+ * Home examples, one per answer layout, each answered by a typed tool without the LLM (checked with
+ * `bun run ask`). The label names the layout the question opens.
+ */
 const EXAMPLES = [
-  "Résultats de Chovy à tous les Worlds",
-  "Faker contre Chovy",
-  "Stats d'Azir aux Worlds 2025",
-  "Meilleurs mids aux Worlds 2026",
-  "Champions les plus bannis en LCK 2025",
-  "Récap de la game 5 de la finale des Worlds 2024",
+  { question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
+  { question: "Faker contre Chovy", display: "duel de joueurs" },
+  { question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
+  { question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
+  { question: "Meilleurs mids aux Worlds 2026", display: "tableau de joueurs" },
+  { question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
 ];
 
 /** What the visitor reads while a step runs: what the agent is doing, in plain words. */
@@ -174,7 +177,7 @@ export function AgentConsole() {
           e.preventDefault();
           ask(question);
         }}
-        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 focus-within:border-accent`}
+        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
       >
         <span aria-hidden className="text-accent">
           &gt;
@@ -190,7 +193,7 @@ export function AgentConsole() {
           placeholder="Faker contre Chovy"
           autoComplete="off"
           enterKeyHint="search"
-          className="min-h-11 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted sm:text-sm"
+          className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:text-sm"
         />
         <button
           type="submit"
@@ -204,18 +207,22 @@ export function AgentConsole() {
       {!asked && (
         <div className="mt-8">
           <h2 className="text-xs text-muted">── Essaie par exemple</h2>
-          <ul className="mt-2 grid text-sm sm:grid-cols-2 sm:gap-x-6">
-            {EXAMPLES.map((ex) => (
+          <ul className="mt-2 text-sm">
+            {EXAMPLES.map(({ question: ex, display }) => (
               <li key={ex}>
                 <button
                   type="button"
                   onClick={() => ask(ex)}
-                  className="press flex min-h-11 w-full items-center gap-2 border-b border-dashed border-line text-left text-muted hover:text-accent sm:min-h-10"
+                  className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:min-h-10"
                 >
                   <span aria-hidden className="text-accent">
                     &gt;
                   </span>
-                  {ex}
+                  <span className="min-w-0 flex-1 group-hover:text-accent">{ex}</span>
+                  <span className="w-full pl-4 text-xs text-muted sm:w-auto sm:pl-0">
+                    <span aria-hidden># </span>
+                    {display}
+                  </span>
                 </button>
               </li>
             ))}

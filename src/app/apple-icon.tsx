@@ -8,11 +8,11 @@ export const contentType = "image/png";
 
 /** Home-screen icon: the mark on the dark background (iOS rounds the corners itself). */
 export default function AppleIcon() {
-  const { background, foreground, accent } = PALETTE.dark;
+  const { background, foreground, muted, accent } = PALETTE.dark;
 
   return new ImageResponse(
     <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background }}>
-      <Mark fg={foreground} accent={accent} size={120} />
+      <Mark fg={foreground} accent={accent} lane={muted} size={120} />
     </div>,
     size,
   );

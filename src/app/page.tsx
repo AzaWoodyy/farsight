@@ -7,7 +7,7 @@ export default function Home() {
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
       <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
         <p className="inline-flex min-h-11 items-center gap-2.5">
-          <Mark />
+          <Mark size={32} />
           <span className="text-base font-semibold lowercase">{SITE.name}</span>
         </p>
         <span className="hidden text-xs text-muted sm:block">~/ {SITE.tagline.toLowerCase()}</span>

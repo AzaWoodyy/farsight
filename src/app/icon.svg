@@ -1,9 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
   <style>
-    .bg { fill: #fafaf9; } .fg { stroke: #1c1917; } .ac { fill: #b45309; }
-    @media (prefers-color-scheme: dark) { .bg { fill: #0c0a09; } .fg { stroke: #e7e5e4; } .ac { fill: #f59e0b; } }
+    .bg { fill: #fafaf9; } .fg { stroke: #1c1917; } .fgf { fill: #1c1917; } .ln { stroke: #78716c; } .ac { stroke: #b45309; } .acf { fill: #b45309; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0c0a09; } .fg { stroke: #e7e5e4; } .fgf { fill: #e7e5e4; } .ln { stroke: #a8a29e; } .ac { stroke: #f59e0b; } .acf { fill: #f59e0b; }
+    }
   </style>
   <rect class="bg" x="1" y="1" width="30" height="30" rx="5"/>
-  <path class="fg" d="M11.5 4.5H6.25v23h5.25M20.5 4.5h5.25v23H20.5" stroke-width="2.5"/>
-  <rect class="ac" x="12.5" y="17" width="7" height="7"/>
+  <path class="fg" d="M8.5 4.5H4.25v23H8.5M23.5 4.5h4.25v23H23.5" stroke-width="2.5"/>
+  <path class="ln" d="M10.5 21.5V10.5h11M10.5 21.5h11V10.5" stroke-width="1.75"/>
+  <path class="ac" d="M10.5 21.5 21.5 10.5" stroke-width="2"/>
+  <rect class="acf" x="8.5" y="19.5" width="4" height="4"/>
+  <rect class="fgf" x="19.5" y="8.5" width="4" height="4"/>
 </svg>
