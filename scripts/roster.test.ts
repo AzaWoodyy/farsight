@@ -83,6 +83,8 @@ describe("one team and a roster word: its players by role, decided by the rules"
     expect(route("historique de T1", entities({ teams: [T1] }))).toBe("team_history");
     expect(route("meilleur adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
     expect(route("KDA de l'adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
+    expect(route("assists du support de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
+    expect(route("deaths of the jungler of G2", entities({ teams: [G2] }))).not.toBe("team_roster");
   });
 });
 
@@ -181,6 +183,12 @@ describe("roster of a team on a seeded database", () => {
       expect(now.totals).toMatchObject({ season: 2015, bot: "Imp" });
       expect(now.facts.startsWith("ADC de Samsung White en 2015 : Imp (1 partie)")).toBe(true);
       expect(now.notes).toContain("Aucune période précisée : roster de la saison la plus récente de Samsung White (2015).");
+
+      // The latest season keeps the split asked: Spring was last played in 2014, not in 2015.
+      const lastSpring = bindTool(db, { tool: "team_roster", input: { team: "SSW", league: null, yearFrom: null, yearTo: null, split: "Spring", role: null } });
+      const spring14 = await lastSpring.format(db, db.prepare(lastSpring.sql).all(lastSpring.params));
+
+      expect(spring14.roster).toMatchObject({ games: 2, scope: "au split Spring en 2014" });
 
       // The router model may write an old name: the input carries the team's current one.
       expect(TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014, split: null, role: null })).toMatchObject({ input: { team: "Samsung White" } });

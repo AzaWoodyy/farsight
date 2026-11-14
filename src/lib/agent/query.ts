@@ -494,7 +494,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?"): the roster, that role first.
   const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(question) && !detectMetric(question);
 
-  if (oneTeam && (ROSTER.test(question) || (roleOf(question) && !RANKING.test(question) && !COMPARE.test(question) && !HISTORY_WORDS.test(question))))
+  if (oneTeam && (ROSTER.test(question) || (roleOf(question) && !RANKING.test(question) && !COMPARE.test(question) && !HISTORY_WORDS.test(question) && !UNSUPPORTED.test(question))))
     return rosterRoute(question, e);
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;

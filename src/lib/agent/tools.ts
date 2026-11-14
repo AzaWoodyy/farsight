@@ -723,8 +723,8 @@ function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): 
 }
 
 /**
- * Without a period, the roster is the current one: the team's latest season in the scope (in the database,
- * so a team that stopped playing gets its last season). A period or a split given by the question stays as is.
+ * Without a period, the roster is the current one: the team's latest season in the scope, competition and split
+ * included (in the database, so a team that stopped playing gets its last season). A period given by the question stays as is.
  */
 function rosterSeason(db: DatabaseSync, input: TeamRosterInput): TeamRosterInput & { latest: boolean } {
   if (input.yearFrom != null || input.yearTo != null) return { ...input, latest: false };
@@ -735,7 +735,8 @@ function rosterSeason(db: DatabaseSync, input: TeamRosterInput): TeamRosterInput
   const year = selectOne(
     db,
     z.object({ year: z.number().nullable() }),
-    `SELECT MAX(g.year) AS year FROM v_games g WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league}`,
+    `SELECT MAX(g.year) AS year FROM v_games g
+     WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league} ${splitFilter("g.tournament_page", input, params)}`,
     params,
   )?.year;
 
