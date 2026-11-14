@@ -19,25 +19,11 @@ import { detectComparison } from "@/lib/comparison";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
+import { HomeExamples } from "./home-examples";
 import { PlayerComparison } from "./player-comparison";
 import { TeamHeadToHead } from "./team-h2h";
 import { TeamRoster } from "./team-roster";
 import { Versus } from "./versus";
-
-/**
- * Home examples, one per answer layout, each answered by a typed tool without the LLM (checked with
- * `bun run ask`). The label names the layout the question opens.
- */
-const EXAMPLES = [
-  { question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
-  { question: "Faker contre Chovy", display: "duel de joueurs" },
-  { question: "KC contre MKOI", display: "confrontation d'équipes" },
-  { question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
-  { question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
-  { question: "Champion pool de Caps en LEC 2025", display: "champion pool" },
-  { question: "Meilleurs mids aux Worlds 2026", display: "tableau de joueurs" },
-  { question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
-];
 
 /** What the visitor reads while a step runs: what the agent is doing, in plain words. */
 const PROGRESS: Record<StepName, string> = {
@@ -209,27 +195,7 @@ export function AgentConsole() {
 
       {!asked && (
         <div className="mt-8">
-          <h2 className="text-xs text-muted">── Essaie par exemple</h2>
-          <ul className="mt-2 text-sm">
-            {EXAMPLES.map(({ question: ex, display }) => (
-              <li key={ex}>
-                <button
-                  type="button"
-                  onClick={() => ask(ex)}
-                  className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:min-h-10"
-                >
-                  <span aria-hidden className="text-accent">
-                    &gt;
-                  </span>
-                  <span className="min-w-0 flex-1 group-hover:text-accent">{ex}</span>
-                  <span className="w-full pl-4 text-xs text-muted sm:w-auto sm:pl-0">
-                    <span aria-hidden># </span>
-                    {display}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <HomeExamples onAsk={ask} />
           <p className="mt-6 max-w-[70ch] text-xs leading-relaxed text-muted">
             Résultats, compositions et stats de partie :{" "}
             <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://lol.fandom.com" target="_blank" rel="noreferrer">
