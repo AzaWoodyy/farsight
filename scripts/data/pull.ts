@@ -70,7 +70,7 @@ const headers = (accept: string) => ({
   Accept: accept,
   Authorization: `Bearer ${token}`,
   "X-GitHub-Api-Version": "2022-11-28",
-  "User-Agent": "lol-esports-agent-data-pull",
+  "User-Agent": "farsight-data-pull",
 });
 
 /** GitHub error body without anything from the request (no token in logs). */

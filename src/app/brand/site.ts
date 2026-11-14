@@ -1,9 +1,9 @@
 /** Name, tagline and base URL of the site, shared by the header, the metadata and the generated images. */
 export const SITE = {
-  name: "Minimap",
+  name: "Farsight",
   tagline: "L'esport League of Legends en une question",
   description:
-    "Pose une question sur l'esport League of Legends : Minimap cherche dans les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond avec un tableau et ses sources Leaguepedia.",
+    "Pose une question sur l'esport League of Legends : Farsight cherche dans les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond avec un tableau et ses sources Leaguepedia.",
   url: "https://lolesport.enzoneault.dev",
 } as const;
 

@@ -23,7 +23,7 @@ const API_URL = `${LEAGUEPEDIA_BASE}/api.php`;
 /** Says who we are and how we behave, as the wiki's bot policy asks. */
 export const USER_AGENT =
   process.env.LEAGUEPEDIA_USER_AGENT ||
-  "lol-esports-agent/0.4 (+https://lolesport.enzoneault.dev; portfolio research project; batch ingestion, one request at a time, at least 2 s apart)";
+  "farsight/0.4 (+https://lolesport.enzoneault.dev; portfolio research project; batch ingestion, one request at a time, at least 2 s apart)";
 
 const MIN_DELAY_MS = 2000;
 

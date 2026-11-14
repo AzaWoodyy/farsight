@@ -1,4 +1,4 @@
-# lol-esports-agent
+# Farsight
 
 Un agent de recherche sur l’esport League of Legends, disponible sur [lolesport.enzoneault.dev](https://lolesport.enzoneault.dev).
 
