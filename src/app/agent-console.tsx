@@ -20,6 +20,7 @@ import { ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { PlayerComparison } from "./player-comparison";
+import { TeamHeadToHead } from "./team-h2h";
 import { Versus } from "./versus";
 
 const EXAMPLES = [
@@ -283,6 +284,8 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       {answer.champion && <ChampionProfileView p={answer.champion} />}
       {answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
+      ) : answer.teams ? (
+        <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
       ) : (
         answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}

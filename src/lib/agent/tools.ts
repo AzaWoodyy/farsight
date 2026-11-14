@@ -21,6 +21,8 @@ import {
   type Side,
   type Source,
   type TableCell,
+  type TeamHeadToHead,
+  type TeamSeries,
   type TimelineView,
   type TraceStatus,
   type VersusGame,
@@ -226,6 +228,7 @@ export type ToolOutput = {
   timeline?: TimelineView;
   scoreboard?: GameScoreboard;
   versus?: VersusView;
+  teams?: TeamHeadToHead;
   champion?: ChampionProfile;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
@@ -660,10 +663,68 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
       totals: { events: raw.length, wins, losses, titles: titles.length },
     };
   },
-  normalize: (db, input) => (resolveTeam(db, input.team) ? input : null),
+  normalize: (db, input) => {
+    const t = resolveTeam(db, input.team);
+
+    return t ? { ...input, team: t.team } : null;
+  },
 };
 
 // 3. Head-to-head -------------------------------------------------------------------
+
+const SeriesRow = z.object({
+  tournament_page: Text,
+  tab: NullableText,
+  league_short: Text,
+  year: z.number().nullable(),
+  played_at: z.number().nullable(),
+  team_a: Text,
+  team_b: Text,
+  wins_a: z.number(),
+  wins_b: z.number(),
+});
+
+/** Series listed under a head-to-head; the record counts every series of the scope. */
+const MAX_SERIES = 100;
+
+/** Every series (one tab's match of one tournament page) the two teams played in the scope, newest first. */
+function teamSeries(db: DatabaseSync, input: HeadToHeadInput) {
+  const params: Params = {};
+  const A = inList("a", teamMembers(db, input.sideA).members, params);
+  const B = inList("b", teamMembers(db, input.sideB).members, params);
+  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+
+  const rows = selectAll(
+    db,
+    SeriesRow,
+    `SELECT g.tournament_page, g.tab, MIN(g.league_short) AS league_short, MIN(g.year) AS year, MIN(g.played_at) AS played_at,
+            MIN(CASE WHEN g.blue_team IN (${A}) THEN g.blue_team ELSE g.red_team END) AS team_a,
+            MIN(CASE WHEN g.blue_team IN (${A}) THEN g.red_team ELSE g.blue_team END) AS team_b,
+            SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END) AS wins_a,
+            SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END) AS wins_b
+     FROM v_games g
+     WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}) AND g.red_team IN (${A})))
+       AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
+     GROUP BY g.tournament_page, g.tab, g.match_n
+     ORDER BY MIN(g.played_at) DESC`,
+    params,
+  );
+
+  return {
+    count: rows.length,
+    seriesA: rows.filter((r) => r.wins_a > r.wins_b).length,
+    seriesB: rows.filter((r) => r.wins_b > r.wins_a).length,
+    series: rows.slice(0, MAX_SERIES).map((r): TeamSeries => ({
+      playedAt: r.played_at,
+      label: [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · "),
+      teamA: displayTeam(r.team_a),
+      teamB: displayTeam(r.team_b),
+      winsA: r.wins_a,
+      winsB: r.wins_b,
+      source: { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) },
+    })),
+  };
+}
 
 const headToHead: ToolDef<HeadToHeadInput> = {
   name: "head_to_head",
@@ -721,10 +782,17 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     const last = raw[raw.length - 1];
     const leader = winsA === winsB ? "à égalité" : `avantage ${winsA > winsB ? a.team : b.team}`;
 
+    const series = teamSeries(db, input);
+    const latest = series.series[0];
+    const seriesLeader = series.seriesA === series.seriesB ? "à égalité" : `avantage ${series.seriesA > series.seriesB ? a.team : b.team}`;
+
     const facts =
       `${[`${a.team} – ${b.team}`, inLeague(league)].filter(Boolean).join(" ")} : ` +
-      `${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois (${span(raw.map((r) => Number(r.year)))}), ${leader}. ` +
-      `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`;
+      `${series.count} séries (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} gagnées par ${a.team} et ${series.seriesB} par ${b.team} (${seriesLeader}) ; ` +
+      `${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois, ${leader}. ` +
+      (latest
+        ? `Dernière rencontre : ${latest.label}${latest.playedAt ? ` (${DAY_FR.format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`
+        : `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`);
 
     return {
       title: `${a.team} vs ${b.team}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
@@ -737,11 +805,28 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
         ...[...a.members, ...b.members].map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
       ],
+      teams: {
+        teamA: a.team,
+        teamB: b.team,
+        scope: scopeLabel(league, input),
+        seriesA: series.seriesA,
+        seriesB: series.seriesB,
+        gamesA: winsA,
+        gamesB: winsB,
+        seriesCount: series.count,
+        series: series.series,
+      },
       followUps: [`Historique de ${a.team}`, `Historique de ${b.team}`],
-      totals: { wins_a: winsA, wins_b: winsB, events: raw.length },
+      totals: { wins_a: winsA, wins_b: winsB, events: raw.length, series: series.count, series_a: series.seriesA, series_b: series.seriesB },
     };
   },
-  normalize: (db, input) => (resolveTeam(db, input.sideA) && resolveTeam(db, input.sideB) ? input : null),
+  // The model may write a franchise's old name ("MAD Lions KOI"): the input carries the franchise's current one.
+  normalize: (db, input) => {
+    const a = resolveTeam(db, input.sideA);
+    const b = resolveTeam(db, input.sideB);
+
+    return a && b ? { ...input, sideA: a.team, sideB: b.team } : null;
+  },
 };
 
 // 3b. Two players set against each other ----------------------------------------------
@@ -2212,7 +2297,11 @@ ORDER BY is_total, first_game`),
       totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? "n/d"])) },
     };
   },
-  normalize: (db, input) => (resolveTeam(db, input.team) ? input : null),
+  normalize: (db, input) => {
+    const t = resolveTeam(db, input.team);
+
+    return t ? { ...input, team: t.team } : null;
+  },
 };
 
 

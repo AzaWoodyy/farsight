@@ -406,6 +406,21 @@ function comparisonRoute(question: string, e: Entities): Route {
   };
 }
 
+/** Two teams: their series against each other. An opposing word settles it, so the LLM router is not asked again. */
+function teamsRoute(question: string, e: Entities): Route {
+  const [a, b] = e.teams;
+  const cue = OPPOSE.exec(question)?.[0];
+
+  return {
+    kind: "tool",
+    call: { tool: "head_to_head", input: { kind: "team", sideA: a.team, sideB: b.team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: 0.9,
+    reason: cue ? `deux équipes opposées (« ${cue} ») → confrontations` : "deux équipes → confrontations",
+    notes: e.teams.length > 2 ? [`Plusieurs équipes reconnues : seules ${a.team} et ${b.team} sont opposées.`] : [],
+    forced: cue != null,
+  };
+}
+
 /** A champion alone: its stats in the competition (the Worlds when the question names none). */
 function championRoute(e: Entities): Route {
   return {
@@ -441,6 +456,9 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
+
+  // Two teams set against each other ("h2h KC et MKOI", "G2 vs Fnatic"): their series, decided by the rules.
+  if (e.teams.length >= 2 && !e.players.length && OPPOSE.test(question)) return teamsRoute(question, e);
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
 
@@ -487,14 +505,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (e.players.length >= 2) return comparisonRoute(question, e);
 
-  if (e.teams.length >= 2)
-    return {
-      kind: "tool",
-      call: { tool: "head_to_head", input: { kind: "team", sideA: e.teams[0].team, sideB: e.teams[1].team, league: e.league, ...period } },
-      confidence: 0.9,
-      reason: "deux équipes → confrontations",
-      notes,
-    };
+  if (e.teams.length >= 2) return teamsRoute(question, e);
 
   if (e.players.length === 1 && e.teams.length === 1 && versus)
     return { kind: "sql", reason: "confrontation joueur contre équipe : pas d'outil typé" };
