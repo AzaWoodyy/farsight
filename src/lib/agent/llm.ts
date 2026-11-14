@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { APICallError, type LanguageModel, RetryError } from "ai";
 
@@ -53,6 +54,8 @@ export function llmStatus(): LlmStatus {
 
 /** The model to call, or null when there is no key or the key is out of credit. */
 export function getLlm(): Llm | null {
+  requestSignal.getStore()?.throwIfAborted();
+
   return llmStatus() === "ready" ? configured() : null;
 }
 
@@ -76,4 +79,15 @@ export function describeLlmError(error: Error): string {
   exhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS;
 
   return "quota OpenRouter épuisé, bascule en mode déterministe";
+}
+
+// Request-local cancellation reaches every cascade without global mutable state.
+const requestSignal = new AsyncLocalStorage<AbortSignal | undefined>();
+export const withLlmSignal = <T>(signal: AbortSignal | undefined, run: () => T): T => requestSignal.run(signal, run);
+
+export function llmSignal(timeoutMs?: number): AbortSignal | undefined {
+  const signal = requestSignal.getStore();
+  signal?.throwIfAborted();
+
+  return timeoutMs == null ? signal : signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
 }

@@ -26,6 +26,7 @@ if (flag("deterministic")) delete process.env.OPENROUTER_API_KEY;
 // Imported after the flag so the LLM client never sees an ignored key.
 const { runAgent } = await import("../src/lib/agent/run");
 const { getLlm } = await import("../src/lib/agent/llm");
+const { TOOLS } = await import("../src/lib/agent/tools");
 const { STEPS } = await import("../src/lib/agent/types");
 
 type Answer = import("../src/lib/agent/types").Answer;
@@ -38,7 +39,7 @@ const Scalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 type Scalar = z.infer<typeof Scalar>;
 
 const Expect = z.strictObject({
-  route: z.string(),
+  route: z.enum([...Object.keys(TOOLS), "sql", "out_of_scope", "missing_data", "none"]),
   players: z.array(z.string()).optional(),
   teams: z.array(z.string()).optional(),
   champion: z.string().optional(),
@@ -86,7 +87,8 @@ const file = resolve(import.meta.dirname, "../eval/questions.json");
 
 const questions = QuestionsFile.parse(JSON.parse(readFileSync(file, "utf8")));
 const now = new Date(questions.now);
-const cases = questions.questions.filter((c) => (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm));
+const excludedTags = args.find((a) => a.startsWith("--exclude-tags="))?.slice(15).split(",") ?? [];
+const cases = questions.questions.filter((c) => !c.tags.some((t) => excludedTags.includes(t)) && (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm));
 
 type Shown = Scalar | Scalar[] | undefined;
 

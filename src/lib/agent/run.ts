@@ -1,3 +1,7 @@
+import { executeGeneratedQuery, SqlTimeoutError } from "../db/generated-query";
+import { periodProblem } from "../domain/years";
+import { leagueMembers, SCOPE_LABEL } from "../domain/leagues";
+import { claimsBeyondFacts } from "./summary";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText } from "ai";
 import { z } from "zod";
@@ -5,7 +9,7 @@ import { openDb, readSchema, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
-import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE } from "./llm";
+import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE, llmSignal, withLlmSignal } from "./llm";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
@@ -210,7 +214,7 @@ type Problem = CorrectInput["problem"];
 type Attempt = { rows: SqlRow[]; problem: null } | { rows: null; problem: Problem };
 
 /** One guarded run of a plan: its rows, or the problem the corrector has to fix. */
-function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan: QueryPlan, step: Step): Attempt {
+async function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan: QueryPlan, step: Step): Promise<Attempt> {
   // Generated SQL may only read the v_* views; typed tools also read small lookup tables.
   const guard = guardQuery(db, schema, plan.sql, { objects: plan.tool ? ALLOWED_OBJECTS : VIEWS });
 
@@ -232,7 +236,7 @@ function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan: Query
   const started = performance.now();
 
   try {
-    const rows = db.prepare(guard.sql).all(plan.params);
+    const rows = plan.tool ? db.prepare(guard.sql).all(plan.params) : await executeGeneratedQuery(guard.sql, plan.params, { signal: llmSignal() });
     const ms = Math.round(performance.now() - started);
 
     if (rows.length) {
@@ -249,7 +253,7 @@ function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan: Query
 
     step.add(entry({ status: "error", title: "Erreur SQLite", detail: message }));
 
-    return { rows: null, problem: { kind: "error", message } };
+    return { rows: null, problem: { kind: err instanceof SqlTimeoutError ? "timeout" : "error", message } };
   }
 }
 
@@ -259,18 +263,18 @@ async function execute(db: DatabaseSync, question: string, entities: Entities, f
   let plan = first;
 
   for (;;) {
-    const { rows, problem } = attempt(db, schema, plan, step);
+    const { rows, problem } = await attempt(db, schema, plan, step);
 
     if (rows) {
       step.done(plan.attempt > 1 ? "fix" : "ok", `${rows.length} ligne(s)${plan.attempt > 1 ? `, après ${plan.attempt - 1} correction(s)` : ""}`);
 
-      return { rows, plan };
+      return { rows, plan, problem: null };
     }
 
-    if (plan.attempt >= MAX_ATTEMPTS) {
+    if (problem.kind === "timeout" || plan.attempt >= MAX_ATTEMPTS) {
       step.done("error", `Abandon après ${plan.attempt} tentatives`);
 
-      return { rows: [], plan };
+      return { rows: [], plan, problem };
     }
 
     const fix = await correctQuery({ db, question, entities, plan, problem });
@@ -279,7 +283,7 @@ async function execute(db: DatabaseSync, question: string, entities: Entities, f
       step.add(entry({ status: "error", title: "Aucune correction possible", detail: problem.message }));
       step.done(problem.kind === "empty" ? "warn" : "error", problem.kind === "empty" ? "Aucune ligne" : "Échec");
 
-      return { rows: [], plan };
+      return { rows: [], plan, problem };
     }
 
     if (fix.result.note) notes.push(fix.result.note);
@@ -300,25 +304,6 @@ const PageColumns = z
 
 /** `facts`: the tool's own sentence, built from the aggregates of the question's scope. */
 type SummaryInput = { question: string; facts: string };
-
-const NUMBER = /\d+(?:[.,]\d+)?/g;
-
-/** Period words that would narrow or move the scope ("cette saison" for a Worlds run). */
-const PERIOD_WORDS = ["saison", "season", "cette année", "this year", "actuellement", "en cours", "currently"];
-
-/**
- * What an LLM sentence states beyond the facts: numbers the facts do not
- * contain, and period words they do not use. The sentence must only reword.
- */
-function claimsBeyondFacts(text: string, facts: string): string[] {
-  const known = new Set(facts.match(NUMBER) ?? []);
-  const lower = text.toLowerCase();
-  const factsLower = facts.toLowerCase();
-  const numbers = (text.match(NUMBER) ?? []).filter((n) => !known.has(n));
-  const periods = PERIOD_WORDS.filter((w) => lower.includes(w) && !factsLower.includes(w));
-
-  return [...new Set([...numbers, ...periods])];
-}
 
 const templateSummary: Decider<SummaryInput, string> = {
   level: "rules",
@@ -346,13 +331,13 @@ const llmSummary: Decider<SummaryInput, string> = {
       telemetry: { functionId: "write-summary" },
       maxOutputTokens: 300,
       maxRetries: LLM_CALL.maxRetries,
-      abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
+      abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
     const sentence = text.trim();
 
     if (!sentence) return null;
-    const beyond = claimsBeyondFacts(sentence, facts);
+    const beyond = claimsBeyondFacts(sentence, facts, question);
 
     // Thrown so the trace shows why the template sentence was kept.
     if (beyond.length) throw new Error(`synthèse rejetée, absent des faits : ${beyond.join(", ")}`);
@@ -364,8 +349,7 @@ const llmSummary: Decider<SummaryInput, string> = {
 function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null): string {
   if (route.kind === "out_of_scope")
     return (
-      `Question hors périmètre : ${route.reason}. La base couvre les Worlds, le MSI, les ligues coréennes (LCK, OGN, LCK CL, CK, LCK AS), ` +
-      "la LPL, l'Europe (EU LCS, LEC, EU Masters, EMEA Masters), l'Amérique du Nord (NA LCS, LCS, LTA), la LFL, la LFL D2 et la SuperLiga 2nd Division."
+      `Question hors périmètre : ${route.reason.replace(/\.$/, "")}. La base couvre : ${SCOPE_LABEL}.`
     );
 
   if (!plan) {
@@ -417,6 +401,7 @@ async function format(
   emit: Emit,
   notes: string[],
   missing: string[],
+  problem: Problem | null,
 ): Promise<Answer> {
   const step = new Step("format", "Mise en forme…", emit);
   const amb = ambiguityNotes(question, entities);
@@ -454,6 +439,17 @@ async function format(
       notes,
       meta,
     };
+  }
+
+  if (problem && problem.kind !== "empty") {
+    const summary = problem.kind === "timeout"
+      ? "La requête a dépassé le délai de calcul et a été arrêtée. Précise une compétition ou une période plus courte."
+      : problem.kind === "guard" ? "La requête a été rejetée par le garde-fou. Aucun résultat ne peut être conclu."
+      : "La requête a échoué pendant son exécution. Aucun résultat ne peut être conclu.";
+
+    step.done("error", "Requête interrompue ou rejetée");
+
+    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, sources: [], followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -533,7 +529,11 @@ async function format(
  * Each step is one observation of the question's trace.
  * `now` dates the relative seasons of the question ("l'an dernier"); the eval passes a fixed date.
  */
-export async function runAgent(question: string, emit: Emit, now: Date = new Date()): Promise<Answer> {
+export function runAgent(question: string, emit: Emit, now: Date = new Date(), signal?: AbortSignal): Promise<Answer> {
+  return withLlmSignal(signal, () => run(question, emit, now));
+}
+
+async function run(question: string, emit: Emit, now: Date): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
   // The last state of each step, as streamed: what its observation reports.
@@ -544,45 +544,57 @@ export async function runAgent(question: string, emit: Emit, now: Date = new Dat
     emit(event);
   };
 
-  const entities = await traceStep(
-    "understand",
-    { question },
-    () => understand(db, question, traced, now),
-    (e) => understandReport(question, e, steps.get("understand")),
-  );
+  try {
+    const entities = await traceStep(
+      "understand",
+      { question },
+      () => understand(db, question, traced, now),
+      (e) => understandReport(question, e, steps.get("understand")),
+    );
 
-  const route = routeQuestion(question, entities, readSchema(db), coverageLookup(db));
-  const missing: string[] = [];
+    const periodError = periodProblem(entities.yearFrom, entities.yearTo, now);
+    const route: Route = periodError ? { kind: "out_of_scope", reason: periodError } : routeQuestion(question, entities, readSchema(db), coverageLookup(db));
+    const members = entities.league ? leagueMembers(entities.league, entities.yearFrom, entities.yearTo) : [];
 
-  const first = await traceStep(
-    "build",
-    { question },
-    () => build(db, question, entities, route, traced, notes, missing),
-    (plan) => buildReport(route, plan, steps.get("build")),
-  );
+    if (members.length > 1) notes.push(`La période couvre plusieurs noms de ligue : ${members.join(", ")}.`);
+    const missing: string[] = [];
 
-  const { rows, plan } = await traceStep(
-    "execute",
-    { sql: first?.sql ?? null, params: first?.params ?? {} },
-    async () => {
-      if (first) return execute(db, question, entities, first, traced, notes);
-      new Step("execute", "Exécution…", traced).done("warn", "Rien à exécuter");
+    const first = await traceStep(
+      "build",
+      { question },
+      () => build(db, question, entities, route, traced, notes, missing),
+      (plan) => buildReport(route, plan, steps.get("build")),
+    );
 
-      return { rows: [], plan: null };
-    },
-    (result) => executeReport(result.plan, result.rows.length, steps.get("execute")),
-  );
+    const { rows, plan, problem } = await traceStep(
+      "execute",
+      { sql: first?.sql ?? null, params: first?.params ?? {} },
+      async () => {
+        if (first) return execute(db, question, entities, first, traced, notes);
+        new Step("execute", "Exécution…", traced).done("warn", "Rien à exécuter");
 
-  const answer = await traceStep(
-    "format",
-    { route: plan?.intent ?? route.kind, rowCount: rows.length },
-    () => format(db, question, entities, route, plan, rows, traced, notes, missing),
-    (a) => formatReport(a, steps.get("format")),
-  );
+        return { rows: [], plan: null, problem: null };
+      },
+      (result) => executeReport(result.plan, result.rows.length, steps.get("execute")),
+    );
 
-  if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
-  recordOutcome(answer, entities, steps);
-  emit({ type: "answer", answer });
+    const answer = await traceStep(
+      "format",
+      { route: plan?.intent ?? route.kind, rowCount: rows.length },
+      () => format(db, question, entities, route, plan, rows, traced, notes, missing, problem),
+      (a) => formatReport(a, steps.get("format")),
+    );
 
-  return answer;
+    if (llmStatus() === "exhausted") answer.notes.push(QUOTA_NOTE);
+    recordOutcome(answer, entities, steps);
+    emit({ type: "answer", answer });
+
+    return answer;
+  } catch (error) {
+    for (const part of steps.values()) {
+      if (part.state === "running") traced({ type: "step", part: { ...part, state: "done", status: "error", title: "Étape interrompue" } });
+    }
+
+    throw error;
+  }
 }
