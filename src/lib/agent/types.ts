@@ -178,6 +178,8 @@ export type AnswerMeta = {
   totals: Record<string, string | number>;
   ambiguities: { mention: string; chosen: string; alternatives: string[]; uncertain: boolean }[];
   attempts: number;
+  /** Words the rules did not understand, when they put the route in doubt and the LLM router is asked; empty otherwise. */
+  unread: string[];
 };
 
 export type Side = "blue" | "red";

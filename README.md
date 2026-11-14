@@ -104,10 +104,19 @@ trace affiche le niveau et la confiance de chaque décision.
 
 | Étape      | `rules`                                         | `llm` (si la règle hésite)            |
 |------------|-------------------------------------------------|----------------------------------------|
-| understand | n-grammes contre les tables d'alias (joueurs, équipes, champions), regex de ligue, d'années et de split | extraction structurée des entités, résolues ensuite contre les tables d'alias |
+| understand | n-grammes contre les tables d'alias (joueurs, équipes, champions) et quelques surnoms sûrs, regex de ligue, d'années, de saison relative (« l'an dernier », « cette saison », résolue contre la date du jour) et de split | extraction structurée des entités, résolues ensuite contre les tables d'alias |
 | build      | routage vers un outil typé (`src/lib/agent/tools.ts`) | choix d'outil par appel d'outil AI SDK, sinon text-to-SQL sur les vues `v_*` |
 | execute    | corrections propres à l'outil : retirer la période, le split ou la compétition, essayer un homonyme | réparer la requête rejetée, en erreur ou vide (text-to-SQL) |
 | format     | phrase construite à partir des agrégats         | la même phrase reformulée ; rejetée si elle ajoute un chiffre ou une période |
+
+Reconnaître une entité ne suffit pas à comprendre la question. Après le
+routage, `unreadWords()` (`src/lib/agent/query.ts`) compte les mots porteurs
+de sens que ni l'étape understand ni l'outil choisi n'ont lus (« toplaner »
+pour un historique d'équipe, « bannis » pour un palmarès). À partir d'un mot
+non lu sur quatre (`UNREAD_THRESHOLD`, 0,25), la confiance de l'outil tombe à
+0,5 : le LLM reçoit ces mots avec les neuf outils et tranche entre un outil
+et le text-to-SQL. Sans clé, l'outil des règles est gardé. Une question bien
+comprise ne coûte aucun appel de plus.
 
 Outils typés (`src/lib/agent/tools.ts`) : chaque outil a un schéma zod
 d'entrée (partagé avec le LLM via `tool()` de l'AI SDK, sans `execute` : la
@@ -220,22 +229,27 @@ scripts/eval.ts              bun run eval
 
 ## Évaluation
 
-`eval/questions.json` liste 31 questions de référence (Worlds, MSI, LCK, LPL,
+`eval/questions.json` liste 92 questions de référence (Worlds, MSI, LCK, LPL,
 LEC, LCS, alias Chovy / 정지훈 / Ji hun / Lee Sang-hyeok, alias ambigus,
-confrontations, auto-correction, text-to-SQL, donnée absente, hors périmètre) avec leurs
+confrontations, auto-correction, text-to-SQL, donnée absente, hors périmètre,
+30 paraphrases d'un audit du routage et leurs variantes) avec leurs
 attentes : outil ou route, entités résolues, entrée de l'outil, nombre de
 lignes, totaux clés (bilan V-D, titres, picks…), ambiguïté signalée, notes,
-sources, contenu de la synthèse (mots attendus ou interdits) et absence de
-chiffre pour les données absentes. `bun run eval` les rejoue et affiche un score par question et un
+sources, contenu de la synthèse (mots attendus ou interdits), absence de
+chiffre pour les données absentes et mots non compris par les règles. Les
+saisons relatives sont résolues contre la date `now` du fichier. `bun run eval` les rejoue et affiche un score par question et un
 score global :
 
 - sans clé, en mode déterministe ; les vérifications qui demandent un résultat
   de text-to-SQL sont ignorées (la route reste vérifiée) ;
 - avec `OPENROUTER_API_KEY` dans l'environnement, le même jeu passe par le LLM
   quand les règles hésitent, et le text-to-SQL est vérifié ;
-- `--deterministic` ignore la clé, `--only=id1,id2` filtre, `--verbose`
-  affiche chaque vérification, `--strict` sort en erreur si une question
-  échoue.
+- un cas marqué `llm: true` a besoin du LLM pour atteindre sa route : sans
+  clé, seules ses vérifications de niveau règles tournent (entités, mots non
+  compris) et il est listé « demande le LLM », pas compté comme réussi ;
+- `--deterministic` ignore la clé, `--only=id1,id2` filtre, `--llm-only` ne
+  garde que les cas `llm`, `--verbose` affiche chaque vérification,
+  `--strict` sort en erreur si une question échoue.
 
 Les valeurs attendues viennent de la base complète (schéma v3) ; les totaux
 clés ont été recoupés par des requêtes indépendantes sur les tables de base.

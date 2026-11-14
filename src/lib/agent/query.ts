@@ -6,8 +6,10 @@ import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS } from "./guard";
 import { getLlm, LLM_CALL } from "./llm";
 import { aiTools, type BoundTool, bindTool, type GamePhase, normalizeToolCall, type ToolCall } from "./tools";
-import { detectMetric, type MetricCue } from "./metrics";
-import type { Entities, QueryPlan } from "./types";
+import { detectMetric, type MetricCue, MINUTE } from "./metrics";
+import { ROLE_CUES as ROLES, ROLE_WORDS } from "./roles";
+import type { Entities, QueryPlan, ToolName } from "./types";
+import { maskUnderstood, SPLIT_CUES } from "./understand";
 
 // Rules router ----------------------------------------------------------------------
 
@@ -30,7 +32,7 @@ const UNSUPPORTED = word(
 /** Words that make a question about LoL esports even without a known entity. */
 const LOL_DOMAIN = word(
   "lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|" +
-    "parties|games?|matchs?|splits?|playoffs|picks?|bans?|mid|jungle|jungler|adc|bot|support|top ?lane|kills?|pentakills?",
+    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS}`,
 );
 
 /**
@@ -120,13 +122,7 @@ const RANKING = word(
 
 const TEAM_WORDS = word("[ée]quipes?|teams?");
 
-const ROLE_CUES = [
-  { role: "Support", pattern: word("supports?") },
-  { role: "Mid", pattern: word("mid ?laners?|mids") },
-  { role: "Jungle", pattern: word("junglers?|jungles") },
-  { role: "Bot", pattern: word("adcs?|bot ?laners?|ad carr(?:y|ies)") },
-  { role: "Top", pattern: word("top ?laners?|toplaners?") },
-] as const;
+const ROLE_CUES = ROLES.map((r) => ({ role: r.role, pattern: word(r.words) }));
 
 /** Leagues of the scope (short names), period words aside: "la LPL", "le MSI 2024". */
 function scopeOf(e: Entities): string {
@@ -284,11 +280,12 @@ function routeTimeline(question: string, e: Entities): Route | null {
 }
 
 export type Route =
-  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[] }
+  /** `unread`: the words the rules did not understand, when they are enough to put the tool in doubt (confidence lowered to UNSURE). */
+  | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[] }
   /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
   | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
-  /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. */
-  | { kind: "sql"; reason: string; open?: boolean }
+  /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. `unread`: as above, for an open route. */
+  | { kind: "sql"; reason: string; open?: boolean; unread?: string[] }
   | { kind: "out_of_scope"; reason: string };
 
 const WORLDS = "World Championship";
@@ -298,7 +295,7 @@ const WORLDS = "World Championship";
  * Returns a typed tool + input, "sql" when no tool covers the question,
  * "missing" when the data is not in the database, or "out_of_scope".
  */
-export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
+function routeByRules(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
   if (e.outOfScope)
     return { kind: "out_of_scope", reason: `« ${e.outOfScope} » n'est pas dans le périmètre (Worlds, MSI, LCK, LPL, LEC, LCS, LFL…)` };
   const nEntities = e.players.length + e.teams.length + (e.champion ? 1 : 0);
@@ -409,6 +406,136 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
   return { kind: "sql", reason: "aucun outil typé ne correspond aux entités reconnues", open: true };
 }
 
+// What the rules did not understand ---------------------------------------------------
+
+/** Grammar and filler words, accents stripped: they carry no intent. */
+const FUNCTION_WORDS = new Set(
+  (
+    "a au aux de des du le la les un une et ou en dans sur pour par avec ce cet cette ces ne pas qu que qui quoi quel quelle quels quelles " +
+    "est sont ete etait ont avait avaient il elle ils elles on se sa son ses leur leurs tous toutes tout toute chaque comment combien fois " +
+    "quand the of at in on all by for with from to and an is are was were be been has have had do does did done what which who whom how " +
+    "many much when where every each it its their his her this that these those me moi nous je tu donne donner montre montrer dis show " +
+    "give tell please stp svp depuis since apres after avant before until jusqu jusque entre between fait faire font prend prennent pris " +
+    "eu avoir etre get got take takes took about chez lors pendant during annee annees saison saisons year years season seasons " +
+    "lol league legends"
+  ).split(/\s+/),
+);
+
+const HISTORY_WORDS = word(
+  "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|stats?|statistiques?|carri[èe]re|career|" +
+    "runs?|titres?|titles?|troph[ée]es?|gagn[ée]e?s?|won|wins?|victoires?|d[ée]faites?|losses|classements?|places?|[ée]ditions?|" +
+    "champions? jou[ée]s?|jou[ée]e?s?|played",
+);
+
+const INGAME_WORDS = word(
+  "stats?|statistiques?|moyen(?:ne)?s?|average|par (?:partie|game|match)|per game|in-?game|joueurs?|players?|total|nombre|min(?:ute)?s?|profil|pos[ée]e?s?|placed",
+);
+
+const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]ries?|rencontres?|face ?[àa] ?face");
+
+/**
+ * The words each tool answers, beyond the entities: the cues that route to
+ * it and the vocabulary of what it returns. A word outside them was not
+ * understood ("toplaner" for a team history, "bannis" for standings).
+ */
+const TOOL_WORDS: Record<ToolName, RegExp[]> = {
+  player_event_history: [HISTORY_WORDS],
+  team_history: [HISTORY_WORDS],
+  head_to_head: [VERSUS, HISTORY_WORDS, GAME_WORDS],
+  champion_event_stats: [
+    word(
+      "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +
+        "priorit[ée]|jou[ée]e?s?|played|champion|r[ée]sultats?|results?|bilan|victoires?|d[ée]faites?|wins?|losses|forte?s?|strong|bons?|good|m[ée]ta",
+    ),
+  ],
+  tournament_standings: [
+    STANDINGS,
+    ...SPLIT_CUES.map((s) => s.pattern),
+    word(
+      "r[ée]sultats?|results?|[ée]quipes?|teams?|champions? (?:du monde|d'europe|de cor[ée]e|de chine)|world champions?|titres?|titles?|gagn[ée]e?s?|won|" +
+        "wins?|remport[ée]e?s?|finalistes?|[ée]ditions?|complet|full|historique|history|bilan",
+    ),
+  ],
+  player_ingame_stats: [MINUTE, INGAME_WORDS],
+  team_ingame_stats: [MINUTE, INGAME_WORDS, TEAM_WORDS],
+  ingame_leaderboard: [MINUTE, RANKING, INGAME_WORDS, TEAM_WORDS, word("souvent|often")],
+  game_timeline: [TIMELINE, ...GAME_NUMBER, ...ORDINALS.map(([pattern]) => pattern), ...PHASES.map((p) => p.pattern), VERSUS, GAME_WORDS],
+};
+
+const fold = (text: string) => text.normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+/**
+ * The meaningful words of the question that neither the understand step nor
+ * the routed tool read, and their share of everything meaningful (read
+ * mentions and cues count one each). `call` is null for an open route.
+ */
+export function unreadWords(question: string, e: Entities, call: ToolCall | null) {
+  const understood = maskUnderstood(question, e);
+  let { rest, read } = understood;
+
+  const take = (pattern: RegExp) => {
+    rest = rest.replace(new RegExp(pattern.source, "giu"), (m) => {
+      read++;
+
+      return " ".repeat(m.length);
+    });
+  };
+
+  if (call) {
+    const ingame = call.tool === "player_ingame_stats" || call.tool === "team_ingame_stats" || call.tool === "ingame_leaderboard";
+    const cue = ingame ? detectMetric(question) : null;
+
+    if (cue) take(word(cue.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    if (call.tool === "ingame_leaderboard" && call.input.role) for (const r of ROLE_CUES) take(r.pattern);
+
+    for (const pattern of TOOL_WORDS[call.tool]) take(pattern);
+  }
+
+  const words = rest.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1 && !/^\d+$/.test(w) && !FUNCTION_WORDS.has(fold(w)));
+
+  return { words, share: words.length ? words.length / (words.length + read) : 0 };
+}
+
+/**
+ * Share of unread words from which a typed tool is no longer trusted: the
+ * rules found an entity, not what is asked about it. One unread word out of
+ * four meaningful ones is enough. On the eval questions the well-understood
+ * ones stay at 0.20 or less ("spring" for a champion's stats) and the
+ * misread ones start at 0.25 ("compare Caps et Perkz en LEC").
+ */
+export const UNREAD_THRESHOLD = 0.25;
+
+/** Confidence of a tool in doubt: under the LLM router's threshold and under a generated query (0.6), so either can replace it. */
+const UNSURE = 0.5;
+
+/**
+ * The rules' route, with a check of how much of the question they read. A
+ * tool picked while too many words stay unread is put in doubt: the LLM
+ * router then decides, with those words, between a tool and text-to-SQL.
+ */
+export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
+  const route = routeByRules(question, e, schema, coverage);
+
+  if (route.kind === "sql" && route.open) {
+    const { words } = unreadWords(question, e, null);
+
+    return words.length ? { ...route, unread: words } : route;
+  }
+
+  if (route.kind !== "tool") return route;
+  const { words, share } = unreadWords(question, e, route.call);
+
+  if (share < UNREAD_THRESHOLD) return route;
+
+  return {
+    ...route,
+    confidence: Math.min(route.confidence, UNSURE),
+    unread: words,
+    reason: `${route.reason} ; mots non compris (${Math.round(100 * share)} %) : ${words.join(", ")}`,
+  };
+}
+
 // Plans -------------------------------------------------------------------------------
 
 export function toolPlan(tool: BoundTool, attempt: number, relaxed: string[] = []): QueryPlan {
@@ -433,6 +560,7 @@ const SQL_RULES =
   "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
   "Use only these views and columns (no other table). " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
+  "A role is one of 'Top', 'Jungle', 'Mid', 'Bot', 'Support' (an ADC is 'Bot'). " +
   "Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under 200 rows. " +
   "If the answer needs data that no listed column holds (for example MVP awards or summoner spells), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
@@ -500,6 +628,15 @@ const rulesRouter: Decider<BuildInput, BuildResult> = {
   },
 };
 
+/** Added to the router's instructions when the rules left words of the question unread. */
+const UNREAD_RULES =
+  " The rule-based router matched the names but could not read the words listed below, so its pick is in doubt: check it against those words. " +
+  "A tool only filters on the arguments of its schema and only returns what its description says. " +
+  "If a listed word is a misspelt name or a nickname of a player or a team, call the fitting tool with the correct name. " +
+  "If the listed words ask for a filter or a result that no tool has (a stage such as the final, who plays a role or a roster, " +
+  "a comparison of two players' statistics, a ranking of champions or players, personal details...), call no tool: " +
+  "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
+
 /** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */
 const llmRouter: Decider<BuildInput, BuildResult> = {
   level: "llm",
@@ -509,14 +646,20 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
 
     if (!llm || (route.kind === "sql" && !route.open)) return null;
 
+    const unread = route.kind === "tool" || route.kind === "sql" ? (route.unread ?? []) : [];
+    const picked = route.kind === "tool" ? ` They picked ${route.call.tool} ${JSON.stringify(route.call.input)}.` : "";
+
     const { toolCalls } = await generateText({
       model: llm.model,
       tools: aiTools,
       toolChoice: "auto",
       instructions:
         "Pick the one tool that answers the League of Legends esports question exactly, with its arguments. " +
-        "If no tool answers it exactly (other metrics such as end-of-game kills, durations, objective counts, or open rankings), call no tool.",
-      prompt: `Question: ${question}\nResolved entities: ${entitySummary(entities)}`,
+        "If no tool answers it exactly (other metrics such as end-of-game kills, durations, objective counts, or open rankings), call no tool." +
+        (unread.length ? UNREAD_RULES : ""),
+      prompt:
+        `Question: ${question}\nResolved entities: ${entitySummary(entities)}` +
+        (unread.length ? `\nWords the rules could not read: ${unread.join(", ")}.${picked}` : ""),
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
       abortSignal: AbortSignal.timeout(LLM_CALL.timeoutMs),
@@ -531,7 +674,8 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
     if (!call) return null;
 
     return {
-      result: { plan: toolPlan(bindTool(db, call), 1), notes: [] },
+      // The rules' notes (a default competition...) still hold when the LLM confirms their tool.
+      result: { plan: toolPlan(bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
       confidence: 0.85,
       level: "llm",
       reason: `${llm.id} : ${call.tool}(${JSON.stringify(call.input)})`,

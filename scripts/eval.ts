@@ -7,6 +7,11 @@
  *   bun run eval --only=worlds-chovy,alias-hangul
  *   bun run eval --strict          exit 1 unless every check passes
  *   bun run eval --verbose         print every check, not only the failing ones
+ *   bun run eval --llm-only        only the cases marked `llm` (the ones the rules hand to the LLM)
+ *
+ * A case marked `llm` cannot pass on the rules alone: without a key only what
+ * the rules decide is scored (entities, unread words) and the case is listed
+ * as needing the LLM instead of being counted as passed.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -53,21 +58,35 @@ const Expect = z.strictObject({
   summaryExcludes: z.array(z.string()).optional(),
   /** The answer gives no figure: no row, no table, no digit in the summary. */
   noFigure: z.boolean().optional(),
+  /** Words the rules did not understand and handed to the LLM router (answer.meta.unread). */
+  unread: z.array(z.string()).optional(),
 });
 
-const Case = z.strictObject({ id: z.string(), question: z.string(), tags: z.array(z.string()), expect: Expect });
+const Case = z.strictObject({
+  id: z.string(),
+  question: z.string(),
+  tags: z.array(z.string()),
+  /** The expected answer needs the LLM (tool choice or entities): not scored as passed without a key. */
+  llm: z.boolean().optional(),
+  expect: Expect,
+});
 
 type Case = z.infer<typeof Case>;
 
-const QuestionsFile = z.object({ $comment: z.string().optional(), questions: z.array(Case) });
+const QuestionsFile = z.object({
+  $comment: z.string().optional(),
+  /** Date the relative seasons are resolved against ("l'an dernier"), so the expectations do not move with the calendar. */
+  now: z.iso.date(),
+  questions: z.array(Case),
+});
 
 type Check = { name: string; ok: boolean | null; detail?: string }; // null = skipped
 
 const file = resolve(import.meta.dirname, "../eval/questions.json");
 
-const cases = QuestionsFile.parse(JSON.parse(readFileSync(file, "utf8"))).questions.filter(
-  (c) => !only || only.includes(c.id),
-);
+const questions = QuestionsFile.parse(JSON.parse(readFileSync(file, "utf8")));
+const now = new Date(questions.now);
+const cases = questions.questions.filter((c) => (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm));
 
 type Shown = Scalar | Scalar[] | undefined;
 
@@ -81,11 +100,17 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
   const add = (name: string, ok: boolean | null, detail?: string) => checks.push({ name, ok, detail });
   // Without a key, text-to-SQL cannot run: the routing is still checked, the result is not.
   const noResult = e.route === "sql" && !m.sqlAvailable;
-  const result = (name: string, ok: boolean, detail?: string) => add(name, noResult ? null : ok, noResult ? "pas de clé OpenRouter" : detail);
+  // Without a key, a case that needs the LLM is only scored on what the rules decide.
+  const noLlm = c.llm === true && !m.sqlAvailable;
+
+  const result = (name: string, ok: boolean, detail?: string) =>
+    add(name, noLlm || noResult ? null : ok, noLlm ? "demande le LLM" : noResult ? "pas de clé OpenRouter" : detail);
+
+  const routed = (name: string, ok: boolean, detail?: string) => add(name, noLlm ? null : ok, noLlm ? "demande le LLM" : detail);
 
   const done = STEPS.filter((s) => steps.get(s)?.state === "done");
   add("4 étapes visibles", done.length === STEPS.length, `${done.length}/4 terminées`);
-  add("route", m.route === e.route, `attendu ${e.route}, obtenu ${m.route}`);
+  routed("route", m.route === e.route, `attendu ${e.route}, obtenu ${m.route}`);
 
   if (e.players) add("joueurs", same(m.players, e.players), `attendu ${show(e.players)}, obtenu ${show(m.players)}`);
 
@@ -93,13 +118,15 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
 
   if (e.champion) add("champion", m.champion === e.champion, `attendu ${e.champion}, obtenu ${m.champion}`);
 
-  if (e.league) add("compétition", m.league === e.league, `attendu ${e.league}, obtenu ${m.league}`);
+  if (e.unread) add("mots non compris", same(m.unread, e.unread), `attendu ${show(e.unread)}, obtenu ${show(m.unread)}`);
+
+  if (e.league) routed("compétition", m.league === e.league, `attendu ${e.league}, obtenu ${m.league}`);
 
   if (e.input) {
     const input = new Map<string, Scalar>(Object.entries(m.input ?? {}));
 
     for (const [k, v] of Object.entries(e.input))
-      add(`entrée ${k}`, same(input.get(k) ?? null, v), `attendu ${show(v)}, obtenu ${show(input.get(k))}`);
+      routed(`entrée ${k}`, same(input.get(k) ?? null, v), `attendu ${show(v)}, obtenu ${show(input.get(k))}`);
   }
 
   if (e.ambiguity) {
@@ -123,19 +150,19 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
   if (e.attempts !== undefined) result("tentatives", m.attempts === e.attempts, `attendu ${e.attempts}, obtenu ${m.attempts}`);
 
   if (e.notes)
-    for (const n of e.notes) add(`note « ${n} »`, answer.notes.some((x) => x.includes(n)), answer.notes.join(" | ") || "aucune note");
+    for (const n of e.notes) routed(`note « ${n} »`, answer.notes.some((x) => x.includes(n)), answer.notes.join(" | ") || "aucune note");
 
   const summary = answer.summary.toLowerCase();
 
   if (e.summaryIncludes)
-    for (const t of e.summaryIncludes) add(`synthèse contient « ${t} »`, summary.includes(t.toLowerCase()), answer.summary);
+    for (const t of e.summaryIncludes) routed(`synthèse contient « ${t} »`, summary.includes(t.toLowerCase()), answer.summary);
 
   if (e.summaryExcludes)
-    for (const t of e.summaryExcludes) add(`synthèse sans « ${t} »`, !summary.includes(t.toLowerCase()), answer.summary);
+    for (const t of e.summaryExcludes) routed(`synthèse sans « ${t} »`, !summary.includes(t.toLowerCase()), answer.summary);
 
   if (e.noFigure) {
     const figures = answer.rows.length + (answer.table?.rows.length ?? 0);
-    add("aucun chiffre donné", figures === 0 && !/\d/.test(answer.summary), `${figures} ligne(s) · ${answer.summary}`);
+    routed("aucun chiffre donné", figures === 0 && !/\d/.test(answer.summary), `${figures} ligne(s) · ${answer.summary}`);
   }
 
   if (e.sources !== undefined || (e.route !== "out_of_scope" && answer.meta.rowCount > 0)) {
@@ -155,6 +182,7 @@ let total = 0;
 let full = 0;
 let skipped = 0;
 const failures: string[] = [];
+const needLlm: string[] = [];
 const t0 = performance.now();
 
 for (const c of cases) {
@@ -163,9 +191,13 @@ for (const c of cases) {
   const started = performance.now();
 
   try {
-    const answer = await runAgent(c.question, (ev) => {
-      if (ev.type === "step") steps.set(ev.part.step, ev.part);
-    });
+    const answer = await runAgent(
+      c.question,
+      (ev) => {
+        if (ev.type === "step") steps.set(ev.part.step, ev.part);
+      },
+      now,
+    );
 
     checks = score(c, answer, steps);
   } catch (err) {
@@ -175,14 +207,22 @@ for (const c of cases) {
   const scored = checks.filter((k) => k.ok !== null);
   const passed = scored.filter((k) => k.ok).length;
   const s = scored.length ? passed / scored.length : 0;
-  total += s;
   skipped += checks.length - scored.length;
 
-  if (s === 1) full++;
-  else failures.push(c.id);
+  // A case that needs the LLM is not passed without a key, even when the rules' part is right.
+  const pending = s === 1 && c.llm === true && !llm;
+
+  if (pending) needLlm.push(c.id);
+  else {
+    total += s;
+
+    if (s === 1) full++;
+    else failures.push(c.id);
+  }
+
   const ms = Math.round(performance.now() - started);
   console.log(
-    `${s === 1 ? "✓" : "✗"} ${String(Math.round(100 * s)).padStart(3)} %  ${passed}/${scored.length}` +
+    `${pending ? "~" : s === 1 ? "✓" : "✗"} ${String(Math.round(100 * s)).padStart(3)} %  ${passed}/${scored.length}` +
       `${checks.length > scored.length ? ` (+${checks.length - scored.length} ignorés)` : ""}  ${c.id.padEnd(24)} ${c.question}  [${ms} ms]`,
   );
 
@@ -191,13 +231,16 @@ for (const c of cases) {
       console.log(`      ${k.ok === null ? "–" : k.ok ? "ok" : "xx"} ${k.name}${k.detail ? ` : ${k.detail}` : ""}`);
 }
 
-const global = cases.length ? (100 * total) / cases.length : 0;
+const judged = cases.length - needLlm.length;
+const global = judged ? (100 * total) / judged : 0;
 
 console.log(
-  `\nscore global : ${global.toFixed(1)} % · ${full}/${cases.length} questions entièrement réussies` +
-    `${skipped ? ` · ${skipped} vérifications ignorées (text-to-SQL sans clé)` : ""} · ${Math.round(performance.now() - t0)} ms`,
+  `\nscore global : ${global.toFixed(1)} % · ${full}/${judged} questions entièrement réussies` +
+    `${skipped ? ` · ${skipped} vérifications ignorées (LLM ou text-to-SQL sans clé)` : ""} · ${Math.round(performance.now() - t0)} ms`,
 );
+
+if (needLlm.length) console.log(`demandent le LLM, non vérifiés sans clé (${needLlm.length}) : ${needLlm.join(", ")}`);
 
 if (failures.length) console.log(`échecs : ${failures.join(", ")}`);
 
-if (flag("strict") && full < cases.length) process.exit(1);
+if (flag("strict") && failures.length) process.exit(1);

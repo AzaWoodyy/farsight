@@ -1,5 +1,6 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants.",
+  "now": "2026-11-14",
   "questions": [
     {
       "id": "worlds-chovy",
@@ -976,6 +977,836 @@
         "summaryIncludes": [
           "Pas de timeline"
         ]
+      }
+    },
+    {
+      "id": "para-faker-results",
+      "question": "résultats de Faker aux Worlds",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "rows": 11
+      }
+    },
+    {
+      "id": "para-faker-english",
+      "question": "how did Faker do at Worlds?",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "rows": 11
+      }
+    },
+    {
+      "id": "para-goat",
+      "question": "le GOAT aux mondiaux",
+      "tags": [
+        "paraphrase",
+        "nickname"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "rows": 11
+      }
+    },
+    {
+      "id": "para-skt-roll",
+      "question": "palmarès de SKT",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "T1"
+        ],
+        "input": {
+          "league": null
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-t1-geng-since",
+      "question": "T1 vs Gen.G depuis 2020",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Gen.G"
+        ],
+        "input": {
+          "kind": "team",
+          "yearFrom": 2020,
+          "yearTo": null
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-chovy-faker-last-year",
+      "question": "Chovy contre Faker en LCK l'an dernier",
+      "tags": [
+        "paraphrase",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "players": [
+          "Chovy",
+          "Faker"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "kind": "player",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-jihun",
+      "question": "Jihun aux Worlds",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Chovy"
+        ],
+        "league": "World Championship",
+        "rows": 8
+      }
+    },
+    {
+      "id": "para-typo-chovi",
+      "question": "Chovi au MSI",
+      "tags": [
+        "paraphrase",
+        "typo"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "player_event_history",
+        "league": "Mid-Season Invitational",
+        "input": {
+          "player": "Chovy"
+        },
+        "unread": [
+          "Chovi"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-t1-worlds-titles",
+      "question": "combien de fois T1 a gagné les Worlds ?",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "T1"
+        ],
+        "league": "World Championship",
+        "totals": {
+          "titles": 6
+        }
+      }
+    },
+    {
+      "id": "para-worlds-2022-winner",
+      "question": "who won Worlds 2022",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2022,
+          "yearTo": 2022,
+          "full": true
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-cup-2023",
+      "question": "qui a soulevé la coupe en 2023 ?",
+      "tags": [
+        "paraphrase"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-azir-winrate",
+      "question": "winrate d'Azir aux Worlds 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Azir",
+        "league": "World Championship",
+        "attempts": 2,
+        "notes": [
+          "Rien entre 2024 et 2024"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-yone-pick-rate",
+      "question": "Yone pick rate LCK 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yone",
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-lee-sin-strong",
+      "question": "est-ce que Lee Sin est fort au MSI ?",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Lee Sin",
+        "league": "Mid-Season Invitational",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-faker-on-azir",
+      "question": "Faker sur Azir aux Worlds",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "sql",
+        "players": [
+          "Faker"
+        ],
+        "champion": "Azir",
+        "league": "World Championship",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-lec-best-kda",
+      "question": "meilleur KDA de la LEC 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "LoL EMEA Championship",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-jungler-first-bloods",
+      "question": "quel jungler a le plus de first bloods en LCK 2025",
+      "tags": [
+        "paraphrase",
+        "role"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "subject": "player",
+          "metric": "first_bloods",
+          "role": "Jungle",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-zeus-gold-diff",
+      "question": "gold diff @15 de Zeus en 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Zeus"
+        ],
+        "input": {
+          "metric": "gold_diff",
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-t1-stomp-blg-final",
+      "question": "T1 a-t-il stomp BLG en finale ?",
+      "tags": [
+        "paraphrase"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "teams": [
+          "T1",
+          "Bilibili Gaming"
+        ],
+        "unread": [
+          "stomp",
+          "finale"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-game-5-t1-blg",
+      "question": "game 5 T1 BLG",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "game_timeline",
+        "teams": [
+          "T1",
+          "Bilibili Gaming"
+        ],
+        "input": {
+          "teamA": "T1",
+          "teamB": "Bilibili Gaming",
+          "game": 5
+        }
+      }
+    },
+    {
+      "id": "para-compare-caps-perkz",
+      "question": "compare Caps et Perkz en LEC",
+      "tags": [
+        "paraphrase"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "league": "LoL EMEA Championship",
+        "unread": [
+          "compare"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-faker-chovy-titles",
+      "question": "Faker et Chovy : qui a le plus de titres ?",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "sql",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-g2-worlds-since",
+      "question": "G2 a fait quoi aux Worlds depuis 2019",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "G2 Esports"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2019,
+          "yearTo": null
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-kc-lfl-this-year",
+      "question": "les perfs de KC en LFL cette année",
+      "tags": [
+        "paraphrase",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "Karmine Corp"
+        ],
+        "league": "La Ligue Française",
+        "attempts": 2,
+        "notes": [
+          "Rien entre 2026 et 2026"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-gumayusi-2023",
+      "question": "Gumayusi stats 2023",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Gumayusi"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "notes": [
+          "Aucune compétition précisée"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-best-midlaner",
+      "question": "qui est le meilleur midlaner du monde ?",
+      "tags": [
+        "paraphrase",
+        "role"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "missing_data",
+        "players": [],
+        "unread": [
+          "meilleur",
+          "midlaner",
+          "monde"
+        ],
+        "noFigure": true
+      }
+    },
+    {
+      "id": "para-most-banned",
+      "question": "champions les plus bannis aux Worlds 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "league": "World Championship",
+        "unread": [
+          "champions",
+          "plus",
+          "bannis"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-lpl-game-length",
+      "question": "durée moyenne des games en LPL 2024",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "Tencent LoL Pro League",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "para-ruler-pentakills-lpl",
+      "question": "Ruler pentakills LPL",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "players": [
+          "Ruler"
+        ],
+        "noFigure": true
+      }
+    },
+    {
+      "id": "para-t1-toplaner",
+      "question": "c'est qui le toplaner de T1 ?",
+      "tags": [
+        "paraphrase",
+        "role"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "teams": [
+          "T1"
+        ],
+        "players": [],
+        "unread": [
+          "toplaner"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-goat-msi",
+      "question": "le GOAT au MSI",
+      "tags": [
+        "variant",
+        "nickname"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "Mid-Season Invitational",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-claps",
+      "question": "Claps aux Worlds",
+      "tags": [
+        "variant",
+        "nickname"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Caps"
+        ],
+        "league": "World Championship",
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-g2-last-year",
+      "question": "bilan de G2 en LEC l'an dernier",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "G2 Esports"
+        ],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-t1-geng-last-year",
+      "question": "T1 against Gen.G last year",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Gen.G"
+        ],
+        "players": [],
+        "input": {
+          "kind": "team",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-faker-since-last-year",
+      "question": "Faker en LCK depuis l'an dernier",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": null
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-msi-winner-last-year",
+      "question": "who won MSI last year",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "players": [],
+        "league": "Mid-Season Invitational",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "full": true
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-chovy-last-season",
+      "question": "Chovy vs Faker en LCK la saison passée",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "players": [
+          "Chovy",
+          "Faker"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "kind": "player",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-yone-this-season",
+      "question": "stats de Yone en LCK cette saison",
+      "tags": [
+        "variant",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yone",
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-adc-solo-kills-this-year",
+      "question": "quel adc a le plus de solo kills en LCK cette année",
+      "tags": [
+        "variant",
+        "role",
+        "relative-time"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "players": [],
+        "league": "LoL Champions Korea",
+        "input": {
+          "subject": "player",
+          "metric": "solo_kills",
+          "role": "Bot",
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-midlaner-gold-diff",
+      "question": "meilleur midlaner en gold diff à 15 en LEC 2024",
+      "tags": [
+        "variant",
+        "role"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "players": [],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "subject": "player",
+          "metric": "gold_diff",
+          "role": "Mid"
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-support-wards",
+      "question": "which support has the most wards placed at Worlds 2024",
+      "tags": [
+        "variant",
+        "role"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "players": [],
+        "league": "World Championship",
+        "input": {
+          "subject": "player",
+          "metric": "wards_placed",
+          "role": "Support"
+        },
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-roster-t1",
+      "question": "roster de T1 en 2024",
+      "tags": [
+        "variant"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "teams": [
+          "T1"
+        ],
+        "unread": [
+          "roster"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-jungler-g2",
+      "question": "who is the jungler of G2",
+      "tags": [
+        "variant",
+        "role"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "teams": [
+          "G2 Esports"
+        ],
+        "players": [],
+        "unread": [
+          "jungler"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-adc-t1",
+      "question": "adc de T1",
+      "tags": [
+        "variant",
+        "role"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "teams": [
+          "T1"
+        ],
+        "players": [],
+        "unread": [
+          "adc"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-typo-fakr",
+      "question": "Fakr au MSI 2024",
+      "tags": [
+        "variant",
+        "typo"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "player_event_history",
+        "league": "Mid-Season Invitational",
+        "input": {
+          "player": "Faker",
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "unread": [
+          "Fakr"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "var-most-played-champions",
+      "question": "champions les plus joués en LCK 2024",
+      "tags": [
+        "variant"
+      ],
+      "llm": true,
+      "expect": {
+        "route": "sql",
+        "league": "LoL Champions Korea",
+        "unread": [
+          "champions",
+          "plus",
+          "joués"
+        ],
+        "rowsMin": 1
       }
     }
   ]
