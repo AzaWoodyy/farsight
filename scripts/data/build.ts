@@ -12,6 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { normalizeAlias } from "../../src/lib/aliases";
 import { DB_MAX_BYTES, DB_WARN_BYTES } from "./artifact";
+import { playerIdentity } from "./identity";
 import { loadIngame } from "./riot";
 import { selectAll, selectOne } from "../../src/lib/db";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
@@ -284,6 +285,16 @@ for (const g of load("games", Rows)) {
 }
 
 // Player lines ------------------------------------------------------------------
+// A scoreboard link is not always the player page (case, older handle): every
+// link of a player goes to one row, keyed by the page `canonical` finds.
+const playerRows = load("players", Rows);
+const redirectRows = load("redirects", Rows);
+
+const canonical = playerIdentity(
+  playerRows.map((p) => String(p.Page)),
+  redirectRows.map((r) => ({ name: String(r.AllName), page: String(r.Page) })),
+);
+
 const playerId = new Map<string, number>();
 const insPlayer = db.prepare("INSERT INTO players (id, page) VALUES (?, ?)");
 
@@ -299,6 +310,11 @@ const player = (page: string) => {
   return id;
 };
 
+/** The scoreboard links behind each player, kept as aliases. */
+const linksByPlayer = new Map<number, Set<string>>();
+const identity = { page: 0, case: 0, redirect: 0, ambiguous: 0, unknown: 0, merged_lines: 0, same_game: 0 };
+const countedLinks = new Set<string>();
+
 const insLine = db.prepare(`INSERT OR IGNORE INTO game_players VALUES (${Array(15).fill("?").join(",")})`);
 const insItem = db.prepare("INSERT OR IGNORE INTO game_player_items VALUES (?,?,?,?)");
 let skippedLines = 0;
@@ -307,16 +323,45 @@ let skippedLines = 0;
 const linesByGame = new Map<number, { pid: number; side: number | null; role: string | null; championId: number | null; kills: number | null }[]>();
 const ignByPlayer = new Map<number, Set<string>>();
 
-for (const l of load("lines", Rows)) {
-  const gid = gameId.get(String(l.GameId));
-  const page = text(l.Link) ?? text(l.Name);
+const lineRows = load("lines", Rows);
+const linkOf = (l: Row) => text(l.Link) ?? text(l.Name);
 
-  if (!gid || !page) {
+// Two links of one player in the same game: one of them is another person on
+// that scoreboard, so in that game a renamed link keeps its own identity.
+const pagesInGame = new Map<string, Map<string, number>>();
+
+for (const l of lineRows) {
+  const link = linkOf(l);
+
+  if (!link) continue;
+  const seen = pagesInGame.get(String(l.GameId)) ?? new Map<string, number>();
+  const { page } = canonical(link);
+  seen.set(page, (seen.get(page) ?? 0) + 1);
+  pagesInGame.set(String(l.GameId), seen);
+}
+
+for (const l of lineRows) {
+  const gid = gameId.get(String(l.GameId));
+  const link = linkOf(l);
+
+  if (!gid || !link) {
     skippedLines++;
     continue;
   }
 
-  const pid = player(page);
+  const { page, via } = canonical(link);
+  const sameGame = page !== link && (pagesInGame.get(String(l.GameId))?.get(page) ?? 0) > 1;
+  const pid = player(sameGame ? link : page);
+
+  if (sameGame) identity.same_game++;
+  else if (page !== link) identity.merged_lines++;
+
+  if (!countedLinks.has(link)) {
+    countedLinks.add(link);
+    identity[via]++;
+  }
+
+  linksByPlayer.set(pid, (linksByPlayer.get(pid) ?? new Set()).add(link));
   const championId = champion(l.Champion);
   const side = int(l.Side);
   const lines = linesByGame.get(gid) ?? [];
@@ -343,7 +388,7 @@ const alias = (raw: Field, pid: number) => {
 
 const updPlayer = db.prepare("UPDATE players SET ign=?, real_name=?, native_name=? WHERE id=?");
 
-for (const p of load("players", Rows)) {
+for (const p of playerRows) {
   const pid = playerId.get(String(p.Page));
 
   if (!pid) continue;
@@ -356,13 +401,15 @@ for (const p of load("players", Rows)) {
   if (real?.includes(" ")) alias(real.split(" ").slice(1).join(" "), pid);
 }
 
-for (const r of load("redirects", Rows)) {
+for (const r of redirectRows) {
   const pid = playerId.get(String(r.Page));
 
   if (pid) alias(r.AllName, pid);
 }
 
 for (const [page, pid] of playerId) alias(page, pid);
+
+for (const [pid, links] of linksByPlayer) for (const link of links) alias(link, pid);
 
 for (const [pid, names] of ignByPlayer) for (const n of names) alias(n, pid);
 
@@ -646,7 +693,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, ingame: ingameCounts }),
+  JSON.stringify({ ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, ingame: ingameCounts, identity }),
 );
 
 db.exec("COMMIT");
@@ -684,5 +731,7 @@ console.log("rows:", rowCounts);
 console.log("item icons:", itemIcons);
 
 console.log("in-game:", ingameCounts);
+
+console.log("player links:", identity);
 
 console.table(byLeague);
