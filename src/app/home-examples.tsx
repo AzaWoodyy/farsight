@@ -1,7 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { SITE } from "./brand/site";
 
 /**
  * Home examples, grouped by what the question is about. Each one is answered by a typed tool without the
@@ -327,7 +328,7 @@ const RENDER: Record<VariantId, (props: AskProps) => React.ReactNode> = {
 
 /**
  * Prototype harness: the floating picker (fixed spec from the prototype skill, deliberately not on the
- * site's tokens) shown only when `?examples=` is in the URL. Removed once a variant is chosen.
+ * site's tokens), shown off production or with `?examples=`. Removed once a variant is chosen.
  */
 function ProtoPicker({ current, onChange, onReplay }: { current: number; onChange: (i: number) => void; onReplay: () => void }) {
   const highlight = useRef<HTMLSpanElement>(null);
@@ -402,8 +403,14 @@ function ProtoPicker({ current, onChange, onReplay }: { current: number; onChang
   );
 }
 
+const noSubscribe = () => () => {};
+
+/** The picker shows on every host but production (previews, local), and in production with `?examples=`. */
+const offProduction = () => window.location.origin !== SITE.url;
+
 function ExamplesFromUrl({ onAsk }: AskProps) {
   const requested = useSearchParams().get("examples");
+  const picker = useSyncExternalStore(noSubscribe, offProduction, () => false) || requested !== null;
   const found = VARIANTS.findIndex((v) => v.id === requested);
   const [current, setCurrent] = useState(Math.max(found, 0));
   const [mount, setMount] = useState(0);
@@ -421,7 +428,7 @@ function ExamplesFromUrl({ onAsk }: AskProps) {
   return (
     <>
       <Variant key={mount} onAsk={onAsk} />
-      {requested !== null && <ProtoPicker current={current} onChange={change} onReplay={() => setMount((m) => m + 1)} />}
+      {picker && <ProtoPicker current={current} onChange={change} onReplay={() => setMount((m) => m + 1)} />}
     </>
   );
 }
