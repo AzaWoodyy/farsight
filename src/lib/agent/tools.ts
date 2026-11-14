@@ -22,6 +22,8 @@ import {
   type Source,
   type TableCell,
   type TeamHeadToHead,
+  type TeamRoster,
+  type RosterPlayer,
   type TeamSeries,
   type TimelineView,
   type TraceStatus,
@@ -70,6 +72,12 @@ export const PlayerHistoryInput = z.object({
 export const TeamHistoryInput = z.object({
   team: z.string().min(1).describe("Team name or shorthand (T1, Gen.G, G2...)"),
   league: League.nullable().describe("Restrict to one competition, null for all"),
+  ...Period,
+});
+
+export const TeamRosterInput = z.object({
+  team: z.string().min(1).describe("Team name or shorthand (Samsung White, SKT, G2...)"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
   ...Period,
 });
 
@@ -197,6 +205,8 @@ export type PlayerHistoryInput = z.infer<typeof PlayerHistoryInput>;
 
 export type TeamHistoryInput = z.infer<typeof TeamHistoryInput>;
 
+export type TeamRosterInput = z.infer<typeof TeamRosterInput>;
+
 export type HeadToHeadInput = z.infer<typeof HeadToHeadInput>;
 
 export type PlayerComparisonInput = z.infer<typeof PlayerComparisonInput>;
@@ -229,6 +239,7 @@ export type ToolOutput = {
   scoreboard?: GameScoreboard;
   versus?: VersusView;
   teams?: TeamHeadToHead;
+  roster?: TeamRoster;
   champion?: ChampionProfile;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
@@ -345,7 +356,7 @@ function leagueShortName(db: DatabaseSync, league: string | null): string {
   return selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league])?.short_name ?? league;
 }
 
-const inLeague = (short: string) => (short === "Worlds" ? "aux Worlds" : short === "toutes compétitions" ? "" : `en ${short}`);
+const inLeague = (short: string) => (short === "Worlds" ? "aux Worlds" : short === "MSI" ? "au MSI" : short === "toutes compétitions" ? "" : `en ${short}`);
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
@@ -661,6 +672,174 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
         `Palmarès ${league === "toutes compétitions" ? "des Worlds" : league}`,
       ],
       totals: { events: raw.length, wins, losses, titles: titles.length },
+    };
+  },
+  normalize: (db, input) => {
+    const t = resolveTeam(db, input.team);
+
+    return t ? { ...input, team: t.team } : null;
+  },
+};
+
+// 2b. Team roster ---------------------------------------------------------------------
+
+const RosterEvent = z.object({ event: z.string(), tournament: z.string().nullable(), team: z.string(), games: z.number(), at: z.number().nullable() });
+
+const RosterRow = z.object({
+  player: Text,
+  role: Text,
+  games: z.number(),
+  wins: z.number(),
+  first_played: z.number().nullable(),
+  last_played: z.number().nullable(),
+  events: jsonColumn(z.array(RosterEvent)),
+});
+
+const RosterTournamentRow = z.object({ event_page: Text, tournament: NullableText, games: z.number(), wins: z.number(), at: z.number().nullable() });
+
+/** Roles in roster order; a role the database does not know sorts last. */
+const roleRank = (role: string) => {
+  const i = ROLE_ORDER.indexOf(role);
+
+  return i < 0 ? ROLE_ORDER.length : i;
+};
+
+/** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league and the period. */
+function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): string {
+  const t = inList("t", teamMembers(db, input.team).members, params);
+  const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
+
+  return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)}`;
+}
+
+/** The team's tournaments of the scope, in play order, with its games and wins in each (a trusted helper query). */
+function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
+  const params: Params = {};
+  const t = inList("t", teamMembers(db, input.team).members, params);
+  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+
+  return selectAll(
+    db,
+    RosterTournamentRow,
+    `SELECT g.event_page, MIN(g.tournament) AS tournament, COUNT(*) AS games,
+            SUM(CASE WHEN g.winner IN (${t}) THEN 1 ELSE 0 END) AS wins, MIN(g.played_at) AS at
+     FROM v_games g
+     WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
+     GROUP BY g.event_page
+     ORDER BY MIN(g.played_at), g.event_page`,
+    params,
+  );
+}
+
+const teamRoster: ToolDef<TeamRosterInput> = {
+  name: "team_roster",
+  label: "roster d'équipe",
+  description:
+    "A team's roster over a period or a competition: every player who played for it, by role (Top, Jungle, Mid, Bot, Support), " +
+    "with their games and the tournaments they played. Renamed teams are merged (Samsung Ozone → Samsung White, SK Telecom T1 → T1).",
+  plan: (db, input) => {
+    const params: Params = {};
+
+    return {
+      params,
+      sql: tidy(`WITH lines AS (
+  SELECT gp.player, gp.role, gp.event_page, MIN(gp.tournament) AS tournament, MIN(gp.team) AS team,
+         COUNT(*) AS games, SUM(gp.win) AS wins, MIN(gp.played_at) AS first_played, MAX(gp.played_at) AS last_played
+  FROM v_game_players gp
+  WHERE ${rosterScope(db, input, params)}
+  GROUP BY gp.player, gp.role, gp.event_page
+)
+SELECT player, role, SUM(games) AS games, SUM(wins) AS wins, MIN(first_played) AS first_played, MAX(last_played) AS last_played,
+       json_group_array(json_object('event', event_page, 'tournament', tournament, 'team', team, 'games', games, 'at', first_played) ORDER BY first_played) AS events
+FROM lines
+GROUP BY player, role
+ORDER BY role, SUM(games) DESC, player`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "tous les joueurs de son histoire"));
+
+    if (input.league)
+      out.push({
+        key: "league",
+        input: { ...input, league: null },
+        note: `Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`,
+        reason: "filtre de compétition retiré",
+      });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const raw = z.array(RosterRow).parse(sqlRows);
+    const { team, members } = teamMembers(db, input.team);
+    const league = leagueShortName(db, input.league);
+    const scope = scopeLabel(league, input);
+    const events = rosterTournaments(db, input);
+    const games = events.reduce((n, e) => n + e.games, 0);
+    const wins = events.reduce((n, e) => n + e.wins, 0);
+    const names = [...new Set(raw.flatMap((r) => r.events.map((e) => e.team)))].map(displayTeam);
+    const label = (e: { event: string; tournament: string | null }) => e.tournament ?? e.event;
+
+    const top = new Map<string, number>();
+
+    for (const r of raw) top.set(r.role, Math.max(top.get(r.role) ?? 0, r.games));
+
+    const players = raw
+      .map((r): RosterPlayer => ({
+        player: r.player,
+        role: r.role,
+        games: r.games,
+        wins: r.wins,
+        starter: false,
+        tournaments: r.events.map(label),
+        firstPlayed: r.first_played,
+        lastPlayed: r.last_played,
+        source: { label: `Leaguepedia — ${r.player}`, url: wikiUrl(r.player) },
+      }))
+      .sort((a, b) => roleRank(a.role) - roleRank(b.role) || b.games - a.games || a.player.localeCompare(b.player));
+
+    // The starters of a role are its players with the most games: two of them when they split the games evenly.
+    for (const p of players) p.starter = p.games === top.get(p.role);
+
+    const starters = players.filter((p) => p.starter);
+    const others = players.filter((p) => !p.starter);
+    const roleName = (role: string) => ROLE_LABEL_BY_NAME.get(role) ?? role;
+    const where = scope ? ` ${scope}` : "";
+
+    let facts =
+      `${team}${where} : ${games} parties (${wins} victoires) sur ${events.length} tournoi${events.length > 1 ? "s" : ""}. ` +
+      `Joueurs avec le plus de parties à chaque poste : ${starters.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`;
+
+    if (others.length) facts += ` Aussi alignés : ${others.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`;
+
+    if (names.length > 1) facts += ` Noms pris en compte : ${names.join(", ")}.`;
+
+    return {
+      title: `${team} — roster${where}`,
+      table: {
+        columns: ["Poste", "Joueur", "Statut", "Parties", "V-D", "Tournois"],
+        rows: players.map((p) => [roleName(p.role), p.player, p.starter ? "titulaire" : "remplaçant", p.games, `${p.wins}-${p.games - p.wins}`, p.tournaments.join(", ")]),
+      },
+      roster: {
+        team,
+        names,
+        scope,
+        games,
+        wins,
+        tournaments: events.map((e) => ({ label: label({ event: e.event_page, tournament: e.tournament }), games: e.games, source: { label: `Leaguepedia — ${e.event_page}`, url: wikiUrl(e.event_page) } })),
+        players,
+      },
+      notes: ["Seuls les joueurs alignés en match figurent ici : la base ne contient ni les coachs ni les remplaçants qui n'ont pas joué."],
+      facts,
+      sources: [
+        ...members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
+        ...eventSources(events.map((e) => e.event_page), 12),
+        ...starters.map((p) => p.source),
+      ],
+      followUps: [`Historique de ${team}${where}`, ...starters.slice(0, 2).map((p) => `${p.player}${where}`)].slice(0, 3),
+      totals: { players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
     };
   },
   normalize: (db, input) => {
@@ -1128,6 +1307,8 @@ const kdaOf = (ka: number | null, deaths: number | null) => (ka == null || death
 
 /** French role names, as the answers write them. */
 export const ROLE_LABEL: Record<(typeof ROLES)[number], string> = { Top: "top", Jungle: "jungle", Mid: "mid", Bot: "ADC", Support: "support" };
+
+const ROLE_LABEL_BY_NAME = new Map<string, string>(Object.entries(ROLE_LABEL));
 
 /** The players of a role, as the answers name them. */
 const ROLE_PLAYERS: Record<(typeof ROLES)[number], string> = { Top: "toplaners", Jungle: "junglers", Mid: "mids", Bot: "ADC", Support: "supports" };
@@ -2847,6 +3028,7 @@ function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
 export const TOOLS = {
   player_event_history: defineTool(PlayerHistoryInput, playerEventHistory),
   team_history: defineTool(TeamHistoryInput, teamHistory),
+  team_roster: defineTool(TeamRosterInput, teamRoster),
   head_to_head: defineTool(HeadToHeadInput, headToHead),
   player_comparison: defineTool(PlayerComparisonInput, playerComparison),
   champion_event_stats: defineTool(ChampionStatsInput, championEventStats),

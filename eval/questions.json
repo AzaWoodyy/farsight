@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -2299,18 +2299,29 @@
       "id": "var-roster-t1",
       "question": "roster de T1 en 2024",
       "tags": [
-        "variant"
+        "variant",
+        "roster"
       ],
-      "llm": true,
       "expect": {
-        "route": "sql",
+        "route": "team_roster",
         "teams": [
           "T1"
         ],
-        "unread": [
-          "roster"
-        ],
-        "rowsMin": 1
+        "input": {
+          "league": null,
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "unread": [],
+        "rows": 6,
+        "totals": {
+          "games": 156,
+          "top": "Zeus",
+          "jungle": "Oner",
+          "mid": "Faker",
+          "bot": "Gumayusi",
+          "support": "Keria"
+        }
       }
     },
     {
@@ -3096,6 +3107,214 @@
           "losses": 183,
           "titles": 7
         }
+      }
+    },
+    {
+      "id": "roster-ssw-2014",
+      "question": "Samsung White roster 2014",
+      "tags": [
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Samsung White"
+        ],
+        "input": {
+          "league": null,
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "unread": [],
+        "rows": 7,
+        "totals": {
+          "players": 7,
+          "games": 70,
+          "wins": 52,
+          "events": 4,
+          "top": "Looper",
+          "jungle": "DanDy",
+          "mid": "PawN",
+          "bot": "Imp",
+          "support": "Mata"
+        },
+        "sources": 10,
+        "summaryIncludes": [
+          "Looper (top, 68)",
+          "Dade (mid, 17)",
+          "Samsung Ozone, Samsung White"
+        ]
+      }
+    },
+    {
+      "id": "roster-ssw-alias-worlds-2014",
+      "question": "SSW roster aux Worlds 2014",
+      "tags": [
+        "roster",
+        "alias",
+        "worlds"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Samsung White"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "unread": [],
+        "rows": 5,
+        "totals": {
+          "players": 5,
+          "games": 17,
+          "wins": 15,
+          "events": 1,
+          "top": "Looper",
+          "jungle": "DanDy",
+          "mid": "PawN",
+          "bot": "Imp",
+          "support": "Mata"
+        },
+        "summaryIncludes": [
+          "17 parties"
+        ]
+      }
+    },
+    {
+      "id": "roster-skt-2015",
+      "question": "roster de SKT en 2015",
+      "tags": [
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "T1"
+        ],
+        "input": {
+          "league": null,
+          "yearFrom": 2015,
+          "yearTo": 2015
+        },
+        "unread": [],
+        "rows": 9,
+        "totals": {
+          "players": 9,
+          "games": 125,
+          "wins": 101,
+          "events": 7,
+          "top": "MaRin",
+          "jungle": "Bengi",
+          "mid": "Faker",
+          "bot": "Bang",
+          "support": "Wolf (Lee Jae-wan)"
+        },
+        "summaryIncludes": [
+          "Easyhoon (mid, 42)"
+        ]
+      }
+    },
+    {
+      "id": "roster-g2-msi-2019",
+      "question": "line-up de G2 au MSI 2019",
+      "tags": [
+        "roster",
+        "msi"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "G2 Esports"
+        ],
+        "league": "Mid-Season Invitational",
+        "input": {
+          "yearFrom": 2019,
+          "yearTo": 2019
+        },
+        "unread": [],
+        "rows": 5,
+        "totals": {
+          "players": 5,
+          "games": 18,
+          "wins": 11,
+          "events": 1,
+          "top": "Wunder",
+          "jungle": "Jankos",
+          "mid": "Caps",
+          "bot": "Perkz",
+          "support": "Mikyx"
+        },
+        "summaryIncludes": [
+          "au MSI en 2019",
+          "18 parties"
+        ]
+      }
+    },
+    {
+      "id": "roster-fnatic-2018",
+      "question": "qui jouait chez Fnatic en 2018",
+      "tags": [
+        "roster"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Fnatic"
+        ],
+        "input": {
+          "league": null,
+          "yearFrom": 2018,
+          "yearTo": 2018
+        },
+        "unread": [],
+        "rows": 7,
+        "totals": {
+          "players": 7,
+          "starters": 6,
+          "games": 82,
+          "wins": 56,
+          "events": 6,
+          "top": "Bwipo",
+          "jungle": "Broxah",
+          "mid": "Caps",
+          "bot": "Rekkles",
+          "support": "Hylissang"
+        },
+        "summaryIncludes": [
+          "SOAZ (top, 41)",
+          "Bwipo (ADC, 13)"
+        ]
+      }
+    },
+    {
+      "id": "roster-ssg-white-galaxy",
+      "question": "roster Samsung Galaxy White 2014",
+      "tags": [
+        "roster",
+        "alias"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Samsung White"
+        ],
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "unread": [],
+        "rows": 7,
+        "totals": {
+          "games": 70,
+          "mid": "PawN"
+        },
+        "summaryIncludes": [
+          "70 parties"
+        ]
       }
     }
   ]

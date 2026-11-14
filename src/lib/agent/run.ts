@@ -458,6 +458,7 @@ async function format(
       scoreboard: null,
       versus: null,
       teams: null,
+      roster: null,
       champion: null,
       icons: {},
       profiles: [],
@@ -476,7 +477,7 @@ async function format(
 
     step.done("error", "Requête interrompue ou rejetée");
 
-    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, teams: null, champion: null, icons: {}, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
+    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, teams: null, roster: null, champion: null, icons: {}, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -492,6 +493,7 @@ async function format(
       scoreboard: null,
       versus: null,
       teams: null,
+      roster: null,
       champion: null,
       icons: {},
       profiles: [],
@@ -518,6 +520,7 @@ async function format(
       scoreboard: null,
       versus: null,
       teams: null,
+      roster: null,
       champion: null,
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
@@ -561,6 +564,7 @@ async function format(
     scoreboard: out.scoreboard ?? null,
     versus: out.versus ?? null,
     teams: out.teams ?? null,
+    roster: out.roster ?? null,
     champion: out.champion ?? null,
     icons: out.icons ?? {},
     profiles: plan.tool.call.tool === "player_comparison" ? playerProfiles(db, entities) : [],

@@ -121,6 +121,19 @@ const RANKING = word(
 
 const TEAM_WORDS = word("[ée]quipes?|teams?");
 
+/**
+ * Words asking who played for a team: "roster", "line-up", "effectif", "composition", "qui jouait chez".
+ * Not "composition d'équipe" in the draft sense: the draft is champions, and a champion goes elsewhere first.
+ */
+export const ROSTER = word(
+  "rosters?|line[- ]?ups?|effectifs?|compositions?|compos?|[ée]quipes? types?|cinq (?:de d[ée]part|majeur)|starting (?:five|lineup)|titulaires?|rempla[çc]ants?|" +
+    "qui (?:jouait|jouaient|joue|jouent|a jou[ée]|ont jou[ée]|[ée]tait|[ée]taient)(?: (?:chez|pour|dans|à|a|avec|en))?|who (?:played|plays|was|were)(?: (?:for|on|in|at))?|" +
+    "(?:quels?|les) joueurs (?:de|d'|du|chez|pour)|players (?:of|on|for)|membres?|members?",
+);
+
+/** Who is "best" or "most" in a team, or an in-game figure: a ranking or a metric, not its roster. */
+const NOT_ROSTER = word("le plus|la plus|les plus|most|meilleure?s?|best|pires?|worst|top ?\\d+|kda|kills?|gold|golds|cs|d[ée]g[âa]ts|damage|vision|winrate|win rate");
+
 // Champions and roles ranked ------------------------------------------------------------
 
 /**
@@ -421,6 +434,20 @@ function teamsRoute(question: string, e: Entities): Route {
   };
 }
 
+/** One team's roster over the period or competition asked (every competition when none is named). */
+function rosterRoute(question: string, e: Entities): Route {
+  const cue = ROSTER.exec(question)![0];
+
+  return {
+    kind: "tool",
+    call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: 0.9,
+    reason: `une équipe et « ${cue} » → roster par poste`,
+    notes: e.yearFrom == null && e.yearTo == null && !e.league ? ["Aucune période précisée : tous les joueurs de l'histoire de l'équipe."] : [],
+    forced: true,
+  };
+}
+
 /** A champion alone: its stats in the competition (the Worlds when the question names none). */
 function championRoute(e: Entities): Route {
   return {
@@ -459,6 +486,9 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   // Two teams set against each other ("h2h KC et MKOI", "G2 vs Fnatic"): their series, decided by the rules.
   if (e.teams.length >= 2 && !e.players.length && OPPOSE.test(question)) return teamsRoute(question, e);
+
+  // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
+  if (e.teams.length === 1 && !e.players.length && !e.champion && ROSTER.test(question) && !NOT_ROSTER.test(question)) return rosterRoute(question, e);
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
 
@@ -586,6 +616,7 @@ const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]rie
 const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
+  team_roster: [ROSTER, ...ROLE_CUES.map((r) => r.pattern), word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list")],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
   player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
   champion_event_stats: [
