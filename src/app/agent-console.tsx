@@ -155,12 +155,16 @@ export function AgentConsole() {
         <h1 className="sr-only">{askedText}</h1>
       ) : (
         <div className="mt-10 sm:mt-16">
-          <h1 className="max-w-3xl font-sans text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
+          <h1 className="max-w-3xl text-xl leading-snug font-semibold text-balance sm:text-3xl">
+            <span aria-hidden className="text-accent">
+              &gt;{" "}
+            </span>
             Pose une question sur l&apos;esport League of Legends.
+            <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
           </h1>
-          <p className="mt-4 max-w-[62ch] font-sans text-base leading-relaxed text-pretty text-muted">
-            Minimap cherche dans les résultats et les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et
-            répond avec un tableau, une phrase de résumé et les pages d&apos;où viennent les chiffres.
+          <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
+            Minimap cherche dans les résultats et les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond
+            avec un tableau, une phrase de résumé et les pages d&apos;où viennent les chiffres.
           </p>
         </div>
       )}
@@ -170,7 +174,7 @@ export function AgentConsole() {
           e.preventDefault();
           ask(question);
         }}
-        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-surface py-1 pr-1 pl-3 focus-within:border-accent`}
+        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 focus-within:border-accent`}
       >
         <span aria-hidden className="text-accent">
           &gt;
@@ -191,19 +195,23 @@ export function AgentConsole() {
         <button
           type="submit"
           disabled={running || !question.trim()}
-          className="press min-h-11 shrink-0 border border-line bg-background px-4 text-sm hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-9"
+          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-9"
         >
-          {running ? "Recherche…" : "Demander"}
+          {running ? "…" : "Demander"}
         </button>
       </form>
 
       {!asked && (
         <div className="mt-8">
           <h2 className="text-xs text-muted">── Essaie par exemple</h2>
-          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <ul className="mt-2 grid text-sm sm:grid-cols-2 sm:gap-x-6">
             {EXAMPLES.map((ex) => (
               <li key={ex}>
-                <button type="button" onClick={() => ask(ex)} className={`${CHIP} w-full gap-2 py-2`}>
+                <button
+                  type="button"
+                  onClick={() => ask(ex)}
+                  className="press flex min-h-11 w-full items-center gap-2 border-b border-dashed border-line text-left text-muted hover:text-accent sm:min-h-10"
+                >
                   <span aria-hidden className="text-accent">
                     &gt;
                   </span>
@@ -300,15 +308,27 @@ function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   );
 }
 
-/** The technical trace (steps, decisions, SQL, retries), closed by default for the curious. */
+/**
+ * The technical trace (steps, decisions, SQL, retries): open while the agent works, so the visitor sees it
+ * progress, folded once the answer is in. The visitor can still open or close it by hand.
+ */
 function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+  const [open, setOpen] = useState(running);
+  const [wasRunning, setWasRunning] = useState(running);
+
+  // A run starting opens the trace, a run ending folds it (state adjusted during render, not in an effect).
+  if (running !== wasRunning) {
+    setWasRunning(running);
+    setOpen(running);
+  }
+
   return (
-    <details data-how className="mt-8 border-t border-dashed border-line pt-4">
+    <details data-how open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className={`${running ? "mt-4" : "mt-8"} border-t border-dashed border-line pt-4`}>
       <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-accent sm:min-h-8">
         <span aria-hidden data-chevron className="inline-block">
           ›
         </span>
-        Voir comment j&apos;ai trouvé
+        {running ? "Comment je cherche" : "Voir comment j\u2019ai trouvé"}
       </summary>
       <Steps steps={steps} running={running} />
     </details>

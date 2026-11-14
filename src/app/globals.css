@@ -1,57 +1,28 @@
 @import "tailwindcss";
 
-/*
- * Three identity directions, picked with ?theme= (see theme.ts):
- *   minimap (default)  river teal on cool slate
- *   ambre              terminal amber on warm stone (the original look)
- *   baron              Baron violet on cool zinc
- * Each one has a light and a dark palette; every text token reaches WCAG AA
- * (4.5:1) on its background. Blue / red stay the in-game side colors.
- */
-:root,
-:root[data-theme="minimap"] {
+/* The original terminal palette: amber on warm stone. Every text token reaches WCAG AA (4.5:1) on the background. */
+:root {
   color-scheme: light dark;
-  --background: #f6f8f8;
-  --surface: #ecf1f1;
-  --foreground: #0f1a1c;
-  --muted: #56666b;
-  --line: #d0dadc;
-  --accent: #0f766e;
+  --background: #fafaf9;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --line: #d6d3d1;
+  --accent: #b45309;
   --ok: #15803d;
-  --warn: #8a5a06;
+  --warn: #a16207;
   --error: #b91c1c;
   --fix: #7c3aed;
   --blue: #1d4ed8;
   --red: #b91c1c;
 }
 
-:root[data-theme="ambre"] {
-  --background: #fafaf9;
-  --surface: #f2f1ef;
-  --foreground: #1c1917;
-  --muted: #6f6964;
-  --line: #d6d3d1;
-  --accent: #a14a07;
-}
-
-:root[data-theme="baron"] {
-  --background: #f8f7fb;
-  --surface: #efedf5;
-  --foreground: #1a1625;
-  --muted: #645e78;
-  --line: #dcd8e6;
-  --accent: #6d28d9;
-}
-
 @media (prefers-color-scheme: dark) {
-  :root,
-  :root[data-theme="minimap"] {
-    --background: #0a1214;
-    --surface: #101c1f;
-    --foreground: #e2eaec;
-    --muted: #93a4a9;
-    --line: #22333a;
-    --accent: #2dd4bf;
+  :root {
+    --background: #0c0a09;
+    --foreground: #e7e5e4;
+    --muted: #a8a29e;
+    --line: #292524;
+    --accent: #f59e0b;
     --ok: #4ade80;
     --warn: #facc15;
     --error: #f87171;
@@ -59,29 +30,10 @@
     --blue: #60a5fa;
     --red: #f87171;
   }
-
-  :root[data-theme="ambre"] {
-    --background: #0c0a09;
-    --surface: #171412;
-    --foreground: #e7e5e4;
-    --muted: #a8a29e;
-    --line: #292524;
-    --accent: #f59e0b;
-  }
-
-  :root[data-theme="baron"] {
-    --background: #0f0c17;
-    --surface: #17131f;
-    --foreground: #e8e4f2;
-    --muted: #a39cb8;
-    --line: #2a2438;
-    --accent: #b49cfc;
-  }
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-line: var(--line);
@@ -109,28 +61,28 @@ body {
   outline-offset: 2px;
 }
 
-/* Only the mark of the active direction is shown (all three are rendered, the theme is set before paint). */
-.brand-mark {
-  display: none;
-}
-
-:root:not([data-theme]) .brand-mark[data-mark="minimap"],
-:root[data-theme="minimap"] .brand-mark[data-mark="minimap"],
-:root[data-theme="ambre"] .brand-mark[data-mark="ambre"],
-:root[data-theme="baron"] .brand-mark[data-mark="baron"] {
-  display: block;
-}
-
-/* Pressable controls answer the press; hover only where a pointer hovers. */
+/* Pressable controls answer the press. */
 .press {
   transition:
     transform 140ms var(--ease-out-strong),
     color 150ms ease,
-    border-color 150ms ease;
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
 .press:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* The terminal cursor after the home prompt. */
+.cursor {
+  animation: blink 1.1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 /* The "how I found it" panel: the chevron turns when it opens. */
@@ -154,5 +106,9 @@ details[data-how][open] > summary [data-chevron] {
 
   .press:active:not(:disabled) {
     transform: none;
+  }
+
+  .cursor {
+    animation: none;
   }
 }

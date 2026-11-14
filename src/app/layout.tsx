@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { SITE, THEME_SCRIPT } from "./brand/site";
+import { PALETTE, SITE } from "./brand/site";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -19,19 +19,14 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f8f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a1214" },
+    { media: "(prefers-color-scheme: light)", color: PALETTE.light.background },
+    { media: "(prefers-color-scheme: dark)", color: PALETTE.dark.background },
   ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // data-theme is set by THEME_SCRIPT before hydration when the URL asks for another direction.
-    <html lang="fr" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <head>
-        {/* oxlint-disable-next-line react/no-danger -- constant script built from THEMES, no user input */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-      </head>
+    <html lang="fr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

@@ -7,13 +7,8 @@ export const SITE = {
   url: "https://lolesport.enzoneault.dev",
 } as const;
 
-/** Identity directions, picked with ?theme= until one is chosen. The first one is the default. */
-export const THEMES = ["minimap", "ambre", "baron"] as const;
-
-export type ThemeName = (typeof THEMES)[number];
-
-/**
- * Runs in <head> before the first paint: applies a valid ?theme= to <html>, so the
- * page never flashes the default palette. Anything else keeps the default.
- */
-export const THEME_SCRIPT = `(function(){try{var t=new URLSearchParams(location.search).get("theme");if(${JSON.stringify(THEMES)}.indexOf(t)>=0)document.documentElement.dataset.theme=t}catch(e){}})()`;
+/** The palette the generated images use (globals.css holds the page's). */
+export const PALETTE = {
+  light: { background: "#fafaf9", foreground: "#1c1917", accent: "#b45309" },
+  dark: { background: "#0c0a09", foreground: "#e7e5e4", muted: "#a8a29e", accent: "#f59e0b" },
+} as const;
