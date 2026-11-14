@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type AgentUIMessage,
   type Answer,
@@ -23,13 +23,30 @@ import { PlayerComparison } from "./player-comparison";
 import { TeamHeadToHead } from "./team-h2h";
 import { Versus } from "./versus";
 
+/**
+ * Home examples, one per answer layout, each answered by a typed tool without the LLM (checked with
+ * `bun run ask`). The label names the layout the question opens.
+ */
 const EXAMPLES = [
-  "résultats de Chovy à tous les Worlds",
-  "stats d'Azir aux Worlds 2025",
-  "champions les plus bannis en LCK 2025",
-  "meilleurs mids LEC 2025",
-  "timeline de la game 5 de la finale des Worlds 2024",
+  { question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
+  { question: "Faker contre Chovy", display: "duel de joueurs" },
+  { question: "KC contre MKOI", display: "confrontation d'équipes" },
+  { question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
+  { question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
+  { question: "Meilleurs mids aux Worlds 2026", display: "tableau de joueurs" },
+  { question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
 ];
+
+/** What the visitor reads while a step runs: what the agent is doing, in plain words. */
+const PROGRESS: Record<StepName, string> = {
+  understand: "Je repère les joueurs, équipes et compétitions…",
+  build: "Je prépare la recherche…",
+  execute: "Je cherche dans les matchs…",
+  format: "Je mets la réponse en forme…",
+};
+
+const CHIP =
+  "press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-left text-muted hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-8";
 
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   ok: { mark: "ok", cls: "text-ok" },
@@ -134,83 +151,202 @@ export function AgentConsole() {
     if (part.type === "data-trace") trace = part.data;
   }
 
+  const askedText = asked?.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ");
+
   return (
-    <section className="mt-8">
+    <section>
+      {asked ? (
+        <h1 className="sr-only">{askedText}</h1>
+      ) : (
+        <div className="mt-10 sm:mt-16">
+          <h1 className="max-w-3xl text-xl leading-snug font-semibold text-balance sm:text-3xl">
+            <span aria-hidden className="text-accent">
+              &gt;{" "}
+            </span>
+            Pose une question sur l&apos;esport League of Legends.
+            <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
+          </h1>
+          <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
+            Minimap cherche dans les résultats et les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond
+            avec un tableau, une phrase de résumé et les pages d&apos;où viennent les chiffres.
+          </p>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
           ask(question);
         }}
-        className="flex items-center gap-2 border border-line bg-background px-3 py-2 focus-within:border-accent"
+        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
       >
         <span aria-hidden className="text-accent">
           &gt;
         </span>
         <label htmlFor="question" className="sr-only">
-          Question
+          Ta question
         </label>
         <input
           id="question"
           value={question}
           maxLength={500}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="résultats de Chovy à tous les Worlds"
+          placeholder="Faker contre Chovy"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
+          enterKeyHint="search"
+          className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:text-sm"
         />
         <button
           type="submit"
           disabled={running || !question.trim()}
-          className="border border-line px-3 py-1 text-xs uppercase tracking-wider hover:border-accent hover:text-accent disabled:opacity-40"
+          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-9"
         >
           {running ? "…" : "Demander"}
         </button>
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            type="button"
-            onClick={() => ask(ex)}
-            disabled={running}
-            className="border border-dashed border-line px-2 py-1 text-muted hover:border-accent hover:text-accent"
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
+      {!asked && (
+        <div className="mt-8">
+          <h2 className="text-xs text-muted">── Essaie par exemple</h2>
+          <ul className="mt-2 text-sm">
+            {EXAMPLES.map(({ question: ex, display }) => (
+              <li key={ex}>
+                <button
+                  type="button"
+                  onClick={() => ask(ex)}
+                  className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:min-h-10"
+                >
+                  <span aria-hidden className="text-accent">
+                    &gt;
+                  </span>
+                  <span className="min-w-0 flex-1 group-hover:text-accent">{ex}</span>
+                  <span className="w-full pl-4 text-xs text-muted sm:w-auto sm:pl-0">
+                    <span aria-hidden># </span>
+                    {display}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 max-w-[70ch] text-xs leading-relaxed text-muted">
+            Résultats, compositions et stats de partie :{" "}
+            <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://lol.fandom.com" target="_blank" rel="noreferrer">
+              Leaguepedia
+            </a>{" "}
+            (CC BY-SA 3.0). Noms et icônes des champions, objets et runes :{" "}
+            <a
+              className="underline decoration-line underline-offset-2 hover:text-accent"
+              href="https://developer.riotgames.com/docs/lol#data-dragon"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Riot Data Dragon
+            </a>
+            . Chaque réponse cite ses pages.
+          </p>
+        </div>
+      )}
 
       {asked && (
-        <div className="mt-10">
-          <div className="flex items-baseline justify-between gap-4">
-            <p className="text-sm">
-              <span className="text-muted">?</span>{" "}
-              {asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
+        <div className="mt-8">
+          <div className="flex items-start justify-between gap-4">
+            <p className="min-w-0 pt-2.5 text-sm sm:pt-1">
+              <span aria-hidden className="text-muted">
+                ?
+              </span>{" "}
+              {askedText}
             </p>
-            <button type="button" onClick={restart} className="shrink-0 text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent">
-              nouvelle conversation
+            <button
+              type="button"
+              onClick={restart}
+              className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:min-h-8"
+            >
+              Nouvelle conversation
             </button>
           </div>
-          <Steps steps={steps} running={running} />
+          {running && <Progress steps={steps} />}
           {error && !answer && (
-            <p role="alert" className="mt-4 text-xs text-error">
+            <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
             </p>
           )}
           {answer && <AnswerView answer={answer} onAsk={ask} />}
           {answer && trace && <Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
+          {steps.size > 0 && <HowIFoundIt steps={steps} running={running} />}
         </div>
       )}
     </section>
   );
 }
 
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/** A braille spinner, fast so the wait feels short; a still dot when the visitor asks for reduced motion. */
+function Spinner() {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const id = window.setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 80);
+
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span aria-hidden className="inline-block w-4 text-accent">
+      {SPINNER[frame]}
+    </span>
+  );
+}
+
+/** The one line shown while the agent works, read from the step that is running. */
+function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
+  // The latest step started; once it is done and before the next one streams, the next one is what comes.
+  const lastIndex = STEPS.findLastIndex((name) => steps.has(name));
+  const last = lastIndex < 0 ? undefined : STEPS[lastIndex];
+  const current = last && steps.get(last)?.state === "done" ? (STEPS[lastIndex + 1] ?? last) : last;
+  const retrying = current === "execute" && steps.get("execute")?.entries.some((e) => e.status === "fix");
+  const label = !current ? "Je lis ta question…" : retrying ? "Je réessaie autrement…" : PROGRESS[current];
+
+  return (
+    <p className="mt-6 flex items-center gap-2 text-sm">
+      <Spinner />
+      <span role="status">{label}</span>
+    </p>
+  );
+}
+
+/**
+ * The technical trace (steps, decisions, SQL, retries): open while the agent works, so the visitor sees it
+ * progress, folded once the answer is in. The visitor can still open or close it by hand.
+ */
+function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+  const [open, setOpen] = useState(running);
+  const [wasRunning, setWasRunning] = useState(running);
+
+  // A run starting opens the trace, a run ending folds it (state adjusted during render, not in an effect).
+  if (running !== wasRunning) {
+    setWasRunning(running);
+    setOpen(running);
+  }
+
+  return (
+    <details data-how open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className={`${running ? "mt-4" : "mt-8"} border-t border-dashed border-line pt-4`}>
+      <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-accent sm:min-h-8">
+        <span aria-hidden data-chevron className="inline-block">
+          ›
+        </span>
+        {running ? "Comment je cherche" : "Voir comment j\u2019ai trouvé"}
+      </summary>
+      <Steps steps={steps} running={running} />
+    </details>
+  );
+}
+
 function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
   return (
-    <div className="mt-4">
-      <h2 className="text-xs uppercase tracking-widest text-muted">── étapes de l&apos;agent</h2>
-      <ol className="mt-2 space-y-2 text-xs" aria-live="polite">
+    <div className="mt-2 overflow-x-auto">
+      <ol className="space-y-2 text-xs">
         {STEPS.map((name, i) => {
           const part = steps.get(name);
           const branch = i === STEPS.length - 1 ? "└─" : "├─";
@@ -299,8 +435,8 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       ))}
       {answer.sources.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-xs uppercase tracking-widest text-muted">── sources</h3>
-          <ul className="mt-2 space-y-1 text-xs">
+          <h3 className="text-xs text-muted">── Sources</h3>
+          <ul className="mt-2 space-y-1 text-xs leading-6">
             {answer.sources.map((s) => (
               <li key={s.url}>
                 <a href={s.url} target="_blank" rel="noreferrer" className="underline decoration-line underline-offset-2 hover:text-accent">
@@ -312,14 +448,14 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
         </div>
       )}
       <div className="mt-6">
-        <h3 className="text-xs uppercase tracking-widest text-muted">── questions de suivi</h3>
+        <h3 className="text-xs text-muted">── Questions de suivi</h3>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {answer.followUps.map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => onAsk(f)}
-              className="border border-dashed border-line px-2 py-1 text-muted hover:border-accent hover:text-accent"
+              className={CHIP}
             >
               {f}
             </button>
@@ -368,7 +504,7 @@ function Feedback({ traceId, token }: { traceId: string; token: string }) {
 
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
-      <span className="uppercase tracking-widest text-muted">── réponse correcte ?</span>
+      <span className="text-muted">── Réponse correcte ?</span>
       {RATINGS.map(({ rating, label }) => (
         <button
           key={rating}
@@ -376,7 +512,7 @@ function Feedback({ traceId, token }: { traceId: string; token: string }) {
           onClick={() => rate(rating)}
           disabled={state.kind === "sending"}
           aria-pressed={state.recorded === rating}
-          className={`border px-2 py-1 hover:border-accent hover:text-accent disabled:opacity-40 ${
+          className={`press inline-flex min-h-11 items-center border px-3 hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-8 ${
             state.recorded === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
           }`}
         >
