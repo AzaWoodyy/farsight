@@ -50,6 +50,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
     teams: null,
     roster: null,
     champion: null,
+    pool: null,
     icons: {},
     profiles: [],
     sources: [],

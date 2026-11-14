@@ -356,6 +356,42 @@ export type ChampionProfile = {
   roles: { role: string; games: number }[];
 };
 
+/** One champion of a pool: how often and how well the player (or the team) played it. */
+export type ChampionPoolLine = {
+  champion: string;
+  icon: string | null;
+  games: number;
+  wins: number;
+  losses: number;
+  /** Victories / games, in %. */
+  winrate: number;
+  /** (kills + assists) / deaths over those games; null when a figure is missing. */
+  kda: number | null;
+  /** Share of the pool, in %: games on the champion / every pick of the scope. */
+  share: number;
+  /** Team pool only: who played it, most games first. */
+  players: { player: string; games: number }[];
+};
+
+/** The champions a player or a team played in a scope (champion_pool tool). */
+export type ChampionPool = {
+  subject: "player" | "team";
+  name: string;
+  /** "aux Worlds en 2024", "en LEC en 2025", "" for every competition and season. */
+  scope: string;
+  /** Games of the player, or of the team. */
+  games: number;
+  wins: number;
+  losses: number;
+  /** Every pick of the scope: the games of a player, five per game for a team. */
+  picks: number;
+  /** Diversity: distinct champions, and the share of the three most played. */
+  unique: number;
+  top3Share: number;
+  /** Most games first. */
+  lines: ChampionPoolLine[];
+};
+
 export type Answer = {
   title: string;
   summary: string;
@@ -375,6 +411,8 @@ export type Answer = {
   roster: TeamRoster | null;
   /** One champion's profile (champion_event_stats tool). */
   champion: ChampionProfile | null;
+  /** The champions a player or a team played (champion_pool tool). */
+  pool: ChampionPool | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */
   icons: Record<string, string>;
   /** Database profile of each player the question names, for comparison layouts. */

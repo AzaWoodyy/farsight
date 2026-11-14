@@ -16,7 +16,7 @@ import {
 import { z } from "zod";
 import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
-import { ChampionProfileView, ChampionRankingView } from "./champion-view";
+import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { PlayerComparison } from "./player-comparison";
@@ -34,6 +34,7 @@ const EXAMPLES = [
   { question: "KC contre MKOI", display: "confrontation d'équipes" },
   { question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
   { question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
+  { question: "Champion pool de Caps en LEC 2025", display: "champion pool" },
   { question: "Meilleurs mids aux Worlds 2026", display: "tableau de joueurs" },
   { question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
 ];
@@ -419,7 +420,9 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
       {answer.champion && <ChampionProfileView p={answer.champion} />}
-      {answer.versus ? (
+      {answer.pool ? (
+        <ChampionPoolView pool={answer.pool} fallback={answer.table && <GenericTable table={answer.table} />} />
+      ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (
         <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
@@ -664,6 +667,9 @@ const COLUMN_LABEL = new Map([
   ["player", "joueur"],
   ["games", "parties"],
   ["wins", "victoires"],
+  ["losses", "défaites"],
+  ["share", "part %"],
+  ["players", "joueurs"],
 ]);
 
 const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
