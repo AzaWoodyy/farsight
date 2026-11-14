@@ -7,6 +7,9 @@ const buckets = new Map<string, Bucket>();
 const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_BUCKETS = 10_000;
 
+/** Requests per IP and per window; `ask` mirrors the Vercel firewall rule in docs/deploy.md. */
+export const RATE_LIMITS = { ask: 30, feedback: 30 } as const;
+
 /** Instance-local limit supplements Vercel's shared firewall. No IP is logged or traced. */
 export function rateLimited(req: Request, route: "ask" | "feedback", now = Date.now()): boolean {
   const ip = ipAddress(req) ?? "local";
@@ -24,7 +27,7 @@ export function rateLimited(req: Request, route: "ask" | "feedback", now = Date.
 
   bucket.count++;
 
-  return bucket.count > (route === "ask" ? 15 : 30);
+  return bucket.count > RATE_LIMITS[route];
 }
 
 export function requestPolicy(req: Request, route: "ask" | "feedback"): Response | null {
