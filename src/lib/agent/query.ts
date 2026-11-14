@@ -116,7 +116,7 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
 }
 
 const RANKING = word(
-  "le plus|la plus|les plus|le moins|most|highest|lowest|greatest|meilleure?s?|best|top ?\\d+|classement|leaderboard|record|quels? joueurs?|quelles? [ée]quipes?|which (?:players?|teams?)|qui (?:a|fait|prend|prennent)",
+  "le plus|la plus|les plus|le moins|most|highest|lowest|greatest|meilleure?s?|best|top ?\\d+|classements?|rankings?|leaderboards?|record|quels? joueurs?|quelles? [ée]quipes?|which (?:players?|teams?)|qui (?:a|fait|prend|prennent)",
 );
 
 const TEAM_WORDS = word("[ée]quipes?|teams?");
@@ -150,6 +150,9 @@ export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
 export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
 
 const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
+
+/** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
+const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]to[- ]head|duels?|matchups?");
 
 /** The in-game figures of a champion's profile: metric and minute. */
 const PROFILE_INGAME = new Set(["gold_diff@15", "cs_diff@15"]);
@@ -449,13 +452,17 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) return championRankingRoute(question, e);
 
-  const ranksPlayers = roleOf(question) != null || PLAYER_WORDS.test(question);
+  const role = roleOf(question);
+  const ranksPlayers = role != null || PLAYER_WORDS.test(question);
+  // At most one player named (two go to their comparison above), no team or champion; one only with a role ("Caps, meilleur mid ?").
+  const forPlayers = !e.teams.length && !e.champion && (noEntity || (e.players.length === 1 && role != null));
 
   // Players ranked on an end-of-game criterion; in-game metrics (gold diff, solo kills...) keep their leaderboard.
-  // "classement" is also a tournament's standings: only without a role or a player word.
+  // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a
+  // tournament's standings: only without a role or a player word.
   if (
-    noEntity && !cue && RANKING.test(question) && !TEAM_WORDS.test(question) && (ranksPlayers || !STANDINGS.test(question)) &&
-    (ranksPlayers || PLAYER_CRITERION_CUES.some(([, re]) => re.test(question)))
+    forPlayers && !cue && (RANKING.test(question) || (ranksPlayers && COMPARE.test(question))) && !TEAM_WORDS.test(question) &&
+    (ranksPlayers || !STANDINGS.test(question)) && (ranksPlayers || PLAYER_CRITERION_CUES.some(([, re]) => re.test(question)))
   )
     return playerLeaderboardRoute(question, e);
 
@@ -589,6 +596,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     // Roles first: "meilleur top" is a role, not "meilleur" then a stray "top".
     ...ROLE_CUES.map((r) => r.pattern),
     RANKING,
+    COMPARE,
     PLAYER_WORDS,
     ...PLAYER_CRITERION_CUES.map(([, re]) => re),
     word(

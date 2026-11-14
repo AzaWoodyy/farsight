@@ -1044,6 +1044,9 @@ const kdaOf = (ka: number | null, deaths: number | null) => (ka == null || death
 /** French role names, as the answers write them. */
 export const ROLE_LABEL: Record<(typeof ROLES)[number], string> = { Top: "top", Jungle: "jungle", Mid: "mid", Bot: "ADC", Support: "support" };
 
+/** The players of a role, as the answers name them. */
+const ROLE_PLAYERS: Record<(typeof ROLES)[number], string> = { Top: "toplaners", Jungle: "junglers", Mid: "mids", Bot: "ADC", Support: "supports" };
+
 /** A champion's picks in the scope (`gp` is v_game_players). */
 function championScope(input: ChampionStatsInput, params: Params): string {
   params.champion = input.champion;
@@ -1314,8 +1317,8 @@ const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
 
 const needsMinPicks = (sort: ChampionSort) => sort === "winrate" || sort === "kda";
 
-/** The scope of the champion ranking (`alias` is v_games or v_game_players). */
-function rankingScope(input: ChampionRankingInput, params: Params, alias: string): string {
+/** The games of a ranking's scope, competition and period (`alias` is v_games or v_game_players). */
+function rankingScope(input: { league: string | null } & Period, params: Params, alias: string): string {
   const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
 
   return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
@@ -1399,6 +1402,9 @@ LIMIT 20`),
       params,
     ).map((r) => r.event_page);
 
+    const ongoingParams: Params = {};
+    const ongoing = inProgressNote(db, rankingScope(input, ongoingParams, "g"), ongoingParams);
+
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
       `${i + 1}. ${r.champion} (${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
       `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
@@ -1406,7 +1412,8 @@ LIMIT 20`),
     const facts =
       `Champions ${label.title}${role} ${scope || "toutes compétitions"} (${games} parties) : ${rows.slice(0, 3).map(line).join(", ")}. ` +
       `Critère : ${label.criterion}${minPicks ? `, minimum ${minPicks} picks` : ""}.` +
-      (input.role ? ` Picks, victoires et KDA${role} seulement ; bans et présence tous rôles confondus.` : "");
+      (input.role ? ` Picks, victoires et KDA${role} seulement ; bans et présence tous rôles confondus.` : "") +
+      (ongoing ? ` ${ongoing}` : "");
 
     return {
       title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
@@ -1894,6 +1901,35 @@ LIMIT 20`),
   },
 };
 
+/** How recent an edition's last game must be, against the newest game of the database, to count as in progress. */
+const IN_PROGRESS_DAYS = 30;
+
+const DAY_FR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
+/**
+ * Editions of the scope still being played: no champion in their standings yet, and a game within
+ * IN_PROGRESS_DAYS of the newest game of the database (an old group stage without a winner is not one).
+ * The answer then says its figures are those of the games played so far.
+ */
+function inProgressNote(db: DatabaseSync, scope: string, params: Params): string | null {
+  const rows = selectAll(
+    db,
+    z.object({ tournament: NullableText, event_page: Text, games: z.number(), last: z.number() }),
+    `SELECT MIN(g.tournament) AS tournament, g.event_page, COUNT(*) AS games, MAX(g.played_at) AS last FROM v_games g
+     WHERE ${scope} AND g.played_at IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM v_tournament_results r WHERE r.event_page = g.event_page AND r.place_number = 1)
+     GROUP BY g.event_page
+     HAVING MAX(g.played_at) >= (SELECT MAX(played_at) FROM v_games) - ${IN_PROGRESS_DAYS} * 86400`,
+    params,
+  );
+
+  if (!rows.length) return null;
+
+  return rows
+    .map((r) => `${(r.tournament ?? r.event_page).replace(/ (Main Event|Season)$/, "")} en cours : chiffres sur les ${r.games} parties jouées jusqu'au ${DAY_FR.format(new Date(r.last * 1000))}, sans le reste de la compétition.`)
+    .join(" ");
+}
+
 // 7b. Players of a role ranked on an end-of-game criterion -----------------------------------
 
 type CriterionDef = {
@@ -2023,7 +2059,7 @@ LIMIT 20`),
     const scope = scopeLabel(league, input);
     const def = PLAYER_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfLeaderboard(input);
-    const who = input.role ? `${ROLE_LABEL[input.role]}s` : "joueurs";
+    const who = input.role ? ROLE_PLAYERS[input.role] : "joueurs";
     const columns = [...new Set<PlayerCriterion>([input.criterion, ...LEADERBOARD_COLUMNS])].filter((c) => c !== "games");
     const value = (r: z.infer<typeof PlayerLeaderRow>, c: PlayerCriterion) => r[c] ?? null;
     const ingame = rows.reduce((n, r) => n + r.ingame_games, 0);
@@ -2037,6 +2073,9 @@ LIMIT 20`),
       params,
     ).map((r) => r.event_page);
 
+    const gameParams: Params = {};
+    const ongoing = inProgressNote(db, rankingScope(input, gameParams, "g"), gameParams);
+
     const line = (r: z.infer<typeof PlayerLeaderRow>, i: number) =>
       `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`;
 
@@ -2047,7 +2086,8 @@ LIMIT 20`),
         ? " Écart d'or à 15 min n/d : aucune partie avec données Riot dans ce périmètre."
         : ingame < all
           ? ` Écart d'or à 15 min calculé sur les ${ingame} parties avec données Riot seulement (sur ${all}).`
-          : "");
+          : "") +
+      (ongoing ? ` ${ongoing}` : "");
 
     return {
       title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${league === "toutes compétitions" ? "" : ` (${league})`}`,
@@ -2074,6 +2114,7 @@ LIMIT 20`),
         min_games: minGames,
         criterion: input.criterion,
         leader_gold_diff_15: rows[0]?.gold_diff_15 ?? "n/d",
+        in_progress: ongoing ? "yes" : "no",
       },
     };
   },

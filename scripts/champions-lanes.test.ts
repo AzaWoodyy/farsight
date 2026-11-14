@@ -118,6 +118,36 @@ describe("lane questions: a role, an explicit criterion", () => {
     });
   });
 
+  // A role with a comparison or ranking word gives the role's leaderboard, never the competition's standings.
+  test.each([
+    ["comparaison des mid au worlds 2026", scope("World Championship", "Worlds", 2026), "Mid"],
+    ["compare les junglers LCK 2025", scope("LoL Champions Korea", "LCK", 2025), "Jungle"],
+    ["meilleurs supports MSI 2024", scope("Mid-Season Invitational", "MSI", 2024), "Support"],
+    ["top laners comparison LEC", scope("LoL EMEA Championship", "LEC"), "Top"],
+    ["classement des mids aux Worlds 2026", scope("World Championship", "Worlds", 2026), "Mid"],
+    ["comparaison des ADC en LPL 2024", scope("Tencent LoL Pro League", "LPL", 2024), "Bot"],
+    ["supports comparison at Worlds 2026", scope("World Championship", "Worlds", 2026), "Support"],
+    ["mid laners ranking Worlds 2026", scope("World Championship", "Worlds", 2026), "Mid"],
+    ["ranking of supports at Worlds 2026", scope("World Championship", "Worlds", 2026), "Support"],
+  ] as const)("%s → the %s players ranked", (q, e, role) => {
+    const route = routeQuestion(q, e, SCHEMA, COVERAGE);
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { role, criterion: "kda", league: e.league } } });
+    // Every word read: the rules' pick is not put in doubt.
+    expect(route.kind === "tool" && route.unread).toBeFalsy();
+    expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test("without a role, a ranking word is still the standings; two players named are still their comparison", () => {
+    const worlds26 = scope("World Championship", "Worlds", 2026);
+    const two = { ...worlds26, players: ["Faker", "Chovy"].map((p) => ({ mention: p, player: p, matchedAlias: p, realName: null, nativeName: null, otherCandidates: [], ambiguity: null })) };
+
+    for (const q of ["classement worlds 2026", "Worlds 2026 ranking"])
+      expect(routeQuestion(q, worlds26, SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "tournament_standings", input: { full: true } } });
+    expect(routeQuestion("comparaison des équipes LCK 2025", scope("LoL Champions Korea", "LCK", 2025), SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "player_leaderboard" } });
+    expect(routeQuestion("comparaison des mids Faker et Chovy aux Worlds 2026", two, SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "player_comparison" } });
+  });
+
   test.each([
     ["écart d'or à 15 min des junglers", scope(null, null), { role: "Jungle", metric: "gold_diff", minute: 15 }],
     ["gold diff at 15 of mid laners in LCK 2024", LCK24, { role: "Mid", metric: "gold_diff", minute: 15 }],
@@ -251,6 +281,12 @@ describe("tools on a seeded season", () => {
       expect(out.table!.rows[0][col("KP %")]).toBe(186.7);
       expect(out.facts).toContain("selon le critère KDA ((kills + assists) / morts, sur toutes leurs parties), minimum 2 parties");
       expect(out.facts).toContain("Écart d'or à 15 min calculé sur les 6 parties avec données Riot seulement (sur 8)");
+
+      // No champion in the season's standings and its games are the newest: in progress, said with the figures.
+      expect(out.facts).toContain("LEC25 en cours : chiffres sur les 4 parties jouées jusqu'au");
+      expect(out.totals.in_progress).toBe("yes");
+      db.exec("INSERT INTO tournament_results VALUES (1, 1, '1', 1, NULL)");
+      expect((await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "kda" } })).totals.in_progress).toBe("no");
 
       // Top laners have a single game each: below the default minimum, so nobody until it is lowered.
       const tops = bindTool(db, { tool: "player_leaderboard", input: { ...input, role: "Top", minGames: null, criterion: "kda" } });

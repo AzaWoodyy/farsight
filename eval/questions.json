@@ -2836,6 +2836,135 @@
         },
         "rowsMin": 1
       }
+    },
+    {
+      "id": "lane-compare-mids-worlds-2026",
+      "question": "comparaison des mid au worlds 2026",
+      "tags": [
+        "worlds",
+        "lane"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "players": [],
+        "league": "World Championship",
+        "input": {
+          "role": "Mid",
+          "criterion": "kda",
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "unread": [],
+        "rows": 17,
+        "totals": {
+          "leader": "Knight (Zhuo Ding)",
+          "leader_value": 9.2,
+          "leader_games": 15,
+          "min_games": 5,
+          "in_progress": "yes"
+        },
+        "summaryIncludes": [
+          "selon le critère KDA",
+          "minimum 5 parties",
+          "Worlds 2026 en cours"
+        ]
+      }
+    },
+    {
+      "id": "lane-compare-junglers-lck-2025",
+      "question": "compare les junglers LCK 2025",
+      "tags": [
+        "lck",
+        "lane"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "role": "Jungle",
+          "criterion": "kda"
+        },
+        "unread": [],
+        "totals": {
+          "leader": "Canyon",
+          "leader_value": 5.09,
+          "leader_games": 116,
+          "min_games": 10,
+          "in_progress": "no"
+        }
+      }
+    },
+    {
+      "id": "lane-best-supports-msi-2024",
+      "question": "meilleurs supports MSI 2024",
+      "tags": [
+        "msi",
+        "lane"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "Mid-Season Invitational",
+        "input": {
+          "role": "Support",
+          "criterion": "kda"
+        },
+        "totals": {
+          "leader": "Jun (Yoon Se-jun)",
+          "leader_value": 4.82,
+          "leader_games": 14,
+          "min_games": 5
+        }
+      }
+    },
+    {
+      "id": "lane-top-laners-comparison-lec-en",
+      "question": "top laners comparison LEC",
+      "tags": [
+        "lec",
+        "lane",
+        "english"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "role": "Top",
+          "criterion": "kda",
+          "yearFrom": null
+        },
+        "unread": [],
+        "totals": {
+          "leader": "BrokenBlade",
+          "leader_value": 3.81,
+          "leader_games": 436,
+          "min_games": 20
+        }
+      }
+    },
+    {
+      "id": "standings-worlds-2026-in-progress",
+      "question": "classement worlds 2026",
+      "tags": [
+        "worlds",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026,
+          "full": true
+        },
+        "rows": 17,
+        "totals": {
+          "champion": "",
+          "teams": 17
+        },
+        "summaryIncludes": [
+          "finale pas encore publiée"
+        ]
+      }
     }
   ]
 }
