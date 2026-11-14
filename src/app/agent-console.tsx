@@ -18,6 +18,7 @@ import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
+import { SeriesView } from "./series-view";
 import { GameTimeline } from "./game-timeline";
 import { HomeExamples } from "./home-examples";
 import { PlayerComparison } from "./player-comparison";
@@ -386,7 +387,9 @@ function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => v
       </h2>
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
       {answer.champion && <ChampionProfileView p={answer.champion} />}
-      {answer.pool ? (
+      {answer.series ? (
+        <SeriesView list={answer.series} table={answer.table && <GenericTable table={answer.table} />} />
+      ) : answer.pool ? (
         <ChampionPoolView pool={answer.pool} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />

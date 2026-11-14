@@ -8,6 +8,7 @@ import { DDRAGON_BASE, keystoneIcons } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
 import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
+import { MAX_ROWS } from "./guard";
 import {
   type ChampionPlayer,
   type ChampionPool,
@@ -22,6 +23,10 @@ import {
   type ScoreboardTeam,
   type Side,
   type Source,
+  type SeriesDetail,
+  type SeriesList,
+  type SeriesGame,
+  type SeriesPick,
   type TableCell,
   type TeamHeadToHead,
   type TeamRoster,
@@ -209,6 +214,17 @@ export const GameTimelineInput = z.object({
 
 export type GameTimelineInput = z.infer<typeof GameTimelineInput>;
 
+export const SeriesInput = z.object({
+  teamA: z.string().min(1).nullable().describe("One team of the series (T1, Gen.G...), null when the question names none"),
+  teamB: z.string().min(1).nullable().describe("The other team, null when the question names one team or none"),
+  league: League.nullable(),
+  ...Period,
+  phase: z.enum(GAME_PHASES).nullable().describe("Stage of the series (final, semifinal, quarterfinal...), null for every series of the teams"),
+  split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Split of the season (LCK summer final...), null when not given"),
+});
+
+export type SeriesInput = z.infer<typeof SeriesInput>;
+
 export type PlayerIngameInput = z.infer<typeof PlayerIngameInput>;
 
 export type LeaderboardInput = z.infer<typeof LeaderboardInput>;
@@ -256,6 +272,7 @@ export type ToolOutput = {
   roster?: TeamRoster;
   champion?: ChampionProfile;
   pool?: ChampionPool;
+  series?: SeriesList;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
   trace?: ToolTrace[];
@@ -720,7 +737,7 @@ const roleRank = (role: string) => {
 };
 
 /** A split of the season ("Spring 2018"): the tournament pages of that split. */
-function splitFilter(column: string, input: TeamRosterInput, params: Params): string {
+function splitFilter(column: string, input: { split: string | null }, params: Params): string {
   if (!input.split) return "";
   params.split = input.split;
 
@@ -2757,7 +2774,7 @@ const PHASE_SQL: Record<GamePhase, string> = {
   semifinal: "g.tab IN ('Semifinals', 'Semifinal')",
   quarterfinal: "g.tab IN ('Quarterfinals', 'Quarterfinal')",
   third_place: "g.tab LIKE 'Third-Place%'",
-  groups: "(g.tab LIKE 'Group%' OR g.tab LIKE 'Swiss%' OR (g.stage = 'main_event' AND g.tab LIKE 'Day %'))",
+  groups: "(g.tab LIKE 'Group%' OR g.tab LIKE 'Swiss%' OR (g.stage = 'main_event' AND (g.tab LIKE 'Day %' OR g.tab GLOB 'Round [0-9]*')))",
   play_in: "(g.stage = 'play_in' OR g.tab LIKE 'Play-In%')",
 };
 
@@ -2794,6 +2811,7 @@ export function tabLabel(tab: string | null): string {
   return tab
     .replace(/^Week (\d+)/, "semaine $1")
     .replace(/^Day (\d+)/, "jour $1")
+    .replace(/^Bracket Round (\d+)/, "tour $1 du bracket")
     .replace(/^Round (\d+)/, "tour $1")
     .replace(/^Groups? /, "groupes ")
     .replace(/^Group ([A-Z])$/, "groupe $1");
@@ -2822,19 +2840,20 @@ const TimelineGameRow = z.object({
 
 type TimelineGameRow = z.infer<typeof TimelineGameRow>;
 
+/** What names a series: its competition, season and tab. */
+type SeriesNaming = Pick<TimelineGameRow, "league_short" | "year" | "tab" | "tournament">;
+
 /** The series a game belongs to: one tab's match of one tournament page. */
 const seriesKey = (r: TimelineGameRow) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
 
 /** "Worlds 2024 · finale" */
-const seriesLabel = (r: TimelineGameRow) => [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · ");
+const seriesLabel = (r: SeriesNaming) => [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · ");
 
 /** "la finale des Worlds 2024" */
-function seriesPhrase(r: TimelineGameRow): string {
-  const event = `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
-  const of = r.league_short === "Worlds" || r.league_short.endsWith("Masters") ? `des ${event}` : r.league_short === "MSI" ? `du ${event}` : `de la ${event}`;
+function seriesPhrase(r: SeriesNaming): string {
   const tab = tabLabel(r.tab);
 
-  return tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : "la "}${tab} ${of}` : r.tournament ?? event;
+  return tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : /^(quart|match)/.test(tab) ? "le " : "la "}${tab} ${ofEvent(r)}` : (r.tournament ?? `${r.league_short}${r.year ? ` ${r.year}` : ""}`);
 }
 
 const thousands = (n: number) => Math.abs(n).toLocaleString("fr-FR").replace(/ | /g, " ");
@@ -3257,6 +3276,379 @@ ORDER BY g.played_at DESC, g.game_n`,
   },
 };
 
+// 10. Series (best-of) as one unit: score, then every game ---------------------------------
+
+const PhaseTabRow = z.object({
+  tournament_page: Text,
+  tab: Text,
+  start: z.number().nullable(),
+  end: z.number().nullable(),
+  named: z.number(),
+  final: z.number(),
+  play_in: z.number(),
+});
+
+/** A tab that holds the phase asked; `before` names the final it precedes when the bracket names no such phase. */
+type PhaseTab = { page: string; tab: string; before: string | null };
+
+/**
+ * The tabs (one per tournament page) that hold a phase in the scope. Play-in tabs only count for the play-in, so a
+ * play-in final is not the event's final. A double-elimination bracket (MSI since 2023, LCK playoffs) has no tab
+ * named "Semifinals": its semifinal is the last round before the final, the round that decides both finalists.
+ * Qualifier stages are out of scope (COMPETITION_STAGES): "LPL Regional Finals" is not the Worlds final.
+ */
+function phaseTabs(db: DatabaseSync, input: SeriesInput & { phase: GamePhase }): PhaseTab[] {
+  const params: Params = {};
+  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+
+  const rows = selectAll(
+    db,
+    PhaseTabRow,
+    `SELECT g.tournament_page, g.tab, MIN(g.played_at) AS start, MAX(g.played_at) AS end,
+            MAX(${PHASE_SQL[input.phase]}) AS named, MAX(${PHASE_SQL.final}) AS final, MAX(${PHASE_SQL.play_in}) AS play_in
+     FROM v_games g
+     WHERE g.stage IN (${COMPETITION_STAGES}) AND g.tab IS NOT NULL ${league} ${periodFilter("g.year", input, params)} ${splitFilter("g.tournament_page", input, params)}
+     GROUP BY g.tournament_page, g.tab`,
+    params,
+  );
+
+  const pages = new Map<string, z.infer<typeof PhaseTabRow>[]>();
+
+  for (const r of rows) pages.set(r.tournament_page, [...(pages.get(r.tournament_page) ?? []), r]);
+
+  return [...pages].flatMap(([page, tabs]): PhaseTab[] => {
+    const named = tabs.filter((t) => t.named === 1 && (input.phase === "play_in" || t.play_in === 0));
+
+    if (named.length) return named.map((t) => ({ page, tab: t.tab, before: null }));
+
+    const final = tabs.find((t) => t.final === 1 && t.play_in === 0);
+
+    if (input.phase !== "semifinal" || !final || final.start == null) return [];
+
+    const last = tabs
+      .filter((t) => t.final === 0 && t.play_in === 0 && t.end != null && t.end <= final.start!)
+      .reduce<z.infer<typeof PhaseTabRow> | null>((best, t) => (!best || t.end! > best.end! ? t : best), null);
+
+    return last ? [{ page, tab: last.tab, before: final.tab }] : [];
+  });
+}
+
+const SeriesGameRow = z.object({
+  game_id: z.number(),
+  tournament_page: Text,
+  event_page: Text,
+  tournament: NullableText,
+  league_short: Text,
+  year: z.number().nullable(),
+  tab: NullableText,
+  match_n: z.number().nullable(),
+  game_n: z.number().nullable(),
+  played_at: z.number().nullable(),
+  patch: NullableText,
+  length_s: z.number().nullable(),
+  blue_team: NullableText,
+  red_team: NullableText,
+  winner: NullableText,
+  stats_page: NullableText,
+});
+
+type SeriesGameRow = z.infer<typeof SeriesGameRow>;
+
+const SeriesPickRow = z.object({ game_id: z.number(), side: z.number().nullable(), role: NullableText, player: Text, champion: NullableText, icon: NullableText });
+
+const SeriesBanRow = z.object({ game_id: z.number(), side: z.number(), champion: Text, icon: NullableText });
+
+/** Series detailed with their games; the others of a long phase (Swiss rounds...) are listed with their score only. */
+const MAX_DETAILED_SERIES = 16;
+
+const seriesGameKey = (r: SeriesGameRow) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
+
+const DAY_SHORT = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+const gameSource = (r: SeriesGameRow): Source =>
+  r.stats_page
+    ? { label: `Leaguepedia — ${seriesLabel(r)} · game ${r.game_n ?? "?"} (${r.stats_page})`, url: wikiUrl(r.stats_page) }
+    : { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) };
+
+/** 1, 3 or 5 from the score: the winner's wins are the wins needed. Null without a winner. */
+const bestOfScore = (a: number, b: number) => (a === b ? null : 2 * Math.max(a, b) - 1);
+
+/** Picks (Top → Support) and bans of the detailed games, from Leaguepedia's scoreboards. */
+function seriesDrafts(db: DatabaseSync, ids: number[]) {
+  const params: Params = {};
+  const list = ids.map((id, i) => ((params[`g${i}`] = id), `:g${i}`)).join(", ");
+
+  const picks = ids.length
+    ? selectAll(
+        db,
+        SeriesPickRow,
+        `SELECT p.game_id, p.side, p.role, p.player, p.champion, c.icon_url AS icon
+         FROM v_game_players p LEFT JOIN champions c ON c.name = p.champion WHERE p.game_id IN (${list})`,
+        params,
+      )
+    : [];
+
+  const bans = ids.length
+    ? selectAll(
+        db,
+        SeriesBanRow,
+        `SELECT d.game_id, d.side, d.champion, c.icon_url AS icon
+         FROM v_draft d LEFT JOIN champions c ON c.name = d.champion WHERE d.kind = 'ban' AND d.game_id IN (${list})
+         ORDER BY d.game_id, d.side, d.slot`,
+        params,
+      )
+    : [];
+
+  const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
+
+  return (id: number): Pick<SeriesGame, "picks" | "bans"> => {
+    const sideOfRow = (side: number | null): Side | null => (side === 1 ? "blue" : side === 2 ? "red" : null);
+    const own = picks.filter((p) => p.game_id === id).sort((a, b) => rank(a.role) - rank(b.role));
+    const banned = bans.filter((b) => b.game_id === id);
+
+    const pickOf = (side: Side): SeriesPick[] =>
+      own.filter((p) => sideOfRow(p.side) === side).map((p) => ({ role: p.role, player: displayTeam(p.player), champion: p.champion, icon: p.icon }));
+
+    const banOf = (side: Side) => banned.filter((b) => sideOfRow(b.side) === side).map((b) => ({ champion: b.champion, icon: b.icon }));
+
+    return { picks: { blue: pickOf("blue"), red: pickOf("red") }, bans: { blue: banOf("blue"), red: banOf("red") } };
+  };
+}
+
+const PHASE_PLURAL: Record<GamePhase, string> = {
+  final: "finales",
+  semifinal: "demi-finales",
+  quarterfinal: "quarts de finale",
+  third_place: "matchs pour la 3e place",
+  groups: "phase de groupes",
+  play_in: "play-in",
+};
+
+/** "des Worlds 2025", "du MSI 2024", "de la LCK 2024" */
+function ofEvent(r: Pick<SeriesNaming, "league_short" | "year">): string {
+  const event = `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
+
+  return r.league_short === "Worlds" || r.league_short.endsWith("Masters") ? `des ${event}` : r.league_short === "MSI" ? `du ${event}` : `de la ${event}`;
+}
+
+const capitalize = (text: string) => text.replace(/^./, (c) => c.toUpperCase());
+
+const series: ToolDef<SeriesInput> = {
+  name: "series",
+  label: "série (BO)",
+  description:
+    "Series (best-of) shown as one unit: the score (3-2), then every game with its winner, sides, duration, picks and bans. " +
+    "For a final, a semifinal, a quarterfinal or another stage of a competition ('finale des Worlds 2025', 'demi-finales MSI 2024'), " +
+    "or a named match between two teams ('T1 vs Gen.G finale LCK 2024'). Regional qualifiers such as 'LPL Regional Finals' are not " +
+    "the international event's final. For a team's whole record against another, use head_to_head; for one game's minute-by-minute story, game_timeline.",
+  plan: (db, input) => {
+    const params: Params = {};
+    const where = [`g.stage IN (${COMPETITION_STAGES})`];
+    const a = input.teamA ? inList("a", teamMembers(db, input.teamA).members, params) : null;
+    const b = input.teamB ? inList("b", teamMembers(db, input.teamB).members, params) : null;
+
+    if (a && b) where.push(`((g.blue_team IN (${a}) AND g.red_team IN (${b})) OR (g.blue_team IN (${b}) AND g.red_team IN (${a})))`);
+    else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
+
+    if (input.league) where.push(leagueFilter("g.league", input, params));
+
+    if (input.phase) {
+      const tabs = phaseTabs(db, { ...input, phase: input.phase });
+
+      where.push(tabs.length ? `(g.tournament_page || '|' || g.tab) IN (${inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params)})` : "0");
+    }
+
+    return {
+      params,
+      sql: `SELECT g.game_id, g.tournament_page, g.event_page, g.tournament, g.league_short, g.year, g.tab, g.match_n, g.game_n,
+       g.played_at, g.patch, g.length_s, g.blue_team, g.red_team, g.winner, r.stats_page
+FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
+WHERE ${where.join("\n  AND ")}
+  ${periodFilter("g.year", input, params)}
+  ${splitFilter("g.tournament_page", input, params)}
+ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+    const phase = input.phase ? PHASE_LABEL[input.phase] : null;
+
+    // Two teams that did not meet in that phase: their series in the season asked (a year keeps the list short).
+    if (phase && input.teamA && input.teamB && hasPeriod(input))
+      out.push({
+        key: "phase",
+        input: { ...input, phase: null },
+        note: `Aucune ${phase} ${input.teamA} – ${input.teamB} dans ce périmètre : toutes leurs séries de la période.`,
+        reason: `phase « ${phase} » retirée`,
+      });
+
+    // One team that did not reach that phase: the phase itself, without the team.
+    if (phase && input.teamA && !input.teamB && (input.league || hasPeriod(input)))
+      out.push({
+        key: "team",
+        input: { ...input, teamA: null },
+        note: `${input.teamA} n'a pas joué de ${phase} dans ce périmètre : affichage de la ${phase} sans filtre d'équipe.`,
+        reason: `équipe ${input.teamA} retirée`,
+      });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(SeriesGameRow).parse(sqlRows);
+    const groups = new Map<string, SeriesGameRow[]>();
+
+    for (const r of rows) groups.set(seriesGameKey(r), [...(groups.get(seriesGameKey(r)) ?? []), r]);
+    const seriesGames = [...groups.values()];
+    const detailedIds = seriesGames.slice(0, MAX_DETAILED_SERIES).flatMap((g) => g.map((r) => r.game_id));
+    const draftOf = seriesDrafts(db, detailedIds);
+
+    const list: SeriesDetail[] = seriesGames.map((games, i) => {
+      games.sort((x, y) => (x.game_n ?? 0) - (y.game_n ?? 0));
+      const first = games[0];
+      const names = [...new Set(games.flatMap((g) => [g.blue_team, g.red_team]).filter((t): t is string => t != null))];
+      const winsOf = (team: string | undefined) => games.filter((g) => team != null && g.winner === team).length;
+      // The series winner first; a series without one keeps the first game's blue side first.
+      const [x, y] = winsOf(names[1]) > winsOf(names[0]) ? [names[1], names[0]] : [names[0], names[1]];
+
+      return {
+        label: seriesLabel(first),
+        tournamentPage: first.tournament_page,
+        playedAt: first.played_at,
+        teamA: displayTeam(x ?? "?"),
+        teamB: displayTeam(y ?? "?"),
+        winsA: winsOf(x),
+        winsB: winsOf(y),
+        bestOf: bestOfScore(winsOf(x), winsOf(y)),
+        games:
+          i < MAX_DETAILED_SERIES
+            ? games.map((g) => ({
+                n: g.game_n,
+                playedAt: g.played_at,
+                blue: displayTeam(g.blue_team ?? "Bleu"),
+                red: displayTeam(g.red_team ?? "Rouge"),
+                winner: g.winner == null ? null : g.winner === g.blue_team ? "blue" : g.winner === g.red_team ? "red" : null,
+                durationS: g.length_s,
+                patch: g.patch,
+                ...draftOf(g.game_id),
+                source: gameSource(g),
+              }))
+            : null,
+        source: { label: `Leaguepedia — ${first.tournament_page}`, url: wikiUrl(first.tournament_page) },
+      };
+    });
+
+    const firstRow = rows[0];
+    const one = list.length === 1 ? list[0] : null;
+    const teams = [input.teamA, input.teamB].flatMap((t) => (t == null ? [] : [displayTeam(t)]));
+    const labels = [...new Set(list.map((s) => s.label))];
+    // One competition and season: "MSI 2024"; several: the competition asked, with the period.
+    const oneEvent = new Set(rows.map((r) => `${r.league_short}|${r.year}`)).size === 1;
+    const short = leagueShortName(db, input.league);
+    const span = hasPeriod(input) ? yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year]))) : "";
+
+    const event = oneEvent
+      ? `${firstRow.league_short}${firstRow.year ? ` ${firstRow.year}` : ""}`
+      : input.league
+        ? [short, span].filter(Boolean).join(" ")
+        : span || short;
+
+    const phaseName = input.phase ? PHASE_PLURAL[input.phase] : null;
+    const scope = [labels.length === 1 ? labels[0] : phaseName ? `${event} · ${phaseName}` : event, teams.join(" – ")].filter(Boolean).join(" · ");
+
+    const notes: string[] = [];
+
+    if (input.phase === "semifinal") {
+      const fallback = phaseTabs(db, { ...input, phase: "semifinal" }).filter((t) => t.before && list.some((s) => s.tournamentPage === t.page));
+
+      for (const t of fallback)
+        notes.push(`${t.page} : pas de demi-finales nommées sur Leaguepedia (tableau à double élimination) ; séries du dernier tour avant la finale (${t.tab}), qui désigne les deux finalistes.`);
+    }
+
+    if (list.length > MAX_DETAILED_SERIES) notes.push(`${list.length} séries : le détail game par game est donné pour les ${MAX_DETAILED_SERIES} premières.`);
+
+    if (rows.length >= MAX_ROWS) notes.push(`Liste limitée aux ${MAX_ROWS} premières parties : précise la saison ou la phase pour la suite.`);
+
+    const score = (s: SeriesDetail) => `${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`;
+    const sideName = (g: SeriesGame) => (g.winner === "blue" ? `${g.blue} (bleu)` : g.winner === "red" ? `${g.red} (rouge)` : "vainqueur inconnu");
+
+    const ofScope = oneEvent
+      ? ofEvent(firstRow)
+      : input.league
+        ? [ofEvent({ league_short: short, year: null }), span].filter(Boolean).join(" ")
+        : [teams.length ? `de ${teams.join(" et ")}` : "", span ? `en ${span}` : "toutes compétitions"].filter(Boolean).join(" ");
+
+    const phrase = capitalize(one || !phaseName ? seriesPhrase(firstRow) : `${phaseName} ${ofScope}`.trim());
+
+    const facts = one
+      ? `${phrase} : ${one.winsA === one.winsB ? `${one.teamA} et ${one.teamB} à égalité ${one.winsA}-${one.winsB}` : `${one.teamA} bat ${one.teamB} ${one.winsA}-${one.winsB}`}` +
+        `${one.bestOf ? ` (BO${one.bestOf})` : ""}${one.playedAt ? `, le ${DAY_FR.format(new Date(one.playedAt * 1000))}` : ""}. ` +
+        (one.games ?? []).map((g) => `Game ${g.n ?? "?"} : ${sideName(g)}${g.durationS ? ` en ${clock(g.durationS)}` : ""}`).join(" ; ") +
+        "."
+      : `${phrase} : ${list.length} séries. ${list.slice(0, 8).map(score).join(" ; ")}${list.length > 8 ? " ; …" : ""}.`;
+
+    // Asked again by its stage, the follow-up routes back to this tool.
+    const askAgain = (s: SeriesDetail) =>
+      `${s.teamA} vs ${s.teamB} ${input.phase ? `${PHASE_LABEL[input.phase]} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`;
+
+    const followUps = one
+      ? [
+          ...(one.games ?? []).filter((g) => g.n != null).slice(-2).reverse().map((g) => `Récap de la game ${g.n} de ${one.teamA} vs ${one.teamB}, ${seriesPhrase(firstRow)}`),
+          `${one.teamA} contre ${one.teamB}`,
+        ]
+      : list.slice(0, 3).map(askAgain);
+
+    const totals: ToolOutput["totals"] = { series: list.length, games: rows.length };
+    const top = list[0];
+
+    if (top)
+      Object.assign(totals, {
+        team_a: top.teamA,
+        team_b: top.teamB,
+        wins_a: top.winsA,
+        wins_b: top.winsB,
+        score: `${top.winsA}-${top.winsB}`,
+        best_of: top.bestOf ?? "n/d",
+        label: top.label,
+        date: top.playedAt ? DAY_SHORT.format(new Date(top.playedAt * 1000)) : "n/d",
+      });
+
+    const pages = [...new Set(list.map((s) => s.tournamentPage))];
+    const gamePages = list.flatMap((s) => (s.games ?? []).flatMap((g) => (g.source.url === s.source.url ? [] : [g.source])));
+
+    return {
+      title: one ? `${score(one)} — ${one.label}` : phaseName ? `${capitalize(phaseName)} — ${[event, teams.join(" – ")].filter(Boolean).join(" · ")}` : `Séries — ${scope}`,
+      series: { scope, count: list.length, series: list },
+      table: {
+        columns: ["Série", "Game", "Bleu", "Rouge", "Vainqueur", "Durée", "Patch"],
+        rows: list.flatMap((s, i) =>
+          seriesGames[i].map((g) => [
+            `${score(s)} · ${s.label}`,
+            g.game_n,
+            displayTeam(g.blue_team ?? "?"),
+            displayTeam(g.red_team ?? "?"),
+            g.winner ? displayTeam(g.winner) : null,
+            g.length_s ? clock(g.length_s) : null,
+            g.patch,
+          ]),
+        ),
+      },
+      facts,
+      sources: [...pages.map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) })), ...gamePages].slice(0, 30),
+      followUps: followUps.slice(0, 3),
+      notes,
+      totals,
+    };
+  },
+  normalize: (db, input) => {
+    const a = input.teamA ? resolveTeam(db, input.teamA) : null;
+    const b = input.teamB ? resolveTeam(db, input.teamB) : null;
+
+    if ((input.teamA && !a) || (input.teamB && !b)) return null;
+
+    return { ...input, teamA: a?.team ?? b?.team ?? null, teamB: a ? (b?.team ?? null) : null };
+  },
+};
+
 // Registry ----------------------------------------------------------------------------
 
 /** Capture each tool's input/implementation relationship once, before indexing the heterogeneous registry. */
@@ -3304,6 +3696,7 @@ export const TOOLS = {
   ingame_leaderboard: defineTool(LeaderboardInput, ingameLeaderboard),
   team_ingame_stats: defineTool(TeamIngameInput, teamIngameStats),
   game_timeline: defineTool(GameTimelineInput, gameTimeline),
+  series: defineTool(SeriesInput, series),
 };
 
 export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {

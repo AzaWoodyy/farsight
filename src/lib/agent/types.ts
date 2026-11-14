@@ -294,6 +294,58 @@ export type TeamHeadToHead = {
   series: TeamSeries[];
 };
 
+/** One pick of a game in a series: who played which champion, in Top → Support order. */
+export type SeriesPick = {
+  role: string | null;
+  player: string;
+  champion: string | null;
+  icon: string | null;
+};
+
+/** One game of a series as the best-of view draws it (sides are Leaguepedia's: blue = Team1). */
+export type SeriesGame = {
+  /** Number of the game in the series (1 to 5). */
+  n: number | null;
+  playedAt: number | null;
+  blue: string;
+  red: string;
+  winner: Side | null;
+  durationS: number | null;
+  patch: string | null;
+  picks: Record<Side, SeriesPick[]>;
+  /** Bans in draft order, empty when Leaguepedia has none for the game. */
+  bans: Record<Side, { champion: string; icon: string | null }[]>;
+  /** The game's Riot data page when Leaguepedia has one, else the tournament page. */
+  source: Source;
+};
+
+/** One series (best-of) shown as a unit: its score, then every game. */
+export type SeriesDetail = {
+  /** "Worlds 2025 · finale" */
+  label: string;
+  tournamentPage: string;
+  playedAt: number | null;
+  /** The series winner first when there is one. */
+  teamA: string;
+  teamB: string;
+  winsA: number;
+  winsB: number;
+  /** 1, 3 or 5 read from the score (wins needed × 2 − 1); null when the series has no winner. */
+  bestOf: number | null;
+  /** Null when the series is listed without its games (beyond the detailed ones). */
+  games: SeriesGame[] | null;
+  source: Source;
+};
+
+/** The series a question names (series tool): a final, one match, or every series of a phase. */
+export type SeriesList = {
+  /** "Worlds 2025 · finale", "LCK 2024 · finale · T1 – Gen.G" */
+  scope: string;
+  /** Every series of the scope, in play order. */
+  count: number;
+  series: SeriesDetail[];
+};
+
 /** One player of a team's roster in a role, over the scope asked. */
 export type RosterPlayer = {
   player: string;
@@ -413,6 +465,8 @@ export type Answer = {
   champion: ChampionProfile | null;
   /** The champions a player or a team played (champion_pool tool). */
   pool: ChampionPool | null;
+  /** Series shown as best-of units, with their games (series tool). */
+  series: SeriesList | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */
   icons: Record<string, string>;
   /** Database profile of each player the question names, for comparison layouts. */
