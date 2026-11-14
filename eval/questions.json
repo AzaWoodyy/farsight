@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -3569,6 +3569,201 @@
           "games": 73,
           "unique": 22,
           "top": "Taliyah"
+        }
+      }
+    },
+    {
+      "id": "pool-alias-pool-champ-bin",
+      "question": "pool champ bin",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-bin-champ-pool",
+      "question": "bin champ pool",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-champs-pool-bin",
+      "question": "champs pool bin",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-pool-de-champions-bin",
+      "question": "pool de champions bin",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-typo-chamion-pool-bin",
+      "question": "chamion pool bin",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-pool-bin",
+      "question": "pool bin",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Bin (Chen Ze-Bin)"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Bin (Chen Ze-Bin)",
+          "league": null
+        },
+        "rows": 43,
+        "totals": {
+          "games": 898,
+          "wins": 571,
+          "unique": 43,
+          "top": "Gnar",
+          "top_games": 104
+        }
+      }
+    },
+    {
+      "id": "pool-alias-pool-champion-faker",
+      "question": "pool champion faker",
+      "tags": [
+        "pool",
+        "player",
+        "alias"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "players": [
+          "Faker"
+        ],
+        "input": {
+          "subject": "player",
+          "name": "Faker",
+          "league": null
+        },
+        "totals": {
+          "games": 1560,
+          "wins": 1042,
+          "unique": 87,
+          "top": "Azir",
+          "top_games": 194
         }
       }
     },

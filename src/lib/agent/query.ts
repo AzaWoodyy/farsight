@@ -10,7 +10,7 @@ import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, n
 import { detectMetric, type MetricCue, MINUTE } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
-import { LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
+import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
 
 // Rules router ----------------------------------------------------------------------
 
@@ -141,7 +141,8 @@ const NOT_ROSTER = word(
  * "champions joués par T1", "winrate de Faker par champion". Only with one player or one team named.
  */
 export const POOL = word(
-  "champions?[- ]?pools?|pools? (?:de |of )?champions?|pools?|quels? champions?|quelles? champions?|which champions?|what champions?|" +
+  `${CHAMPION_POOL}|pools?|` +
+    "quels? champions?|quelles? champions?|which champions?|what champions?|" +
     "champions? (?:jou[ée]e?s?|played|pick[ée]e?s?|picked|utilis[ée]e?s?|used)|champions? (?:les? |la )?(?:plus|most) (?:jou[ée]e?s|played|pick[ée]e?s|picked)|" +
     "(?:most|least) (?:played|picked) champions?|(?:par|by|per) champions?|ses champions|his champions|her champions|their champions|" +
     "persos?|signature picks?",
