@@ -76,6 +76,20 @@ test("two teams still route to their head-to-head; a metric keeps two opposed pl
     expect(routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE)).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
 });
 
+test("a metric the comparison does not hold is said in a note", () => {
+  const notesOf = (q: string) => {
+    const route = routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+
+    expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
+
+    return route.kind === "tool" ? route.notes.filter((n) => n.includes("ne contient pas")) : [];
+  };
+
+  for (const q of ["Faker vs Chovy pentakills", "Faker vs Chovy first bloods", "compare les wards de Faker et Chovy", "Faker vs Chovy gold diff at 10"]) expect(notesOf(q)).toHaveLength(1);
+
+  for (const q of ["Faker vs Chovy KDA", "compare les solo kills de Faker et Chovy", "Faker vs Chovy gold diff at 15"]) expect(notesOf(q)).toEqual([]);
+});
+
 /** LEC 2024: Caps (G2) and Humanoid (Fnatic) meet twice; Caps also plays MAD Lions (Elyoya) once, and once in the LCK. */
 function seed(db: DatabaseSync) {
   createSchema(db);

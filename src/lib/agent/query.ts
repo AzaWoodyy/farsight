@@ -188,6 +188,11 @@ export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
   ["winrate", word("forts?|strongest|strong|meilleurs?|best|pires?|worst")],
 ];
 
+/** Per-game figures a champion ranking does not sort by (it sorts by presence, picks, bans, win rate or KDA). */
+const CHAMPION_UNRANKED = word(
+  "kills?|morts?|deaths?|assists?|golds?|cs|farm|d[ée]g[âa]ts|damage|vision|dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration",
+);
+
 export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
 
 const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
@@ -197,6 +202,9 @@ const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]
 
 /** The in-game figures of a champion's profile: metric and minute. */
 const PROFILE_INGAME = new Set(["gold_diff@15", "cs_diff@15"]);
+
+/** The in-game figures of a two-player comparison: metric and minute. Keep in line with COMPARISON_COLUMNS in tools.ts. */
+const COMPARED_INGAME = new Set(["solo_kills@15", "gold_diff@15", "cs_diff@15"]);
 
 /** "au moins 50 parties", "minimum 20 games", "more than 30 picks": a minimum the question sets itself. */
 const MINIMUM = /(au moins|minimum(?: de)?|min\.?|at least|plus de|more than|over)\s*(\d{1,3})\s*(parties|games|matchs|matches|picks)/iu;
@@ -486,6 +494,11 @@ function comparisonRoute(question: string, e: Entities): Route {
   const [a, b] = e.players;
   const notes = e.players.length > 2 ? [`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`] : [];
   const cue = OPPOSE.exec(question)?.[0];
+  const metric = detectMetric(question);
+
+  // The comparison holds end-of-game averages, gold and CS difference at 15 min and solo kills: another in-game metric is said missing.
+  if (metric && !COMPARED_INGAME.has(`${metric.player}@${metric.minute ?? 15}`))
+    notes.push(`La comparaison ne contient pas « ${metric.mention} » : elle porte sur les statistiques de fin de partie, les écarts d'or et de CS à 15 min et les solo kills.`);
 
   return {
     kind: "tool",
@@ -618,7 +631,14 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
   if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.minute ?? 15}`))) return championRoute(e);
 
-  if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) return championRankingRoute(question, e);
+  if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
+    const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
+
+    // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
+    if (figure) return { kind: "sql", reason: `classement de champions sur une statistique que l'outil ne trie pas (« ${figure} »)` };
+
+    return championRankingRoute(question, e);
+  }
 
   const role = roleOf(question);
   const ranksPlayers = role != null || PLAYER_WORDS.test(question);

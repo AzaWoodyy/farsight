@@ -251,6 +251,20 @@
       }
     },
     {
+      "id": "h2h-apostrophe-order",
+      "question": "T1 vs Anyone's Legend",
+      "tags": [
+        "head_to_head"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Anyone's Legend"
+        ]
+      }
+    },
+    {
       "id": "lck-t1-vs-geng",
       "question": "T1 contre Gen.G en LCK",
       "tags": [
@@ -4938,6 +4952,36 @@
           "score": "3-2"
         },
         "unread": []
+      }
+    },
+    {
+      "id": "champion-unranked-metric",
+      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "tags": [
+        "champion",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship"
+      }
+    },
+    {
+      "id": "comparison-metric-not-held",
+      "question": "Faker vs Chovy pentakills",
+      "tags": [
+        "head_to_head",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "notes": [
+          "ne contient pas « pentakills »"
+        ]
       }
     }
   ]

@@ -131,4 +131,23 @@ describe("head-to-head of two teams on a seeded database", () => {
       db.close();
     }
   });
+
+  test("the order of the question holds for a name written with an apostrophe", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      // Before any team is resolved: the team index is cached per database handle.
+      db.exec(`INSERT INTO teams VALUES (6,'Anyone''s Legend');
+        INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (7,3,'Round 1',1,1,5,6,1,310);`);
+      const order = async (q: string) => (await understandQuestion(db, q, new Date("2026-11-14")))?.result.teams.map((t) => t.team);
+
+      expect(await order("Fnatic vs Anyone's Legend")).toEqual(["Fnatic", "Anyone's Legend"]);
+      expect(await order("Anyone's Legend vs Fnatic")).toEqual(["Anyone's Legend", "Fnatic"]);
+      expect(await order("Fnatic vs Anyone’s Legend")).toEqual(["Fnatic", "Anyone's Legend"]);
+      expect(await order("Karmine Corp contre Fnatic")).toEqual(["Karmine Corp", "Fnatic"]);
+    } finally {
+      db.close();
+    }
+  });
 });

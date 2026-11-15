@@ -58,6 +58,15 @@ describe("champion questions route to the champion tools, decided by the rules",
     expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
   });
 
+  test("a figure the ranking does not sort by goes to generated SQL", () => {
+    for (const [q, e] of [
+      ["quel champion a le plus de pentakills aux Worlds 2024", WORLDS24],
+      ["quel champion fait le plus de dégâts aux Worlds 2024", WORLDS24],
+      ["champions avec le plus de kills en LCK 2024", LCK24],
+    ] as const)
+      expect(routeQuestion(q, e, SCHEMA, COVERAGE).kind).toBe("sql");
+  });
+
   test("a champion alone gets its profile, even with an end-of-game metric", () => {
     const azir = { ...WORLDS24, champion: { mention: "Azir", champion: "Azir" } };
 

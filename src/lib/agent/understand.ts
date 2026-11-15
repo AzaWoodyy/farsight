@@ -465,6 +465,15 @@ export function resolveTeam(db: DatabaseSync, mention: string): ResolvedTeam | n
   return hit ? { mention, team: hit.team, members: hit.members } : null;
 }
 
+/** Franchises with several names that have games in the database, under their current name. */
+export function renamedTeams(db: DatabaseSync): { team: string; members: string[] }[] {
+  return FRANCHISES.flatMap((f) => {
+    const t = resolveTeam(db, f.team);
+
+    return t && t.members.length > 1 ? [{ team: t.team, members: t.members }] : [];
+  });
+}
+
 export function resolveChampion(db: DatabaseSync, mention: string): ResolvedChampion | null {
   const name = getIndexes(db).champions.get(normalizeAlias(mention));
 
@@ -496,6 +505,8 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
   const found: Mentions = { players: [], teams: [], champion: null };
   const used = new Set<number>();
+  // Where each mention starts, in tokens: the order of the question.
+  const at = new Map<string, number>();
   const { teams } = getIndexes(db);
 
   for (let size = 3; size >= 1; size--) {
@@ -528,14 +539,19 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
 
       if (team && (team.curated || !players.length || team.games >= players[0].games)) {
-        if (!found.teams.some((t) => t.team === team.team))
+        if (!found.teams.some((t) => t.team === team.team)) {
           found.teams.push({ mention, team: team.team, members: team.members });
+          at.set(mention, i);
+        }
+
         span.forEach((k) => used.add(k));
         continue;
       }
 
       if (players.length) {
         found.players.push(mention);
+
+        if (!at.has(mention)) at.set(mention, i);
         span.forEach((k) => used.add(k));
       }
     }
@@ -563,7 +579,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   if (found.teams.length) found.players = found.players.filter((m) => !SHORT_ROLE_MENTION.test(m));
 
   // Keep the order of the question (it decides sides in a head-to-head).
-  const pos = (m: string) => question.indexOf(m);
+  const pos = (m: string) => at.get(m) ?? Number.MAX_SAFE_INTEGER;
   found.players.sort((a, b) => pos(a) - pos(b));
   found.teams.sort((a, b) => pos(a.mention) - pos(b.mention));
 
