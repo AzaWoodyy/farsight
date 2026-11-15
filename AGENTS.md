@@ -10,6 +10,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Farsight
 
+This code base is yours. What it's for and how it's built are your call, and you are going to be the one that keeps building on it.
+
 Natural-language research agent over League of Legends esports data, a portfolio project deployed at `askfarsight.com`. A question ("Chovy's results at every Worlds") goes through four visible steps: understand (entities and aliases such as Chovy / 정지훈 / Jihun), build the query behind a schema guard, execute and self-correct on empty or error, format (sortable table, summary sentence, sources, follow-ups).
 
 ## Decisions
