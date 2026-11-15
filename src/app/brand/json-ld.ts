@@ -14,6 +14,8 @@ export const JSON_LD = {
       "@id": `${SITE.url}/#website`,
       url: SITE.url,
       name: SITE.name,
+      // The name Google may show instead of the bare domain, and the domain as its accepted alternative.
+      alternateName: new URL(SITE.url).host,
       description: SITE.description,
       inLanguage: "fr",
       author,
