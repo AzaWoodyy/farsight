@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
 import { selectAll, selectOne, type SqlRow } from "../db";
-import { DDRAGON_BASE, keystoneIcons } from "../sources/ddragon";
+import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
 import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
@@ -16,11 +16,13 @@ import {
   type ChampionPool,
   type ChampionPoolLine,
   type ChampionProfile,
+  type ChampionSetups,
   type Entities,
   type GameScoreboard,
   LEAGUE_NAMES,
   type PlayerProfile,
   type ResultRow,
+  RUNE_KINDS,
   type ScoreboardPlayer,
   type ScoreboardTeam,
   type Side,
@@ -1540,6 +1542,87 @@ function itemsFacts(p: ChampionProfile): string {
   );
 }
 
+/** Where the summoner spells and the runes come from: the scoreboards. */
+const SETUPS_SOURCE: Source = { label: "Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)", url: wikiUrl("Special:CargoTables/ScoreboardPlayers") };
+
+const ChampionSpellsRow = z.object({ spell1: Text, spell2: NullableText, icon1: NullableText, icon2: NullableText, games: z.number(), wins: z.number() });
+
+const ChampionRuneRow = z.object({ rune: Text, kind: z.enum(RUNE_KINDS), tree: NullableText, icon: NullableText, games: z.number(), wins: z.number() });
+
+/** A champion's summoner spell pairs and runes in the scope (`gp` is v_game_players), and the games that have them. */
+function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: number): ChampionSetups {
+  const params: Params = {};
+  const where = championScope(input, params);
+
+  const spells = selectAll(
+    db,
+    ChampionSpellsRow,
+    `SELECT gp.spell1, gp.spell2, s1.icon_url AS icon1, s2.icon_url AS icon2, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
+     FROM v_game_players gp LEFT JOIN summoner_spells s1 ON s1.name = gp.spell1 LEFT JOIN summoner_spells s2 ON s2.name = gp.spell2
+     WHERE ${where} AND gp.spell1 IS NOT NULL
+     GROUP BY gp.spell1, gp.spell2 ORDER BY games DESC, gp.spell1, gp.spell2`,
+    params,
+  );
+
+  // A stat shard taken twice on a page counts once, as two copies of an item do.
+  const runes = selectAll(
+    db,
+    ChampionRuneRow,
+    `SELECT r.rune, r.kind, r.tree, r.icon_url AS icon, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
+     FROM v_game_players gp JOIN v_player_runes r ON r.game_id = gp.game_id AND r.player = gp.player
+     WHERE ${where}
+     GROUP BY r.kind, r.rune ORDER BY games DESC, MIN(r.slot), r.rune`,
+    params,
+  );
+
+  const counts = selectOne(
+    db,
+    z.object({ keystones: z.number(), pages: z.number() }),
+    `SELECT COUNT(gp.keystone) AS keystones,
+            COUNT(CASE WHEN EXISTS (SELECT 1 FROM v_player_runes r WHERE r.game_id = gp.game_id AND r.player = gp.player AND r.slot = 2) THEN 1 END) AS pages
+     FROM v_game_players gp WHERE ${where}`,
+    params,
+  ) ?? { keystones: 0, pages: 0 };
+
+  const notes: string[] = [];
+
+  if (picks && !counts.keystones) notes.push("Leaguepedia ne liste aucune rune pour ces parties (aucune avant la saison 2018).");
+  else if (counts.keystones < picks) notes.push(`Keystone connue pour ${counts.keystones} parties sur ${picks} (aucune avant la saison 2018).`);
+
+  if (counts.keystones && counts.pages < counts.keystones)
+    notes.push(
+      counts.pages
+        ? `Page de runes complète pour ${counts.pages} parties sur ${picks} (keystone seule en 2018, 2019 et sur une partie de 2020).`
+        : "Seule la keystone est listée pour ces parties (page de runes complète listée à partir de 2020).",
+    );
+
+  return {
+    spellGames: spells.reduce((n, s) => n + s.games, 0),
+    spells: spells.map((s) => ({
+      spells: [{ name: s.spell1, iconUrl: s.icon1 }, ...(s.spell2 ? [{ name: s.spell2, iconUrl: s.icon2 }] : [])],
+      games: s.games,
+      wins: s.wins,
+    })),
+    keystoneGames: counts.keystones,
+    pageGames: counts.pages,
+    runes,
+    notes,
+  };
+}
+
+/** "Flash + Teleport (185/215 parties, 86 %)" for the most taken spell pairs, then the keystones the same way. */
+function setupsFacts(p: ChampionProfile): string {
+  const s = p.setups;
+  const line = (name: string, games: number, of: number) => `${name} (${games}/${of} parties, ${pct(games, of)} %)`;
+  const keystones = s.runes.filter((r) => r.kind === "keystone").slice(0, 3);
+
+  return (
+    (s.spells.length ? ` Sorts d'invocateur les plus fréquents : ${s.spells.slice(0, 3).map((x) => line(x.spells.map((sp) => sp.name).join(" + "), x.games, s.spellGames)).join(", ")}.` : "") +
+    (keystones.length ? ` Keystones les plus fréquentes : ${keystones.map((r) => line(r.rune, r.games, s.keystoneGames)).join(", ")}.` : "") +
+    (s.notes.length ? ` Runes : ${s.notes.join(" ")}` : "")
+  );
+}
+
 /** Averages, players and roles of a champion in the scope of the question. */
 function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): ChampionProfile {
   const params: Params = {};
@@ -1602,6 +1685,7 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
     roles,
     items: championItems(db, input, picks),
+    setups: championSetups(db, input, picks),
   };
 }
 
@@ -1623,7 +1707,8 @@ const championEventStats: ToolDef<ChampionStatsInput> = {
   label: "stats d'un champion × compétition",
   description:
     "One champion in one competition and period: picks, bans, presence, win rate, KDA, average kills/deaths/assists, gold, CS, damage, vision " +
-    "and gold/CS difference at 15 min, the players who played it most (games, win rate, KDA), the roles it was played in, and its editions one by one.",
+    "and gold/CS difference at 15 min, the players who played it most (games, win rate, KDA), the roles it was played in, its most built items, " +
+    "its summoner spells and runes (keystones, primary and secondary runes, shards), and its editions one by one.",
   plan: (_db, input) => {
     const params: Params = {};
 
@@ -1703,7 +1788,7 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       (picks ? `, KDA ${frNumber(profile.kda)}. ${averagesFacts(profile)}` : ".") +
       (profile.roles.length ? ` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.` : "") +
       (profile.players.length ? ` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.` : "") +
-      (picks ? itemsFacts(profile) : "");
+      (picks ? itemsFacts(profile) + setupsFacts(profile) : "");
 
     return {
       title: `${input.champion} — ${league}`,
@@ -1729,6 +1814,7 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [RIOT_DATA_SOURCE] : []),
         { label: "Riot Data Dragon — champions", url: icon ?? `${DDRAGON_BASE}/api/versions.json` },
         ...(profile.items.items.length ? [ITEMS_SOURCE, { label: "Riot Data Dragon — items", url: `${DDRAGON_BASE}/api/versions.json` }] : []),
+        ...(profile.setups.spells.length || profile.setups.runes.length ? [SETUPS_SOURCE] : []),
       ],
       followUps: [
         `Champions les plus joués ${inLeague(league) || "aux Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`,
@@ -1750,6 +1836,11 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         item_games: profile.items.games,
         top_item: profile.items.items.find((i) => i.kind === "complete")?.item ?? "",
         top_item_games: profile.items.items.find((i) => i.kind === "complete")?.games ?? 0,
+        top_spells: profile.setups.spells[0]?.spells.map((s) => s.name).join(" + ") ?? "",
+        top_spells_games: profile.setups.spells[0]?.games ?? 0,
+        keystone_games: profile.setups.keystoneGames,
+        top_keystone: profile.setups.runes.find((r) => r.kind === "keystone")?.rune ?? "",
+        top_keystone_games: profile.setups.runes.find((r) => r.kind === "keystone")?.games ?? 0,
       },
     };
   },
@@ -3107,7 +3198,13 @@ const ScoreboardPlayerRow = z.object({
   damage: z.number().nullable(),
   vision: z.number().nullable(),
   keystone: NullableText,
+  spell1: NullableText,
+  spell2: NullableText,
+  spell1_icon: NullableText,
+  spell2_icon: NullableText,
 });
+
+const ScoreboardRuneRow = z.object({ player: Text, slot: z.number(), kind: z.enum(RUNE_KINDS), rune: Text, icon_url: NullableText });
 
 const ScoreboardItemRow = z.object({ player: Text, item: Text, icon_url: Text });
 
@@ -3117,9 +3214,9 @@ const teamSum = (players: ScoreboardPlayer[], key: "kills" | "gold") =>
 
 /**
  * End-of-game recap of one game, from Leaguepedia's scoreboard tables only (no Riot JSON needed, so
- * it also covers the LPL). Data Dragon gives the keystone icons; champion and item icons are stored.
+ * it also covers the LPL). Champion, item, spell and rune icons are stored.
  */
-async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<GameScoreboard | null> {
+function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | null {
   const game = selectOne(
     db,
     ScoreboardGameRow,
@@ -3133,8 +3230,10 @@ async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<Gam
     db,
     ScoreboardPlayerRow,
     `SELECT p.side, p.role, p.player, p.champion, c.icon_url AS champion_icon,
-            p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision, p.keystone
+            p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision, p.keystone,
+            p.spell1, p.spell2, s1.icon_url AS spell1_icon, s2.icon_url AS spell2_icon
      FROM v_game_players p LEFT JOIN champions c ON c.name = p.champion
+     LEFT JOIN summoner_spells s1 ON s1.name = p.spell1 LEFT JOIN summoner_spells s2 ON s2.name = p.spell2
      WHERE p.game_id = :game`,
     { game: r.game_id },
   );
@@ -3142,9 +3241,7 @@ async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<Gam
   if (!game || !rows.length) return null;
 
   const items = selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
-  // Champion and item icons carry the Data Dragon version the build used: read the keystones from the same one.
-  const version = /\/cdn\/([\d.]+)\//.exec(rows.find((p) => p.champion_icon)?.champion_icon ?? items[0]?.icon_url ?? "")?.[1];
-  const runes = version && rows.some((p) => p.keystone) ? await keystoneIcons(version) : new Map<string, string>();
+  const runes = selectAll(db, ScoreboardRuneRow, "SELECT player, slot, kind, rune, icon_url FROM v_player_runes WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
 
   const players: ScoreboardPlayer[] = rows
@@ -3165,7 +3262,12 @@ async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<Gam
               damage: p.damage,
               vision: p.vision,
               keystone: p.keystone,
-              keystoneIcon: p.keystone ? (runes.get(p.keystone) ?? null) : null,
+              keystoneIcon: runes.find((x) => x.player === p.player && x.slot === 1)?.icon_url ?? null,
+              spells: [
+                ...(p.spell1 ? [{ name: p.spell1, iconUrl: p.spell1_icon }] : []),
+                ...(p.spell2 ? [{ name: p.spell2, iconUrl: p.spell2_icon }] : []),
+              ],
+              runes: runes.flatMap((x) => (x.player === p.player && x.slot > 1 ? [{ name: x.rune, kind: x.kind, iconUrl: x.icon_url }] : [])),
               items: items.flatMap((i) => (i.player === p.player ? [{ name: i.item, iconUrl: i.icon_url }] : [])),
             },
           ]
@@ -3344,7 +3446,7 @@ ORDER BY g.played_at DESC, g.game_n`,
     const title = `${displayTeam(pick.blue_team ?? "?")} – ${displayTeam(pick.red_team ?? "?")} — ${seriesLabel(pick)}${pick.game_n ? ` · game ${pick.game_n}` : ""}`;
     const result = `${displayTeam(pick.winner ?? "?")} gagne${pick.length_s ? ` en ${clock(pick.length_s)}` : ""}`;
     // The recap comes from the scoreboard tables: shown whether or not the Riot timeline exists.
-    const scoreboard = (await gameScoreboard(db, pick)) ?? undefined;
+    const scoreboard = gameScoreboard(db, pick) ?? undefined;
 
     if (!pick.riot_key || pick.has_timeline !== 1)
       return {

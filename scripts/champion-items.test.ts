@@ -168,6 +168,95 @@ describe("a champion's most built items", () => {
   });
 });
 
+describe("a champion's summoner spells and runes", () => {
+  /** Spells on the four Yunara games; a keystone on three of them, the whole page on two. */
+  function loadouts(db: DatabaseSync) {
+    db.exec(`
+      INSERT INTO summoner_spells VALUES (1,'Flash','/flash.png'),(2,'Heal',NULL),(3,'Barrier',NULL);
+      INSERT INTO runes VALUES (1,'Lethal Tempo','Precision','/lt.png'),(2,'Fleet Footwork','Precision',NULL),(3,'Triumph','Precision',NULL),
+        (4,'Biscuit Delivery','Inspiration',NULL),(5,'Attack Speed',NULL,NULL);
+      -- Barrier + Flash once (a loss), Flash + Heal three times (two wins).
+      UPDATE game_players SET spell1_id = 1, spell2_id = 2 WHERE champion_id = 1;
+      UPDATE game_players SET spell1_id = 3, spell2_id = 1 WHERE champion_id = 1 AND game_id = 2;
+      UPDATE game_players SET keystone_id = 1 WHERE champion_id = 1 AND game_id IN (1, 2);
+      UPDATE game_players SET keystone_id = 2 WHERE champion_id = 1 AND game_id = 3;
+      -- game_id, player_id, primary 1-3, secondary 1-2, shards 1-3: the same shard twice on a page counts once.
+      INSERT INTO game_player_runes VALUES (1,1,3,NULL,NULL,4,NULL,5,5,NULL),(3,2,3,NULL,NULL,NULL,NULL,5,NULL,NULL);
+    `);
+  }
+
+  test("spell pairs and runes by part of the page, each over the games that list it", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      loadouts(db);
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+      const s = out.champion!.setups;
+
+      expect([s.spellGames, s.keystoneGames, s.pageGames]).toEqual([4, 3, 2]);
+      expect(s.spells).toEqual([
+        { spells: [{ name: "Flash", iconUrl: "/flash.png" }, { name: "Heal", iconUrl: null }], games: 3, wins: 2 },
+        { spells: [{ name: "Barrier", iconUrl: null }, { name: "Flash", iconUrl: "/flash.png" }], games: 1, wins: 0 },
+      ]);
+      expect(s.runes.map((r) => [r.rune, r.kind, r.tree, r.games, r.wins])).toEqual([
+        ["Lethal Tempo", "keystone", "Precision", 2, 1],
+        ["Triumph", "primary", "Precision", 2, 1],
+        ["Attack Speed", "shard", null, 2, 1],
+        ["Fleet Footwork", "keystone", "Precision", 1, 0],
+        ["Biscuit Delivery", "secondary", "Inspiration", 1, 1],
+      ]);
+      expect(s.runes[0].icon).toBe("/lt.png");
+      expect(s.notes).toEqual([
+        "Keystone connue pour 3 parties sur 4 (aucune avant la saison 2018).",
+        "Page de runes complète pour 2 parties sur 4 (keystone seule en 2018, 2019 et sur une partie de 2020).",
+      ]);
+      expect(out.facts).toContain("Sorts d'invocateur les plus fréquents : Flash + Heal (3/4 parties, 75 %), Barrier + Flash (1/4 parties, 25 %).");
+      expect(out.facts).toContain("Keystones les plus fréquentes : Lethal Tempo (2/3 parties, 67 %), Fleet Footwork (1/3 parties, 33 %).");
+      expect(out.totals).toMatchObject({ top_spells: "Flash + Heal", top_spells_games: 3, keystone_games: 3, top_keystone: "Lethal Tempo", top_keystone_games: 2 });
+      expect(out.sources.map((x) => x.label)).toContain("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("no rune in the scope: the reason, and no source", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+
+      expect(out.champion!.setups).toEqual({
+        spellGames: 0, spells: [], keystoneGames: 0, pageGames: 0, runes: [],
+        notes: ["Leaguepedia ne liste aucune rune pour ces parties (aucune avant la saison 2018)."],
+      });
+      expect(out.sources.map((x) => x.label)).not.toContain("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("a rune or spell question about a champion goes to its profile; summoner spells are no longer missing data", () => {
+    const e: Entities = {
+      players: [], teams: [], champion: { mention: "Yunara", champion: "Yunara" }, unresolved: [], league: "World Championship", leagueShort: "Worlds",
+      leagueMention: "Worlds", yearFrom: 2026, yearTo: 2026, split: null, outOfScope: null,
+    };
+
+    const coverage = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+
+      for (const q of ["Runes de Yunara aux Worlds 2026", "keystone Yunara worlds 2026", "sorts d'invocateur de Yunara aux Worlds 2026", "summoner spells Yunara worlds 2026"])
+        expect(routeQuestion(q, e, readSchema(db), coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("rate leaderboards show the count beside the share", () => {
   test("first dragon: games, first dragons, %", async () => {
     const db = new DatabaseSync(":memory:");

@@ -1280,6 +1280,53 @@
       }
     },
     {
+      "id": "champion-runes-yunara-worlds-2026",
+      "question": "Runes de Yunara aux Worlds 2026",
+      "tags": [
+        "champion",
+        "runes"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yunara",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "totals": {
+          "picks": 19,
+          "keystone_games": 19,
+          "top_keystone": "Lethal Tempo",
+          "top_keystone_games": 19
+        },
+        "summaryIncludes": [
+          "Lethal Tempo"
+        ]
+      }
+    },
+    {
+      "id": "champion-spells-yunara-worlds-2026",
+      "question": "sorts d'invocateur de Yunara aux Worlds 2026",
+      "tags": [
+        "champion",
+        "spells"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yunara",
+        "league": "World Championship",
+        "totals": {
+          "picks": 19,
+          "top_spells": "Barrier + Flash",
+          "top_spells_games": 10
+        },
+        "summaryIncludes": [
+          "Barrier"
+        ]
+      }
+    },
+    {
       "id": "ingame-lec-early-kills",
       "question": "joueurs avec le plus de kills avant 10 minutes en LEC 2024",
       "tags": [

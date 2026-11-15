@@ -113,6 +113,7 @@ const leagueByName = new Map<string, (typeof LEAGUES)[number]>(LEAGUES.map((l) =
 const team = dictionary("teams");
 const champion = dictionary("champions");
 const rune = dictionary("runes");
+const spell = dictionary("summoner_spells");
 
 // Items carry a NOT NULL icon, so they are collected first and inserted at the end.
 const itemIds = new Map<string, number>();
@@ -250,9 +251,11 @@ const linksByPlayer = new Map<number, Set<string>>();
 const identity = { page: 0, case: 0, redirect: 0, ambiguous: 0, unknown: 0, merged_lines: 0, same_game: 0 };
 const countedLinks = new Set<string>();
 
-const insLine = db.prepare(`INSERT OR IGNORE INTO game_players (game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone_id) VALUES (${Array(15).fill("?").join(",")})`);
+const insLine = db.prepare(`INSERT OR IGNORE INTO game_players (game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone_id, spell1_id, spell2_id) VALUES (${Array(17).fill("?").join(",")})`);
+const insRunes = db.prepare(`INSERT OR IGNORE INTO game_player_runes (game_id, player_id, primary1_id, primary2_id, primary3_id, secondary1_id, secondary2_id, shard1_id, shard2_id, shard3_id) VALUES (${Array(10).fill("?").join(",")})`);
 const insItem = db.prepare("INSERT OR IGNORE INTO game_player_items (game_id, player_id, slot, item_id) VALUES (?,?,?,?)");
 let skippedLines = 0;
+let oddRunePages = 0;
 
 /** The Leaguepedia lines of each game, to map Riot participants onto players. */
 const linesByGame = new Map<number, { pid: number; side: number | null; role: string | null; championId: number | null; kills: number | null }[]>();
@@ -265,7 +268,29 @@ const linkOf = (l: Row) => text(l.Link) ?? text(l.Name);
 // that scoreboard, so in that game a renamed link keeps its own identity.
 const pagesInGame = new Map<string, Map<string, number>>();
 
+/**
+ * A rune page in order: the keystone, three primary runes, two secondary ones, then three stat shards (absent on some
+ * pages). A list of another length is not trusted slot by slot.
+ */
+const runePage = (l: Row) => {
+  const page = list(l.Runes);
+
+  return page.length === 9 || page.length === 6 ? page : [];
+};
+
+// Tree of each rune, as the lines name it (Data Dragon only knows the runes of its patch): the tree most lines agree on.
+const treeVotes = new Map<string, Map<string, number>>();
+
+const vote = (name: Field, tree: Field) => {
+  if (!name || !tree) return;
+  const votes = treeVotes.get(String(name)) ?? new Map<string, number>();
+  votes.set(String(tree), (votes.get(String(tree)) ?? 0) + 1);
+  treeVotes.set(String(name), votes);
+};
+
 for (const l of lineRows) {
+  vote(l.Keystone, l.Primary);
+  runePage(l).slice(1, 6).forEach((name, i) => vote(name, i < 3 ? l.Primary : l.Secondary));
   const link = linkOf(l);
 
   if (!link) continue;
@@ -304,10 +329,18 @@ for (const l of lineRows) {
   linesByGame.set(gid, lines);
 
   if (l.Name) ignByPlayer.set(pid, (ignByPlayer.get(pid) ?? new Set()).add(String(l.Name)));
+  const spells = list(l.Spells).sort();
   insLine.run(
     gid, pid, team(l.Team), side, text(l.Role), championId, yes(l.Win),
     int(l.K), int(l.D), int(l.A), int(l.Gold), int(l.CS), int(l.Dmg), int(l.Vision), rune(l.Keystone),
+    spell(spells[0]), spell(spells[1]),
   );
+
+  const slots = runePage(l).slice(1);
+
+  if (slots.length) insRunes.run(gid, pid, ...Array.from({ length: 8 }, (_, i) => rune(slots[i])));
+  else if (list(l.Runes).length) oddRunePages++;
+
   list(l.Items).forEach((it, slot) => insItem.run(gid, pid, slot + 1, item(it)));
 }
 
@@ -355,6 +388,8 @@ const DdragonData = z.object({
     data: z.record(z.string(), z.object({ id: z.string(), key: z.string(), name: z.string(), image: z.object({ full: z.string() }) })),
   }),
   item: z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) }),
+  runes: z.array(z.object({ name: z.string(), slots: z.array(z.object({ runes: z.array(z.object({ name: z.string(), icon: z.string() })) })) })),
+  summoner: z.object({ data: z.record(z.string(), z.object({ name: z.string(), image: z.object({ full: z.string() }), modes: z.array(z.string()).optional() })) }),
   // `meta` is absent from raw caches fetched before items had a kind: their retired items get a NULL kind.
   legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()), meta: z.record(z.string(), ItemMeta).optional() })),
 });
@@ -375,6 +410,31 @@ const updChampion = db.prepare("UPDATE champions SET icon_url=? WHERE id=?");
 for (const c of selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM champions")) {
   const d = championByName.get(normalizeAlias(c.name));
   updChampion.run(d ? `${cdn}/${dd.version}/img/champion/${d.image.full}` : null, c.id);
+}
+
+// Runes: tree and icon from Data Dragon, the tree of a retired rune from the lines. Stat shards have neither.
+const ddRunes = new Map(dd.runes.flatMap((t) => t.slots.flatMap((s) => s.runes.map((r) => [normalizeAlias(r.name), { tree: t.name, icon: r.icon }] as const))));
+const updRune = db.prepare("UPDATE runes SET tree=?, icon_url=? WHERE id=?");
+const runeCounts = { ddragon: 0, tree_from_lines: 0, shard_or_unknown: 0 };
+
+for (const r of selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM runes")) {
+  const d = ddRunes.get(normalizeAlias(r.name));
+  const voted = [...(treeVotes.get(r.name) ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  updRune.run(d?.tree ?? voted, d ? `${cdn}/img/${d.icon}` : null, r.id);
+  runeCounts[d ? "ddragon" : voted ? "tree_from_lines" : "shard_or_unknown"]++;
+}
+
+// Summoner spells: the Summoner's Rift entry when several modes share a name.
+const ddSpells = new Map<string, string>();
+
+for (const sp of Object.values(dd.summoner.data).sort((a, b) => Number(b.modes?.includes("CLASSIC") ?? false) - Number(a.modes?.includes("CLASSIC") ?? false)))
+  if (!ddSpells.has(normalizeAlias(sp.name))) ddSpells.set(normalizeAlias(sp.name), sp.image.full);
+
+const updSpell = db.prepare("UPDATE summoner_spells SET icon_url=? WHERE id=?");
+
+for (const sp of selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM summoner_spells")) {
+  const image = ddSpells.get(normalizeAlias(sp.name));
+  updSpell.run(image ? `${cdn}/${dd.version}/img/spell/${image}` : null, sp.id);
 }
 
 // Latest patch first, then older patches (newest first) for retired items.
@@ -583,7 +643,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, ingame: ingameCounts, identity }),
+  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity }),
 );
 
 db.exec("COMMIT");
@@ -621,6 +681,10 @@ console.log("rows:", rowCounts);
 console.log("item icons:", itemIcons);
 
 console.log("item kinds:", kindCounts);
+
+console.log("runes:", runeCounts);
+
+console.log(`rune pages of an unexpected length, left out: ${oddRunePages}`);
 
 console.log("in-game:", ingameCounts);
 
