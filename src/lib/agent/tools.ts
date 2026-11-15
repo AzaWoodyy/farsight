@@ -454,6 +454,9 @@ const ChampionStatsRow = z.object({
   event_page: Text,
   tournament: NullableText,
   games: z.number(),
+  scope_games: z.number(),
+  scope_from: z.number().nullable(),
+  scope_to: z.number().nullable(),
   picks: z.number(),
   wins: z.number(),
   bans: z.number(),
@@ -1595,6 +1598,7 @@ player_counts AS (
 )
 SELECT ev.year, ev.league_short, ev.event_page, MIN(ev.tournament) AS tournament,
        COUNT(*) AS games, COUNT(p.game_id) AS picks, COALESCE(SUM(p.win), 0) AS wins, COUNT(b.game_id) AS bans,
+       (SELECT COUNT(*) FROM ev) AS scope_games, (SELECT MIN(year) FROM ev) AS scope_from, (SELECT MAX(year) FROM ev) AS scope_to,
        (SELECT json_group_array(json_object('player', pc.player, 'games', pc.n) ORDER BY pc.n DESC, pc.player)
           FROM player_counts pc WHERE pc.event_page = ev.event_page) AS players
 FROM ev
@@ -1615,11 +1619,20 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
   format: (db, input, sqlRows): ToolOutput => {
     const raw = z.array(ChampionStatsRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
-    const sum = (k: "picks" | "bans" | "wins" | "games") => raw.reduce((n, r) => n + r[k], 0);
+    const sum = (k: "picks" | "bans" | "wins") => raw.reduce((n, r) => n + r[k], 0);
     const picks = sum("picks");
     const bans = sum("bans");
     const wins = sum("wins");
-    const games = sum("games");
+    // Every game of the scope, as champion_ranking counts them: editions without the champion included.
+    const first = raw[0];
+    const games = first?.scope_games ?? 0;
+    const years = raw.map((r) => Number(r.year));
+
+    // Said only when the scope is wider than the champion's own editions.
+    const scopeYears =
+      first?.scope_from != null && first.scope_to != null && (first.scope_from < Math.min(...years) || first.scope_to > Math.max(...years))
+        ? `, ${yearSpan([first.scope_from, first.scope_to])}`
+        : "";
 
     const icon = selectOne(db, z.object({ icon_url: z.string().nullable() }), "SELECT icon_url FROM champions WHERE name = ?", [
       input.champion,
@@ -1630,8 +1643,8 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
     const playerLine = (p: ChampionPlayer) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}, ${pct(p.wins, p.games)} % de victoires, KDA ${frNumber(p.kda)})`;
 
     const facts =
-      `${input.champion} ${inLeague(league)} (${yearSpan(raw.map((r) => Number(r.year)))}) : ${picks} picks et ${bans} bans ` +
-      `sur ${games} parties (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
+      `${input.champion} ${inLeague(league)} (${yearSpan(years)}) : ${picks} picks et ${bans} bans ` +
+      `sur les ${games} parties du périmètre${scopeYears} (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
       `(${pct(wins, picks)} % de victoires)` +
       (picks ? `, KDA ${frNumber(profile.kda)}. ${averagesFacts(profile)}` : ".") +
       (profile.roles.length ? ` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.` : "") +
