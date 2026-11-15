@@ -56,3 +56,12 @@ Node 24.22.3 a exécuté le SQL enfant et l’application compilée. Parcours r�
 Les 832 comptes d’équipes ont été comparés ligne par ligne entre l’ancienne et la nouvelle agrégation : identiques, somme 78 192. La revue indépendante a fermé deux constats sur le contrôle du déploiement (tous les chemins doivent vérifier la CI du SHA checkouté ; permission `actions: read` aussi sur l’appelant réutilisable). Trois passages, aucun constat restant.
 
 L’API GitHub de protection de branche a répondu 403 : le plan actuel demande GitHub Pro ou un dépôt public pour cette fonctionnalité. Aucun réglage n’a été modifié ; `PR checks` reste informatif tant que cette protection ne peut pas être activée. Les validations CI à distance ne remplacent pas la vérification d’un déploiement ; aucun merge ni déploiement n’est autorisé ici.
+
+## Écarts constatés le 15 novembre 2026
+
+Les rapports d’origine restent inchangés ; ces points ont changé depuis leur rédaction.
+
+- `security.md` indique qu’aucun workflow ne se déclenche sur `pull_request`. Depuis, `PR CI` tourne sur les PR, y compris celles des forks maintenant que le dépôt est public. Ce workflow n’a que des permissions en lecture (`contents: read`, `actions: read`), ne reçoit aucun secret du dépôt (seulement le jeton du workflow, en lecture), ne conserve pas les identifiants du checkout et n’écrit le cache partagé que sur `push`. Le réglage « Require approval for all outside collaborators » de la liste du même rapport est donc devenu nécessaire ; son état n’a pas été vérifié ici et reste à confirmer par le mainteneur.
+- `security.md` indique l’absence de `dangerouslySetInnerHTML`. `src/app/page.tsx` en contient pour un script et un style statiques et pour le JSON-LD, sans donnée de visiteur ni de base.
+- La mention « Rapport non commité » en tête de `security.md` est historique : le rapport est publié avec le dépôt (voir la section Sécurité ci-dessus).
+- La protection de branche avait répondu 403 tant que le dépôt était privé. Il est public depuis : rendre `PR checks` requis est désormais possible ; son activation n’a pas été vérifiée ici.

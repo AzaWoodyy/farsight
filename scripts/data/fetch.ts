@@ -9,12 +9,13 @@
  *   bun run data:fetch --no-riot           Cargo and Data Dragon only
  *   bun run data:fetch --rederive          recompute every in-game summary from the cached Riot JSON
  *
- * Riot game JSON (stats + timeline, one wiki request per game) is downloaded
- * for every game listed in `PostgameJsonMetadata` that has no summary yet:
- * read from R2 first when R2_* is set (parallel, outside --riot-budget), else
- * downloaded from the wiki and uploaded to R2; cached as one object per game
- * under data/raw/riot, summarized into data/raw/ingame.jsonl. The first catch-up is
- * about 15 000 games (8-9 h at 2 s per request) and resumes where it stopped.
+ * Riot game JSON (stats + timeline, two games per wiki request by default,
+ * `RIOT_GAMES_PER_REQUEST`) is downloaded for every game listed in
+ * `PostgameJsonMetadata` that has no summary yet: read from R2 first when R2_* is
+ * set (parallel, outside --riot-budget), else downloaded from the wiki and
+ * uploaded to R2; cached as one object per game under data/raw/riot, summarized
+ * into data/raw/ingame.jsonl. The first catch-up is about 28 000 games (8-9 h)
+ * and resumes where it stopped.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
  * league with 5000-row pages. Every raw response is kept under data/raw/cargo,
