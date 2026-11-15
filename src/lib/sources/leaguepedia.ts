@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { z } from "zod";
+import { writeFileAtomic } from "../fs-atomic";
 
 /**
  * Minimal Leaguepedia Cargo client.
@@ -33,6 +34,9 @@ const DELAY_MS = Math.max(
 );
 
 const MAX_ATTEMPTS = 6;
+
+/** A stalled request is aborted after this long and retried like any network error. */
+const REQUEST_TIMEOUT_MS = 60_000;
 export const PAGE_SIZE = 5000;
 
 function decodeEntities(value: string): string {
@@ -124,9 +128,14 @@ async function fetchPage(
   const cacheFile = resolve(opts.cacheDir, `${key}.json`);
 
   if (!opts.refresh && existsSync(cacheFile)) {
-    cargoStats.cached++;
+    try {
+      const { rows } = CachedResponse.parse(JSON.parse(readFileSync(cacheFile, "utf8")));
+      cargoStats.cached++;
 
-    return CachedResponse.parse(JSON.parse(readFileSync(cacheFile, "utf8"))).rows;
+      return rows;
+    } catch {
+      console.warn(`  leaguepedia: unreadable cache file ${basename(cacheFile)}, fetching again`);
+    }
   }
 
   const rows = await politeGet(url, (text) => {
@@ -138,7 +147,7 @@ async function fetchPage(
     return null;
   });
 
-  writeFileSync(cacheFile, JSON.stringify({ url, fetchedAt: new Date().toISOString(), rows }));
+  writeFileAtomic(cacheFile, JSON.stringify({ url, fetchedAt: new Date().toISOString(), rows }));
 
   return rows;
 }
@@ -161,7 +170,7 @@ async function politeGet<T>(url: string, parse: (text: string) => T | null): Pro
     let retryAfter = 0;
 
     try {
-      const res = await transport.fetch(url, { headers: { "User-Agent": USER_AGENT } });
+      const res = await transport.fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       const text = await res.text();
       cargoStats.bytes += text.length;
       retryAfter = Number(res.headers.get("retry-after")) || 0;

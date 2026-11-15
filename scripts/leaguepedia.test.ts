@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { type CargoQuery, type CargoRow, PAGE_SIZE, USER_AGENT, cargoQuery, cargoStats, resetThrottle, transport, wikiPages } from "../src/lib/sources/leaguepedia";
@@ -59,6 +59,8 @@ beforeEach(() => {
   // Never forwards: an unscripted request fails the test instead of reaching the wiki.
   transport.fetch = async (url, init) => {
     expect(new Headers(init.headers).get("User-Agent")).toBe(USER_AGENT);
+    // Every request carries a timeout, so a stalled connection cannot hang the run.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     requests.push({ url: new URL(url), at: clock });
     const next = queue.shift();
 
@@ -229,4 +231,39 @@ test("wikiPages retries maxlag and stops on another API error", async () => {
 
   await expect(wikiPages(["P"])).rejects.toThrow(/MediaWiki API error: badtoken/);
   expect(requests).toHaveLength(1);
+});
+
+test("a damaged cache file is fetched again and replaced by a valid one", async () => {
+  quiet();
+  script(json([{ N: 1 }]));
+  await cargoQuery(query("Damaged"), { cacheDir });
+  const [file] = readdirSync(cacheDir);
+  writeFileSync(join(cacheDir, file), '{"rows":[{"A":');
+  resetThrottle();
+
+  script(json([{ N: 2 }]));
+  expect(await cargoQuery(query("Damaged"), { cacheDir })).toEqual([{ N: 2 }]);
+  expect(requests).toHaveLength(2);
+  expect(cargoStats.cached).toBe(0);
+  expect(JSON.parse(readFileSync(join(cacheDir, file), "utf8")).rows).toEqual([{ N: 2 }]);
+});
+
+test("a cached query leaves no temporary file behind", async () => {
+  script(json([{ N: 1 }]), json([]));
+  await cargoQuery(query("Atomic"), { cacheDir });
+  script(json(Array.from({ length: PAGE_SIZE }, (_, i) => ({ N: i }))), json([]));
+  await cargoQuery(query("AtomicPaged"), { cacheDir });
+  queue = [];
+
+  const files = readdirSync(cacheDir);
+  expect(files.length).toBeGreaterThan(0);
+  expect(files.filter((f) => f.includes(".tmp-"))).toEqual([]);
+});
+
+test("a timed-out request is retried, not fatal", async () => {
+  quiet();
+  script(new DOMException("timed out", "TimeoutError"), json([{ N: 1 }]));
+
+  expect(await cargoQuery(query("Stalled"), { cacheDir })).toEqual([{ N: 1 }]);
+  expect(requests).toHaveLength(2);
 });

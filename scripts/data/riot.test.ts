@@ -204,3 +204,24 @@ test("a game whose upload to R2 fails is left for the next run", async () => {
     r2.stop();
   }
 });
+
+test("an R2 request that never gets an answer is aborted after the store's timeout", async () => {
+  const server = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
+
+  try {
+    const store = new R2Store({
+      accountId: "test",
+      bucket: "bucket",
+      accessKeyId: "AK",
+      secretAccessKey: "SK",
+      endpoint: `http://localhost:${server.port}`,
+      timeoutMs: 200,
+    });
+
+    const started = Date.now();
+    await expect(store.get("games/x")).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(3000);
+  } finally {
+    server.stop(true);
+  }
+});

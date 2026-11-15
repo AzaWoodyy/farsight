@@ -21,9 +21,10 @@
  * and the merged datasets under data/raw/*.json feed `data:build`.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { z } from "zod";
+import { writeFileAtomic } from "../../src/lib/fs-atomic";
 import { type Json, JsonSchema } from "../../src/lib/json";
 import { ItemMeta, itemMeta } from "../../src/lib/domain/items";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
@@ -215,14 +216,22 @@ async function ddragon(path: string, force: boolean): Promise<Json> {
   mkdirSync(DDRAGON_CACHE_DIR, { recursive: true });
   const file = resolve(DDRAGON_CACHE_DIR, `${createHash("sha1").update(path).digest("hex").slice(0, 20)}.json`);
 
-  if (!force && existsSync(file)) return JsonSchema.parse(JSON.parse(readFileSync(file, "utf8")));
-  const res = await fetch(`${DDRAGON_BASE}${path}`);
+  if (!force && existsSync(file)) {
+    try {
+      return JsonSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+    } catch {
+      console.warn(`  ddragon: unreadable cache file ${basename(file)}, fetching again`);
+    }
+  }
+
+  const res = await fetch(`${DDRAGON_BASE}${path}`, { signal: AbortSignal.timeout(60_000) });
 
   if (!res.ok) throw new Error(`Data Dragon ${res.status}: ${path}`);
   const text = await res.text();
-  writeFileSync(file, text);
+  const value = JsonSchema.parse(JSON.parse(text));
+  writeFileAtomic(file, text);
 
-  return JsonSchema.parse(JSON.parse(text));
+  return value;
 }
 
 const ItemFile = z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) });
@@ -292,7 +301,7 @@ function load(name: Dataset): CargoRow[] {
 }
 
 function save(name: Dataset, value: Json) {
-  writeFileSync(datasetFile(name), JSON.stringify(value));
+  writeFileAtomic(datasetFile(name), JSON.stringify(value));
 }
 
 /** Replace the rows of the refreshed pages, keep everything else. */

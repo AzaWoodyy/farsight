@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { AwsClient } from "aws4fetch";
+import { writeFileAtomic } from "../fs-atomic";
 
 /**
  * Object storage for the per-game Riot JSON (end-of-game stats and the
@@ -55,9 +56,7 @@ export class FsStore implements ObjectStore {
   async put(key: string, body: Uint8Array, _contentType: string) {
     const file = this.path(key);
     mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.tmp-${process.pid}`;
-    writeFileSync(tmp, body);
-    renameSync(tmp, file);
+    writeFileAtomic(file, body);
   }
 
   async has(key: string) {
@@ -84,14 +83,18 @@ export type R2Config = {
   secretAccessKey: string;
   /** Override for tests or a jurisdiction endpoint (default https://<account>.r2.cloudflarestorage.com). */
   endpoint?: string;
+  /** Per-request limit; an upload gets four times as long (default 30 s). */
+  timeoutMs?: number;
 };
 
 export class R2Store implements ObjectStore {
   readonly label: string;
   private client: AwsClient;
   private base: string;
+  private timeoutMs: number;
 
   constructor(config: R2Config) {
+    this.timeoutMs = config.timeoutMs ?? 30_000;
     const endpoint = (config.endpoint || `https://${config.accountId}.r2.cloudflarestorage.com`).replace(/\/$/, "");
     this.base = `${endpoint}/${config.bucket}`;
     this.label = `r2:${config.bucket}`;
@@ -116,7 +119,7 @@ export class R2Store implements ObjectStore {
   }
 
   async get(key: string) {
-    const res = await this.client.fetch(this.url(key));
+    const res = await this.client.fetch(this.url(key), { signal: AbortSignal.timeout(this.timeoutMs) });
 
     if (res.status === 404) return null;
 
@@ -130,13 +133,14 @@ export class R2Store implements ObjectStore {
       method: "PUT",
       body: new Blob([new Uint8Array(body)]),
       headers: { "Content-Type": contentType },
+      signal: AbortSignal.timeout(4 * this.timeoutMs),
     });
 
     if (!res.ok) await this.fail(res, `PUT ${key}`);
   }
 
   async has(key: string) {
-    const res = await this.client.fetch(this.url(key), { method: "HEAD" });
+    const res = await this.client.fetch(this.url(key), { method: "HEAD", signal: AbortSignal.timeout(this.timeoutMs) });
 
     if (res.status === 404) return false;
 
@@ -154,7 +158,7 @@ export class R2Store implements ObjectStore {
       const params = new URLSearchParams({ "list-type": "2", prefix });
 
       if (token) params.set("continuation-token", token);
-      const res = await this.client.fetch(`${this.base}?${params}`);
+      const res = await this.client.fetch(`${this.base}?${params}`, { signal: AbortSignal.timeout(this.timeoutMs) });
 
       if (!res.ok) await this.fail(res, `LIST ${prefix}`);
       const xml = await res.text();
