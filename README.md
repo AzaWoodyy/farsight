@@ -46,13 +46,10 @@ bun run data:package --tag=data-20000101
 ## Vérifier une modification
 
 ```sh
-bun run lint --deny-warnings
-bun run typecheck
-bun run test
-python3 scripts/ci/test.py
-bun run eval --deterministic --strict --exclude-tags=timeline
-bun run build
+bun run verify
 ```
+
+La commande lance dans l’ordre le lint, les types, les tests en ordre normal et aléatoire, l’eval déterministe hors timeline (après avoir récupéré la base si elle manque) et le build, et s’arrête au premier échec. Pour la lancer à chaque push : `git config core.hooksPath .githooks` (optionnel ; `git push --no-verify` le saute une fois).
 
 Les tests sont côté serveur. L’interface se vérifie dans l’application. L’eval lit [eval/questions.json](eval/questions.json), avec une date figée et des attentes attachées au snapshot. Les cas qui nécessitent un modèle sont signalés comme non vérifiés en mode déterministe ; les timelines demandent le JSON local ou R2 et sont exclues de la CI sans secrets.
 
