@@ -416,6 +416,23 @@ function missingSummary(missing: string[], route: Route): string {
   );
 }
 
+/** Every view empty: what an answer holds before a tool or a table fills it. */
+const EMPTY_VIEWS = {
+  rows: [],
+  table: null,
+  timeline: null,
+  scoreboard: null,
+  versus: null,
+  teams: null,
+  roster: null,
+  champion: null,
+  pool: null,
+  series: null,
+  icons: {},
+  profiles: [],
+  sources: [],
+} satisfies Partial<Answer>;
+
 async function format(
   db: DatabaseSync,
   question: string,
@@ -454,21 +471,9 @@ async function format(
     step.done("warn", "Donnée absente de la base");
 
     return {
+      ...EMPTY_VIEWS,
       title: "Donnée absente de la base",
       summary: missingSummary(missing, route),
-      rows: [],
-      table: null,
-      timeline: null,
-      scoreboard: null,
-      versus: null,
-      teams: null,
-      roster: null,
-      champion: null,
-      pool: null,
-      series: null,
-      icons: {},
-      profiles: [],
-      sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
       meta,
@@ -483,7 +488,7 @@ async function format(
 
     step.done("error", "Requête interrompue ou rejetée");
 
-    return { title: "Échec de la requête", summary, rows: [], table: null, timeline: null, scoreboard: null, versus: null, teams: null, roster: null, champion: null, pool: null, series: null, icons: {}, profiles: [], sources: [], followUps: EXAMPLES, notes, meta };
+    return { ...EMPTY_VIEWS, title: "Échec de la requête", summary, followUps: EXAMPLES, notes, meta };
   }
 
   if (!raw.length || !plan) {
@@ -491,21 +496,9 @@ async function format(
     step.done("warn", route.kind === "out_of_scope" ? "Hors périmètre" : "Pas de résultat");
 
     return {
+      ...EMPTY_VIEWS,
       title: route.kind === "out_of_scope" ? "Hors périmètre" : "Pas de résultat",
       summary: emptySummary(entities, route, plan),
-      rows: [],
-      table: null,
-      timeline: null,
-      scoreboard: null,
-      versus: null,
-      teams: null,
-      roster: null,
-      champion: null,
-      pool: null,
-      series: null,
-      icons: {},
-      profiles: [],
-      sources: [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
       meta,
@@ -520,18 +513,10 @@ async function format(
     const pages = [...new Set(raw.flatMap((r) => PageColumns.parse(r).flatMap((v) => v ?? [])))];
 
     return {
+      ...EMPTY_VIEWS,
       title: question,
       summary: `${raw.length} ligne(s) renvoyée(s) par une requête générée, validée par le garde-fou.`,
-      rows: [],
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
-      timeline: null,
-      scoreboard: null,
-      versus: null,
-      teams: null,
-      roster: null,
-      champion: null,
-      pool: null,
-      series: null,
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
       // Several named players: the comparison layouts show their team and role next to the generated table.
