@@ -91,3 +91,6 @@ export function llmSignal(timeoutMs?: number): AbortSignal | undefined {
 
   return timeoutMs == null ? signal : signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
 }
+
+/** True once the request this code runs for was cancelled (client gone or stop pressed). Not a per-call LLM timeout. */
+export const requestAborted = (): boolean => requestSignal.getStore()?.aborted === true;
