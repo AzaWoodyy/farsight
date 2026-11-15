@@ -465,6 +465,15 @@ export function resolveTeam(db: DatabaseSync, mention: string): ResolvedTeam | n
   return hit ? { mention, team: hit.team, members: hit.members } : null;
 }
 
+/** Franchises with several names that have games in the database, under their current name. */
+export function renamedTeams(db: DatabaseSync): { team: string; members: string[] }[] {
+  return FRANCHISES.flatMap((f) => {
+    const t = resolveTeam(db, f.team);
+
+    return t && t.members.length > 1 ? [{ team: t.team, members: t.members }] : [];
+  });
+}
+
 export function resolveChampion(db: DatabaseSync, mention: string): ResolvedChampion | null {
   const name = getIndexes(db).champions.get(normalizeAlias(mention));
 

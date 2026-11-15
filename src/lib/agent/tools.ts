@@ -39,7 +39,7 @@ import {
   type VersusGame,
   type VersusView,
 } from "./types";
-import { resolveChampion, resolvePlayer, resolveTeam } from "./understand";
+import { renamedTeams, resolveChampion, resolvePlayer, resolveTeam } from "./understand";
 import {
   PLAYER_METRIC_DEFS,
   PLAYER_METRICS,
@@ -415,6 +415,17 @@ function teamMembers(db: DatabaseSync, team: string): { team: string; members: s
   const t = resolveTeam(db, team);
 
   return t ? { team: t.team, members: t.members } : { team, members: [team] };
+}
+
+/** SQL for a team name with a franchise's former names folded into its current one. */
+function franchiseName(db: DatabaseSync, column: string, params: Params): string {
+  const whens = renamedTeams(db).map((f, i) => {
+    params[`fr${i}`] = f.team;
+
+    return `WHEN ${column} IN (${inList(`fr${i}_`, f.members, params)}) THEN :fr${i}`;
+  });
+
+  return whens.length ? `CASE ${whens.join(" ")} ELSE ${column} END` : column;
 }
 
 // Result rows, as each tool's query returns them ----------------------------------------
@@ -2449,7 +2460,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
   description:
     "Ranks players (or teams) of a competition and period on one in-game metric from the Riot game data: solo kills, pentakills, first bloods, " +
     "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference. Not available for the LPL.",
-  plan: (_db, input) => {
+  plan: (db, input) => {
     const params: Params = {};
 
     Object.assign(params, { minGames: minGamesOf(input) });
@@ -2457,7 +2468,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
     const { def } = leaderboardMetric(input);
     const column = `s.${metricColumn(def, input.minute)}`;
     const view = input.subject === "team" ? "v_game_team_stats" : "v_game_player_stats";
-    const name = input.subject === "team" ? "s.team" : "s.player";
+    const name = input.subject === "team" ? franchiseName(db, "s.team", params) : "s.player";
     const filters = [ingameScope(input, params)];
 
     if (input.subject === "player" && input.role) {
@@ -2474,7 +2485,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
        COUNT(*) AS games, COUNT(${column}) AS counted, SUM(${column}) AS total, ROUND(${average}, 2) AS average
 FROM ${view} s
 WHERE ${filters.join(" ")}
-GROUP BY ${name}
+GROUP BY 1
 HAVING COUNT(${column}) >= :minGames${def.aggregate === "sum" ? ` AND SUM(${column}) > 0` : ""}
 ORDER BY ${value} DESC, games ASC, name
 LIMIT 20`),

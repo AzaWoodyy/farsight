@@ -188,4 +188,28 @@ describe("rate leaderboards show the count beside the share", () => {
       db.close();
     }
   });
+  test("a renamed team is one row", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      // SK Telecom T1 is T1's former name: its MSI 2023 game (a first dragon) counts for T1. Inserted before any team is resolved.
+      db.exec(`
+        INSERT INTO teams VALUES (3,'SK Telecom T1');
+        INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (8,2,3,2,1,40);
+        INSERT INTO game_riot VALUES (8,'K8','V5 data:K8',5,1,0);
+        INSERT INTO game_team_stats(game_id,side,first_dragon) VALUES (8,1,1),(8,2,0);
+      `);
+
+      const out = await run(db, {
+        tool: "ingame_leaderboard",
+        input: { subject: "team", metric: "first_dragon", minute: null, league: "Mid-Season Invitational", yearFrom: 2023, yearTo: 2023, role: null, minGames: 1 },
+      });
+
+      expect(out.table!.rows).toEqual([[1, "T1", 4, 3, 75], [2, "Gen.G", 4, 1, 25]]);
+      expect(out.table!.rows.some((r) => r[1] === "SK Telecom T1")).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
 });
