@@ -46,17 +46,34 @@ const pickAttr = (i: number) => `${ATTR}${i}`;
  */
 export const PICK_SCRIPT = `try{var d=document.documentElement;${JSON.stringify(COUNTS)}.forEach(function(n,i){d.setAttribute("${ATTR}"+i,Math.floor(Math.random()*n))})}catch(e){}`;
 
-// Without the attribute (the script did not run), the first example of each category stays visible.
+// Without the attribute (the script did not run), the first example of each category stays visible. The others are
+// hidden but keep their place: every example of a category sits in the same grid cell, so the block is as tall as
+// its longest example from the first frame, and a later draw changes no height.
 export const PICK_CSS = `${COUNTS.flatMap((n, i) => [
   `:root:not([${pickAttr(i)}]) [data-c="${i}"]>[data-i]:not([data-i="0"])`,
   ...Array.from({ length: n }, (_, p) => `:root[${pickAttr(i)}="${p}"] [data-c="${i}"]>[data-i]:not([data-i="${p}"])`),
-]).join(",")}{display:none}`;
+]).join(",")}{visibility:hidden}`;
 
 /** The draw read back on the client; out-of-range or missing values fall back to the first example. */
-export function readPicks(root: Element): number[] {
+export function readPicks(root: Pick<Element, "getAttribute">): number[] {
   return COUNTS.map((n, i) => {
     const v = Number(root.getAttribute(pickAttr(i)));
 
     return Number.isInteger(v) && v >= 0 && v < n ? v : 0;
+  });
+}
+
+/** Delay between two automatic draws on the home page: time to read four short questions. */
+export const ROTATE_MS = 7000;
+
+/**
+ * A new draw: in each category with more than one example, another example than the one shown, so the same set
+ * never comes back twice in a row. `random` returns a number in [0, 1), like Math.random.
+ */
+export function nextPicks(shown: readonly number[], random: () => number = Math.random): number[] {
+  return COUNTS.map((n, i) => {
+    const current = shown[i] ?? 0;
+
+    return n < 2 ? 0 : (current + 1 + Math.floor(random() * (n - 1))) % n;
   });
 }
