@@ -275,7 +275,7 @@
         },
         "rowsMin": 12,
         "totals": {
-          "titles": 5
+          "titles": 6
         }
       }
     },
@@ -2562,7 +2562,7 @@
           "yearTo": null
         },
         "totals": {
-          "events": 31
+          "events": 25
         },
         "notes": [
           "plusieurs noms de ligue"
@@ -2608,7 +2608,7 @@
           "yearTo": 2020
         },
         "totals": {
-          "events": 16
+          "events": 15
         },
         "notes": [
           "plusieurs noms de ligue"

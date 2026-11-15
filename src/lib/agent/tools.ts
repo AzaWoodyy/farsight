@@ -68,6 +68,19 @@ const COMPETITION_STAGES = "'main_event', 'play_in', 'season', 'playoffs'";
 /** Pages that carry final standings. */
 const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
 
+/**
+ * A `season` page that crowns nobody (`t` is v_tournaments): no knockout tab, and either playoffs of the same split,
+ * or week-by-week league play in a year where another page of the league holds the final.
+ * "Rounds 1-2" of the LCK is one; the LCK Cup, stored as a season too, is not.
+ */
+const regularSeason = (t: string) =>
+  `(${t}.stage = 'season'
+    AND NOT EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = ${t}.tournament_page AND f.tab LIKE '%final%')
+    AND (EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = ${t}.league AND p.year = ${t}.year AND p.stage = 'playoffs' AND COALESCE(p.split, '') = COALESCE(${t}.split, ''))
+      OR (EXISTS (SELECT 1 FROM v_games w WHERE w.tournament_page = ${t}.tournament_page AND w.tab LIKE 'Week %')
+        AND EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = ${t}.league AND p.year = ${t}.year AND p.tournament_page <> ${t}.tournament_page
+              AND (p.stage = 'playoffs' OR (p.stage = 'season' AND EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = p.tournament_page AND f.tab LIKE '%final%')))))))`;
+
 const League = z.enum(LEAGUE_NAMES).describe("Leaguepedia League value. Worlds = World Championship, LCK = LoL Champions Korea.");
 const Year = z.number().int().min(YEAR_MIN).nullable();
 const Period = { yearFrom: Year.describe("First season (inclusive), null for all"), yearTo: Year.describe("Last season (inclusive), null for all") };
@@ -367,11 +380,11 @@ export const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 const pct = (w: number, n: number) => Math.round((100 * w) / Math.max(1, n));
 const span = (years: number[]) => (years.length ? `${Math.min(...years)}–${Math.max(...years)}` : "");
 
-export function placeLabel(place: string | null, stage?: string | null): string {
+export function placeLabel(place: string | null, isRegularSeason = false): string {
   if (!place) return "Classement non publié";
 
   // Regular-season standings are not a title.
-  if (stage === "season") return place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`;
+  if (isRegularSeason) return place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`;
 
   if (place === "1") return "Champion";
 
@@ -421,6 +434,7 @@ const PlayerHistoryRow = z.object({
   losses: z.number(),
   place: NullableText,
   place_number: z.number().nullable(),
+  regular_season: z.number(),
   champions: jsonColumn(
     z.array(z.object({ name: z.string(), games: z.number(), wins: z.number(), icon: z.string().nullable() })),
   ),
@@ -437,6 +451,7 @@ const TeamHistoryRow = z.object({
   losses: z.number(),
   place: NullableText,
   place_number: z.number().nullable(),
+  regular_season: z.number(),
 });
 
 const HeadToHeadRow = z.object({
@@ -504,6 +519,7 @@ SELECT pg.year, pg.event_page, pg.team, MIN(pg.stage) AS stage,
        SUM(pg.win) AS wins,
        COUNT(*) - SUM(pg.win) AS losses,
        tr.place, tr.place_number,
+       MAX(CASE WHEN ${regularSeason("t")} THEN 1 ELSE 0 END) AS regular_season,
        (SELECT json_group_array(json_object('name', c.champion, 'games', c.games, 'wins', c.wins,
                                             'icon', ch.icon_url)
                 ORDER BY c.games DESC, c.wins DESC, c.champion)
@@ -512,6 +528,7 @@ SELECT pg.year, pg.event_page, pg.team, MIN(pg.stage) AS stage,
 FROM player_games pg
 LEFT JOIN v_tournament_results tr
   ON tr.event_page = pg.event_page AND tr.team = pg.team
+LEFT JOIN v_tournaments t ON t.tournament_page = pg.event_page
 GROUP BY pg.year, pg.event_page, pg.team
 ORDER BY pg.year, MIN(pg.event_page)`),
     };
@@ -541,9 +558,9 @@ ORDER BY pg.year, MIN(pg.event_page)`),
       event: r.event_page,
       team: r.team,
       place: r.place,
-      placeLabel: placeLabel(r.place, r.stage),
+      placeLabel: placeLabel(r.place, r.regular_season === 1),
       // Regular-season ranks do not compete with final placements.
-      placeNumber: r.stage === "season" ? null : r.place_number,
+      placeNumber: r.regular_season === 1 ? null : r.place_number,
       wins: r.wins,
       losses: r.losses,
       champions: r.champions.map(({ icon, ...c }) => ({ ...c, imageUrl: icon })),
@@ -639,9 +656,11 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
 SELECT tg.year, tg.league_short, tg.event_page, MIN(tg.stage) AS stage,
        COALESCE(tr.tournament, MIN(tg.tournament)) AS tournament, tg.team,
        SUM(tg.win) AS wins, COUNT(*) - SUM(tg.win) AS losses,
-       tr.place, tr.place_number
+       tr.place, tr.place_number,
+       MAX(CASE WHEN ${regularSeason("t")} THEN 1 ELSE 0 END) AS regular_season
 FROM team_games tg
 LEFT JOIN v_tournament_results tr ON tr.event_page = tg.event_page AND tr.team = tg.team
+LEFT JOIN v_tournaments t ON t.tournament_page = tg.event_page
 GROUP BY tg.year, tg.event_page, tg.team
 ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     };
@@ -667,7 +686,7 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     const league = leagueShortName(db, input.league);
     const wins = raw.reduce((n, r) => n + Number(r.wins), 0);
     const losses = raw.reduce((n, r) => n + Number(r.losses), 0);
-    const titles = raw.filter((r) => r.place === "1" && r.stage !== "season");
+    const titles = raw.filter((r) => r.place === "1" && r.regular_season !== 1);
     const leagues = [...new Set(raw.map((r) => String(r.league_short)))];
     const names = [...new Set(raw.map((r) => String(r.team)))];
     const intl = titles.filter((r) => r.league_short === "Worlds" || r.league_short === "MSI");
@@ -691,7 +710,7 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
           r.league_short,
           r.tournament ?? r.event_page,
           ...(names.length > 1 ? [displayTeam(r.team)] : []),
-          r.place ? `${placeLabel(r.place, r.stage)} (${r.place})` : placeLabel(null),
+          r.place ? `${placeLabel(r.place, r.regular_season === 1)} (${r.place})` : placeLabel(null),
           `${r.wins}-${r.losses}`,
           pct(r.wins, r.wins + r.losses),
         ]),
@@ -2064,9 +2083,7 @@ const tournamentStandings: ToolDef<StandingsInput> = {
     if (!input.full) {
       filters.push("AND tr.place_number <= 2");
       // A regular season with its own playoffs: the title is the playoffs one.
-      filters.push(
-        "AND NOT (t.stage = 'season' AND EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = t.league AND p.year = t.year AND p.stage = 'playoffs' AND COALESCE(p.split, '') = COALESCE(t.split, '')))",
-      );
+      filters.push(`AND NOT ${regularSeason("t")}`);
     }
 
     return {
