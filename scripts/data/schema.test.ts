@@ -24,6 +24,7 @@ describe("database schema contract", () => {
 
       const index = db.prepare("PRAGMA index_info(draft_champion_kind_game)").all();
       expect(index.map((column) => column.name)).toEqual(["champion_id", "kind", "game_id"]);
+      expect(db.prepare("PRAGMA index_info(gp_team)").all().map((column) => column.name)).toEqual(["team_id"]);
       db.exec("INSERT INTO game_draft VALUES (1,1,0,1,100)");
       expect(() => db.exec("INSERT INTO game_draft VALUES (1,1,0,1,200)")).toThrow();
     } finally {

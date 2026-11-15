@@ -78,6 +78,7 @@ CREATE TABLE ingest_runs (
 export const QUERY_DDL = `
 CREATE INDEX gp_player ON game_players(player_id);
 CREATE INDEX gp_champion ON game_players(champion_id);
+CREATE INDEX gp_team ON game_players(team_id);
 CREATE INDEX draft_champion_kind_game ON game_draft(champion_id, kind, game_id);
 CREATE INDEX gps_player ON game_player_stats(player_id);
 CREATE INDEX games_tournament ON games(tournament_id);
