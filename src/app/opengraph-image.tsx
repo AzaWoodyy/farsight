@@ -31,7 +31,7 @@ export default function OpenGraphImage() {
           ))}
         </div>
       </div>
-      <div style={{ display: "flex", fontSize: 24, color: muted }}>Données Leaguepedia et Riot Data Dragon · farsight.enzoneault.dev</div>
+      <div style={{ display: "flex", fontSize: 24, color: muted }}>Données Leaguepedia et Riot Data Dragon · askfarsight.com</div>
     </div>,
     size,
   );

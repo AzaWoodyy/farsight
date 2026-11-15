@@ -1,7 +1,7 @@
 # Déploiement sur Vercel
 
 Projet Vercel séparé (plan Hobby, quotas partagés avec le portfolio), domaine
-`farsight.enzoneault.dev`. Cette page décrit ce que le code fait déjà et les
+`askfarsight.com`. Cette page décrit ce que le code fait déjà et les
 réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 
 ## Ce que contient le déploiement
@@ -130,7 +130,7 @@ Le job lance `lint`, `typecheck` et `test`, déploie, puis vérifie :
   du log. Après un « Data release », ce doit être le tag qui vient d'être
   publié, sinon le job échoue (c'est le cas si `DATA_RELEASE` est épinglée
   sur Vercel) ;
-- que `https://farsight.enzoneault.dev/` répond 200.
+- que `https://askfarsight.com/` répond 200.
 
 La question Chovy n'est pas posée au domaine : `POST /api/ask` est derrière
 BotID, qui refuse un client sans navigateur. Elle est posée à la nouvelle base
