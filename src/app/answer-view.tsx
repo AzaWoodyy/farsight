@@ -61,7 +61,7 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
           <h3 className="text-xs text-muted">── Sources</h3>
           <ul className="mt-2 space-y-1 text-xs leading-6 pointer-coarse:space-y-0">
             {answer.sources.map((s) => (
-              <li key={s.url}>
+              <li key={`${s.label}|${s.url}`}>
                 <a href={s.url} target="_blank" rel="noreferrer" className="tap underline decoration-line underline-offset-2 hover:text-accent">
                   {s.label}
                 </a>
