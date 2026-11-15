@@ -1,8 +1,12 @@
+import type { Metadata } from "next";
 import { AgentConsole } from "./agent-console";
 import { jsonLdScript } from "./brand/json-ld";
 import { Mark } from "./brand/logo";
 import { SITE } from "./brand/site";
 import { PICK_CSS, PICK_SCRIPT } from "./home-examples-data";
+
+// Canonical of the home page only (resolved against metadataBase): a page added later must not inherit "/".
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default function Home() {
   return (

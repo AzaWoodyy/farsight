@@ -1,9 +1,13 @@
-/** Name, tagline and base URL of the site, shared by the header, the metadata and the generated images. */
+/**
+ * Name, tagline and base URL of the site, shared by the header, the metadata and the generated images.
+ * The description is the search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that
+ * stands alone, about 150 characters so Google shows it whole.
+ */
 export const SITE = {
   name: "Farsight",
   tagline: "L'esport League of Legends en une question",
   description:
-    "Pose une question sur l'esport League of Legends : Farsight cherche dans les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond avec un tableau et ses sources Leaguepedia.",
+    "Farsight répond à tes questions sur les matchs pros de League of Legends (Worlds, MSI, LCK, LPL, LEC, LCS) avec un tableau et ses sources Leaguepedia.",
   url: "https://askfarsight.com",
 } as const;
 
