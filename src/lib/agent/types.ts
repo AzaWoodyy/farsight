@@ -81,6 +81,8 @@ export type Entities = {
   players: ResolvedPlayer[];
   teams: ResolvedTeam[];
   champion: ResolvedChampion | null;
+  /** A second champion named after the first ("Azir contre Orianna"): the one a matchup sets it against. */
+  opponentChampion?: ResolvedChampion | null;
   unresolved: string[];
   league: LeagueName | null;
   leagueShort: string | null;

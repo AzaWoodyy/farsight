@@ -69,7 +69,7 @@ const BARE_POOL = /^pools?$/i;
 /** Words that make a question about LoL esports even without a known entity. */
 export const LOL_DOMAIN = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${CHAMPION_POOL}|lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|` +
-    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
+    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|kda|assists?|d[ée]g[âa]ts|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
   "iu",
 );
 
@@ -79,7 +79,7 @@ export const LOL_DOMAIN = new RegExp(
  * its own ("Solo aux Worlds") is still resolved.
  */
 const TERM_PHRASES =
-  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
+  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|parts? (?:des? |aux |de l['’]|d['’])(?:d[ée]g[âa]ts|or|golds?)|(?:damage|dmg|gold) share|(?:(?:pires?|worst) )?match[- ]?ups?|formes? r[ée]centes?|last \d* ?(?:games?|matches)|en ce moment|ces derniers temps|derni[èe]re?s? (?:\d+ )?(?:parties?|games?|matchs?)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
 
 const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
 
@@ -489,7 +489,7 @@ function isCommonHandle(mention: string): boolean {
   return /^[a-z0-9]{1,3}$/.test(alias) || COMMON_WORDS.has(alias);
 }
 
-type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null };
+type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null; opponentChampion?: ResolvedChampion | null };
 
 /**
  * Rule-based detection: longest n-gram that matches a known champion, team or
@@ -531,6 +531,15 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
       if (champion && !found.champion) {
         found.champion = champion;
+        at.set(mention, i);
+        span.forEach((k) => used.add(k));
+        continue;
+      }
+
+      // A second champion: the one the first is set against ("Azir contre Orianna").
+      if (champion && !found.opponentChampion && champion.champion !== found.champion?.champion) {
+        found.opponentChampion = champion;
+        at.set(mention, i);
         span.forEach((k) => used.add(k));
         continue;
       }
@@ -582,6 +591,10 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   const pos = (m: string) => at.get(m) ?? Number.MAX_SAFE_INTEGER;
   found.players.sort((a, b) => pos(a) - pos(b));
   found.teams.sort((a, b) => pos(a.mention) - pos(b.mention));
+
+  // Longer names are read first ("Lee Sin" before "Azir"): the champion the question names first stays the subject.
+  if (found.champion && found.opponentChampion && pos(found.opponentChampion.mention) < pos(found.champion.mention))
+    [found.champion, found.opponentChampion] = [found.opponentChampion, found.champion];
 
   return found;
 }
@@ -662,6 +675,7 @@ function buildEntities(
     players,
     teams: mentions.teams,
     champion: mentions.champion,
+    opponentChampion: mentions.opponentChampion ?? null,
     unresolved,
     league,
     leagueShort: leagueShort(db, league),
@@ -782,7 +796,7 @@ export function maskUnderstood(question: string, e: Entities) {
     });
   };
 
-  const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
+  const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.opponentChampion?.mention, e.leagueMention];
 
   // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa". Whole words only: "TL" is not the one in "botlaner".
   for (const m of mentions)

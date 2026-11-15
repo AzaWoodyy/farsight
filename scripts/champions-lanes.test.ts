@@ -237,12 +237,15 @@ describe("tools on a seeded season", () => {
 
     try {
       seed(db);
-      const lec = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minPicks: null };
+      const lec = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minPicks: null, side: null };
       const out = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "picks", role: null } });
 
-      expect(out.table!.columns).toEqual(["rank", "champion", "picks", "bans", "presence", "winrate", "kda"]);
+      // The figures of the picks beside them (per minute, lane, players) have their own test in rankings.test.ts.
+      const head = (rows: (typeof out.table & {})["rows"], n = 7) => rows.map((r) => r.slice(0, n));
+
+      expect(out.table!.columns.slice(0, 7)).toEqual(["rank", "champion", "picks", "bans", "presence", "winrate", "kda"]);
       // Azir: 4 picks (3 Caps + 1 Humanoid), 2 wins, (10 kills + 15 assists) / 9 deaths; ties go to the name.
-      expect(out.table!.rows.slice(0, 3)).toEqual([
+      expect(head(out.table!.rows.slice(0, 3))).toEqual([
         [1, "Azir", 4, 0, 100, 50, 2.78],
         [2, "Orianna", 4, 0, 100, 50, 3.33],
         [3, "Gnar", 2, 0, 50, 50, 1.5],
@@ -252,11 +255,11 @@ describe("tools on a seeded season", () => {
 
       const bans = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "bans", role: null } });
 
-      expect(bans.table!.rows[0]).toEqual([1, "Ahri", 0, 2, 50, null, null]);
+      expect(bans.table!.rows[0].slice(0, 7)).toEqual([1, "Ahri", 0, 2, 50, null, null]);
 
       const tops = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "picks", role: "Top" } });
 
-      expect(tops.table!.rows).toEqual([[1, "Gnar", 2, 0, 50, 50, 1.5]]);
+      expect(head(tops.table!.rows)).toEqual([[1, "Gnar", 2, 0, 50, 50, 1.5]]);
       expect(tops.facts).toContain("bans et présence tous rôles confondus");
 
       // Winrate needs a minimum of picks: 3 by default here (2 % of 4 games, at least 3).
@@ -271,8 +274,8 @@ describe("tools on a seeded season", () => {
       // One more column for the average; Gnar (2 picks, 2 deaths a game) stays under the minimum asked.
       const deaths = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "deaths", role: null, minPicks: 3 } });
 
-      expect(deaths.table!.columns).toEqual(["rank", "champion", "deaths", "picks", "bans", "presence", "winrate", "kda"]);
-      expect(deaths.table!.rows).toEqual([
+      expect(deaths.table!.columns.slice(0, 8)).toEqual(["rank", "champion", "deaths", "picks", "bans", "presence", "winrate", "kda"]);
+      expect(head(deaths.table!.rows, 8)).toEqual([
         [1, "Azir", 2.25, 4, 0, 100, 50, 2.78],
         [2, "Orianna", 1.5, 4, 0, 100, 50, 3.33],
       ]);
@@ -349,7 +352,7 @@ describe("tools on a seeded season", () => {
 
     try {
       seed(db);
-      const input = { role: "Mid" as const, league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minGames: 2 };
+      const input = { role: "Mid" as const, league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minGames: 2, side: null };
       const out = await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "kda" } });
       const col = (name: string) => out.table!.columns.indexOf(name);
 
