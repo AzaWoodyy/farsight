@@ -16,24 +16,95 @@ export class SqlTimeoutError extends Error {
   }
 }
 
-/** Execute already guarded generated SQL outside the request-serving process.
- * The child gets neither application credentials nor network clients.
+/** Children running at once per instance: each holds its own SQLite page cache
+ * and sort buffers for up to SQL_TIMEOUT_MS. Revisit if the function memory changes.
  */
-export function executeGeneratedQuery(
+export const MAX_SQL_CHILDREN = 3;
+let running = 0;
+const waiters: (() => void)[] = [];
+
+/** Wait for a child slot, giving up at the query deadline or on abort. */
+function acquire(signal: AbortSignal | undefined, deadline: number): Promise<void> {
+  if (running < MAX_SQL_CHILDREN) {
+    running++;
+
+    return Promise.resolve();
+  }
+
+  return new Promise((resolveSlot, reject) => {
+    const leave = (reason: Error) => {
+      const index = waiters.indexOf(granted);
+
+      if (index !== -1) waiters.splice(index, 1);
+      cleanup();
+      reject(reason);
+    };
+
+    const timer = setTimeout(() => leave(new SqlTimeoutError()), Math.max(1, deadline - Date.now()));
+    const abort = () => leave(new DOMException("Request aborted", "AbortError"));
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
+
+    // `release` hands its slot over without decrementing `running`.
+    const granted = () => {
+      cleanup();
+      resolveSlot();
+    };
+
+    waiters.push(granted);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function release() {
+  const next = waiters.shift();
+
+  if (next) next();
+  else running--;
+}
+
+/** Execute already guarded generated SQL outside the request-serving process.
+ * The child gets neither application credentials nor network clients. Waiting
+ * for a slot and running share one SQL_TIMEOUT_MS deadline.
+ */
+export async function executeGeneratedQuery(
   sql: string,
   params: SqlParams,
   { signal, databasePath = DB_PATH }: { signal?: AbortSignal; databasePath?: string } = {},
 ): Promise<SqlRow[]> {
   signal?.throwIfAborted();
 
+  const deadline = Date.now() + SQL_TIMEOUT_MS;
+  await acquire(signal, deadline);
+
+  let released = false;
+
+  const releaseOnce = () => {
+    if (released) return;
+
+    released = true;
+    release();
+  };
+
   return new Promise((resolveRows, reject) => {
     const childPath = resolve(/*turbopackIgnore: true*/ process.cwd(), "src/lib/db/sql-child.mjs");
     const args = process.versions.bun ? ["--no-env-file", childPath] : [childPath];
 
-    const child = spawn(process.execPath, args, {
-      env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1" },
-      stdio: ["pipe", "pipe", "ignore"],
-    });
+    const child = (() => {
+      try {
+        return spawn(process.execPath, args, {
+          env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1" },
+          stdio: ["pipe", "pipe", "ignore"],
+        });
+      } catch (err) {
+        // A synchronous spawn failure rejects the promise; free the slot first.
+        releaseOnce();
+        throw err;
+      }
+    })();
 
     let output = "";
     let error: Error | null = null;
@@ -43,7 +114,7 @@ export function executeGeneratedQuery(
       child.kill("SIGKILL");
     };
 
-    const timer = setTimeout(() => kill(new SqlTimeoutError()), SQL_TIMEOUT_MS);
+    const timer = setTimeout(() => kill(new SqlTimeoutError()), Math.max(1, deadline - Date.now()));
     const abort = () => kill(new DOMException("Request aborted", "AbortError"));
     signal?.addEventListener("abort", abort, { once: true });
 
@@ -54,9 +125,17 @@ export function executeGeneratedQuery(
 
       if (Buffer.byteLength(output) > MAX_RESULT_BYTES + 10_000) kill(new Error("SQL result exceeds the response size limit."));
     });
-    child.on("error", (err) => { error ??= err; });
+    // A failed spawn can emit `error` without `close`: free the slot and settle here.
+    child.on("error", (err) => {
+      error ??= err;
+      releaseOnce();
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(error);
+    });
     child.stdin.on("error", (err) => { error ??= err; });
     child.on("close", () => {
+      releaseOnce();
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
 
