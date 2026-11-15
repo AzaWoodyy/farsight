@@ -5,7 +5,9 @@ import { PALETTE, SITE } from "./brand/site";
 import "./globals.css";
 
 // The whole page is set in Geist Mono: Geist Sans would only add a preloaded font nobody reads.
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// symbols2 holds the box-drawing dashes of the headings ("── joueurs"): preloaded with latin, or they are drawn
+// in a fallback font first and the heading shifts sideways when that file arrives.
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "symbols2"] });
 
 const title = `${SITE.name} · ${SITE.tagline}`;
 
