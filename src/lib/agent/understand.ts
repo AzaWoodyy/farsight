@@ -589,12 +589,22 @@ function detectPeriod(question: string, now: Date) {
   if (years.length === 0) return { yearFrom: null, yearTo: null };
 
   if (years.length === 1 && relative.length === 1) return { yearFrom: years[0], yearTo: relative[0].since ? null : years[0] };
-  const since = /\b(depuis|since|apr[eè]s|after|from)\s+((?:19|20)\d{2})\b/i.exec(question);
-  const before = /\b(avant|before|until|jusqu'?en)\s+((?:19|20)\d{2})\b/i.exec(question);
+  const year = "\\s+((?:19|20)\\d{2})\\b";
+  // "depuis 2016" and "jusqu'en 2020" include the year named; "après 2016" and "avant 2020" do not.
+  const since = new RegExp(`\\b(?:depuis|since|from)${year}`, "i").exec(question);
+  const after = new RegExp(`\\b(?:apr[eè]s|after)${year}`, "i").exec(question);
+  const until = new RegExp(`\\b(?:until|jusqu'?en)${year}`, "i").exec(question);
+  const before = new RegExp(`\\b(?:avant|before)${year}`, "i").exec(question);
 
-  if (since && years.length === 1) return { yearFrom: Number(since[2]), yearTo: null };
+  if (years.length === 1) {
+    if (since) return { yearFrom: Number(since[1]), yearTo: null };
 
-  if (before && years.length === 1) return { yearFrom: null, yearTo: Number(before[2]) };
+    if (after) return { yearFrom: Number(after[1]) + 1, yearTo: null };
+
+    if (until) return { yearFrom: null, yearTo: Number(until[1]) };
+
+    if (before) return { yearFrom: null, yearTo: Number(before[1]) - 1 };
+  }
 
   return { yearFrom: Math.min(...years), yearTo: Math.max(...years) };
 }
