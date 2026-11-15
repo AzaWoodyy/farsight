@@ -358,6 +358,19 @@ function periodFilter(col: string, input: Period, params: Params): string {
   return parts.join(" ");
 }
 
+/** Games that count in a competition scope: its stages, the league when one is asked, the period, a role when ranked by role. */
+function competitionScope(alias: string, input: { league: string | null; role?: string | null } & Period, params: Params): string {
+  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
+  const role = input.role ? `AND ${alias}.role = :role` : "";
+
+  if (input.role) params.role = input.role;
+
+  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${role} ${periodFilter(`${alias}.year`, input, params)}`;
+}
+
+/** The league and period of an input, without the role its own tool filters on. */
+const leagueAndPeriod = (input: { league: string | null } & Period) => ({ league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+
 /** A JSON text column (json_group_array...) parsed with its own schema. */
 const jsonColumn = <S extends z.ZodType>(schema: S) => z.string().transform((text) => schema.parse(JSON.parse(text)));
 
@@ -1185,13 +1198,6 @@ const MAX_VERSUS_GAMES = 200;
 
 const fr1 = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
 
-/** Scope of both players' games (`alias` is a v_game_players row). */
-function comparisonScope(input: PlayerComparisonInput, params: Params, alias: string): string {
-  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
-
-  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
-}
-
 /** The other player of the pair, for a row of either: they faced each other when they were on opposing teams. */
 const FACED = `EXISTS (SELECT 1 FROM v_game_players o
     WHERE o.game_id = p.game_id AND o.team <> p.team AND o.player = CASE p.player WHEN :a THEN :b ELSE :a END)`;
@@ -1209,7 +1215,7 @@ function comparisonSql(input: PlayerComparisonInput, params: Params, faced: bool
          st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
-  WHERE p.player IN (:a, :b) AND ${comparisonScope(input, params, "p")}${faced ? `\n    AND ${FACED}` : ""}
+  WHERE p.player IN (:a, :b) AND ${competitionScope("p", input, params)}${faced ? `\n    AND ${FACED}` : ""}
 )
 SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(kills), 2) AS avg_kills, ROUND(AVG(deaths), 2) AS avg_deaths, ROUND(AVG(assists), 2) AS avg_assists,
@@ -1255,7 +1261,7 @@ function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame
      LEFT JOIN game_riot r ON r.game_id = p.game_id
      LEFT JOIN champions ca ON ca.name = p.champion
      LEFT JOIN champions cb ON cb.name = o.champion
-     WHERE p.player = :a AND ${comparisonScope(input, params, "p")}
+     WHERE p.player = :a AND ${competitionScope("p", input, params)}
      ORDER BY g.played_at DESC
      LIMIT ${MAX_VERSUS_GAMES}`,
     params,
@@ -1287,7 +1293,7 @@ function sameLane(db: DatabaseSync, input: PlayerComparisonInput): VersusView["l
     z.object({ role: Text, games: z.number() }),
     `SELECT p.role, COUNT(*) AS games FROM v_game_players p
      JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team AND o.player = :b AND o.role = p.role
-     WHERE p.player = :a AND p.role IS NOT NULL AND ${comparisonScope(input, params, "p")}
+     WHERE p.player = :a AND p.role IS NOT NULL AND ${competitionScope("p", input, params)}
      GROUP BY p.role ORDER BY games DESC, p.role`,
     params,
   );
@@ -1774,13 +1780,6 @@ const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
 
 const needsMinPicks = (sort: ChampionSort) => sort === "winrate" || sort === "kda";
 
-/** The games of a ranking's scope, competition and period (`alias` is v_games or v_game_players). */
-function rankingScope(input: { league: string | null } & Period, params: Params, alias: string): string {
-  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
-
-  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter(`${alias}.year`, input, params)}`;
-}
-
 const championRanking: ToolDef<ChampionRankingInput> = {
   name: "champion_ranking",
   label: "classement de champions",
@@ -1800,7 +1799,7 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     return {
       params,
       sql: tidy(`WITH ev AS (
-  SELECT g.game_id FROM v_games g WHERE ${rankingScope(input, params, "g")}
+  SELECT g.game_id FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)}
 ),
 n AS (SELECT COUNT(*) AS games FROM ev),
 picks AS (
@@ -1808,7 +1807,7 @@ picks AS (
          SUM(CASE WHEN ${role} THEN gp.win END) AS wins,
          SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
          SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths
-  FROM v_game_players gp WHERE ${rankingScope(input, params, "gp")}
+  FROM v_game_players gp WHERE ${competitionScope("gp", leagueAndPeriod(input), params)}
   GROUP BY gp.champion
 ),
 bans AS (
@@ -1855,12 +1854,12 @@ LIMIT 20`),
     const pages = selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT DISTINCT g.event_page FROM v_games g WHERE ${rankingScope(input, params, "g")} ORDER BY g.played_at DESC LIMIT 12`,
+      `SELECT DISTINCT g.event_page FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)} ORDER BY g.played_at DESC LIMIT 12`,
       params,
     ).map((r) => r.event_page);
 
     const ongoingParams: Params = {};
-    const ongoing = inProgressNote(db, rankingScope(input, ongoingParams, "g"), ongoingParams);
+    const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
       `${i + 1}. ${r.champion} (${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
@@ -2242,14 +2241,7 @@ function aggregateSql(aggregate: "sum" | "avg" | "rate", column: string): string
 
 /** Shared WHERE clause of the in-game tools (`s` is the stats view). */
 function ingameScope(input: { league: string | null } & Period, params: Params): string {
-  const parts = [`s.stage IN (${COMPETITION_STAGES})`];
-
-  if (input.league) {
-    parts.push(leagueFilter("s.league", input, params));
-
-  }
-
-  return `${parts.join(" AND ")} ${periodFilter("s.year", input, params)}`;
+  return competitionScope("s", leagueAndPeriod(input), params);
 }
 
 /** Games of the scope, and how many of them have Riot data. */
@@ -2642,16 +2634,6 @@ const PlayerLeaderRow = z
   .object({ player: Text, team: NullableText, games: z.number(), wins: z.number(), gold_diff_15: z.number().nullable(), ingame_games: z.number() })
   .catchall(z.number().nullable());
 
-/** The scope of the player leaderboard (`alias` is a v_game_players or v_game_player_stats row). */
-function leaderboardScope(input: PlayerLeaderboardInput, params: Params, alias: string): string {
-  const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
-  const role = input.role ? `AND ${alias}.role = :role` : "";
-
-  if (input.role) params.role = input.role;
-
-  return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${role} ${periodFilter(`${alias}.year`, input, params)}`;
-}
-
 const isInternational = (league: string | null) => LEAGUES.some((l) => l.name === league && l.international);
 
 /** Rates and averages need enough games: 5 in one international event, 10 in one league season, else 20. */
@@ -2686,7 +2668,7 @@ const playerLeaderboard: ToolDef<PlayerLeaderboardInput> = {
       params,
       sql: tidy(`WITH p AS (
   SELECT p.game_id, p.player, p.team, p.played_at, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision
-  FROM v_game_players p WHERE ${leaderboardScope(input, params, "p")}
+  FROM v_game_players p WHERE ${competitionScope("p", input, params)}
 ),
 team_kills AS (
   SELECT t.game_id, t.team, SUM(t.kills) AS team_kills FROM v_game_players t
@@ -2694,7 +2676,7 @@ team_kills AS (
 ),
 lengths AS (SELECT g.game_id, g.length_s FROM v_games g WHERE g.game_id IN (SELECT game_id FROM p)),
 st AS (
-  SELECT s.game_id, s.player, s.gold_diff_15 FROM v_game_player_stats s WHERE ${leaderboardScope(input, params, "s")}
+  SELECT s.game_id, s.player, s.gold_diff_15 FROM v_game_player_stats s WHERE ${competitionScope("s", input, params)}
 ),
 b AS (
   SELECT p.*, tk.team_kills, l.length_s, st.gold_diff_15
@@ -2738,12 +2720,12 @@ LIMIT 20`),
     const pages = selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT DISTINCT p.event_page FROM v_game_players p WHERE ${leaderboardScope(input, params, "p")} ORDER BY p.played_at DESC LIMIT 12`,
+      `SELECT DISTINCT p.event_page FROM v_game_players p WHERE ${competitionScope("p", input, params)} ORDER BY p.played_at DESC LIMIT 12`,
       params,
     ).map((r) => r.event_page);
 
     const gameParams: Params = {};
-    const ongoing = inProgressNote(db, rankingScope(input, gameParams, "g"), gameParams);
+    const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), gameParams), gameParams);
 
     const line = (r: z.infer<typeof PlayerLeaderRow>, i: number) =>
       `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`;
