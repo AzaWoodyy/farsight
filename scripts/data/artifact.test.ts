@@ -51,8 +51,8 @@ function manifest(counts: Partial<Manifest["counts"]> = {}): Manifest {
   };
 }
 
-describe("regressionProblems (data:package --previous)", () => {
-  const ok = { allowIngameDrop: false };
+describe("regressionProblems (data:package --previous / --baseline)", () => {
+  const ok = { allowDrop: [] };
   const min = Math.floor(COUNTS.games * MIN_GAMES_RATIO);
 
   test("equal counts, or games at exactly the minimum ratio, pass", () => {
@@ -63,7 +63,7 @@ describe("regressionProblems (data:package --previous)", () => {
   test("one game below the minimum is refused, naming the previous release", () => {
     const problems = regressionProblems({ ...COUNTS, games: min - 1 }, manifest(), ok);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("data-20261108");
+    expect(problems[0]).toContain("previous release data-20261108");
     expect(problems[0]).toContain(`minimum ${min}`);
   });
 
@@ -73,16 +73,45 @@ describe("regressionProblems (data:package --previous)", () => {
     expect(problems[0]).toContain("leagues");
   });
 
+  test.each(["tournaments", "players", "teams"] as const)("%s one below the ratio is refused, at the ratio passes", (key) => {
+    const floor = Math.floor(COUNTS[key] * MIN_GAMES_RATIO);
+    expect(regressionProblems({ ...COUNTS, [key]: floor }, manifest(), ok)).toEqual([]);
+    const problems = regressionProblems({ ...COUNTS, [key]: floor - 1 }, manifest(), ok);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain(`${floor - 1} ${key},`);
+    expect(problems[0]).toContain(`minimum ${floor}`);
+  });
+
+  test("a drop is lifted only for the counts named in allowDrop", () => {
+    const counts = { ...COUNTS, players: 300, teams: 60 };
+    expect(regressionProblems(counts, manifest(), { allowDrop: ["players"] })).toEqual([expect.stringContaining("teams")]);
+    expect(regressionProblems(counts, manifest(), { allowDrop: ["players", "teams"] })).toEqual([]);
+  });
+
   test("an in-game drop is refused unless explicitly allowed", () => {
     const counts = { ...COUNTS, ingame_games: Math.floor(800 * MIN_GAMES_RATIO) - 1 };
     const problems = regressionProblems(counts, manifest(), ok);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("in-game");
-    expect(regressionProblems(counts, manifest(), { allowIngameDrop: true })).toEqual([]);
+    expect(regressionProblems(counts, manifest(), { allowDrop: ["ingame_games"] })).toEqual([]);
   });
 
   test("a previous manifest without in-game counts sets no in-game floor", () => {
     expect(regressionProblems({ ...COUNTS, ingame_games: 0 }, manifest({ ingame_games: undefined }), ok)).toEqual([]);
+  });
+
+  test("a fixed baseline catches a slow loss the week-to-week ratio lets through", () => {
+    // 1.5 % lost each week: every week passes against the previous release; from the second, the baseline refuses it.
+    const baseline = manifest();
+    let previous = baseline;
+
+    for (let week = 1; week <= 3; week++) {
+      const counts = { ...COUNTS, games: Math.round(COUNTS.games * 0.985 ** week) };
+      expect(regressionProblems(counts, previous, ok)).toEqual([]);
+      const againstBaseline = regressionProblems(counts, baseline, { ...ok, label: "baseline" });
+      expect(againstBaseline).toEqual(week < 2 ? [] : [expect.stringContaining("baseline data-20261108")]);
+      previous = { ...manifest(counts), tag: `data-2026111${week}` };
+    }
   });
 });
 

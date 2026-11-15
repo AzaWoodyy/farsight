@@ -5,10 +5,14 @@
  *   bun run data:package --check-only  (all checks, no release assets)
  *   bun run data:package --tag=data-20261113
  *   bun run data:package --tag=data-20261113 --previous=prev/manifest.json --out=data/release
+ *   bun run data:package --check-only --previous=prev/manifest.json --baseline=pinned/manifest.json
  *
  * Fails (exit 1) without writing anything when a check does not pass, so the
  * workflow never publishes a broken or truncated file. `--previous` compares
- * the counts with the last published release to catch a partial ingestion.
+ * the counts with the last published release to catch a partial ingestion;
+ * `--baseline` applies the same floors against a fixed release, so a small loss
+ * every week cannot add up. `--allow-drop=players,teams` lifts the floor of the
+ * counts an intended change lowers (`--allow-ingame-drop` is `--allow-drop=ingame_games`).
  *
  * Sizes: the database must stay under 190 MB (warning from 170 MB) so the
  * /api/ask function stays under Vercel's 250 MB (`bun run size` checks it
@@ -33,6 +37,8 @@ import {
   derivationProblems,
   headerProblems,
   readFacts,
+  RATIO_COUNTS,
+  isRatioCount,
   regressionProblems,
   sha256File,
 } from "./artifact";
@@ -47,6 +53,7 @@ const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slic
 const checkOnly = args.includes("--check-only");
 const tag = arg("tag");
 const previousFile = arg("previous");
+const baselineFile = arg("baseline");
 const outDir = resolve(arg("out") ?? "data/release");
 
 /** Tables and views the app reads (tools, schema guard, views). */
@@ -142,9 +149,18 @@ if (problems.length === 0) {
 
 db.close();
 
-if (previousFile) {
-  const previous = Manifest.parse(JSON.parse(readFileSync(previousFile, "utf8")));
-  problems.push(...regressionProblems(facts.counts, previous, { allowIngameDrop: args.includes("--allow-ingame-drop") }));
+const allowDrop = [...(arg("allow-drop")?.split(",") ?? []), ...(args.includes("--allow-ingame-drop") ? ["ingame_games"] : [])];
+const unknownDrop = allowDrop.filter((c) => !isRatioCount(c));
+
+if (unknownDrop.length > 0) problems.push(`--allow-drop: unknown count(s) ${unknownDrop.join(", ")}, expected ${RATIO_COUNTS.map(([key]) => key).join(", ")}`);
+
+for (const [file, label] of [
+  [previousFile, "previous release"],
+  [baselineFile, "baseline"],
+] as const) {
+  if (!file) continue;
+  const reference = Manifest.parse(JSON.parse(readFileSync(file, "utf8")));
+  problems.push(...regressionProblems(facts.counts, reference, { allowDrop: allowDrop.filter(isRatioCount), label }));
 }
 
 if (problems.length > 0) fail(problems);

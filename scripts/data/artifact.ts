@@ -102,20 +102,44 @@ export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "stale
 /** A new release may lose a few games to wiki edits, not more. */
 export const MIN_GAMES_RATIO = 0.98;
 
-/** Counts that dropped too much since the previous release: a sign of a partial ingestion. */
-export function regressionProblems(counts: Manifest["counts"], previous: Manifest, opts: { allowIngameDrop: boolean }): string[] {
+/** Counts compared with a reference release under MIN_GAMES_RATIO, with the label of their message. */
+export const RATIO_COUNTS = [
+  ["games", "games"],
+  ["tournaments", "tournaments"],
+  ["players", "players"],
+  ["teams", "teams"],
+  ["ingame_games", "games with in-game stats"],
+] as const satisfies readonly (readonly [keyof Manifest["counts"], string])[];
+
+export type RatioCount = (typeof RATIO_COUNTS)[number][0];
+
+export const isRatioCount = (name: string): name is RatioCount => RATIO_COUNTS.some(([key]) => key === name);
+
+/**
+ * Counts that dropped too much since a reference release: a sign of a partial
+ * ingestion or a broken merge. The reference is the previous release, or a
+ * fixed baseline that does not move weekly (`label` names it in the message).
+ * `allowDrop` lifts the floor of the counts an intended change lowers.
+ */
+export function regressionProblems(
+  counts: Manifest["counts"],
+  reference: Pick<Manifest, "tag" | "counts">,
+  opts: { allowDrop: readonly RatioCount[]; label?: string },
+): string[] {
   const problems: string[] = [];
-  const min = Math.floor(previous.counts.games * MIN_GAMES_RATIO);
+  const label = opts.label ?? "previous release";
 
-  if (counts.games < min)
-    problems.push(`${counts.games} games, previous release ${previous.tag} had ${previous.counts.games} (minimum ${min})`);
+  for (const [key, name] of RATIO_COUNTS) {
+    // A reference without in-game counts (before schema v4) sets no in-game floor.
+    const before = reference.counts[key] ?? 0;
+    const min = Math.floor(before * MIN_GAMES_RATIO);
 
-  if (counts.leagues < previous.counts.leagues)
-    problems.push(`${counts.leagues} leagues, previous release ${previous.tag} had ${previous.counts.leagues}`);
-  const previousIngame = previous.counts.ingame_games ?? 0;
+    if (!opts.allowDrop.includes(key) && (counts[key] ?? 0) < min)
+      problems.push(`${counts[key] ?? 0} ${name}, ${label} ${reference.tag} had ${before} (minimum ${min})`);
+  }
 
-  if (!opts.allowIngameDrop && (counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
-    problems.push(`${counts.ingame_games} games with in-game stats, previous release ${previous.tag} had ${previousIngame}`);
+  if (counts.leagues < reference.counts.leagues)
+    problems.push(`${counts.leagues} leagues, ${label} ${reference.tag} had ${reference.counts.leagues}`);
 
   return problems;
 }

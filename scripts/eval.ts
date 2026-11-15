@@ -8,12 +8,13 @@
  *   bun run eval --strict          exit 1 unless every check passes, or when no case could be judged
  *   bun run eval --verbose         print every check, not only the failing ones
  *   bun run eval --llm-only        only the cases marked `llm` (the ones the rules hand to the LLM)
+ *   bun run eval --tags=release    only the cases carrying one of these tags; exit 1 on a tag no case carries
  *
  * A case marked `llm` cannot pass on the rules alone: without a key only what
  * the rules decide is scored (entities, unread words) and the case is listed
  * as needing the LLM instead of being counted as passed.
  *
- * A selection that keeps no case (`--only`, `--exclude-tags`, `--llm-only`)
+ * A selection that keeps no case (`--only`, `--tags`, `--exclude-tags`, `--llm-only`)
  * always exits 1: a gate that runs nothing must not pass.
  */
 import { readFileSync } from "node:fs";
@@ -91,12 +92,22 @@ const file = resolve(import.meta.dirname, "../eval/questions.json");
 const questions = QuestionsFile.parse(JSON.parse(readFileSync(file, "utf8")));
 const now = new Date(questions.now);
 const excludedTags = args.find((a) => a.startsWith("--exclude-tags="))?.slice(15).split(",") ?? [];
-const cases = questions.questions.filter((c) => !c.tags.some((t) => excludedTags.includes(t)) && (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm));
+const tags = args.find((a) => a.startsWith("--tags="))?.slice(7).split(",");
+const selected = (c: Case) => (!tags || c.tags.some((t) => tags.includes(t))) && (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm);
+const cases = questions.questions.filter((c) => !c.tags.some((t) => excludedTags.includes(t)) && selected(c));
 
 const unknown = only?.filter((id) => !questions.questions.some((c) => c.id === id)) ?? [];
 
 if (unknown.length) {
   console.error(`--only : cas inconnu(s) : ${unknown.join(", ")}`);
+  process.exit(1);
+}
+
+// A mistyped tag next to a valid one would otherwise shrink the gate without a word.
+const unknownTags = tags?.filter((t) => !questions.questions.some((c) => c.tags.includes(t))) ?? [];
+
+if (unknownTags.length) {
+  console.error(`--tags : tag(s) inconnu(s) : ${unknownTags.join(", ")}`);
   process.exit(1);
 }
 
