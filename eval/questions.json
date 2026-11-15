@@ -251,6 +251,20 @@
       }
     },
     {
+      "id": "h2h-apostrophe-order",
+      "question": "T1 vs Anyone's Legend",
+      "tags": [
+        "head_to_head"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Anyone's Legend"
+        ]
+      }
+    },
+    {
       "id": "lck-t1-vs-geng",
       "question": "T1 contre Gen.G en LCK",
       "tags": [
