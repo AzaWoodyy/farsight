@@ -127,7 +127,12 @@ export const ChampionStatsInput = z.object({
   ...Period,
 });
 
-export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda"] as const;
+/** The per-game averages a champion ranking can sort by: end-of-game figures of v_game_players. */
+export const CHAMPION_AVERAGE_SORTS = ["kills", "deaths", "assists", "gold", "cs", "damage", "vision"] as const;
+
+export type ChampionAverageSort = (typeof CHAMPION_AVERAGE_SORTS)[number];
+
+export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda", ...CHAMPION_AVERAGE_SORTS] as const;
 
 export type ChampionSort = (typeof CHAMPION_SORTS)[number];
 
@@ -136,9 +141,12 @@ export const ChampionRankingInput = z.object({
   ...Period,
   sort: z
     .enum(CHAMPION_SORTS)
-    .describe("Ranking order: picks (most played), bans (most banned), presence (picks + bans share of games), winrate or kda (both with a minimum of picks)"),
+    .describe(
+      "Ranking order: picks (most played), bans (most banned), presence (picks + bans share of games), winrate, kda, " +
+        "or a per-game average (kills, deaths, assists, gold, cs, damage, vision), highest first; all but picks, bans and presence need a minimum of picks",
+    ),
   role: z.enum(["Top", "Jungle", "Mid", "Bot", "Support"]).nullable().describe("Only the picks played in this role, null for every role"),
-  minPicks: z.number().int().min(1).max(200).nullable().describe("Minimum picks for winrate and kda rankings, null for the default"),
+  minPicks: z.number().int().min(1).max(200).nullable().describe("Minimum picks for winrate, kda and per-game average rankings, null for the default"),
 });
 
 export type ChampionRankingInput = z.infer<typeof ChampionRankingInput>;
@@ -1760,7 +1768,27 @@ const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: stri
   presence: { title: "les plus présents", criterion: "présence, (picks + bans) / parties" },
   winrate: { title: "au meilleur taux de victoire", criterion: "victoires / picks" },
   kda: { title: "au meilleur KDA", criterion: "KDA, (kills + assists) / morts" },
+  kills: { title: "avec le plus de kills par partie", criterion: "kills par partie, en moyenne" },
+  deaths: { title: "avec le plus de morts par partie", criterion: "morts par partie, en moyenne" },
+  assists: { title: "avec le plus d'assists par partie", criterion: "assists par partie, en moyenne" },
+  gold: { title: "avec le plus d'or par partie", criterion: "or par partie, en moyenne" },
+  cs: { title: "avec le plus de CS par partie", criterion: "CS par partie, en moyenne" },
+  damage: { title: "avec le plus de dégâts par partie", criterion: "dégâts aux champions par partie, en moyenne" },
+  vision: { title: "avec le plus de vision par partie", criterion: "score de vision par partie, en moyenne" },
 };
+
+/** What a per-game average is called in a sentence, and its decimals. */
+const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; digits: number }> = {
+  kills: { unit: "kills", digits: 2 },
+  deaths: { unit: "morts", digits: 2 },
+  assists: { unit: "assists", digits: 2 },
+  gold: { unit: "d'or", digits: 0 },
+  cs: { unit: "CS", digits: 1 },
+  damage: { unit: "de dégâts", digits: 0 },
+  vision: { unit: "de vision", digits: 1 },
+};
+
+const averageSortOf = (sort: ChampionSort): ChampionAverageSort | null => CHAMPION_AVERAGE_SORTS.find((s) => s === sort) ?? null;
 
 /** Columns of the champion ranking table, named as the champion layout reads them. */
 export const CHAMPION_RANKING_COLUMNS = ["rank", "champion", "picks", "bans", "presence", "winrate", "kda"] as const;
@@ -1776,21 +1804,28 @@ const ChampionRankingRow = z.object({
   presence: z.number().nullable(),
   winrate: z.number().nullable(),
   kda: z.number().nullable(),
+  average: z.number().nullable(),
+  /** The figure the ranking is ordered by. */
+  sort_value: z.number().nullable(),
   min_picks: z.number(),
 });
 
 /** Winrate and KDA need enough picks to mean something: 2 % of the scope's games, at least 3. */
 const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
 
-const needsMinPicks = (sort: ChampionSort) => sort === "winrate" || sort === "kda";
+/** A per-game average swings more on a few games: at least 5 picks, the cut Riot's own Worlds stats page applies. */
+const DEFAULT_MIN_PICKS_AVERAGE = "MAX(5, (n.games + 49) / 50)";
+
+const needsMinPicks = (sort: ChampionSort) => sort === "winrate" || sort === "kda" || averageSortOf(sort) != null;
 
 const championRanking: ToolDef<ChampionRankingInput> = {
   name: "champion_ranking",
   label: "classement de champions",
   description:
     "Ranks the champions of a competition and period: most played (picks), most banned (bans), most present (picks + bans share of games), " +
-    "best win rate or KDA (with a minimum of picks). Each line has picks, bans, presence, win rate and KDA. Optionally one role only " +
-    "('champions les plus joués en mid'). Use it for 'most played / banned / picked champions', 'meta', 'priority picks'.",
+    "best win rate or KDA, or highest per-game average of kills, deaths, assists, gold, CS, damage or vision (with a minimum of picks). " +
+    "Each line has picks, bans, presence, win rate and KDA. Optionally one role only ('champions les plus joués en mid'). " +
+    "Use it for 'most played / banned / picked champions', 'meta', 'priority picks', 'champion avec le plus de morts par partie'.",
   plan: (_db, input) => {
     const params: Params = {};
     const role = input.role ? "gp.role = :role" : "1";
@@ -1798,7 +1833,9 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     if (input.role) params.role = input.role;
 
     if (input.minPicks != null) params.minPicks = input.minPicks;
-    const minPicks = input.minPicks != null ? ":minPicks" : DEFAULT_MIN_PICKS;
+    const average = averageSortOf(input.sort);
+    const minPicks = input.minPicks != null ? ":minPicks" : average ? DEFAULT_MIN_PICKS_AVERAGE : DEFAULT_MIN_PICKS;
+    const order = average ? "average" : input.sort;
 
     return {
       params,
@@ -1810,7 +1847,8 @@ picks AS (
   SELECT gp.champion, COUNT(*) AS all_picks, SUM(${role}) AS picks,
          SUM(CASE WHEN ${role} THEN gp.win END) AS wins,
          SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
-         SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths
+         SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths,
+         ${average ? `AVG(CASE WHEN ${role} THEN gp.${average} END)` : "NULL"} AS average
   FROM v_game_players gp WHERE ${competitionScope("gp", leagueAndPeriod(input), params)}
   GROUP BY gp.champion
 ),
@@ -1823,15 +1861,16 @@ lines AS (
          ROUND(100.0 * (COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0)) / MAX(1, n.games), 1) AS presence,
          CASE WHEN p.picks > 0 THEN ROUND(100.0 * p.wins / p.picks, 1) END AS winrate,
          CASE WHEN p.picks > 0 AND p.ka IS NOT NULL THEN ROUND(1.0 * p.ka / MAX(1, p.deaths), 2) END AS kda,
+         ${average ? `ROUND(p.average, ${CHAMPION_AVERAGE_UNIT[average].digits})` : "NULL"} AS average,
          ${needsMinPicks(input.sort) ? minPicks : "0"} AS min_picks
   FROM champions c CROSS JOIN n
   LEFT JOIN picks p ON p.champion = c.name
   LEFT JOIN bans b ON b.champion = c.name
   WHERE ${input.role ? "COALESCE(p.picks, 0) > 0" : "COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0) > 0"}
 )
-SELECT * FROM lines
-WHERE picks >= min_picks AND ${input.sort} IS NOT NULL
-ORDER BY ${input.sort} DESC, picks DESC, bans DESC, champion
+SELECT *, ${order} AS sort_value FROM lines
+WHERE picks >= min_picks AND ${order} IS NOT NULL
+ORDER BY ${order} DESC, picks DESC, bans DESC, champion
 LIMIT 20`),
     };
   },
@@ -1852,6 +1891,7 @@ LIMIT 20`),
     const label = CHAMPION_SORT_LABEL[input.sort];
     const games = rows[0]?.games ?? 0;
     const minPicks = rows[0]?.min_picks ?? 0;
+    const average = averageSortOf(input.sort);
     const role = input.role ? ` en ${ROLE_LABEL[input.role]}` : "";
     const params: Params = {};
 
@@ -1866,26 +1906,27 @@ LIMIT 20`),
     const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
-      `${i + 1}. ${r.champion} (${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
+      `${i + 1}. ${r.champion} (${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].unit} par partie, ` : ""}${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
       `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
 
     const facts =
       `Champions ${label.title}${role} ${scope || "toutes compétitions"} (${games} parties) : ${rows.slice(0, 3).map(line).join(", ")}. ` +
       `Critère : ${label.criterion}${minPicks ? `, minimum ${minPicks} picks` : ""}.` +
-      (input.role ? ` Picks, victoires et KDA${role} seulement ; bans et présence tous rôles confondus.` : "") +
+      (input.role ? ` Picks, victoires${average ? ", KDA et moyennes" : " et KDA"}${role} seulement ; bans et présence tous rôles confondus.` : "") +
       (ongoing ? ` ${ongoing}` : "");
 
     return {
       title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
       table: {
-        columns: [...CHAMPION_RANKING_COLUMNS],
-        rows: rows.map((r, i) => [i + 1, r.champion, r.picks, r.bans, r.presence, r.winrate, r.kda]),
+        // A per-game average is one more column, named as the sort: the champion layout gives it the bar.
+        columns: average ? ["rank", "champion", average, ...CHAMPION_RANKING_COLUMNS.slice(2)] : [...CHAMPION_RANKING_COLUMNS],
+        rows: rows.map((r, i) => [i + 1, r.champion, ...(average ? [r.average] : []), r.picks, r.bans, r.presence, r.winrate, r.kda]),
       },
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
       sources: [...eventSources(pages, 12), { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` }],
       followUps: rows.slice(0, 2).map((r) => `Stats de ${r.champion} ${inLeague(league) || "aux Worlds"}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`),
-      totals: { leader: rows[0]?.champion ?? "", leader_value: rows[0]?.[input.sort] ?? 0, leader_picks: rows[0]?.picks ?? 0, leader_bans: rows[0]?.bans ?? 0, rows: rows.length, games, min_picks: minPicks },
+      totals: { leader: rows[0]?.champion ?? "", leader_value: rows[0]?.sort_value ?? 0, leader_picks: rows[0]?.picks ?? 0, leader_bans: rows[0]?.bans ?? 0, rows: rows.length, games, min_picks: minPicks },
     };
   },
   // The router model tends to set a minimum of 1 for "top 5": below 3 picks, the default threshold keeps a winrate meaningful.

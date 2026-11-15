@@ -33,6 +33,10 @@ const LABELS: [RegExp, string, boolean][] = [
   [/^kda$/, "KDA", false],
   [/^(games|parties|games_played)$/, "parties", false],
   [/^(wins|victoires)$/, "victoires", false],
+  [/^(deaths|morts)$/, "morts", false],
+  [/^gold$/, "or", false],
+  [/^cs$/, "CS", false],
+  [/^(damage|degats)$/, "dégâts", false],
 ];
 
 function metricOf(column: string): ChampionMetric {

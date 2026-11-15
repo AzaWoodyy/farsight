@@ -6,7 +6,7 @@ import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
-import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
+import { aiTools, type BoundTool, bindTool, type ChampionAverageSort, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
 import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
@@ -190,10 +190,40 @@ export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
 
 /** Per-game figures a champion ranking does not sort by (it sorts by presence, picks, bans, win rate or KDA). */
 const CHAMPION_UNRANKED = word(
-  "kills?|morts?|deaths?|assists?|golds?|cs|farm|d[ée]g[âa]ts|damage|vision|dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration",
+  "kills?|morts?|deaths?|assists?|golds?|d['’]or|cs|farm|d[ée]g[âa]ts|damage|vision|dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration",
 );
 
+/** Figures of a game, not of a champion's line: no per-game average of the ranking answers them. */
+const CHAMPION_OTHER_FIGURES = word("dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration");
+
 export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
+
+/** The per-game averages a champion ranking sorts by, as a question names them. */
+export const CHAMPION_AVERAGE_CUES: [ChampionAverageSort, RegExp][] = [
+  ["kills", word("kills?")],
+  ["deaths", word("morts?|deaths?")],
+  ["assists", word("assists?")],
+  ["gold", word("golds?|d['’]or")],
+  ["cs", word("cs|farm")],
+  ["damage", word("d[ée]g[âa]ts|damages?")],
+  ["vision", word("vision")],
+];
+
+/** "par game", "en moyenne": the question asks for an average, not a total over the scope. */
+const PER_GAME = word("par (?:partie|game|match)|per (?:game|match)|/ ?(?:partie|game|match)|en moyenne|moyen(?:ne)?s?|on average|averages?");
+
+/** The ranking only goes from the highest down: "le moins de morts" is not its answer ("au moins 10 picks" is a minimum). */
+const LOWEST = word("(?<!au )moins|(?<!at )least|fewest|lowest|pires?|worst");
+
+/**
+ * The per-game average a champion ranking is asked for ("le plus de morts par game"), null when the question
+ * wants a total, the lowest figure or several figures at once: those stay with generated SQL.
+ */
+export function championAverageSortOf(question: string): ChampionAverageSort | null {
+  const asked = CHAMPION_AVERAGE_CUES.filter(([, re]) => re.test(question));
+
+  return asked.length === 1 && PER_GAME.test(question) && !LOWEST.test(question) ? asked[0][0] : null;
+}
 
 const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
 
@@ -237,9 +267,8 @@ export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
 
 export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
 
-/** Champions ranked on picks, bans, presence, win rate or KDA, optionally in one role. */
-function championRankingRoute(question: string, e: Entities): Route {
-  const sort = championSortOf(question);
+/** Champions ranked on picks, bans, presence, win rate, KDA or a per-game average, optionally in one role. */
+function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question)): Route {
   const role = roleOf(question);
 
   return {
@@ -650,6 +679,10 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
     const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
+    const average = cue ? null : championAverageSortOf(question);
+
+    // "champion avec le plus de morts par game": an average the ranking sorts by, with its minimum of picks.
+    if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);
 
     // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
     if (figure) return { kind: "sql", reason: `classement de champions sur une statistique que l'outil ne trie pas (« ${figure} »)` };
@@ -794,6 +827,8 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   champion_ranking: [
     CHAMPION_RANKING,
     ...CHAMPION_SORT_CUES.map(([, re]) => re),
+    ...CHAMPION_AVERAGE_CUES.map(([, re]) => re),
+    PER_GAME,
     ...ROLE_CUES.map((r) => r.pattern),
     word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?"),
   ],
@@ -933,6 +968,8 @@ const SQL_RULES =
   "the LPL (Tencent LoL Pro League) has none. If the question needs in-game stats for a scope whose ingame_games is 0, set `missing`. " +
   "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
   "Use only these views and columns (no other table). " +
+  "A ranking by an average, a rate or a ratio (per game, per minute, win rate, KDA) needs a minimum sample: add HAVING COUNT(*) >= 5 " +
+  "(or the minimum the question sets), select that count as a column, and return the top 10 rather than one row, even when the question asks for a single name. " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
   "A role is one of 'Top', 'Jungle', 'Mid', 'Bot', 'Support' (an ADC is 'Bot'). " +
   `Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under ${MAX_ROWS} rows. ` +

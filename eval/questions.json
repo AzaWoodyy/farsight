@@ -2263,6 +2263,33 @@
       }
     },
     {
+      "id": "champion-deaths-per-game",
+      "question": "Champion avec le plus de morts par game au World 2026",
+      "tags": [
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "yearFrom": 2026,
+          "yearTo": 2026,
+          "role": null
+        },
+        "totals": {
+          "leader": "Rell",
+          "leader_value": 4.4,
+          "leader_picks": 5,
+          "games": 98,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : morts par partie, en moyenne, minimum 5 picks"
+        ]
+      }
+    },
+    {
       "id": "para-most-banned",
       "question": "champions les plus bannis aux Worlds 2024",
       "tags": [
