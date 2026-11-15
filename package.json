@@ -21,7 +21,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "ask": "bun scripts/ask.ts",
     "eval": "bun scripts/eval.ts",
-    "test": "bun test scripts"
+    "test": "bun test scripts",
+    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run data:pull && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.175",
