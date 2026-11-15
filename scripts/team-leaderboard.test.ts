@@ -24,6 +24,7 @@ describe("team rankings route to the team leaderboard, decided by the rules", ()
     ["quelle équipe a le meilleur winrate en LCK 2024", LCK24, "winrate"],
     ["équipes avec le plus de victoires aux Worlds", WORLDS, "wins"],
     ["which team won the most at Worlds", WORLDS, "wins"],
+    ["quelle équipe a gagné le plus de parties en LCK 2024", LCK24, "wins"],
     ["classement des équipes LCK 2024 par victoires", LCK24, "wins"],
     ["classement des équipes par kills en LCK 2024", LCK24, "kills"],
     ["quelle équipe joue le plus de parties en LCK 2024", LCK24, "games"],
@@ -53,8 +54,8 @@ describe("team rankings route to the team leaderboard, decided by the rules", ()
     expect(routeQuestion(q, e, SCHEMA, COVERAGE)).toMatchObject({ kind: "tool", call: { tool } });
   });
 
-  test("a ranking of titles is not a ranking of wins", () => {
-    expect(routeQuestion("quelle équipe a gagné le plus de titres en LCK", scope("LoL Champions Korea", "LCK"), SCHEMA, COVERAGE).kind).toBe("sql");
+  test.each(["quelle équipe a gagné le plus de titres en LCK", "which team won the most trophies in LCK"])("a ranking of titles is not a ranking of wins: %s", (q) => {
+    expect(routeQuestion(q, scope("LoL Champions Korea", "LCK"), SCHEMA, COVERAGE).kind).toBe("sql");
   });
 });
 

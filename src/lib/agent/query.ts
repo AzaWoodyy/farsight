@@ -268,7 +268,7 @@ function playerLeaderboardRoute(question: string, e: Entities): Route {
 
 /** What "best" means for a team ranking, most specific first; null when the question names no criterion (the standings answer it). */
 export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
-  ["wins", word("(?:le plus de|most|plus de|par|by) (?:victoires|wins)|(?:le plus|most) (?:gagn[ée]|won)|won the most|gagn[ée] le plus(?! de)")],
+  ["wins", word("(?:le plus de|most|plus de|par|by) (?:victoires|wins)|(?:le plus|most) (?:gagn[ée]|won)|won the most|gagn[ée] le plus(?! de)|gagn[ée] le plus de (?:parties|games|matchs)")],
   ["winrate", word("win ?rates?|taux de victoires?|pourcentage de victoires?|% (?:de )?victoires?|victoires?|wins?")],
   ["games", word("(?:le plus de|most|plus de) (?:parties|games|matchs)|(?:le plus|most) jou[ée]")],
   ["kills", word("kills?")],
@@ -276,7 +276,7 @@ export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
 ];
 
 /** A ranking of trophies, not of games: the standings or text-to-SQL answer it. */
-const TITLES = word("titres?|titles?|troph[ée]es?|palmar[eè]s|sacres?");
+const TITLES = word("titres?|titles?|troph[ée]es?|troph(?:y|ies)|palmar[eè]s|sacres?");
 
 const teamCriterionOf = (question: string): TeamCriterion | null => TEAM_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? null;
 
