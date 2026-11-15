@@ -7,7 +7,7 @@ import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
-import { detectMetric, type MetricCue, MINUTE } from "./metrics";
+import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
@@ -288,6 +288,14 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
   const league = e.league;
   const what = `les statistiques in-game (${cue.mention})`;
 
+  // "gold diff à 25 min": the snapshots exist at 10, 15 and 20 min only; say so rather than answer at 15.
+  if (cue.askedMinute != null && cue.minute == null && isSnapshot(cue))
+    return {
+      kind: "missing",
+      concepts: [`${cue.mention} à ${cue.askedMinute} min (relevé seulement à ${MINUTES.join(", ").replace(/, (\d+)$/, " et $1")} min)`],
+      reason: `minute ${cue.askedMinute} absente des données in-game`,
+    };
+
   if (league && coverage.league(league, e.yearFrom, e.yearTo).ingame === 0)
     return {
       kind: "missing",
@@ -497,7 +505,9 @@ function comparisonRoute(question: string, e: Entities): Route {
   const metric = detectMetric(question);
 
   // The comparison holds end-of-game averages, gold and CS difference at 15 min and solo kills: another in-game metric is said missing.
-  if (metric && !COMPARED_INGAME.has(`${metric.player}@${metric.minute ?? 15}`))
+  if (metric && metric.askedMinute != null && metric.minute == null && isSnapshot(metric))
+    notes.push(`Les données in-game ne relèvent l'or, le CS et l'XP qu'à 10, 15 et 20 min : pas de « ${metric.mention} » à ${metric.askedMinute} min.`);
+  else if (metric && !COMPARED_INGAME.has(`${metric.player}@${metric.askedMinute ?? 15}`))
     notes.push(`La comparaison ne contient pas « ${metric.mention} » : elle porte sur les statistiques de fin de partie, les écarts d'or et de CS à 15 min et les solo kills.`);
 
   return {
@@ -629,7 +639,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   // A champion alone: its profile answers its averages too ("KDA d'Azir", "dégâts de Jinx"), and the gold
   // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
-  if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.minute ?? 15}`))) return championRoute(e);
+  if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e);
 
   if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
     const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
