@@ -76,6 +76,24 @@ test("periods spanning renamings read both leagues in parameterized tool SQL", a
   } finally { db.close(); }
 });
 
+test("an edition without its final placements says the final is not published yet", async () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    createSchema(db); createQuerySchema(db);
+    LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i+1,l.name,l.short,l.region,+l.international));
+    const standings = bindTool(db, {tool:"tournament_standings", input:{league:"World Championship",yearFrom:2026,yearTo:2026,split:null,full:true}});
+
+    const row = (team: string, place: string, place_number: number) =>
+      ({year:2026,event_page:"Worlds 2026",tournament:"Worlds 2026",stage:"playoffs",team,place,place_number,prize_usd:null});
+
+    const out = await standings.format(db, [row("T1","3-4",3), row("G2 Esports","5-8",5)]);
+
+    expect(out.totals).toMatchObject({champion:"", teams:2, events:1});
+    expect(out.facts).toContain("Worlds 2026 : finale pas encore publiée sur Leaguepedia.");
+  } finally { db.close(); }
+});
+
 test("router prioritizes timeline, missing coverage, unsupported data and tools", () => {
   const db = new DatabaseSync(":memory:");
 

@@ -1,29 +1,29 @@
 {
   "repository": "AzaWoodyy/farsight",
-  "tag": "data-20261114-4",
-  "schemaVersion": 5,
+  "tag": "data-20261115",
+  "schemaVersion": 6,
   "database": {
     "asset": "lol.sqlite.zst",
-    "sha256": "3fe7811c241cc3da30bac86481d6186b17fcfeead9782697474e7e59ea41c1d6",
-    "uncompressedSha256": "ded9e53a8de1c593f9916b1431ff471f76043b3db68c609c5f5eeed6d5af10e1"
+    "sha256": "758f88daf624d3a3a10f313b0c546aa9f7d91305cc2a007e6e027ca19ec65c3b",
+    "uncompressedSha256": "1f071a862ba6d642add6876ed2839d9f753a4765bf7bfe1645afb410cbf75489"
   },
   "ingame": {
     "asset": "ingame.jsonl.zst",
-    "sha256": "0b89780d0603813dffefa0941b88eb6d2e0ed53226a09a9209ffa4d6ee02d614"
+    "sha256": "7020f7011ca3c1055cc6c52b6eb57b92310f7d1537710008f336fa760b4451ce"
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "6b0ffbd9b1493985f9ab6ab44b7e6ca6e693336d1fbc4c83308cf817b03be487",
+    "sha256": "110fb62e99c6c71b68a2a1d9251fa2fa62b42ca327be41b73aae771a3bd7b2b5",
     "files": {
       "tournaments.json": "492e2a8e276b4e131709fb760d6dbb43143f98145d432669f4492b23dc04ba22",
-      "results.json": "28f786234848e2aa2184d2c3fd1aa4f38458a785522a75410c8c07049d9d19c1",
-      "games.json": "fc46c7abf6045a51c51227b6b3b2c87343cc3d29514f86efd8d12a984cbecf00",
-      "lines.json": "fa02af5ab4b34994664c2eca29e8d7df355276a014b07de631f33dcb8c6ed68a",
-      "players.json": "d6e9a4c7cb342bc774cecee6672a1be068c082c37b5390327a059b78304267f0",
+      "results.json": "acac92320907583a3a8e38fd5c062e6e29759b6761ec3cc497a2e4680899e923",
+      "games.json": "23ba1fb57fc3df354c6b08c7f2b7456ffd0fb6fb3b4c33df502f27479f8e4b1b",
+      "lines.json": "fe9f4951d3125a3f61285023a90ba3d85d4858a6f53b3effa76a2a125d178d46",
+      "players.json": "61d983a47c78b7487f54b084f3a037ff7b4c4a32c4a9d3be00886874dc5d548c",
       "redirects.json": "804dfac7ccd3add4fa7930ec77de106dd1fd5f10e2979d2b51c948ee130d6f5f",
-      "ddragon.json": "29c501e57d4a23738db8909357a7e19a55f09e992c32f9b7e674c9ec43ece0d4",
-      "riot_games.json": "e511dcb3ee7929d13437edf6fdd96b6977ebffd67733fc524cda4924de2bda06",
-      "runs.json": "19bb63a3e040fba3c5a2ebc90e4bbdc502ea13783abc81e881302cc8d8ce9942"
+      "ddragon.json": "8a8552acdcee70cf556e432e38d5e535c704134635865c37eedebdc5c2a21fcb",
+      "riot_games.json": "9fd317eb2626396ac7df7477a526b2768a49592e01325bd59c4a7256dce9fb4b",
+      "runs.json": "55c31887f1cd7744d1d02abdef8e01eeb27a664f92d71be18565b02c1429202c"
     }
   }
 }

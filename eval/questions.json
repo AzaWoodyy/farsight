@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded).",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -17,15 +17,15 @@
         "league": "World Championship",
         "rows": 8,
         "totals": {
-          "wins": 63,
-          "losses": 37,
+          "wins": 64,
+          "losses": 40,
           "events": 8
         },
         "attempts": 1,
         "sources": 9,
         "summaryIncludes": [
-          "63",
-          "37"
+          "64",
+          "40"
         ],
         "summaryExcludes": [
           "saison",
@@ -185,9 +185,9 @@
         "input": {
           "full": false
         },
-        "rows": 15,
+        "rows": 16,
         "totals": {
-          "latest_champion": "T1"
+          "latest_champion": "Bilibili Gaming"
         },
         "sources": 15
       }
@@ -425,8 +425,8 @@
         "league": "World Championship",
         "rows": 8,
         "totals": {
-          "wins": 63,
-          "losses": 37
+          "wins": 64,
+          "losses": 40
         },
         "ambiguity": {
           "mention": "정지훈",
@@ -454,7 +454,7 @@
         ],
         "rows": 8,
         "totals": {
-          "wins": 63
+          "wins": 64
         }
       }
     },
@@ -725,8 +725,8 @@
         "totals": {
           "games_a": 1560,
           "wins_a": 1042,
-          "games_b": 998,
-          "wins_b": 695,
+          "games_b": 1002,
+          "wins_b": 696,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146,
@@ -813,8 +813,8 @@
         "league": "World Championship",
         "rows": 2,
         "totals": {
-          "games_a": 100,
-          "wins_a": 63,
+          "games_a": 104,
+          "wins_a": 64,
           "games_b": 184,
           "wins_b": 134,
           "h2h_games": 9,
@@ -919,7 +919,7 @@
         "rows": 2,
         "totals": {
           "games_a": 1560,
-          "games_b": 998,
+          "games_b": 1002,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146
@@ -948,7 +948,7 @@
         "rows": 2,
         "totals": {
           "games_a": 1560,
-          "games_b": 998,
+          "games_b": 1002,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146
@@ -1171,10 +1171,10 @@
         },
         "rows": 1,
         "totals": {
-          "picks": 18,
-          "item_games": 18,
+          "picks": 19,
+          "item_games": 19,
           "top_item": "Runaan's Hurricane",
-          "top_item_games": 17
+          "top_item_games": 18
         },
         "summaryIncludes": [
           "Runaan's Hurricane"
@@ -1194,7 +1194,7 @@
         "champion": "Yunara",
         "league": "World Championship",
         "totals": {
-          "picks": 18,
+          "picks": 19,
           "top_item": "Runaan's Hurricane"
         }
       }
@@ -3053,15 +3053,17 @@
         "rows": 17,
         "totals": {
           "leader": "Knight (Zhuo Ding)",
-          "leader_value": 9.2,
-          "leader_games": 15,
+          "leader_value": 9.15,
+          "leader_games": 19,
           "min_games": 5,
-          "in_progress": "yes"
+          "in_progress": "no"
         },
         "summaryIncludes": [
           "selon le critère KDA",
-          "minimum 5 parties",
-          "Worlds 2026 en cours"
+          "minimum 5 parties"
+        ],
+        "summaryExcludes": [
+          "en cours"
         ]
       }
     },
@@ -3137,7 +3139,7 @@
       }
     },
     {
-      "id": "standings-worlds-2026-in-progress",
+      "id": "standings-worlds-2026",
       "question": "classement worlds 2026",
       "tags": [
         "worlds",
@@ -3151,13 +3153,13 @@
           "yearTo": 2026,
           "full": true
         },
-        "rows": 17,
+        "rows": 19,
         "totals": {
-          "champion": "",
-          "teams": 17
+          "champion": "Bilibili Gaming",
+          "teams": 19
         },
         "summaryIncludes": [
-          "finale pas encore publiée"
+          "Bilibili Gaming champion, Gen.G finaliste"
         ]
       }
     },
@@ -3743,11 +3745,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
@@ -3771,11 +3773,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
@@ -3799,11 +3801,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
@@ -3827,11 +3829,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
@@ -3855,11 +3857,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
@@ -3883,11 +3885,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 898,
-          "wins": 571,
+          "games": 902,
+          "wins": 574,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 104
+          "top_games": 105
         }
       }
     },
