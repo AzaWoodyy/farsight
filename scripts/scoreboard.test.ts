@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { bindTool, playerProfiles } from "../src/lib/agent/tools";
-import type { Entities } from "../src/lib/agent/types";
 import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 
@@ -65,24 +64,35 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
   }
 });
 
-test("compared players' profiles list teams by games and the main role, in the question's scope", () => {
+test("compared players' profiles list teams by games and the main role, in the scope given", () => {
   const db = new DatabaseSync(":memory:");
 
   try {
     seed(db);
-    const player = { mention: "Saken", player: "SAKEN", matchedAlias: "saken", realName: null, nativeName: null, otherCandidates: [], ambiguity: null };
-
-    const entities: Entities = {
-      players: [player, { ...player, mention: "Zeus", player: "Zeus" }],
-      teams: [], champion: null, unresolved: [], league: "LoL EMEA Championship", leagueShort: "LEC", leagueMention: "LEC",
-      yearFrom: null, yearTo: null, split: null, outOfScope: null,
-    };
 
     // Zeus has no LEC game: no team, no role.
-    expect(playerProfiles(db, entities)).toEqual([
+    expect(playerProfiles(db, ["SAKEN", "Zeus"], { league: "LoL EMEA Championship", yearFrom: null, yearTo: null })).toEqual([
       { player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid" },
       { player: "Zeus", teams: [], role: null },
     ]);
+  } finally {
+    db.close();
+  }
+});
+
+test("profiles follow the scope given, not a narrower one", () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+    const lec = { league: "LoL EMEA Championship", yearFrom: null, yearTo: null };
+
+    // The period the question asked, before a relaxation drops it: no game there.
+    expect(playerProfiles(db, ["SAKEN"], { ...lec, yearFrom: 1999, yearTo: 1999 })).toEqual([{ player: "SAKEN", teams: [], role: null }]);
+    // The widened scope the comparison ran on.
+    expect(playerProfiles(db, ["SAKEN"], lec)).toEqual([{ player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid" }]);
+    // No competition: Zeus's Worlds game counts.
+    expect(playerProfiles(db, ["Zeus"], { league: null, yearFrom: null, yearTo: null })).toEqual([{ player: "Zeus", teams: ["T1"], role: "Top" }]);
   } finally {
     db.close();
   }
