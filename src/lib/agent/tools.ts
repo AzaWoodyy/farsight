@@ -517,7 +517,7 @@ const playerEventHistory: ToolDef<PlayerHistoryInput> = {
     return {
       params,
       sql: tidy(`WITH player_games AS (
-  SELECT gp.year, gp.event_page, gp.stage, gp.team, gp.champion, gp.win
+  SELECT gp.year, gp.event_page, gp.stage, gp.team, gp.champion, gp.win, gp.played_at
   FROM v_game_players gp
   WHERE gp.player = :player
     AND ${leagueFilter("gp.league", input, params)}
@@ -544,7 +544,7 @@ LEFT JOIN v_tournament_results tr
   ON tr.event_page = pg.event_page AND tr.team = pg.team
 LEFT JOIN v_tournaments t ON t.tournament_page = pg.event_page
 GROUP BY pg.year, pg.event_page, pg.team
-ORDER BY pg.year, MIN(pg.event_page)`),
+ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
     };
   },
   relaxations: (input, entities) => {
@@ -590,8 +590,12 @@ ORDER BY pg.year, MIN(pg.event_page)`),
     const titles = rows.filter((r) => r.placeNumber === 1).length;
     const events = new Set(rows.map((r) => r.event)).size;
 
+    // One page per year is an edition (Worlds, MSI); a league's year holds several tournaments (seasons, playoffs, cups).
+    const perYear = new Set(rows.map((r) => r.year)).size === events;
+    const what = perYear ? "éditions" : "tournois";
+
     let facts =
-      `${input.player} a disputé ${events} éditions ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) ` +
+      `${input.player} a disputé ${events} ${what} ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) ` +
       `avec ${teams.length} équipe${teams.length > 1 ? "s" : ""} (${teams.join(", ")}), ` +
       `pour un bilan de ${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %).`;
 
