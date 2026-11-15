@@ -27,7 +27,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="fr" className={`${geistMono.variable} h-full antialiased`}>
+    // The page's draw script sets the home examples' attributes on <html> before hydration (see home-examples-data).
+    <html lang="fr" className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
         {children}
         <SiteAnalytics />
