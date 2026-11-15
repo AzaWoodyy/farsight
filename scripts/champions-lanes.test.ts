@@ -262,6 +262,41 @@ describe("tools on a seeded season", () => {
     }
   });
 
+  test("champion presence counts every game of the scope, editions without the champion included", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+
+      // Playoffs of the same year and a 2024 season: two games each, Azir neither picked nor banned.
+      db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (2,'LEC25P','LEC25P','playoffs',?,2025),(3,'LEC24','LEC24','season',?,2024)").run(lec, lec);
+      db.exec(`
+        INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at)
+          VALUES (5,2,1,2,1,1800,500),(6,2,2,1,1,1800,600),(7,3,1,2,1,1800,50),(8,3,2,1,2,1800,60);
+        INSERT INTO game_players VALUES
+          (5,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(6,1,1,2,'Mid',2,0,1,1,1,10000,200,10000,10,NULL),
+          (7,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(8,1,1,2,'Mid',2,1,1,1,1,10000,200,10000,10,NULL);
+      `);
+
+      const season = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 } });
+
+      // 4 picks over the 6 games of 2025, not over the 4 of the only edition with Azir.
+      expect(season.totals).toMatchObject({ picks: 4, games: 6, events: 1 });
+      expect(season.facts).toContain("sur les 6 parties du périmètre (présence 67 %)");
+      // The table keeps one row per edition with the champion, at the edition's own presence.
+      expect(season.table!.rows).toEqual([[2025, "LEC25", 4, 4, 0, 100, "2-2", 50, "Caps ×3, Humanoid ×1"]]);
+
+      // No period: the 2024 season widens the scope beyond Azir's years, and the sentence says so.
+      const all = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+
+      expect(all.totals).toMatchObject({ games: 8 });
+      expect(all.facts).toContain("sur les 8 parties du périmètre, 2024–2025 (présence 50 %)");
+    } finally {
+      db.close();
+    }
+  });
+
   test("player leaderboard: explicit criterion, minimum of games, n/d without Riot data", async () => {
     const db = new DatabaseSync(":memory:");
 
