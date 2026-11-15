@@ -65,6 +65,48 @@
       }
     },
     {
+      "id": "period-before-year",
+      "question": "résultats de Faker aux Worlds avant 2017",
+      "tags": [
+        "worlds",
+        "player",
+        "period"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": null,
+          "yearTo": 2016
+        },
+        "rows": 3
+      }
+    },
+    {
+      "id": "period-after-year",
+      "question": "résultats de Faker aux Worlds après 2016",
+      "tags": [
+        "worlds",
+        "player",
+        "period"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2017,
+          "yearTo": null
+        },
+        "rowsMin": 5
+      }
+    },
+    {
       "id": "worlds-faker",
       "question": "Faker aux Worlds",
       "tags": [

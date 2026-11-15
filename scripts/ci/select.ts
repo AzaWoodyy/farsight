@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SCHEMA_VERSION } from "../../src/lib/db/schema";
-import { affected, attribution, CHECKS, withSnapshotSchema } from "./affected";
+import { affected, attribution, CHECKS, pushBase, withSnapshotSchema } from "./affected";
 
 const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, "utf8"));
 let selected = new Set(CHECKS);
@@ -18,10 +18,38 @@ if (event.pull_request) {
   if (attribution.test(`${commits}\n${pr.title ?? ""}\n${pr.body ?? ""}`)) throw new Error("Generation attribution in commit or PR metadata");
   const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}...${head}`], { encoding: "utf8" }).split("\0").filter(Boolean);
   selected = affected(paths);
-} else if (event.before && event.after && /^[a-f0-9]{40}$/.test(event.before) && !/^0+$/.test(event.before) && /^[a-f0-9]{40}$/.test(event.after)) {
-  // main uses the pushed range, so unrelated merges also keep the pinned DB.
-  const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${event.before}..${event.after}`], { encoding: "utf8" }).split("\0").filter(Boolean);
-  selected = affected(paths);
+} else if (event.after && /^[a-f0-9]{40}$/.test(event.after)) {
+  // main compares against the last commit whose main run succeeded, so a failed or cancelled run is never skipped.
+  const after: string = event.after;
+  let green: string[] = [];
+
+  try {
+    green = execFileSync("gh", ["api", `repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=30`, "--jq", ".workflow_runs[].head_sha"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split("\n").filter(Boolean);
+  } catch (error) {
+    console.log(`Could not list successful main runs: ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+  }
+
+  const base = pushBase(green, after, sha => {
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", sha, after], { stdio: "ignore" });
+
+      return true;
+    } catch {
+      return false;
+    }
+  }, sha => {
+    // The run of that commit used its own select.ts: only a run under this rule proves its range.
+    try {
+      return execFileSync("git", ["show", `${sha}:scripts/ci/select.ts`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).includes("pushBase(");
+    } catch {
+      return false;
+    }
+  });
+
+  console.log(`Push range: ${base ?? "none"}..${after}`);
+
+  if (base) selected = affected(execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}..${after}`], { encoding: "utf8" }).split("\0").filter(Boolean));
+  else console.log("No validated ancestor on main: every check runs.");
 }
 
 const snapshotSchema = Number(JSON.parse(readFileSync("ci/data.json", "utf8")).schemaVersion);
