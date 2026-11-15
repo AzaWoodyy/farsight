@@ -53,6 +53,31 @@ function Gauge({ share, label }: { share: number; label: string }) {
   );
 }
 
+/** A figure's name for screen readers, where the column header is only visual. */
+const Label = ({ children }: { children: string }) => <span className="sr-only">{children} : </span>;
+
+/**
+ * A sortable column header. Its accessible name keeps the visible label and adds the sort state, since
+ * these lists are not tables and cannot carry `aria-sort`.
+ */
+function SortHeader({ active, dir, label, title, className, onClick }: { active: boolean; dir: 1 | -1; label: string; title: string; className: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+    >
+      <span className="sr-only">trier par </span>
+      {label}
+      <span aria-hidden className="ml-0.5 inline-block w-2">
+        {active ? (dir === 1 ? "↑" : "↓") : ""}
+      </span>
+      {active && <span className="sr-only">{dir === 1 ? ", tri croissant" : ", tri décroissant"}</span>}
+    </button>
+  );
+}
+
 /** Champions ranked: one line per champion, a gauge on the ranking metric, the other metrics beside it. */
 export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; fallback: ReactNode }) {
   const [asTable, setAsTable] = useState(false);
@@ -110,7 +135,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                       </div>
                     </div>
                   </div>
-                  <span className="text-right font-semibold tabular-nums text-accent sm:w-[4.5rem] sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
+                  <span aria-hidden className="text-right font-semibold tabular-nums text-accent sm:w-[4.5rem] sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
                   {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
                   <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
                     {others.map(({ m, i }) => (
@@ -122,6 +147,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                   </dl>
                   {others.map(({ m, i }) => (
                     <span key={m.key} className="hidden w-[4.5rem] shrink-0 text-right tabular-nums sm:block">
+                      <Label>{m.label}</Label>
                       {formatChampionValue(l.values[i], m.percent)}
                     </span>
                   ))}
@@ -295,24 +321,9 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
 
   const toggle = (key: ItemSortKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "item" ? 1 : -1 }));
 
-  const header = (key: ItemSortKey, label: string, title: string, className: string) => {
-    const active = sort.key === key;
-
-    return (
-      <button
-        type="button"
-        title={title}
-        onClick={() => toggle(key)}
-        aria-label={`trier par ${label}`}
-        className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
-      >
-        {label}
-        <span aria-hidden className="ml-0.5 inline-block w-2">
-          {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
-        </span>
-      </button>
-    );
-  };
+  const header = (key: ItemSortKey, label: string, title: string, className: string) => (
+    <SortHeader active={sort.key === key} dir={sort.dir} label={label} title={title} className={className} onClick={() => toggle(key)} />
+  );
 
   return (
     <section aria-labelledby="champion-items" className="border-t border-line px-3 py-2">
@@ -370,12 +381,23 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
                         </div>
                       </div>
                     </div>
-                    <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">{l.games}</span>
+                    <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                      <Label>parties</Label>
+                      {l.games}
+                    </span>
                     <span
                       className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
                       title={wr == null ? `moins de ${ITEM_WINRATE_MIN_GAMES} parties : winrate non affiché (${l.wins}-${l.games - l.wins})` : `${l.wins}-${l.games - l.wins}`}
                     >
-                      {wr == null ? "·" : `${Math.round(wr)} %`}
+                      <Label>winrate</Label>
+                      {wr == null ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className="sr-only">non affiché, moins de {ITEM_WINRATE_MIN_GAMES} parties</span>
+                        </>
+                      ) : (
+                        `${Math.round(wr)} %`
+                      )}
                     </span>
                   </li>
                 );
@@ -453,24 +475,9 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
 
   const toggle = (key: PoolKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "champion" ? 1 : -1 }));
 
-  const header = (key: PoolKey, label: string, title: string, className: string) => {
-    const active = sort.key === key;
-
-    return (
-      <button
-        type="button"
-        title={title}
-        onClick={() => toggle(key)}
-        aria-label={`trier par ${label}`}
-        className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
-      >
-        {label}
-        <span aria-hidden className="ml-0.5 inline-block w-2">
-          {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
-        </span>
-      </button>
-    );
-  };
+  const header = (key: PoolKey, label: string, title: string, className: string) => (
+    <SortHeader active={sort.key === key} dir={sort.dir} label={label} title={title} className={className} onClick={() => toggle(key)} />
+  );
 
   const diversity = [
     { label: "parties", value: String(pool.games) },
@@ -546,13 +553,26 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
                     </div>
                   </div>
                 </div>
-                <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">{l.games}</span>
+                <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                  <Label>parties</Label>
+                  {l.games}
+                </span>
                 <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                  <Label>V-D</Label>
                   {l.wins}-{l.losses}
                 </span>
-                <span className="w-14 shrink-0 text-right tabular-nums">{NUMBER.format(l.winrate)} %</span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">{nd(l.kda)}</span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums text-muted sm:block">{NUMBER.format(l.share)} %</span>
+                <span className="w-14 shrink-0 text-right tabular-nums">
+                  <Label>winrate</Label>
+                  {NUMBER.format(l.winrate)} %
+                </span>
+                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                  <Label>KDA</Label>
+                  {nd(l.kda)}
+                </span>
+                <span className="hidden w-14 shrink-0 text-right tabular-nums text-muted sm:block">
+                  <Label>part</Label>
+                  {NUMBER.format(l.share)} %
+                </span>
                 {/* Phone width: the columns that do not fit wrap under the name. */}
                 <dl className="flex w-full flex-wrap gap-x-3 pl-[calc(1.5rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
                   <div className="flex gap-1">
