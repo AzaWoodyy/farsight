@@ -21,6 +21,26 @@ Un `MutationObserver` (plus une lecture à chaque frame) relève les textes visi
 | 02 | 390 px, 3G | [avant](02-avant-exemples-390-3g.png) | [après](02-apres-exemples-390-3g.png) |
 | 03 | Desktop 1280, CPU ×4 | [avant](03-avant-exemples-1280-cpu4.png) | [après](03-apres-exemples-1280-cpu4.png) |
 
+## Titres « ── … » qui glissent au rechargement
+
+Les tirets `──` (U+2500) de « ── Essaie par exemple » et « ── joueurs » sont dans le sous-ensemble `symbols2` de
+Geist Mono, qui n'était pas préchargé : le navigateur le demandait au premier rendu, dessinait les tirets dans une
+police de secours, puis le texte qui suit glissait de 8,5 px vers la gauche à l'arrivée du fichier (5,9 Ko).
+`symbols2` est maintenant préchargé avec `latin`.
+
+Position horizontale du texte après les tirets, relevée à chaque frame (rechargement forcé) :
+
+| Cas | Avant | Après |
+|---|---|---|
+| Desktop 1280, réseau rapide | 182,1 puis 173,6 px (≈ 10 ms) | 173,6 px, fixe |
+| Desktop 1280, 4G (9 Mb/s, 150 ms) | 182,1 puis 173,6 px (≈ 120 ms) | 173,6 px, fixe |
+| 390 px, 4G | 46,1 puis 37,6 px (≈ 150 ms) | 37,6 px, fixe |
+| 390 px et desktop, 3G | 3 positions (police latine puis tirets) | 2 positions : seul reste le changement de police de toute la page, hors périmètre |
+
+| # | Contexte | Avant | Après |
+|---|---|---|---|
+| 04 | 390 px, 4G | [avant](04-avant-titres-390-4g.png) | [après](04-apres-titres-390-4g.png) |
+
 Lighthouse sur l'accueil, médiane de 3 passes, même machine :
 
 | | Perf | FCP | LCP | TBT | CLS |
@@ -29,6 +49,8 @@ Lighthouse sur l'accueil, médiane de 3 passes, même machine :
 | Mobile après | 98 | 0,91 s | 2,33 s | 25 ms | 0 |
 | Desktop avant | 100 | 0,25 s | 0,50 s | 0 ms | 0,0001 |
 | Desktop après | 100 | 0,25 s | 0,50 s | 0 ms | 0 |
+| Mobile, avec `symbols2` préchargé | 98 | 0,75 s | 2,33 s | 26 ms | 0 |
+| Desktop, avec `symbols2` préchargé | 100 | 0,20 s | 0,50 s | 0 ms | 0 |
 
 HTML de l'accueil : + 0,7 Ko gzip (tous les exemples, le script de tirage et la règle CSS qui masque les autres).
 
