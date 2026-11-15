@@ -1431,6 +1431,10 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 /** (kills + assists) / deaths, a perfect game counting one death; null without the three figures. */
 const kdaOf = (ka: number | null, deaths: number | null) => (ka == null || deaths == null ? null : Math.round((100 * ka) / Math.max(1, deaths)) / 100);
 
+/** SQL of the two sums a KDA is made of, null-aware: kills + assists, and deaths (see kdaOf). */
+const kaSum = (alias: string) => `SUM(CASE WHEN ${alias}.deaths IS NOT NULL THEN ${alias}.kills + ${alias}.assists END)`;
+const deathsSum = (alias: string) => `SUM(CASE WHEN ${alias}.kills IS NOT NULL AND ${alias}.assists IS NOT NULL THEN ${alias}.deaths END)`;
+
 /** French role names, as the answers write them. */
 export const ROLE_LABEL: Record<(typeof ROLES)[number], string> = { Top: "top", Jungle: "jungle", Mid: "mid", Bot: "ADC", Support: "support" };
 
@@ -1538,8 +1542,8 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     db,
     Averages,
     `SELECT COUNT(*) AS picks, COALESCE(SUM(gp.win), 0) AS wins,
-            SUM(CASE WHEN gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
-            SUM(CASE WHEN gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS kda_deaths, ${ends}
+            ${kaSum("gp")} AS ka,
+            ${deathsSum("gp")} AS kda_deaths, ${ends}
      FROM v_game_players gp WHERE ${where}`,
     params,
   ) ?? {};
@@ -1558,8 +1562,8 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     db,
     ChampionPlayerRow,
     `SELECT gp.player, gp.team, MAX(gp.played_at) AS last_game, COUNT(*) AS games, SUM(gp.win) AS wins,
-            SUM(CASE WHEN gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
-            SUM(CASE WHEN gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths
+            ${kaSum("gp")} AS ka,
+            ${deathsSum("gp")} AS deaths
      FROM v_game_players gp WHERE ${where}
      GROUP BY gp.player ORDER BY games DESC, wins DESC, gp.player LIMIT 5`,
     params,
@@ -1948,8 +1952,8 @@ pool_players AS (
   FROM by_player b GROUP BY b.champion
 )
 SELECT p.champion, c.icon_url AS icon, COUNT(*) AS games, SUM(p.win) AS wins,
-       ROUND(1.0 * SUM(CASE WHEN p.deaths IS NOT NULL THEN p.kills + p.assists END)
-             / MAX(1, SUM(CASE WHEN p.kills IS NOT NULL AND p.assists IS NOT NULL THEN p.deaths END)), 2) AS kda,
+       ROUND(1.0 * ${kaSum("p")}
+             / MAX(1, ${deathsSum("p")}), 2) AS kda,
        pp.players, tot.total_games, tot.total_wins, tot.total_picks, tot.unique_champions
 FROM picks p JOIN pool_players pp ON pp.champion = p.champion CROSS JOIN tot
 LEFT JOIN champions c ON c.name = p.champion
@@ -2610,7 +2614,7 @@ const perMinute = (column: string, digits: number) =>
   `ROUND(60.0 * SUM(CASE WHEN b.length_s > 0 THEN b.${column} END) / SUM(CASE WHEN b.length_s > 0 AND b.${column} IS NOT NULL THEN b.length_s END), ${digits})`;
 
 export const PLAYER_CRITERION_DEFS: Record<PlayerCriterion, CriterionDef> = {
-  kda: { label: "KDA", definition: "(kills + assists) / morts, sur toutes leurs parties", sql: "ROUND(1.0 * SUM(CASE WHEN b.deaths IS NOT NULL THEN b.kills + b.assists END) / MAX(1, SUM(CASE WHEN b.kills IS NOT NULL AND b.assists IS NOT NULL THEN b.deaths END)), 2)" },
+  kda: { label: "KDA", definition: "(kills + assists) / morts, sur toutes leurs parties", sql: `ROUND(1.0 * ${kaSum("b")} / MAX(1, ${deathsSum("b")}), 2)` },
   winrate: { label: "% victoires", definition: "victoires / parties", sql: "ROUND(100.0 * SUM(b.win) / COUNT(*), 1)", unit: " %" },
   games: { label: "parties", definition: "nombre de parties jouées", sql: "COUNT(*)", total: true },
   kills: { label: "kills", definition: "total des kills", sql: "SUM(b.kills)", total: true },
