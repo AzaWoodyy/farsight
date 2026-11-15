@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { SCHEMA_VERSION, createQuerySchema, createSchema } from "../../src/lib/db/schema";
-import { MIN_GAMES_RATIO, type Manifest, corruption, headerProblems, readFacts, regressionProblems, usabilityProblems } from "./artifact";
+import { MIN_GAMES_RATIO, type Manifest, corruption, headerProblems, rawTar, readFacts, regressionProblems, usabilityProblems } from "./artifact";
 
 const dir = mkdtempSync(join(tmpdir(), "farsight-artifact-"));
 
@@ -167,5 +167,34 @@ describe("corruption", () => {
 
     expect(corruption(path, false)).toContain("Freelist");
     expect(corruption(path, true)).toContain("Freelist");
+  });
+});
+
+describe("rawTar", () => {
+  const files = [
+    { name: "games.json", data: Buffer.from('[{"id":1}]') },
+    { name: "runs.json", data: Buffer.alloc(513, "x") },
+  ];
+
+  test("equal datasets give equal bytes, whatever the clock or the owner", () => {
+    const first = rawTar(files);
+
+    expect(rawTar(files.map((f) => ({ ...f, data: Buffer.from(f.data) })))).toEqual(first);
+    expect(first.length).toBe(512 + 512 + 512 + 1024 + 1024);
+    expect(first.subarray(124, 136).toString()).toBe("00000000012 ");
+    expect(first.subarray(136, 148).toString()).toBe("00000000000 ");
+    expect(first.subarray(257, 265).toString()).toBe("ustar\u000000");
+  });
+
+  test("the header checksum is the sum of its bytes, as tar readers check it", () => {
+    const header = Buffer.from(rawTar(files).subarray(0, 512));
+    const recorded = Number.parseInt(header.subarray(148, 154).toString(), 8);
+
+    header.fill(" ", 148, 156);
+    expect(recorded).toBe(header.reduce((sum, byte) => sum + byte, 0));
+  });
+
+  test("a name other than a dataset file is refused", () => {
+    expect(() => rawTar([{ name: "../games.json", data: Buffer.from("[]") }])).toThrow("Unexpected dataset name");
   });
 });

@@ -5,6 +5,7 @@
  *   bun run data:package --check-only  (all checks, no release assets)
  *   bun run data:package --tag=data-20261113
  *   bun run data:package --tag=data-20261113 --previous=prev/manifest.json --out=data/release
+ *   bun run data:package --tag=data-20261113 --raw  (also the raw datasets, for an offline rebuild)
  *
  * Fails (exit 1) without writing anything when a check does not pass, so the
  * workflow never publishes a broken or truncated file. `--previous` compares
@@ -15,6 +16,7 @@
  * after `next build`).
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -28,10 +30,12 @@ import {
   INGAME_ASSET,
   MANIFEST_ASSET,
   Manifest,
+  RAW_ASSET,
   SIDE_FILES,
   corruption,
   derivationProblems,
   headerProblems,
+  rawTar,
   readFacts,
   regressionProblems,
   sha256File,
@@ -39,12 +43,13 @@ import {
 import { loadIngame } from "./riot";
 import { DERIVE_VERSION } from "./ingame";
 import { SCHEMA_OBJECTS } from "../../src/lib/db/schema";
-import { DB_FILE, INGAME_FILE, LEAGUES, SCHEMA_VERSION } from "./scope";
+import { DATASETS, DB_FILE, INGAME_FILE, LEAGUES, SCHEMA_VERSION, datasetFile } from "./scope";
 
 const args = process.argv.slice(2);
 const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
 const checkOnly = args.includes("--check-only");
+const withRaw = args.includes("--raw");
 const tag = arg("tag");
 const previousFile = arg("previous");
 const outDir = resolve(arg("out") ?? "data/release");
@@ -87,6 +92,9 @@ if (size > DB_MAX_BYTES) problems.push(`${(size / 1e6).toFixed(1)} MB is over th
 else if (size > DB_WARN_BYTES) console.warn(`data:package: warning, the database is ${(size / 1e6).toFixed(1)} MB, close to the ${DB_MAX_BYTES / 1e6} MB limit`);
 
 if (!existsSync(INGAME_FILE)) problems.push(`${INGAME_FILE} is missing: run \`bun run data:fetch\` first`);
+
+if (withRaw)
+  for (const name of DATASETS) if (!existsSync(datasetFile(name))) problems.push(`${datasetFile(name)} is missing: --raw publishes every dataset data:build read`);
 
 const header = headerProblems(DB_FILE);
 
@@ -173,6 +181,20 @@ writeFileSync(ingamePath, zstdCompressSync(ingameRaw, { params: { [constants.ZST
 
 const ingameLines = ingameRaw.toString("utf8").split("\n").filter(Boolean).length;
 
+/** Same datasets, same order, same zstd level: the same bytes (for one zstd version). Level 15: 16 MB in 15 s, where 19 saves 1.5 MB for 100 s. */
+async function writeRaw() {
+  const files = DATASETS.map((name) => ({ name: `${name}.json`, data: readFileSync(datasetFile(name)) }));
+  const path = resolve(outDir, RAW_ASSET);
+  const started = performance.now();
+  writeFileSync(path, zstdCompressSync(rawTar(files), { params: { [constants.ZSTD_c_compressionLevel]: 15 } }));
+  console.log(`  ${path}: compressed in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+  const hashes = Object.fromEntries(files.map(({ name, data }) => [name, createHash("sha256").update(data).digest("hex")]));
+
+  return { file: RAW_ASSET, compression: "zstd" as const, size: statSync(path).size, sha256: await sha256File(path), files: hashes };
+}
+
+const rawAsset = withRaw ? await writeRaw() : undefined;
+
 const commit = process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
 const manifest = Manifest.parse({
@@ -187,6 +209,7 @@ const manifest = Manifest.parse({
   counts: facts.counts,
   ingame: { file: INGAME_ASSET, compression: "zstd", size: statSync(ingamePath).size, sha256: await sha256File(ingamePath), lines: ingameLines },
   ddragon_version: facts.ddragonVersion,
+  raw: rawAsset,
 });
 
 writeFileSync(resolve(outDir, MANIFEST_ASSET), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -202,6 +225,7 @@ writeFileSync(
     `- ${manifest.counts.ingame_games ?? 0} games with in-game stats (Riot data on Leaguepedia; none for the LPL)`,
     `- \`${INGAME_ASSET}\`: in-game summaries (${ingameLines} lines), read back by the next weekly run`,
     `- \`${DB_ASSET}\`: ${mb(manifest.asset.size)} (zstd), ${mb(size)} uncompressed`,
+    ...(manifest.raw ? [`- \`${RAW_ASSET}\`: ${mb(manifest.raw.size)}, the ${Object.keys(manifest.raw.files).length} normalized datasets the database was built from`] : []),
     `- sha256 (uncompressed): \`${manifest.database.sha256}\``,
     `- Data Dragon ${manifest.ddragon_version ?? "unknown"}`,
     "",

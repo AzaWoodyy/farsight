@@ -24,6 +24,12 @@ export const INGAME_ASSET = "ingame.jsonl.zst";
 export const DB_WARN_BYTES = 170e6;
 export const DB_MAX_BYTES = 190e6;
 
+/**
+ * The normalized datasets `data:build` reads (data/raw/*.json), as one tar archive: the raw inputs of the release,
+ * so a CI snapshot can rebuild it offline. The in-game summaries are the separate {@link INGAME_ASSET}.
+ */
+export const RAW_ASSET = "raw.tar.zst";
+
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 export const Manifest = z.object({
@@ -58,6 +64,10 @@ export const Manifest = z.object({
     .object({ file: z.literal(INGAME_ASSET), compression: z.literal("zstd"), size: z.number().int().positive(), sha256: Sha256, lines: z.number().int() })
     .optional(),
   ddragon_version: z.string().nullable(),
+  /** The raw datasets asset, with the SHA-256 of each dataset; absent from releases published without it. */
+  raw: z
+    .object({ file: z.literal(RAW_ASSET), compression: z.literal("zstd"), size: z.number().int().positive(), sha256: Sha256, files: z.record(z.string(), Sha256) })
+    .optional(),
 });
 
 export type Manifest = z.infer<typeof Manifest>;
@@ -68,6 +78,42 @@ export async function sha256File(path: string): Promise<string> {
   for await (const chunk of createReadStream(path)) hash.update(chunk);
 
   return hash.digest("hex");
+}
+
+function octal(header: Buffer, value: number, offset: number, digits: number) {
+  header.write(`${value.toString(8).padStart(digits, "0")} \0`, offset, "ascii");
+}
+
+/**
+ * A USTAR archive of regular files, in the given order. Every header field that is not the name, the size or the
+ * checksum is fixed (mode 644, owner 0:0, mtime 0, no user or group name), so equal contents give equal bytes.
+ */
+export function rawTar(files: { name: string; data: Buffer }[]): Buffer {
+  const parts: Buffer[] = [];
+
+  for (const { name, data } of files) {
+    if (!/^[a-z_]+\.json$/.test(name)) throw new Error(`Unexpected dataset name in the raw archive: ${name}`);
+    const header = Buffer.alloc(512);
+    header.write(name, 0, "ascii");
+    octal(header, 0o644, 100, 6);
+    octal(header, 0, 108, 6);
+    octal(header, 0, 116, 6);
+    header.write(`${data.length.toString(8).padStart(11, "0")} `, 124, "ascii");
+    header.write(`${"0".repeat(11)} `, 136, "ascii");
+    header.write("        ", 148, "ascii");
+    header.write("0", 156, "ascii");
+    header.write("ustar", 257, "ascii");
+    header.write("00", 263, "ascii");
+    octal(header, 0, 329, 6);
+    octal(header, 0, 337, 6);
+    const checksum = header.reduce((sum, byte) => sum + byte, 0);
+    header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+    parts.push(header, data, Buffer.alloc((512 - (data.length % 512)) % 512));
+  }
+
+  parts.push(Buffer.alloc(1024));
+
+  return Buffer.concat(parts);
 }
 
 /** Files SQLite leaves next to a database that is open or was not closed cleanly. */

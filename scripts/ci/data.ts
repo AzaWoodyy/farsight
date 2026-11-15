@@ -9,6 +9,7 @@ import { sha256File } from "../data/artifact";
 
 const Sha = z.string().regex(/^[a-f0-9]{64}$/);
 const Asset = z.object({ asset: z.enum(["lol.sqlite.zst", "ingame.jsonl.zst"]), sha256: Sha });
+const RawFiles = z.record(z.string().regex(/^[a-z_]+\.json$/), Sha);
 
 const Snapshot = z.object({
   repository: z.literal("AzaWoodyy/farsight"),
@@ -16,8 +17,21 @@ const Snapshot = z.object({
   schemaVersion: z.number().int().positive(),
   database: Asset.extend({ uncompressedSha256: Sha }),
   ingame: Asset,
-  raw: z.object({ file: z.literal("ci/raw.tar.zst"), sha256: Sha, files: z.record(z.string().regex(/^[a-z_]+\.json$/), Sha) }),
+  /** The datasets to rebuild from: an archive committed in the repository, or the release's own raw asset. */
+  raw: z.union([
+    z.object({ file: z.literal("ci/raw.tar.zst"), sha256: Sha, files: RawFiles }).strict(),
+    z.object({ asset: z.literal("raw.tar.zst"), sha256: Sha, files: RawFiles }).strict(),
+  ]),
 });
+
+type Snapshot = z.infer<typeof Snapshot>;
+
+/** Release assets to download: the database always, and the rebuild inputs that are release assets with `raw`. */
+export function snapshotAssets(snapshot: Snapshot, raw: boolean) {
+  if (!raw) return [snapshot.database];
+
+  return "asset" in snapshot.raw ? [snapshot.database, snapshot.ingame, snapshot.raw] : [snapshot.database, snapshot.ingame];
+}
 
 async function checked(file: string, hash: string) {
   if (await sha256File(file) !== hash) throw new Error(`Snapshot checksum mismatch: ${basename(file)}`);
@@ -72,13 +86,15 @@ export function extractRaw(tar: string, destination: string, hashes: Record<stri
   }
 }
 
-export async function restoreSnapshot(raw: boolean, cache = ".ci-data") {
-  const snapshot = Snapshot.parse(JSON.parse(readFileSync("ci/data.json", "utf8")));
-  const directory = resolve(cache);
+/** `root` is the checkout (ci/data.json, data/); tests point it at a temporary directory. */
+export async function restoreSnapshot(raw: boolean, cache = ".ci-data", root = ".") {
+  const at = (path: string) => resolve(root, path);
+  const snapshot = Snapshot.parse(JSON.parse(readFileSync(at("ci/data.json"), "utf8")));
+  const directory = resolve(root, cache);
   mkdirSync(directory, { recursive: true });
-  mkdirSync("data", { recursive: true });
+  mkdirSync(at("data"), { recursive: true });
 
-  for (const asset of [snapshot.database, ...(raw ? [snapshot.ingame] : [])]) {
+  for (const asset of snapshotAssets(snapshot, raw)) {
     const file = resolve(directory, asset.asset);
 
     if (!existsSync(file)) {
@@ -103,20 +119,21 @@ export async function restoreSnapshot(raw: boolean, cache = ".ci-data") {
     db.close();
   }
 
-  copyFileSync(database, "data/lol.sqlite");
+  copyFileSync(database, at("data/lol.sqlite"));
 
   if (raw) {
-    await checked(snapshot.raw.file, snapshot.raw.sha256);
+    const archive = "asset" in snapshot.raw ? resolve(directory, snapshot.raw.asset) : at(snapshot.raw.file);
+    await checked(archive, snapshot.raw.sha256);
     const tar = resolve(directory, "raw.tar");
-    execFileSync("zstd", ["-d", "-q", "-f", snapshot.raw.file, "-o", tar]);
+    execFileSync("zstd", ["-d", "-q", "-f", archive, "-o", tar]);
 
     try {
-      extractRaw(tar, resolve("data/raw"), snapshot.raw.files);
+      extractRaw(tar, at("data/raw"), snapshot.raw.files);
     } finally {
       rmSync(tar, { force: true });
     }
 
-    execFileSync("zstd", ["-d", "-q", "-f", resolve(directory, snapshot.ingame.asset), "-o", resolve("data/raw/ingame.jsonl")]);
+    execFileSync("zstd", ["-d", "-q", "-f", resolve(directory, snapshot.ingame.asset), "-o", at("data/raw/ingame.jsonl")]);
   }
 
   const summary = `CI snapshot: ${snapshot.repository}@${snapshot.tag}, schema ${snapshot.schemaVersion}, SHA-256 verified${raw ? ", offline rebuild inputs restored" : ""}\n`;
