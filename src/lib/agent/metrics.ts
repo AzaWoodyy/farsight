@@ -106,7 +106,7 @@ const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p
  * At N minutes: "à 15 min", "at 10", "15 minutes", "@20", "10'". Any minute, held or not: the caller says
  * when the data has none at that minute. Unicode edges, not `\b`: `\b` is ASCII, so "à 10" and "@20" never matched it.
  */
-export const MINUTE = /(?<![\p{L}\p{N}])(?:(?:à|a|at|@)\s*(\d{1,2})(?!\p{N})(?:\s*(?:min(?:ute)?s?|')(?!\p{L}))?|(\d{1,2})\s*(?:min(?:ute)?s?(?!\p{L})|'))/iu;
+export const MINUTE = /(?<![\p{L}\p{N}])(?:(?:à|a|at|@)\s*(\d{1,2})(?:\s*(?:min(?:ute)?s?|'))?(?![\p{L}\p{N}])|(\d{1,2})\s*(?:min(?:ute)?s?(?!\p{L})|'))/iu;
 
 /** The minute a question asks about, whether the data has it or not. */
 export function detectMinute(question: string): number | null {
@@ -120,6 +120,9 @@ export const heldMinute = (n: number | null): Minute | null => MINUTES.find((m) 
 /** Whether a metric is a snapshot at a minute (gold, CS, XP and their differences). */
 export const isSnapshot = (cue: Pick<MetricCue, "player" | "team">): boolean =>
   (cue.player != null && PLAYER_METRIC_DEFS[cue.player].snapshot === true) || (cue.team != null && TEAM_METRIC_DEFS[cue.team].snapshot === true);
+
+/** "à 25 min": any minute when it says "min", so a minute the data does not hold is still read as one. */
+const AT_MINUTE = "(?:à|a|at|@) ?\\d{1,2} ?(?:min(?:ute)?s?|')";
 
 /**
  * Question cues, most specific first. `player` / `team`: the metric each
@@ -153,9 +156,9 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
   { pattern: word("(?:wards?|balises?) (?:d[ée]truites?|killed|cleared|tu[ée]es?)|dewards?"), player: "wards_killed", team: null },
   { pattern: word("wards?|balises?"), player: "wards_placed", team: null },
   { pattern: word("plates?|plaques?"), player: "plates", team: "plates" },
-  { pattern: word("(?:gold|golds|or) (?:à|a|at|@) ?(?:10|15|20)|(?:gold|golds|or) (?:à|a) (?:10|15|20) ?min"), player: "gold", team: null },
-  { pattern: word("cs (?:à|a|at|@) ?(?:10|15|20)"), player: "cs", team: null },
-  { pattern: word("(?:xp|exp[ée]rience) (?:à|a|at|@) ?(?:10|15|20)"), player: "xp", team: null },
+  { pattern: word(`(?:gold|golds|or) (?:à|a|at|@) ?(?:10|15|20)|(?:gold|golds|or) ${AT_MINUTE}`), player: "gold", team: null },
+  { pattern: word(`cs (?:à|a|at|@) ?(?:10|15|20)|cs ${AT_MINUTE}`), player: "cs", team: null },
+  { pattern: word(`(?:xp|exp[ée]rience) (?:à|a|at|@) ?(?:10|15|20)|(?:xp|exp[ée]rience) ${AT_MINUTE}`), player: "xp", team: null },
 ];
 
 /**

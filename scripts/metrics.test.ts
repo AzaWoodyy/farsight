@@ -51,6 +51,10 @@ describe("detectMetric: the minute asked", () => {
     expect(detectMetric("xp diff @30 de Chovy")).toMatchObject({ minute: null, askedMinute: 30 });
   });
 
+  test("a figure is not a minute", () => {
+    expect(detectMetric("gold diff de Chovy à 10k gold")).toMatchObject({ askedMinute: null });
+  });
+
   test("a year is not a minute", () => {
     for (const q of ["gold diff à 2024 de Chovy", "gold diff de Chovy en 2024", "gold diff de Chovy 2024'"]) expect(detectMetric(q)).toMatchObject({ askedMinute: null });
   });
@@ -86,6 +90,9 @@ describe("routing keeps the minute asked", () => {
       ["cs diff à 5 minutes de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
       ["gold diff à 30 min de T1 en LCK 2024", entities({ teams: [team("T1")] })],
       ["meilleur gold diff à 25 min des mids en LCK 2024", entities({})],
+      ["gold à 25 min de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
+      ["cs à 30 min de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
+      ["xp à 5 minutes de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
     ] as const) {
       const route = routeQuestion(q, e, SCHEMA, COVERAGE);
 
