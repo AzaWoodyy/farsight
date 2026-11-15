@@ -1,8 +1,9 @@
 "use client";
 
 import { type ReactNode, useMemo, useState } from "react";
-import type { ChampionPool as Pool, ChampionProfile as Profile } from "@/lib/agent/types";
+import type { ChampionItem, ChampionItems, ChampionPool as Pool, ChampionProfile as Profile } from "@/lib/agent/types";
 import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
+import { ITEM_KIND_LABEL, ITEM_KINDS, type ItemKind } from "@/lib/domain/items";
 
 const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
 
@@ -242,7 +243,171 @@ export function ChampionProfileView({ p }: { p: Profile }) {
           )}
         </section>
       </div>
+
+      <ChampionItemsSection key={`${p.champion}|${p.scope}`} items={p.items} />
     </div>
+  );
+}
+
+type ItemSortKey = "item" | "games" | "winrate";
+
+/** Below this many games, an item's win rate is not shown: one game more or less swings it too much. */
+const ITEM_WINRATE_MIN_GAMES = 5;
+
+/** Lines shown before "voir tout". */
+const ITEM_LINES = 8;
+
+const ITEM_COLUMNS: { key: ItemSortKey; label: string; title: string }[] = [
+  { key: "games", label: "parties", title: "parties finies avec l'item" },
+  { key: "winrate", label: "winrate", title: `victoires / parties avec l'item, dès ${ITEM_WINRATE_MIN_GAMES} parties` },
+];
+
+const winrateOf = (i: ChampionItem) => (i.games >= ITEM_WINRATE_MIN_GAMES ? (100 * i.wins) / i.games : null);
+
+/**
+ * The champion's most built items: end-of-game inventories, filtered by kind (completed items first),
+ * each line with its share of the champion's games and, on enough games, its win rate.
+ */
+function ChampionItemsSection({ items }: { items: ChampionItems }) {
+  const counts = new Map<ItemKind | "all", number>([["all", items.items.length]]);
+
+  for (const i of items.items) if (i.kind) counts.set(i.kind, (counts.get(i.kind) ?? 0) + 1);
+
+  const kinds = ITEM_KINDS.filter((k) => counts.has(k));
+  const [kind, setKind] = useState<ItemKind | "all">(kinds[0] ?? "all");
+  const [sort, setSort] = useState<{ key: ItemSortKey; dir: 1 | -1 }>({ key: "games", dir: -1 });
+  const [all, setAll] = useState(false);
+
+  const lines = useMemo(
+    () =>
+      items.items
+        .filter((i) => kind === "all" || i.kind === kind)
+        .sort((a, b) => {
+          const order = sort.key === "item" ? a.item.localeCompare(b.item, "fr") : compareFigures(sort.key === "games" ? a.games : winrateOf(a), sort.key === "games" ? b.games : winrateOf(b), sort.dir);
+
+          return order * sort.dir || b.games - a.games;
+        }),
+    [items.items, kind, sort],
+  );
+
+  const shown = all ? lines : lines.slice(0, ITEM_LINES);
+  const max = Math.max(...lines.map((l) => l.games), 0);
+
+  const toggle = (key: ItemSortKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "item" ? 1 : -1 }));
+
+  const header = (key: ItemSortKey, label: string, title: string, className: string) => {
+    const active = sort.key === key;
+
+    return (
+      <button
+        type="button"
+        title={title}
+        onClick={() => toggle(key)}
+        aria-label={`trier par ${label}`}
+        className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        <span aria-hidden className="ml-0.5 inline-block w-2">
+          {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <section aria-labelledby="champion-items" className="border-t border-line px-3 py-2">
+      <h3 id="champion-items" className="text-[11px] text-muted">
+        ── items les plus pris <span className="text-muted/80">· inventaire de fin de partie{items.games ? ` · ${items.games} parties` : ""}</span>
+      </h3>
+
+      {items.items.length > 0 && (
+        <>
+          <div role="group" aria-label="type d'item" className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+            {[...kinds, "all" as const].map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={kind === k}
+                onClick={() => {
+                  setKind(k);
+                  setAll(false);
+                }}
+                className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+                  kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                {k === "all" ? "tous" : ITEM_KIND_LABEL[k]} <span className="tabular-nums">{counts.get(k)}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-2 border border-line">
+            <div className="flex items-center gap-3 border-b border-line px-2 py-1 text-[11px] text-muted">
+              <span className="w-5 shrink-0">#</span>
+              {header("item", "item", "ordre alphabétique", "min-w-0 flex-1 text-left")}
+              {ITEM_COLUMNS.map((c) => (
+                <span key={c.key} className="w-14 shrink-0 text-right">
+                  {header(c.key, c.label, c.title, "w-full text-right")}
+                </span>
+              ))}
+            </div>
+            <ol>
+              {shown.map((l, i) => {
+                const wr = winrateOf(l);
+
+                return (
+                  <li key={l.item} className="flex items-center gap-3 border-b border-dashed border-line px-2 py-1.5 text-xs last:border-0">
+                    <span className="w-5 shrink-0 tabular-nums text-muted">{i + 1}</span>
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <ChampionIcon name={l.item} src={l.icon} size={24} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate" translate="no" title={l.kind ? `${l.item} (${ITEM_KIND_LABEL[l.kind]})` : l.item}>
+                          {l.item}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <Gauge share={max ? l.games / max : 0} label={`${l.item} : ${pct(l.games, items.games)} des parties`} />
+                          <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-muted">{pct(l.games, items.games)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">{l.games}</span>
+                    <span
+                      className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
+                      title={wr == null ? `moins de ${ITEM_WINRATE_MIN_GAMES} parties : winrate non affiché (${l.wins}-${l.games - l.wins})` : `${l.wins}-${l.games - l.wins}`}
+                    >
+                      {wr == null ? "·" : `${Math.round(wr)} %`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          {lines.length > ITEM_LINES && (
+            <button
+              type="button"
+              onClick={() => setAll(!all)}
+              aria-expanded={all}
+              className="tap press mt-2 border border-dashed border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            >
+              {all ? "réduire" : `voir les ${lines.length} items`}
+            </button>
+          )}
+        </>
+      )}
+
+      {items.items.length === 0 && !items.notes.length && <p className="mt-1 text-xs text-muted">aucun pick dans ce périmètre</p>}
+      {items.notes.map((n) => (
+        <p key={n} className="mt-1 text-[10px] text-warn">
+          {n}
+        </p>
+      ))}
+      {items.items.length > 0 && (
+        <p className="mt-1 text-[10px] text-muted">
+          % : part des parties du champion finies avec l&apos;item · winrate dès {ITEM_WINRATE_MIN_GAMES} parties, à lire avec prudence : un item fini se voit plus dans les parties longues ou gagnées
+        </p>
+      )}
+    </section>
   );
 }
 

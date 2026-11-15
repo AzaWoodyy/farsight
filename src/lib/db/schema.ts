@@ -1,7 +1,7 @@
 /** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const TABLE_DDL = `
 CREATE TABLE leagues (
@@ -21,7 +21,8 @@ CREATE TABLE player_aliases (
   alias TEXT NOT NULL, raw TEXT NOT NULL, player_id INT NOT NULL,
   PRIMARY KEY (alias, player_id)) WITHOUT ROWID;
 CREATE TABLE champions (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT);
-CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT NOT NULL);
+-- kind: complete | boots | component | starter | consumable (src/lib/domain/items.ts), NULL when Data Dragon does not know the item
+CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT NOT NULL, kind TEXT);
 CREATE TABLE runes (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);  -- keystones
 CREATE TABLE tournament_results (
   tournament_id INT NOT NULL, team_id INT NOT NULL, place TEXT, place_number INT, prize_usd REAL,
@@ -65,6 +66,7 @@ CREATE TABLE game_players (
   game_id INT NOT NULL, player_id INT NOT NULL, team_id INT, side INT, role TEXT, champion_id INT, win INT,
   kills INT, deaths INT, assists INT, gold INT, cs INT, damage INT, vision INT, keystone_id INT,
   PRIMARY KEY (game_id, player_id)) WITHOUT ROWID;
+-- End-of-game inventory from Leaguepedia (ScoreboardPlayers.Items, slots 1-6, trinket excluded).
 CREATE TABLE game_player_items (
   game_id INT NOT NULL, player_id INT NOT NULL, slot INT NOT NULL, item_id INT NOT NULL,
   PRIMARY KEY (game_id, player_id, slot)) WITHOUT ROWID;
@@ -155,7 +157,7 @@ CREATE VIEW v_draft AS
          c.name AS champion
   FROM game_draft d JOIN champions c ON c.id = d.champion_id;
 CREATE VIEW v_player_items AS
-  SELECT gi.game_id, p.page AS player, gi.slot, i.name AS item, i.icon_url
+  SELECT gi.game_id, p.page AS player, gi.slot, i.name AS item, i.icon_url, i.kind
   FROM game_player_items gi JOIN players p ON p.id = gi.player_id JOIN items i ON i.id = gi.item_id;
 `;
 

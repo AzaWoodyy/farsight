@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v5, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -1042,9 +1042,88 @@
         },
         "totals": {
           "leader": "PSG Talon",
-          "leader_value": 66.7
+          "leader_value": 66.7,
+          "leader_count": 6
         },
         "rowsMin": 10
+      }
+    },
+    {
+      "id": "ingame-msi-first-dragon-who",
+      "question": "Qui prend le plus souvent le premier dragon au MSI 2023 ?",
+      "tags": [
+        "ingame",
+        "leaderboard",
+        "team",
+        "home"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "Mid-Season Invitational",
+        "input": {
+          "subject": "team",
+          "metric": "first_dragon",
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "rows": 12,
+        "totals": {
+          "leader": "PSG Talon",
+          "leader_value": 66.7,
+          "leader_count": 6,
+          "ingame_games": 76
+        },
+        "summaryIncludes": [
+          "6 sur 9",
+          "11 sur 17"
+        ],
+        "sources": 3
+      }
+    },
+    {
+      "id": "champion-items-yunara-worlds-2026",
+      "question": "Items de Yunara aux Worlds 2026",
+      "tags": [
+        "champion",
+        "items",
+        "home"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yunara",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 1,
+        "totals": {
+          "picks": 18,
+          "item_games": 18,
+          "top_item": "Runaan's Hurricane",
+          "top_item_games": 17
+        },
+        "summaryIncludes": [
+          "Runaan's Hurricane"
+        ],
+        "sources": 3
+      }
+    },
+    {
+      "id": "champion-items-yunara-short",
+      "question": "yunara worlds 2026",
+      "tags": [
+        "champion",
+        "items"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Yunara",
+        "league": "World Championship",
+        "totals": {
+          "picks": 18,
+          "top_item": "Runaan's Hurricane"
+        }
       }
     },
     {

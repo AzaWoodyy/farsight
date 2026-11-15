@@ -21,7 +21,7 @@ function seed(db: DatabaseSync) {
     INSERT INTO teams VALUES (1,'Bilibili Gaming'),(2,'T1'),(3,'Karmine Corp'),(4,'Team Vitality');
     INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Zeus'),(3,'SAKEN');
     INSERT INTO champions VALUES (1,'Jax','${ICON}'),(2,'Gragas','${ICON}');
-    INSERT INTO items VALUES (1,'Trinity Force','${ICON}'),(2,'Sundered Sky','${ICON}');
+    INSERT INTO items VALUES (1,'Trinity Force','${ICON}','complete'),(2,'Sundered Sky','${ICON}','complete');
     INSERT INTO runes VALUES (1,'Phase Rush');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,length_s,patch,played_at,
                       blue_dragons,red_dragons,blue_barons,red_barons,blue_towers,red_towers,blue_heralds,red_heralds,

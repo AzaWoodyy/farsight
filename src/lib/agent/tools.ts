@@ -1,3 +1,4 @@
+import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
 import type { DatabaseSync } from "node:sqlite";
@@ -10,6 +11,7 @@ import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
 import { MAX_ROWS } from "./guard";
 import {
+  type ChampionItems,
   type ChampionPlayer,
   type ChampionPool,
   type ChampionPoolLine,
@@ -1426,6 +1428,64 @@ const roundTo = (n: number | null, digits: number) => (n == null ? null : Math.r
 export const frNumber = (n: number | null, signedValue = false) =>
   n == null ? "n/d" : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { maximumFractionDigits: 2 }).replace(/[\u202f\u00a0]/g, " ")}`;
 
+/** At most this many items per champion reach the browser: the long tail is one-off components. */
+const CHAMPION_ITEMS_MAX = 60;
+
+/** Since 2026, a bot laner's boots sit in the role quest slot (Riot `roleBoundItem`), which Leaguepedia's Items field leaves out. */
+const BOT_BOOTS_SLOT_YEAR = 2026;
+
+/** Where the inventories come from: the Items field of the scoreboards. */
+const ITEMS_SOURCE: Source = { label: "Leaguepedia — inventaires de fin de partie (ScoreboardPlayers)", url: wikiUrl("Special:CargoTables/ScoreboardPlayers") };
+
+const ChampionItemRow = z.object({ item: Text, icon: Text, kind: z.enum(ITEM_KINDS).nullable(), games: z.number(), wins: z.number() });
+
+/** A champion's end-of-game items in the scope (`gp` is v_game_players), and what the inventories leave out. */
+function championItems(db: DatabaseSync, input: ChampionStatsInput, picks: number): ChampionItems {
+  const params: Params = {};
+  const where = championScope(input, params);
+  const owned = "pi.game_id = gp.game_id AND pi.player = gp.player";
+
+  const items = selectAll(
+    db,
+    ChampionItemRow,
+    `SELECT pi.item, pi.icon_url AS icon, pi.kind, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
+     FROM v_game_players gp JOIN v_player_items pi ON ${owned}
+     WHERE ${where}
+     GROUP BY pi.item ORDER BY games DESC, pi.item LIMIT ${CHAMPION_ITEMS_MAX}`,
+    params,
+  );
+
+  const counts = selectOne(
+    db,
+    z.object({ games: z.number(), bot_slot: z.number() }),
+    `SELECT COUNT(CASE WHEN EXISTS (SELECT 1 FROM v_player_items pi WHERE ${owned}) THEN 1 END) AS games,
+            COUNT(CASE WHEN gp.role = 'Bot' AND gp.year >= ${BOT_BOOTS_SLOT_YEAR} THEN 1 END) AS bot_slot
+     FROM v_game_players gp WHERE ${where}`,
+    params,
+  ) ?? { games: 0, bot_slot: 0 };
+
+  const notes: string[] = [];
+
+  if (picks && !counts.games) notes.push("Leaguepedia ne liste aucun inventaire de fin de partie pour ces parties.");
+  else if (counts.games < picks) notes.push(`Inventaire connu pour ${counts.games} parties sur ${picks}.`);
+
+  if (counts.bot_slot) notes.push(`Depuis ${BOT_BOOTS_SLOT_YEAR}, les bottes des ADC (emplacement de quête de rôle) ne figurent pas dans l'inventaire listé par Leaguepedia.`);
+
+  return { games: counts.games, items, notes };
+}
+
+/** "Infinity Edge (17/21 parties, 81 %)" for the most built completed items. */
+function itemsFacts(p: ChampionProfile): string {
+  const complete = p.items.items.filter((i) => i.kind === "complete").slice(0, 3);
+
+  if (!complete.length) return p.items.notes.length ? ` Items : ${p.items.notes.join(" ")}` : "";
+
+  return (
+    ` Items complets les plus fréquents en fin de partie : ${complete.map((i) => `${i.item} (${i.games}/${p.items.games} parties, ${pct(i.games, p.items.games)} %)`).join(", ")}.` +
+    (p.items.notes.length ? ` ${p.items.notes.join(" ")}` : "")
+  );
+}
+
 /** Averages, players and roles of a champion in the scope of the question. */
 function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): ChampionProfile {
   const params: Params = {};
@@ -1487,6 +1547,7 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     ],
     players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
     roles,
+    items: championItems(db, input, picks),
   };
 }
 
@@ -1577,7 +1638,8 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       `(${pct(wins, picks)} % de victoires)` +
       (picks ? `, KDA ${frNumber(profile.kda)}. ${averagesFacts(profile)}` : ".") +
       (profile.roles.length ? ` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.` : "") +
-      (profile.players.length ? ` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.` : "");
+      (profile.players.length ? ` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.` : "") +
+      (picks ? itemsFacts(profile) : "");
 
     return {
       title: `${input.champion} — ${league}`,
@@ -1602,6 +1664,7 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
         ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [RIOT_DATA_SOURCE] : []),
         { label: "Riot Data Dragon — champions", url: icon ?? `${DDRAGON_BASE}/api/versions.json` },
+        ...(profile.items.items.length ? [ITEMS_SOURCE, { label: "Riot Data Dragon — items", url: `${DDRAGON_BASE}/api/versions.json` }] : []),
       ],
       followUps: [
         `Champions les plus joués ${inLeague(league) || "aux Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`,
@@ -1620,6 +1683,9 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         avg_gold: profile.averages.find((a) => a.key === "gold")?.value ?? "n/d",
         avg_damage: profile.averages.find((a) => a.key === "damage")?.value ?? "n/d",
         gold_diff_15: profile.averages.find((a) => a.key === "gold_diff_15")?.value ?? "n/d",
+        item_games: profile.items.games,
+        top_item: profile.items.items.find((i) => i.kind === "complete")?.item ?? "",
+        top_item_games: profile.items.items.find((i) => i.kind === "complete")?.games ?? 0,
       },
     };
   },
@@ -2412,21 +2478,33 @@ LIMIT 20`),
     const scopeLabel = [inLeague(league), years.length ? `(${yearSpan(years)})` : ""].filter(Boolean).join(" ");
     const roleLabel = input.role ? ` (rôle ${input.role})` : "";
 
+    const totals: ToolOutput["totals"] = {
+      leader: rows[0] ? displayTeam(rows[0].name) : "",
+      leader_value: rows[0] ? (value(rows[0]) ?? 0) : 0,
+      rows: rows.length,
+      ingame_games: cov.ingame,
+    };
+
+    // A rate's leader: how many games had it ("6 first dragons").
+    if (def.aggregate === "rate") totals.leader_count = rows[0]?.total ?? 0;
+
     const facts =
       `${def.aggregate === "sum" ? "Total de" : def.aggregate === "rate" ? "Part des parties avec" : "Moyenne par partie de"} ${label}${roleLabel} ${scopeLabel} : ` +
-      rows.slice(0, 3).map((r, i) => `${i + 1}. ${displayTeam(r.name)} (${value(r)}${unit}, ${r.games} parties)`).join(", ") +
+      rows.slice(0, 3).map((r, i) => `${i + 1}. ${displayTeam(r.name)} (${def.aggregate === "rate" ? `${r.total ?? 0} sur ${r.counted} parties, ${value(r)}${unit}` : `${value(r)}${unit}, ${r.games} parties`})`).join(", ") +
       `. ${cov.ingame} parties avec données in-game${def.aggregate === "sum" ? "" : `, minimum ${minGames} parties par ${input.subject === "team" ? "équipe" : "joueur"}`}.` +
       coverageNote(cov);
 
     return {
       title: `Classement — ${label}${roleLabel}${league === "toutes compétitions" ? "" : ` (${league})`}`,
       table: {
-        columns: ["Rang", who, ...(input.subject === "player" ? ["Équipe (dernière)"] : []), "Parties", def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne", ...(def.aggregate === "sum" ? ["Par partie"] : [])],
+        // A rate shows its count too: "11 first dragons in 17 games, 64.7 %".
+        columns: ["Rang", who, ...(input.subject === "player" ? ["Équipe (dernière)"] : []), "Parties", ...(def.aggregate === "rate" ? ["Nombre"] : []), def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne", ...(def.aggregate === "sum" ? ["Par partie"] : [])],
         rows: rows.map((r, i) => [
           i + 1,
           displayTeam(r.name),
           ...(input.subject === "player" ? [r.team ? displayTeam(r.team) : null] : []),
           r.games,
+          ...(def.aggregate === "rate" ? [r.total ?? 0] : []),
           value(r),
           ...(def.aggregate === "sum" ? [Math.round((100 * (r.total ?? 0)) / Math.max(1, r.counted)) / 100] : []),
         ]),
@@ -2438,7 +2516,7 @@ LIMIT 20`),
         RIOT_DATA_SOURCE,
       ],
       followUps: rows.slice(0, 2).map((r) => (input.subject === "team" ? `Stats in-game de ${displayTeam(r.name)}` : `Stats in-game de ${r.name}`)),
-      totals: { leader: rows[0] ? displayTeam(rows[0].name) : "", leader_value: rows[0] ? (value(rows[0]) ?? 0) : 0, rows: rows.length, ingame_games: cov.ingame },
+      totals,
     };
   },
   normalize: (_db, input) => {

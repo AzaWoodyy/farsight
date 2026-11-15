@@ -244,6 +244,20 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Première release v6
+
+Le schéma v6 ajoute `items.kind` (item complet, bottes, composant, départ,
+consommable), lu par le bloc « items les plus pris » de la fiche champion. Il
+est calculé par `data:build` à partir de Data Dragon : `item.json` du dernier
+patch, et, pour les items retirés, les recettes des anciens patches que
+`data:fetch` garde désormais dans `ddragon.json` (`legacyItems[].meta`). Un
+cache brut plus ancien, comme `ci/raw.tar.zst`, n'a pas ces recettes : ses
+items retirés gardent un `kind` NULL, et ceux du dernier patch sont classés.
+Comme pour la v5, `data:pull` ne prend que les releases v6. Une fois le code
+sur `main`, lancer **Data release** une fois avant le premier déploiement v6.
+Le workflow ne restaure pas les résumés in-game d'une release v5 : il les
+relit sur R2 (environ 6 min).
+
 ### Première release v5
 
 Le schéma v5 ajoute `games.tab`, `match_n`, `game_n` et

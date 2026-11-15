@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { type Json, JsonSchema } from "../../src/lib/json";
+import { ItemMeta, itemMeta } from "../../src/lib/domain/items";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import {
   type CargoOptions,
@@ -224,11 +225,11 @@ async function ddragon(path: string, force: boolean): Promise<Json> {
   return JsonSchema.parse(JSON.parse(text));
 }
 
-const ItemFile = z.object({ data: z.record(z.string(), z.object({ name: z.string() })) });
+const ItemFile = z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) });
 
 /**
- * Latest champion/item/rune/spell data, plus item names from older patches so
- * retired items still get their original icon. Three patches per season
+ * Latest champion/item/rune/spell data, plus item names and recipes from older
+ * patches so retired items still get their original icon and kind. Three patches per season
  * (first, middle, last) are enough to catch nearly every retired item.
  */
 async function fetchDdragon(force: boolean) {
@@ -249,7 +250,7 @@ async function fetchDdragon(force: boolean) {
     .flatMap((vs) => [...new Set([vs[0], vs[Math.floor(vs.length / 2)], vs[vs.length - 1]])])
     .filter((v) => v !== version);
 
-  const legacyItems: { version: string; items: Record<string, string> }[] = [];
+  const legacyItems: { version: string; items: Record<string, string>; meta: Record<string, ItemMeta> }[] = [];
 
   for (const v of legacyVersions) {
     try {
@@ -257,6 +258,13 @@ async function fetchDdragon(force: boolean) {
       legacyItems.push({
         version: v,
         items: Object.fromEntries(Object.entries(file.data).map(([id, it]) => [id, it.name])),
+        // Recipe, tags and price: data:build classifies retired items (completed, component, consumable...).
+        // An entry that does not parse only loses its kind, never its name and icon.
+        meta: Object.fromEntries(Object.entries(file.data).flatMap(([id, it]) => {
+          const meta = ItemMeta.safeParse(it);
+
+          return meta.success ? [[id, itemMeta(meta.data)]] : [];
+        })),
       });
     } catch (err) {
       console.warn(`  ddragon: skipped ${v} (${err instanceof Error ? err.message : String(err)})`);
