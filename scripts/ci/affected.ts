@@ -43,4 +43,12 @@ export function withSnapshotSchema(selected: Set<Check>, snapshotSchema: number,
   return new Set([...selected, "database"]);
 }
 
+/**
+ * The newest commit already validated on main that is an ancestor of the pushed commit, or null: then every check runs.
+ * A run only proves its own range when it selected checks with this rule, so older runs are never a base.
+ */
+export function pushBase(greenShas: string[], after: string, isAncestor: (sha: string) => boolean, usesThisRule: (sha: string) => boolean): string | null {
+  return greenShas.find(sha => /^[a-f0-9]{40}$/.test(sha) && sha !== after && isAncestor(sha) && usesThisRule(sha)) ?? null;
+}
+
 export const attribution = /co-authored-by:.*(?:claude|anthropic|copilot|cursor|codex|openai|chatgpt|gemini|devin|aider)|generated (?:with|by).*(?:claude|copilot|cursor|codex|chatgpt|openai|gemini|\bAI\b)|noreply@anthropic\.com|claude\.com\/claude-code/i;

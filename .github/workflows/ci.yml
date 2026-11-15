@@ -8,6 +8,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -34,6 +35,8 @@ jobs:
           bun-version-file: package.json
       - name: Metadata and conservative selection
         id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bun test scripts/ci/affected.test.ts
           bun scripts/ci/select.ts
