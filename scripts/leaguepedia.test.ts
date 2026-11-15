@@ -59,6 +59,8 @@ beforeEach(() => {
   // Never forwards: an unscripted request fails the test instead of reaching the wiki.
   transport.fetch = async (url, init) => {
     expect(new Headers(init.headers).get("User-Agent")).toBe(USER_AGENT);
+    // Every request carries a timeout, so a stalled connection cannot hang the run.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     requests.push({ url: new URL(url), at: clock });
     const next = queue.shift();
 
@@ -258,3 +260,10 @@ test("a cached query leaves no temporary file behind", async () => {
   expect(files.filter((f) => f.includes(".tmp-"))).toEqual([]);
 });
 
+test("a timed-out request is retried, not fatal", async () => {
+  quiet();
+  script(new DOMException("timed out", "TimeoutError"), json([{ N: 1 }]));
+
+  expect(await cargoQuery(query("Stalled"), { cacheDir })).toEqual([{ N: 1 }]);
+  expect(requests).toHaveLength(2);
+});

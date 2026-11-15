@@ -224,7 +224,7 @@ async function ddragon(path: string, force: boolean): Promise<Json> {
     }
   }
 
-  const res = await fetch(`${DDRAGON_BASE}${path}`);
+  const res = await fetch(`${DDRAGON_BASE}${path}`, { signal: AbortSignal.timeout(60_000) });
 
   if (!res.ok) throw new Error(`Data Dragon ${res.status}: ${path}`);
   const text = await res.text();

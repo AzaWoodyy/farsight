@@ -83,14 +83,18 @@ export type R2Config = {
   secretAccessKey: string;
   /** Override for tests or a jurisdiction endpoint (default https://<account>.r2.cloudflarestorage.com). */
   endpoint?: string;
+  /** Per-request limit; an upload gets four times as long (default 30 s). */
+  timeoutMs?: number;
 };
 
 export class R2Store implements ObjectStore {
   readonly label: string;
   private client: AwsClient;
   private base: string;
+  private timeoutMs: number;
 
   constructor(config: R2Config) {
+    this.timeoutMs = config.timeoutMs ?? 30_000;
     const endpoint = (config.endpoint || `https://${config.accountId}.r2.cloudflarestorage.com`).replace(/\/$/, "");
     this.base = `${endpoint}/${config.bucket}`;
     this.label = `r2:${config.bucket}`;
@@ -115,7 +119,7 @@ export class R2Store implements ObjectStore {
   }
 
   async get(key: string) {
-    const res = await this.client.fetch(this.url(key));
+    const res = await this.client.fetch(this.url(key), { signal: AbortSignal.timeout(this.timeoutMs) });
 
     if (res.status === 404) return null;
 
@@ -129,13 +133,14 @@ export class R2Store implements ObjectStore {
       method: "PUT",
       body: new Blob([new Uint8Array(body)]),
       headers: { "Content-Type": contentType },
+      signal: AbortSignal.timeout(4 * this.timeoutMs),
     });
 
     if (!res.ok) await this.fail(res, `PUT ${key}`);
   }
 
   async has(key: string) {
-    const res = await this.client.fetch(this.url(key), { method: "HEAD" });
+    const res = await this.client.fetch(this.url(key), { method: "HEAD", signal: AbortSignal.timeout(this.timeoutMs) });
 
     if (res.status === 404) return false;
 
@@ -153,7 +158,7 @@ export class R2Store implements ObjectStore {
       const params = new URLSearchParams({ "list-type": "2", prefix });
 
       if (token) params.set("continuation-token", token);
-      const res = await this.client.fetch(`${this.base}?${params}`);
+      const res = await this.client.fetch(`${this.base}?${params}`, { signal: AbortSignal.timeout(this.timeoutMs) });
 
       if (!res.ok) await this.fail(res, `LIST ${prefix}`);
       const xml = await res.text();
