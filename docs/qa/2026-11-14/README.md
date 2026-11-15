@@ -8,7 +8,8 @@ Matrice : 13 écrans (accueil, palmarès, comparaison, duel de joueurs, duel
 d'équipes, récap de partie, fiche champion, lanes, classement de champions,
 roster, champion pool, classement, tableau triable) × 9 largeurs (320, 375,
 390, 414, 768, 1024, 1280, 1440, 1920) × thèmes clair et sombre, soit 234
-écrans. Jusqu'à 1024 px, émulation tactile (pointeur grossier, comme un
+écrans, plus la vue des séries en BO (18 écrans) après la fusion de `main`.
+Jusqu'à 1024 px, émulation tactile (pointeur grossier, comme un
 téléphone ou un iPad).
 
 | | Avant | Après |
@@ -30,6 +31,8 @@ téléphone ou un iPad).
 | 07 | 3G bridée : les exemples de l'accueil restaient invisibles jusqu'à l'hydratation (8 s) ; ils sont rendus côté serveur | 390 px, Slow 3G + CPU ×4, capture à 4 s | [avant](07-avant-exemples-3g-4s-390.png) | [après](07-apres-exemples-3g-4s-390.png) |
 | 08 | Détail des étapes : étapes non exécutées sous le contraste AA (`text-muted/60`), détail technique en 11 px | 390 px, recherche arrêtée après l'étape 1 | [avant](08-avant-detail-etapes-390.png) | [après](08-apres-detail-etapes-390.png) |
 | 09 | Saut de mise en page à l'arrivée de la réponse (CLS 0,61 en 3G) : progression en haut, détail replié au-dessus de la réponse, zone d'au moins un écran | 390 px, « Classement des Worlds 2023 » | [avant](09-avant-ordre-reponse-390.png) | [après](09-apres-ordre-reponse-390.png) |
+| 10 | Séries en BO (arrivées avec la fusion de `main`) : liens « source » de 16 px et en-têtes de tri du tableau des games | 390 px, « Finale des Worlds 2025 » ; avant capturé sur la prod (farsight.enzoneault.dev) | [avant](10-avant-serie-bo-390.png) | [après](10-apres-serie-bo-390.png) |
+| 11 | Échec du chargement à la demande (connexion coupée) : la question restait sur « Je lis ta question… » ; message d'erreur et bouton « Réessayer » | 390 px, chunks bloqués puis rétablis | [échec](11-echec-chargement-390.png) | [après « Réessayer »](11-apres-reessayer-390.png) |
 
 Les captures « après » des correctifs tactiles sont prises fenêtre agrandie à
 la hauteur de la page : une capture pleine page de Chromium perd l'émulation
