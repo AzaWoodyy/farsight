@@ -984,8 +984,7 @@
       "question": "Chovy aux Worlds 2018",
       "tags": [
         "worlds",
-        "self_correction",
-        "release"
+        "self_correction"
       ],
       "expect": {
         "route": "player_event_history",
@@ -2175,8 +2174,7 @@
       "id": "para-game-5-t1-blg",
       "question": "game 5 T1 BLG",
       "tags": [
-        "paraphrase",
-        "release"
+        "paraphrase"
       ],
       "expect": {
         "route": "game_timeline",
@@ -2248,8 +2246,7 @@
       "question": "les perfs de KC en LFL cette année",
       "tags": [
         "paraphrase",
-        "relative-time",
-        "release"
+        "relative-time"
       ],
       "expect": {
         "route": "team_history",
