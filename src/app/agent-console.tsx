@@ -190,7 +190,16 @@ export function AgentConsole() {
             <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://lol.fandom.com" target="_blank" rel="noreferrer">
               Leaguepedia
             </a>{" "}
-            (CC BY-SA 3.0). Noms et icônes des champions, objets et runes :{" "}
+            (
+            <a
+              className="underline decoration-line underline-offset-2 hover:text-accent"
+              href="https://creativecommons.org/licenses/by-sa/3.0/"
+              target="_blank"
+              rel="noreferrer license"
+            >
+              CC BY-SA 3.0
+            </a>
+            ). Noms et icônes des champions, objets et runes :{" "}
             <a
               className="underline decoration-line underline-offset-2 hover:text-accent"
               href="https://developer.riotgames.com/docs/lol#data-dragon"
