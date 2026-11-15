@@ -2,5 +2,8 @@ import type { MetadataRoute } from "next";
 import { SITE } from "./brand/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [{ url: SITE.url, changeFrequency: "weekly", priority: 1 }];
+  return [
+    { url: SITE.url, changeFrequency: "weekly", priority: 1 },
+    { url: `${SITE.url}/mentions-legales`, changeFrequency: "yearly", priority: 0.2 },
+  ];
 }
