@@ -55,16 +55,6 @@ function Section({ id, children }: { id: SectionId; children: ReactNode }) {
   );
 }
 
-/** One recipient of the privacy notice: who receives what, and for how long when it is known. */
-function Recipient({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <div>
-      <dt className="font-semibold">{name}</dt>
-      <dd className="mt-1 text-muted">{children}</dd>
-    </div>
-  );
-}
-
 export default function MentionsLegales() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
@@ -125,60 +115,31 @@ export default function MentionsLegales() {
 
           <Section id="confidentialite">
             <p>
-              Farsight fonctionne sans compte et ne demande aucune information personnelle. Le site ne dépose aucun
-              cookie et n&apos;écrit rien dans le stockage de ton navigateur.
-            </p>
-            <dl className="space-y-4">
-              <Recipient name="Les questions posées : Langfuse">
-                Chaque question et sa réponse sont enregistrées dans Langfuse pour améliorer l&apos;agent, sans
-                adresse IP, cookie ni identifiant de visiteur : seul un identifiant aléatoire regroupe les questions
-                d&apos;une même conversation. Les adresses e-mail, adresses IP et numéros de téléphone reconnus sont
-                masqués, pas les noms. L&apos;éditeur peut consulter ces enregistrements pendant 30 jours.
-              </Recipient>
-              <Recipient name="Les questions posées : OpenRouter et le fournisseur du modèle">
-                La question est aussi envoyée, sans masquage, à OpenRouter et au fournisseur du modèle de langage (par
-                défaut, un modèle Claude d&apos;Anthropic). Évite d&apos;y écrire des informations personnelles.
-              </Recipient>
-              <Recipient name="Les pages vues : Vercel Web Analytics">
-                En production, les pages vues sont comptées sans cookie : chemin de la page, site d&apos;origine, pays,
-                navigateur et type d&apos;appareil.
-              </Recipient>
-              <Recipient name="L'adresse IP">
-                Vercel, l&apos;hébergeur, la reçoit comme tout serveur web. L&apos;application ne s&apos;en sert que
-                pour limiter le nombre de questions et ne l&apos;enregistre pas. Les icônes sont chargées depuis le
-                serveur Data Dragon de Riot Games, qui la reçoit aussi.
-              </Recipient>
-            </dl>
-            <p>
-              Ces traitements reposent sur l&apos;intérêt légitime de l&apos;éditeur : faire fonctionner le site, le
-              protéger des abus et améliorer les réponses. Vercel et OpenRouter sont des sociétés américaines.
-            </p>
-            <p>
-              Tu peux demander l&apos;accès à tes données, leur rectification ou leur suppression, ou t&apos;opposer à
-              leur traitement, en écrivant à l&apos;éditeur (voir{" "}
+              Responsable du traitement : Enzo Neault (voir{" "}
               <a className={TEXT_LINK} href="#contact">
                 Contact
               </a>
-              ) avec le texte de la question et sa date approximative. Tu peux aussi adresser une réclamation à la{" "}
-              <Ext href="https://www.cnil.fr/fr/plaintes">CNIL</Ext>.
+              ). Le site fonctionne sans compte et ne dépose aucun cookie.
             </p>
-            <p className="text-muted">
-              Pour en savoir plus :{" "}
-              <Ext href="https://vercel.com/legal/privacy-policy">Vercel</Ext>,{" "}
-              <Ext href="https://vercel.com/docs/analytics/privacy-policy">Vercel Web Analytics</Ext>,{" "}
-              <Ext href="https://langfuse.com/privacy">Langfuse</Ext>,{" "}
-              <Ext href="https://openrouter.ai/privacy">OpenRouter</Ext>.
+            <p>
+              Les questions posées sont enregistrées chez Langfuse, sans adresse IP ni identifiant de visiteur, pour
+              améliorer l&apos;agent, et envoyées à OpenRouter et au fournisseur du modèle de langage pour y répondre.
+              L&apos;éditeur peut les consulter pendant 30 jours. Vercel, l&apos;hébergeur, reçoit ton adresse IP pour
+              servir le site et limiter les abus, et compte les pages vues (Vercel Web Analytics).
+            </p>
+            <p>
+              Ces traitements reposent sur l&apos;intérêt légitime de l&apos;éditeur. Vercel et OpenRouter sont des
+              sociétés américaines : des données sont traitées hors de l&apos;Union européenne.
+            </p>
+            <p>
+              Tu peux demander l&apos;accès à tes données, leur rectification ou leur suppression, ou t&apos;opposer à
+              leur traitement, en écrivant à l&apos;éditeur. Tu peux aussi adresser une réclamation à la{" "}
+              <Ext href="https://www.cnil.fr/fr/plaintes">CNIL</Ext>.
             </p>
           </Section>
 
           <Section id="riot">
-            <p>
-              Farsight est un projet de fan, indépendant de Riot Games. Il n&apos;est ni approuvé ni sponsorisé par
-              Riot Games et ne reflète pas les opinions de Riot Games ni de quiconque participe officiellement à la
-              production ou à la gestion de ses propriétés. Riot Games, League of Legends et toutes les propriétés
-              associées sont des marques ou des marques déposées de Riot Games, Inc.
-            </p>
-            <p className="text-muted">Le texte demandé par Riot Games, dans sa version officielle :</p>
+            <p>Farsight n&apos;est ni approuvé ni sponsorisé par Riot Games.</p>
             <blockquote lang="en" className="space-y-2 border-l border-line pl-4 text-muted">
               <p>{RIOT_BOILERPLATE}</p>
               <p>
@@ -186,30 +147,15 @@ export default function MentionsLegales() {
                 by Riot Games. Riot Games does not endorse or sponsor this project.
               </p>
             </blockquote>
-            <p className="text-muted">
-              Sources : <Ext href="https://developer.riotgames.com/policies/general">règles générales du portail développeur</Ext>{" "}
-              et <Ext href="https://www.riotgames.com/en/legal">politique « Legal Jibber Jabber »</Ext> de Riot Games.
-            </p>
           </Section>
 
           <Section id="licences">
             <p>
-              <span className="font-semibold">Données.</span> Les résultats, compositions et statistiques viennent de{" "}
-              <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, sous licence{" "}
+              Les données viennent de <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, sous licence{" "}
               <Ext href={CC_BY_SA_URL} rel="noreferrer license">
-                Creative Commons Attribution-ShareAlike 3.0 (CC BY-SA 3.0)
-              </Ext>
-              . Chaque réponse cite et relie ses pages Leaguepedia. La base de données de Farsight, qui en est dérivée,
-              est partagée dans les mêmes conditions : tu peux la réutiliser en citant Leaguepedia et en gardant la
-              même licence.
-            </p>
-            <p>
-              <span className="font-semibold">Noms et icônes.</span> Les noms et icônes des champions, objets et runes
-              viennent de <Ext href="https://developer.riotgames.com/docs/lol#data-dragon">Riot Data Dragon</Ext> et
-              restent la propriété de Riot Games.
-            </p>
-            <p>
-              <span className="font-semibold">Code.</span> Le code de Farsight est publié sous{" "}
+                CC BY-SA 3.0
+              </Ext>{" "}
+              : la base de Farsight, qui en est dérivée, est partagée dans les mêmes conditions. Le code est sous{" "}
               <Ext href={LICENSE_URL} rel="noreferrer license">
                 licence MIT
               </Ext>
