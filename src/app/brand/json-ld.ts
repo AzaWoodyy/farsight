@@ -36,7 +36,10 @@ export const JSON_LD = {
       isBasedOn: {
         "@type": "Dataset",
         name: "Leaguepedia",
+        description:
+          "Wiki communautaire de l'esport League of Legends : résultats des matchs, compositions, picks et bans, statistiques des joueurs et des équipes de chaque compétition.",
         url: "https://lol.fandom.com",
+        creator: { "@type": "Organization", name: "Leaguepedia", url: "https://lol.fandom.com" },
         license: "https://creativecommons.org/licenses/by-sa/3.0/",
       },
     },
