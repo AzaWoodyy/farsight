@@ -545,7 +545,9 @@ async function format(
     };
   }
 
+  const formatStarted = performance.now();
   const out = await plan.tool.format(db, raw);
+  const formatMs = Math.round(performance.now() - formatStarted);
   meta.totals = out.totals;
 
   for (const t of out.trace ?? []) step.add(entry(t));
@@ -558,7 +560,7 @@ async function format(
     ? `Timeline : ${out.timeline.gold.length} points d'or, ${out.timeline.events.length} événements`
     : `Tableau de ${out.rows?.length ?? out.table?.rows.length ?? 0} lignes`;
 
-  step.add(entry({ status: "ok", title: `${shown}, ${out.sources.length} sources, ${followUps.length} suites` }));
+  step.add(entry({ status: "ok", title: `${shown}, ${out.sources.length} sources, ${followUps.length} suites, requêtes de mise en forme en ${formatMs} ms` }));
 
   step.done(
     "ok",
