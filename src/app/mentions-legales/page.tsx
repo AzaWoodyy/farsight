@@ -94,13 +94,7 @@ export default function MentionsLegales() {
           <Section id="editeur">
             <p>
               Farsight (askfarsight.com) est édité par Enzo Neault, un particulier, à titre personnel et non
-              professionnel. Le site est gratuit, sans publicité et sans but commercial. Enzo Neault en est aussi le
-              directeur de la publication.
-            </p>
-            <p className="text-muted">
-              Comme la loi le permet à un particulier (article 6, III, 2 de la loi du 21 juin 2004 pour la confiance
-              dans l&apos;économie numérique), son adresse personnelle n&apos;est pas publiée : elle est connue de
-              l&apos;hébergeur.
+              professionnel. Le site est gratuit, sans publicité et sans but commercial.
             </p>
           </Section>
 
@@ -132,65 +126,40 @@ export default function MentionsLegales() {
           <Section id="confidentialite">
             <p>
               Farsight fonctionne sans compte et ne demande aucune information personnelle. Le site ne dépose aucun
-              cookie et n&apos;écrit rien dans le stockage de ton navigateur. Voici ce qui quitte ton navigateur, et
-              chez qui.
+              cookie et n&apos;écrit rien dans le stockage de ton navigateur.
             </p>
-            <dl className="space-y-5">
+            <dl className="space-y-4">
               <Recipient name="Les questions posées : Langfuse">
-                Chaque question, les étapes de l&apos;agent, les appels au modèle de langage et la réponse sont
-                enregistrés dans Langfuse, un outil de suivi, pour comprendre les erreurs et améliorer l&apos;agent.
-                Ni ton adresse IP, ni un cookie, ni aucun identifiant de visiteur n&apos;y figurent. Les questions
-                d&apos;une même conversation sont regroupées par un identifiant aléatoire créé par ton navigateur : il
-                reste dans la mémoire de la page et disparaît quand tu la fermes ou la recharges. Un filtre
-                masque avant l&apos;envoi les adresses e-mail, adresses IP et numéros de téléphone qu&apos;il reconnaît
-                dans une question ; il peut en laisser passer, et un nom, un pseudo ou une adresse postale ne sont
-                jamais masqués. L&apos;éditeur peut consulter ces enregistrements
-                pendant 30 jours ; au-delà, l&apos;offre gratuite de Langfuse ne les affiche plus, sans garantir
-                qu&apos;ils soient effacés. Ils sont supprimés sur demande.
+                Chaque question et sa réponse sont enregistrées dans Langfuse pour améliorer l&apos;agent, sans
+                adresse IP, cookie ni identifiant de visiteur : seul un identifiant aléatoire regroupe les questions
+                d&apos;une même conversation. Les adresses e-mail, adresses IP et numéros de téléphone reconnus sont
+                masqués, pas les noms. L&apos;éditeur peut consulter ces enregistrements pendant 30 jours.
               </Recipient>
               <Recipient name="Les questions posées : OpenRouter et le fournisseur du modèle">
-                Pour comprendre une question, construire la recherche ou rédiger la phrase de résumé, la question
-                est envoyée telle quelle, sans masquage, à OpenRouter, qui la transmet au fournisseur du modèle de langage (par défaut, un modèle Claude
-                d&apos;Anthropic). Ces sociétés la traitent selon leurs propres règles de confidentialité ; elles ne
-                reçoivent ni ton adresse IP ni un identifiant de visiteur. Évite donc d&apos;écrire des informations
-                personnelles dans une question.
-              </Recipient>
-              <Recipient name="Les avis : pouce levé ou baissé">
-                Un clic sur « Réponse correcte ? » ajoute une note, oui ou non, à l&apos;enregistrement de la question
-                dans Langfuse. Rien d&apos;autre n&apos;est envoyé avec elle.
+                La question est aussi envoyée, sans masquage, à OpenRouter et au fournisseur du modèle de langage (par
+                défaut, un modèle Claude d&apos;Anthropic). Évite d&apos;y écrire des informations personnelles.
               </Recipient>
               <Recipient name="Les pages vues : Vercel Web Analytics">
-                Sur le site en production, chaque page vue est comptée par Vercel Web Analytics, sans cookie : date,
-                chemin de la page (sans paramètre ni question), site d&apos;origine, pays et région approximatifs,
-                navigateur, système et type d&apos;appareil. Vercel reconnaît un même visiteur par une empreinte
-                calculée à partir de la requête, qu&apos;il abandonne au bout de 24 heures. Aucun événement
-                personnalisé n&apos;est envoyé.
+                En production, les pages vues sont comptées sans cookie : chemin de la page, site d&apos;origine, pays,
+                navigateur et type d&apos;appareil.
               </Recipient>
-              <Recipient name="L'adresse IP : hébergement et limite de débit">
-                Comme tout serveur web, Vercel reçoit ton adresse IP pour te répondre et protéger le site (pare-feu,
-                vérification anti-robot BotID avant chaque question). L&apos;application ne s&apos;en sert que pour
-                limiter le nombre de questions : 30 par tranche de dix minutes, comptées en mémoire sous une forme
-                hachée. Elle ne l&apos;écrit ni dans un journal ni dans Langfuse.
-              </Recipient>
-              <Recipient name="Les icônes : Riot Data Dragon">
-                Les icônes de champions, d&apos;objets et de runes sont chargées directement depuis le serveur Data
-                Dragon de Riot Games (ddragon.leagueoflegends.com), qui reçoit donc ton adresse IP comme pour toute
-                image.
+              <Recipient name="L'adresse IP">
+                Vercel, l&apos;hébergeur, la reçoit comme tout serveur web. L&apos;application ne s&apos;en sert que
+                pour limiter le nombre de questions et ne l&apos;enregistre pas. Les icônes sont chargées depuis le
+                serveur Data Dragon de Riot Games, qui la reçoit aussi.
               </Recipient>
             </dl>
             <p>
               Ces traitements reposent sur l&apos;intérêt légitime de l&apos;éditeur : faire fonctionner le site, le
-              protéger des abus et améliorer les réponses. Vercel, OpenRouter et les fournisseurs de modèles sont des
-              sociétés américaines : des données peuvent être traitées hors de l&apos;Union européenne.
+              protéger des abus et améliorer les réponses. Vercel et OpenRouter sont des sociétés américaines.
             </p>
             <p>
-              Tu peux demander l&apos;accès à tes données, leur rectification ou leur suppression, t&apos;opposer à
-              leur traitement ou en demander la limitation, en écrivant à l&apos;éditeur (voir{" "}
+              Tu peux demander l&apos;accès à tes données, leur rectification ou leur suppression, ou t&apos;opposer à
+              leur traitement, en écrivant à l&apos;éditeur (voir{" "}
               <a className={TEXT_LINK} href="#contact">
                 Contact
               </a>
-              ). Comme rien ne relie une question à une personne, indique le texte de la question et sa date
-              approximative pour qu&apos;elle puisse être retrouvée. Tu peux aussi adresser une réclamation à la{" "}
+              ) avec le texte de la question et sa date approximative. Tu peux aussi adresser une réclamation à la{" "}
               <Ext href="https://www.cnil.fr/fr/plaintes">CNIL</Ext>.
             </p>
             <p className="text-muted">
