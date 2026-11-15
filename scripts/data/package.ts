@@ -33,6 +33,7 @@ import {
   derivationProblems,
   headerProblems,
   readFacts,
+  regressionProblems,
   sha256File,
 } from "./artifact";
 import { loadIngame } from "./riot";
@@ -47,10 +48,6 @@ const checkOnly = args.includes("--check-only");
 const tag = arg("tag");
 const previousFile = arg("previous");
 const outDir = resolve(arg("out") ?? "data/release");
-
-
-/** A new release may lose a few games to wiki edits, not more. */
-const MIN_GAMES_RATIO = 0.98;
 
 /** Tables and views the app reads (tools, schema guard, views). */
 const REQUIRED = SCHEMA_OBJECTS;
@@ -147,17 +144,7 @@ db.close();
 
 if (previousFile) {
   const previous = Manifest.parse(JSON.parse(readFileSync(previousFile, "utf8")));
-  const min = Math.floor(previous.counts.games * MIN_GAMES_RATIO);
-
-  if (facts.counts.games < min)
-    problems.push(`${facts.counts.games} games, previous release ${previous.tag} had ${previous.counts.games} (minimum ${min})`);
-
-  if (facts.counts.leagues < previous.counts.leagues)
-    problems.push(`${facts.counts.leagues} leagues, previous release ${previous.tag} had ${previous.counts.leagues}`);
-  const previousIngame = previous.counts.ingame_games ?? 0;
-
-  if (!args.includes("--allow-ingame-drop") && (facts.counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
-    problems.push(`${facts.counts.ingame_games} games with in-game stats, previous release ${previous.tag} had ${previousIngame}`);
+  problems.push(...regressionProblems(facts.counts, previous, { allowIngameDrop: args.includes("--allow-ingame-drop") }));
 }
 
 if (problems.length > 0) fail(problems);
