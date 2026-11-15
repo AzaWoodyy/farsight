@@ -110,13 +110,15 @@ export function HomeExamples({ onAsk }: AskProps) {
   const [focused, setFocused] = useState(false);
   const [all, setAll] = useState(false);
   const leave = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const autoLeave = useRef(false);
   const picks = drawn ?? loaded;
 
-  function reshuffle() {
+  function reshuffle(automatic = false) {
     if (leave.current) return;
 
     const swap = () => {
       leave.current = undefined;
+      autoLeave.current = false;
       setDrawn((shown) => nextPicks(shown ?? drawnPicks()));
       setDraw((d) => d + 1);
       setLeaving(false);
@@ -124,10 +126,22 @@ export function HomeExamples({ onAsk }: AskProps) {
 
     if (reduced) return swap();
     setLeaving(true);
+    autoLeave.current = automatic;
     leave.current = setTimeout(swap, LEAVE_MS);
   }
 
-  const rotate = useEffectEvent(reshuffle);
+  // A pause that starts during an automatic exit keeps the examples shown (and the focus on them).
+  function pause(set: (paused: boolean) => void) {
+    set(true);
+
+    if (!autoLeave.current) return;
+    clearTimeout(leave.current);
+    leave.current = undefined;
+    autoLeave.current = false;
+    setLeaving(false);
+  }
+
+  const rotate = useEffectEvent(() => reshuffle(true));
   const paused = !picks || reduced || hidden || hovered || focused;
 
   // A new countdown after each draw (automatic or asked) and on each resume.
@@ -142,9 +156,9 @@ export function HomeExamples({ onAsk }: AskProps) {
 
   return (
     <div
-      onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(true)}
+      onPointerEnter={(e) => e.pointerType === "mouse" && pause(setHovered)}
       onPointerLeave={() => setHovered(false)}
-      onFocus={(e) => setFocused(keyboardFocus(e))}
+      onFocus={(e) => (keyboardFocus(e) ? pause(setFocused) : setFocused(false))}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
     >
       <h2 className={HEADING}>── Essaie par exemple</h2>
@@ -169,7 +183,7 @@ export function HomeExamples({ onAsk }: AskProps) {
       <div className="mt-4 flex flex-wrap gap-2 text-sm">
         <button
           type="button"
-          onClick={reshuffle}
+          onClick={() => reshuffle()}
           className="press inline-flex min-h-11 items-center gap-2 border border-line px-3 hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
         >
           <span aria-hidden className="text-accent">
