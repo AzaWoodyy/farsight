@@ -128,9 +128,19 @@ details[data-how][open] > summary [data-chevron] {
   }
 }
 
-/* Shuffled home examples fade in when drawn again. */
+/* Home examples fade out, then the new draw fades in (automatic rotation or "Autres exemples"). */
 .ex-in {
   animation: ex-in 200ms var(--ease-out-strong) both;
+}
+
+.ex-out {
+  animation: ex-out 150ms ease-in both;
+}
+
+@keyframes ex-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes ex-in {
@@ -141,7 +151,8 @@ details[data-how][open] > summary [data-chevron] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ex-in {
+  .ex-in,
+  .ex-out {
     animation: none;
   }
 }

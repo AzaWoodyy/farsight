@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import { byCategory, CATEGORIES, EXAMPLES, type Example, readPicks } from "./home-examples-data";
+import { type FocusEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { byCategory, CATEGORIES, EXAMPLES, type Example, nextPicks, readPicks, ROTATE_MS } from "./home-examples-data";
 
 type AskProps = { onAsk: (question: string) => void };
 
 const HEADING = "text-xs text-muted";
 
-function ExampleRow({ example, onAsk, option }: AskProps & { example: Example; option?: number }) {
+function ExampleRow({ example, onAsk, option, stacked, hidden }: AskProps & { example: Example; option?: number; stacked?: boolean; hidden?: boolean }) {
   return (
     <button
       type="button"
       data-i={option}
       onClick={() => onAsk(example.question)}
-      className="press group flex min-h-11 w-full flex-wrap items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:pointer-fine:min-h-10"
+      className={`${stacked ? "[grid-area:1/1] " : ""}${hidden ? "invisible " : ""}press group flex min-h-11 w-full flex-wrap content-start items-baseline gap-x-2 border-b border-dashed border-line py-2.5 text-left sm:pointer-fine:min-h-10`}
     >
       <span aria-hidden className="text-accent">
         &gt;
@@ -52,51 +52,117 @@ function AllExamples({ onAsk }: AskProps) {
 
 const noSubscribe = () => () => {};
 
-// The draw is made before the first paint by PICK_SCRIPT (see home-examples-data). The static page holds
-// every example, the undrawn ones hidden by PICK_CSS; once hydrated, only the drawn ones stay in the DOM.
+// The draw is made before the first paint by PICK_SCRIPT (see home-examples-data). The static page holds every
+// example, the undrawn ones hidden by PICK_CSS; once hydrated, React hides them itself and draws again.
 let loadPicks: number[] | null = null;
 
 const drawnPicks = () => (loadPicks ??= readPicks(document.documentElement));
 
 const staticPicks = () => null;
 
-/** One example per category, drawn at random on each load and again on demand; the full list stays one click away. */
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void) {
+  const query = matchMedia(REDUCED_MOTION);
+  query.addEventListener("change", onChange);
+
+  return () => query.removeEventListener("change", onChange);
+}
+
+const reducedMotion = () => matchMedia(REDUCED_MOTION).matches;
+
+function subscribeVisibility(onChange: () => void) {
+  document.addEventListener("visibilitychange", onChange);
+
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+const pageHidden = () => document.hidden;
+
+// Before hydration nothing rotates.
+const serverTrue = () => true;
+
+// Exit: a 150 ms fade, 40 ms later per category (globals.css); the new draw enters once the last one has left.
+const STAGGER_MS = 40;
+const LEAVE_MS = 150 + (CATEGORIES.length - 1) * STAGGER_MS;
+
+function keyboardFocus(event: FocusEvent) {
+  try {
+    return event.target.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * One example per category, drawn at random on each load, again every ROTATE_MS and on demand; the full list
+ * stays one click away. The rotation pauses under the pointer, under keyboard focus, in a hidden tab, and does
+ * not run with reduced motion.
+ */
 export function HomeExamples({ onAsk }: AskProps) {
   const loaded = useSyncExternalStore(noSubscribe, drawnPicks, staticPicks);
+  const reduced = useSyncExternalStore(subscribeReducedMotion, reducedMotion, serverTrue);
+  const hidden = useSyncExternalStore(subscribeVisibility, pageHidden, serverTrue);
   const [drawn, setDrawn] = useState<number[] | null>(null);
   const [draw, setDraw] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [all, setAll] = useState(false);
+  const leave = useRef<ReturnType<typeof setTimeout>>(undefined);
   const picks = drawn ?? loaded;
 
   function reshuffle() {
-    setDrawn(
-      CATEGORIES.map((c, i) => {
-        const n = byCategory(c).length;
-        const shown = picks?.[i] ?? 0;
+    if (leave.current) return;
 
-        // Another example than the one shown, when the category has more than one.
-        return n < 2 ? 0 : (shown + 1 + Math.floor(Math.random() * (n - 1))) % n;
-      }),
-    );
-    setDraw((d) => d + 1);
+    const swap = () => {
+      leave.current = undefined;
+      setDrawn((shown) => nextPicks(shown ?? drawnPicks()));
+      setDraw((d) => d + 1);
+      setLeaving(false);
+    };
+
+    if (reduced) return swap();
+    setLeaving(true);
+    leave.current = setTimeout(swap, LEAVE_MS);
   }
 
+  const rotate = useEffectEvent(reshuffle);
+  const paused = !picks || reduced || hidden || hovered || focused;
+
+  // A new countdown after each draw (automatic or asked) and on each resume.
+  useEffect(() => {
+    if (paused) return;
+    const timer = setTimeout(rotate, ROTATE_MS);
+
+    return () => clearTimeout(timer);
+  }, [paused, draw]);
+
+  useEffect(() => () => clearTimeout(leave.current), []);
+
   return (
-    <>
+    <div
+      onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={(e) => setFocused(keyboardFocus(e))}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
+    >
       <h2 className={HEADING}>── Essaie par exemple</h2>
       <ul className="mt-2 grid gap-x-10 text-sm md:grid-cols-2">
         {CATEGORIES.map((c, i) => (
           // The entrance plays from the static HTML (CSS only, so on a slow connection too) and again on each
-          // new draw; hydration keeps the same <li>, so it does not replay.
-          <li key={`${c}-${draw}`} data-c={i} className="ex-in pt-3" style={{ animationDelay: `${i * 40}ms` }}>
+          // new draw, after the exit of the previous one; hydration keeps the same <li>, so it does not replay.
+          <li key={`${c}-${draw}`} className={`${leaving ? "ex-out" : "ex-in"} pt-3`} style={{ animationDelay: `${i * STAGGER_MS}ms` }}>
             <p className={HEADING}>
               <span aria-hidden>── </span>
               {c}
             </p>
-            {/* Keyed by question, so the drawn row keeps its node when the undrawn ones leave. */}
-            {(picks ? [byCategory(c)[picks[i]]] : byCategory(c)).map((e, n) => (
-              <ExampleRow key={e.question} example={e} option={picks ? undefined : n} onAsk={onAsk} />
-            ))}
+            {/* Every example of the category in one grid cell, as tall as the longest: a draw moves nothing. */}
+            <div data-c={i} className="grid">
+              {byCategory(c).map((e, n) => (
+                <ExampleRow key={e.question} example={e} option={picks ? undefined : n} stacked hidden={picks ? n !== picks[i] : undefined} onAsk={onAsk} />
+              ))}
+            </div>
           </li>
         ))}
       </ul>
@@ -121,6 +187,6 @@ export function HomeExamples({ onAsk }: AskProps) {
         </button>
       </div>
       {all && <AllExamples onAsk={onAsk} />}
-    </>
+    </div>
   );
 }
