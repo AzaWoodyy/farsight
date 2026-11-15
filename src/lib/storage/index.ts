@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { AwsClient } from "aws4fetch";
+import { writeFileAtomic } from "../fs-atomic";
 
 /**
  * Object storage for the per-game Riot JSON (end-of-game stats and the
@@ -55,9 +56,7 @@ export class FsStore implements ObjectStore {
   async put(key: string, body: Uint8Array, _contentType: string) {
     const file = this.path(key);
     mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.tmp-${process.pid}`;
-    writeFileSync(tmp, body);
-    renameSync(tmp, file);
+    writeFileAtomic(file, body);
   }
 
   async has(key: string) {

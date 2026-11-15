@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { z } from "zod";
+import { writeFileAtomic } from "../fs-atomic";
 
 /**
  * Minimal Leaguepedia Cargo client.
@@ -124,9 +125,14 @@ async function fetchPage(
   const cacheFile = resolve(opts.cacheDir, `${key}.json`);
 
   if (!opts.refresh && existsSync(cacheFile)) {
-    cargoStats.cached++;
+    try {
+      const { rows } = CachedResponse.parse(JSON.parse(readFileSync(cacheFile, "utf8")));
+      cargoStats.cached++;
 
-    return CachedResponse.parse(JSON.parse(readFileSync(cacheFile, "utf8"))).rows;
+      return rows;
+    } catch {
+      console.warn(`  leaguepedia: unreadable cache file ${basename(cacheFile)}, fetching again`);
+    }
   }
 
   const rows = await politeGet(url, (text) => {
@@ -138,7 +144,7 @@ async function fetchPage(
     return null;
   });
 
-  writeFileSync(cacheFile, JSON.stringify({ url, fetchedAt: new Date().toISOString(), rows }));
+  writeFileAtomic(cacheFile, JSON.stringify({ url, fetchedAt: new Date().toISOString(), rows }));
 
   return rows;
 }
