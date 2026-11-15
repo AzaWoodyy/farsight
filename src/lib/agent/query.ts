@@ -870,7 +870,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   const record = asksRecord ? recordMetricOf(question, recordCue) : null;
 
   // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
-  if (record && PER_MINUTE.test(question)) return { kind: "sql", reason: "record sur une partie d'un chiffre par minute : pas d'outil typé" };
+  if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: "record sur une partie d'un chiffre par minute : pas d'outil typé" };
 
   if (record) return (recordCue && ingameAbsent(e, recordCue.mention, coverage)) ?? recordsRoute(e, record, roleOf(question));
 

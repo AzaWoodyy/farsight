@@ -149,6 +149,8 @@ describe("routes of the rankings", () => {
     expect(route("record de kills des mids en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "kills", role: "Mid" } } });
     // A per-minute figure is not one the records hold, and a competition without Riot data has no lane record.
     expect(route("record de dégâts par minute en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "sql" });
+
+    for (const figure of ["DPM", "GPM", "CSPM"]) expect(route(`record de ${figure} en une partie aux Worlds`, WORLDS)).toMatchObject({ kind: "sql" });
     expect(routeQuestion("record de solo kills en une partie aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
     expect(routeQuestion("champions avec le meilleur écart d'or à 15 min aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
     expect(route("meilleure game de Faker en kills", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: "Faker", role: null } } });
