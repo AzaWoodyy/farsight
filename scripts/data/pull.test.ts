@@ -17,16 +17,16 @@ describe("data:pull decision", () => {
 
   for (const local of ["absent", "unusable"] as const) {
     for (const onVercel of [false, true]) {
-      test(`${local} database, vercel=${onVercel}: token decides resolve or fail`, () => {
-        expect(planPull({ ...facts, local, onVercel }).kind).toBe("fail");
+      test(`${local} database, vercel=${onVercel}: resolves a release with or without a token`, () => {
+        expect(planPull({ ...facts, local, onVercel })).toEqual({ kind: "resolve", pinned: null });
         expect(planPull({ ...facts, local, onVercel, token: true })).toEqual({ kind: "resolve", pinned: null });
       });
     }
   }
 
-  test("pinning and forcing never silently keep local without a token", () => {
-    expect(planPull({ ...facts, pinned: "data-20261113" }).kind).toBe("fail");
-    expect(planPull({ ...facts, force: true }).kind).toBe("fail");
+  test("pinning and forcing never keep the local file, with or without a token", () => {
+    expect(planPull({ ...facts, pinned: "data-20261113" })).toEqual({ kind: "resolve", pinned: "data-20261113" });
+    expect(planPull({ ...facts, force: true })).toEqual({ kind: "resolve", pinned: null });
     expect(planPull({ ...facts, token: true, pinned: "data-20261113" })).toEqual({ kind: "resolve", pinned: "data-20261113" });
     expect(planPull({ ...facts, token: true, force: true })).toEqual({ kind: "resolve", pinned: null });
   });

@@ -49,7 +49,7 @@ These decisions describe the current implementation.
 - PRs target `main`; merge waits for Enzo. A successful CI on `main` triggers production Deploy; never push `main` from a cleanup task.
 - The frontend has no automated tests. Verify UI changes by running the app and looking at the changed screen.
 - Secrets live in `.env` only, and `.env.example` lists every variable with an empty value.
-- The repository is private until a first working version exists.
+- The repository is public. Code is MIT (`LICENSE`); the database, data releases and fixtures derived from Leaguepedia stay CC BY-SA 3.0. Commits, PR text, docs and screenshots are readable by anyone: no account id, dashboard URL or personal data in them.
 
 ## Audit follow-up
 
