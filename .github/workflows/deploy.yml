@@ -110,3 +110,32 @@ jobs:
         run: |
           curl --fail --silent --show-error --location --output /dev/null \
             --retry 5 --retry-delay 10 --retry-all-errors --max-time 30 "$SITE_URL/"
+
+      # What the running functions open: the code's schema version and, after a
+      # data release, the game count of that release's manifest.
+      - name: Check the database the site serves
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DATA_TAG: ${{ inputs.data-tag }}
+        run: |
+          health="$RUNNER_TEMP/health.json"
+          curl --fail --silent --show-error --location --output "$health" \
+            --retry 5 --retry-delay 10 --retry-all-errors --max-time 30 "$SITE_URL/api/health"
+          { echo '`/api/health`:'; echo '```json'; cat "$health"; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          schema=$(bun -e 'import { SCHEMA_VERSION } from "./scripts/data/scope"; console.log(SCHEMA_VERSION)')
+          served=$(jq -r .schemaVersion "$health")
+          if [ "$served" != "$schema" ]; then
+            echo "::error::the site serves schema version $served; the code expects $schema"
+            exit 1
+          fi
+          if [ -n "$DATA_TAG" ]; then
+            gh release download "$DATA_TAG" --pattern manifest.json --dir "$RUNNER_TEMP/expected"
+            expected=$(jq -r .counts.games "$RUNNER_TEMP/expected/manifest.json")
+            games=$(jq -r .games "$health")
+            if [ "$games" != "$expected" ]; then
+              echo "::error::the site serves $games games; $DATA_TAG has $expected"
+              exit 1
+            fi
+          fi

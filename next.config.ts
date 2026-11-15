@@ -40,9 +40,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   // The database is opened at runtime from a computed path, so the tracer
-  // cannot see it: ship it inside the /api/ask function (read-only).
+  // cannot see it: ship it inside the functions that open it (read-only).
   outputFileTracingIncludes: {
     "/api/ask": ["./data/lol.sqlite", "./src/lib/db/sql-child.mjs"],
+    "/api/health": ["./data/lol.sqlite"],
   },
   // The ingestion cache (data/raw: Cargo responses, Riot game JSON) and release
   // assets are never read at runtime, but the tracer picks up the cache files a
@@ -50,6 +51,7 @@ const nextConfig: NextConfig = {
   // full cache would ship gigabytes.
   outputFileTracingExcludes: {
     "/api/ask": ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"],
+    "/api/health": ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"],
   },
   turbopack: {
     rules: {

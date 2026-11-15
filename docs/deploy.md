@@ -133,7 +133,17 @@ Le job lance `lint`, `typecheck` et `test`, déploie, puis vérifie :
   du log. Après un « Data release », ce doit être le tag qui vient d'être
   publié, sinon le job échoue (c'est le cas si `DATA_RELEASE` est épinglée
   sur Vercel) ;
-- que `https://askfarsight.com/` répond 200.
+- que `https://askfarsight.com/` répond 200 ;
+- la base que le site sert, d'après `GET /api/health`.
+
+`/api/health` est public et en lecture seule. Il ne renvoie que trois
+valeurs de la base ouverte par la fonction : `schemaVersion` (`user_version`),
+`games` (nombre de parties) et `builtAt` (fin du dernier `data:build`, ou
+`null`), lues une fois par instance et gardées 60 s par le CDN ; une base
+illisible donne un 503 sans détail. Le job échoue si `schemaVersion` diffère
+du `SCHEMA_VERSION` du code déployé, et, après un « Data release », si `games`
+diffère de `counts.games` du `manifest.json` du tag publié. Deux releases au
+même nombre de parties restent indiscernables.
 
 La question Chovy n'est pas posée au domaine : `POST /api/ask` est derrière
 BotID, qui refuse un client sans navigateur. Elle est posée à la nouvelle base
