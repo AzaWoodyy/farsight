@@ -3177,22 +3177,22 @@ async function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): Promise<Gam
 const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.number() });
 
 /**
- * Teams (by games) and main role of each player the question names, in its competition and period.
- * Shown by the comparison layouts next to the generated table, which rarely selects them.
+ * Teams (by games) and main role of each player, in one competition and period: the scope the answer was computed on.
+ * Shown by the comparison layouts next to the table, which rarely selects them.
  */
-export function playerProfiles(db: DatabaseSync, entities: Entities): PlayerProfile[] {
-  return entities.players.map((p) => {
+export function playerProfiles(db: DatabaseSync, players: string[], scope: { league: string | null } & Period): PlayerProfile[] {
+  return players.map((player) => {
     const params: Params = {};
 
-    Object.assign(params, { player: p.player });
+    Object.assign(params, { player });
 
-    const league = entities.league ? `AND ${leagueFilter("league", { league: entities.league, yearFrom: entities.yearFrom, yearTo: entities.yearTo }, params)}` : "";
+    const league = scope.league ? `AND ${leagueFilter("league", { league: scope.league, yearFrom: scope.yearFrom, yearTo: scope.yearTo }, params)}` : "";
 
     const rows = selectAll(
       db,
       ProfileRow,
       `SELECT team, role, COUNT(*) AS games FROM v_game_players
-       WHERE player = :player AND stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("year", { yearFrom: entities.yearFrom, yearTo: entities.yearTo }, params)}
+       WHERE player = :player AND stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("year", { yearFrom: scope.yearFrom, yearTo: scope.yearTo }, params)}
        GROUP BY team, role ORDER BY games DESC`,
       params,
     );
@@ -3205,7 +3205,7 @@ export function playerProfiles(db: DatabaseSync, entities: Entities): PlayerProf
       return [...games].sort((a, b) => b[1] - a[1]).map(([name]) => name);
     };
 
-    return { player: p.player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null };
+    return { player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null };
   });
 }
 

@@ -535,7 +535,7 @@ async function format(
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
       // Several named players: the comparison layouts show their team and role next to the generated table.
-      profiles: entities.players.length > 1 ? playerProfiles(db, entities) : [],
+      profiles: entities.players.length > 1 ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
       sources: pages.length
         ? pages.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }],
@@ -565,6 +565,10 @@ async function format(
     `${out.timeline ? `${out.timeline.events.length} événements` : `${out.rows?.length ?? out.table?.rows.length ?? 0} lignes`} · ${out.sources.length} sources`,
   );
 
+  const call = plan.tool.call;
+  // The scope the comparison ran on: a relaxation may have widened the one asked.
+  const profiles = call.tool === "player_comparison" ? playerProfiles(db, [call.input.playerA, call.input.playerB], call.input) : [];
+
   return {
     title: out.title,
     summary: summary.result,
@@ -579,7 +583,7 @@ async function format(
     pool: out.pool ?? null,
     series: out.series ?? null,
     icons: out.icons ?? {},
-    profiles: plan.tool.call.tool === "player_comparison" ? playerProfiles(db, entities) : [],
+    profiles,
     sources: out.sources,
     followUps,
     notes,
