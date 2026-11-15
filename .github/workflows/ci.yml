@@ -41,14 +41,14 @@ jobs:
           bun test scripts/ci/affected.test.ts
           bun scripts/ci/select.ts
       - if: steps.changes.outputs.any == 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
       # Direct install measured at 2s; caching the 100MB dependency cache costs more.
       - if: steps.changes.outputs.any == 'true'
         run: bun install --frozen-lockfile
       - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: snapshot
         with:
           path: .ci-data
@@ -63,7 +63,7 @@ jobs:
           if [ "$REBUILD" = true ]; then args+=(--raw); fi
           bun scripts/ci/data.ts "${args[@]}"
       - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true')
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-data
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
