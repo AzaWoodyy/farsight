@@ -17,10 +17,24 @@ export function rateLimited(req: Request, route: "ask" | "feedback", now = Date.
   let bucket = buckets.get(key);
 
   if (!bucket || bucket.until <= now) {
-    for (const [id, item] of buckets) if (item.until <= now) buckets.delete(id);
+    // Re-inserting an expired key moves it to the end of the insertion order.
+    if (bucket) buckets.delete(key);
 
-    // Fail closed when full rather than evicting active quotas for new IPs.
-    if (buckets.size >= MAX_BUCKETS) return true;
+    if (buckets.size >= MAX_BUCKETS) {
+      // Every window has the same length, so insertion order is expiry order: stop at the first live counter.
+      for (const [id, item] of buckets) {
+        if (item.until > now) break;
+        buckets.delete(id);
+      }
+
+      // A full table evicts its oldest counter: the shared limit is the firewall's job, this one only stays bounded.
+      if (buckets.size >= MAX_BUCKETS) {
+        const oldest = buckets.keys().next().value;
+
+        if (oldest !== undefined) buckets.delete(oldest);
+      }
+    }
+
     bucket = { count: 0, until: now + WINDOW_MS };
     buckets.set(key, bucket);
   }
