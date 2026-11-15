@@ -2952,7 +2952,7 @@ type TimelineGameRow = z.infer<typeof TimelineGameRow>;
 type SeriesNaming = Pick<TimelineGameRow, "league_short" | "year" | "tab" | "tournament">;
 
 /** The series a game belongs to: one tab's match of one tournament page. */
-const seriesKey = (r: TimelineGameRow) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
+const seriesKey = (r: Pick<TimelineGameRow, "tournament_page" | "tab" | "match_n">) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
 
 /** "Worlds 2024 · finale" */
 const seriesLabel = (r: SeriesNaming) => [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · ");
@@ -3033,7 +3033,7 @@ const gameSources = (r: TimelineGameRow): Source[] => [
   { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) },
 ];
 
-const ROLE_ORDER = ["Top", "Jungle", "Mid", "Bot", "Support"];
+const ROLE_ORDER: readonly string[] = ROLES;
 
 const ScoreboardGameRow = z.object({
   patch: NullableText,
@@ -3469,8 +3469,6 @@ const SeriesBanRow = z.object({ game_id: z.number(), side: z.number(), champion:
 /** Series detailed with their games; the others of a long phase (Swiss rounds...) are listed with their score only. */
 const MAX_DETAILED_SERIES = 16;
 
-const seriesGameKey = (r: SeriesGameRow) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
-
 const DAY_SHORT = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 const gameSource = (r: SeriesGameRow): Source =>
@@ -3605,7 +3603,7 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
     const rows = z.array(SeriesGameRow).parse(sqlRows);
     const groups = new Map<string, SeriesGameRow[]>();
 
-    for (const r of rows) groups.set(seriesGameKey(r), [...(groups.get(seriesGameKey(r)) ?? []), r]);
+    for (const r of rows) groups.set(seriesKey(r), [...(groups.get(seriesKey(r)) ?? []), r]);
     const seriesGames = [...groups.values()];
     const detailedIds = seriesGames.slice(0, MAX_DETAILED_SERIES).flatMap((g) => g.map((r) => r.game_id));
     const draftOf = seriesDrafts(db, detailedIds);
