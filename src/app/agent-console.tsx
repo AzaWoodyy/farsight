@@ -63,7 +63,19 @@ export function AgentConsole() {
   const waiting = first != null && messages.length === 0 && !error && !loadFailed;
   const running = waiting || status === "submitted" || status === "streaming";
   const [modules, setModules] = useState<Modules | null>(null);
-  const preload = useCallback(() => void loadModules().then(setModules, () => setLoadFailed(true)), []);
+
+  const preload = useCallback(
+    () =>
+      void loadModules().then(
+        (loaded) => {
+          setModules(loaded);
+          // A later load (focus on the field after a failure) succeeded: the error no longer holds.
+          setLoadFailed(false);
+        },
+        () => setLoadFailed(true),
+      ),
+    [],
+  );
 
   useEffect(() => {
     const idle = () => ("requestIdleCallback" in window ? requestIdleCallback(preload) : setTimeout(preload, 200));

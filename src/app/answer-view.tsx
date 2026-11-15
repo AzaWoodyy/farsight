@@ -215,7 +215,9 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
         <tbody>
           {sorted.map((r) => (
             <Fragment key={`${r.event}-${r.team}`}>
-              <tr className="border-b border-dashed border-line align-top last:border-0 max-sm:border-0">
+              {/* The separator sits on top of each result: the phone-only champions row below it would otherwise
+                  stay the tbody's last child at every width and keep a border against the frame. */}
+              <tr className="border-t border-dashed border-line align-top first:border-0">
                 <td className="px-2 py-2 tabular-nums sm:px-3">{r.year}</td>
                 <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">{displayTeam(r.team)}</td>
                 <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">
@@ -233,11 +235,13 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
                 </td>
               </tr>
               {/* Phone width: the champions take a row of their own, the table's whole width. */}
-              <tr className="border-b border-dashed border-line last:border-0 sm:hidden">
-                <td colSpan={4} className="px-2 pb-2">
-                  <ResultChampions champions={r.champions} />
-                </td>
-              </tr>
+              {r.champions.length > 0 && (
+                <tr className="sm:hidden">
+                  <td colSpan={4} className="px-2 pb-2">
+                    <ResultChampions champions={r.champions} />
+                  </td>
+                </tr>
+              )}
             </Fragment>
           ))}
         </tbody>
@@ -249,9 +253,9 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
 const winRate = (r: ResultRow) => Math.round((100 * r.wins) / Math.max(1, r.wins + r.losses));
 
 /** The champions a player played in one result line: icon and games, the name in the alt text and tooltip. */
-function ResultChampions({ champions, className = "" }: { champions: ResultRow["champions"]; className?: string }) {
+function ResultChampions({ champions }: { champions: ResultRow["champions"] }) {
   return (
-    <ul className={`flex flex-wrap gap-1.5 ${className}`}>
+    <ul className="flex flex-wrap gap-1.5">
       {champions.map((c) => (
         <li key={c.name} title={`${c.name} : ${c.games} partie(s), ${c.wins} victoire(s)`} className="flex items-center gap-1">
           {c.imageUrl ? (
