@@ -10,7 +10,7 @@ import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 
 const SCHEMA = { v_games: ["game_id"] };
-const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }) };
+const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
 
 const team = (mention: string, name: string, members = [name]): ResolvedTeam => ({ mention, team: name, members });
 

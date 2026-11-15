@@ -317,7 +317,7 @@
         },
         "rowsMin": 12,
         "totals": {
-          "titles": 5
+          "titles": 6
         }
       }
     },
@@ -1259,6 +1259,27 @@
           "Donnée absente de la base",
           "pour la LPL",
           "solo kills"
+        ]
+      }
+    },
+    {
+      "id": "ingame-team-no-riot-data",
+      "question": "first blood de Ultra Prime",
+      "tags": [
+        "ingame",
+        "team",
+        "missing"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "teams": [
+          "Ultra Prime"
+        ],
+        "noFigure": true,
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "Ultra Prime",
+          "aucune pour la LPL"
         ]
       }
     },
@@ -2604,7 +2625,7 @@
           "yearTo": null
         },
         "totals": {
-          "events": 31
+          "events": 25
         },
         "notes": [
           "plusieurs noms de ligue"
@@ -2650,7 +2671,7 @@
           "yearTo": 2020
         },
         "totals": {
-          "events": 16
+          "events": 15
         },
         "notes": [
           "plusieurs noms de ligue"

@@ -12,7 +12,7 @@ import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 
 const SCHEMA = { v_games: ["game_id"] };
-const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }) };
+const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
 
 const scope = (league: LeagueName | null, leagueShort: string | null, year: number | null = null): Entities => ({
   players: [], teams: [], champion: null, unresolved: [], league, leagueShort, leagueMention: leagueShort, yearFrom: year, yearTo: year, split: null, outOfScope: null,
@@ -257,6 +257,41 @@ describe("tools on a seeded season", () => {
       expect(p.averages.find((a) => a.key === "gold_diff_15")).toMatchObject({ value: 100, counted: 3, signed: true });
       expect(out.facts).toContain("dégâts sur 3");
       expect(out.totals).toMatchObject({ picks: 4, kda: 2.78, top_player: "Caps", main_role: "Mid", gold_diff_15: 100 });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("champion presence counts every game of the scope, editions without the champion included", async () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+
+      // Playoffs of the same year and a 2024 season: two games each, Azir neither picked nor banned.
+      db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (2,'LEC25P','LEC25P','playoffs',?,2025),(3,'LEC24','LEC24','season',?,2024)").run(lec, lec);
+      db.exec(`
+        INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at)
+          VALUES (5,2,1,2,1,1800,500),(6,2,2,1,1,1800,600),(7,3,1,2,1,1800,50),(8,3,2,1,2,1800,60);
+        INSERT INTO game_players VALUES
+          (5,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(6,1,1,2,'Mid',2,0,1,1,1,10000,200,10000,10,NULL),
+          (7,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(8,1,1,2,'Mid',2,1,1,1,1,10000,200,10000,10,NULL);
+      `);
+
+      const season = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 } });
+
+      // 4 picks over the 6 games of 2025, not over the 4 of the only edition with Azir.
+      expect(season.totals).toMatchObject({ picks: 4, games: 6, events: 1 });
+      expect(season.facts).toContain("sur les 6 parties du périmètre (présence 67 %)");
+      // The table keeps one row per edition with the champion, at the edition's own presence.
+      expect(season.table!.rows).toEqual([[2025, "LEC25", 4, 4, 0, 100, "2-2", 50, "Caps ×3, Humanoid ×1"]]);
+
+      // No period: the 2024 season widens the scope beyond Azir's years, and the sentence says so.
+      const all = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+
+      expect(all.totals).toMatchObject({ games: 8 });
+      expect(all.facts).toContain("sur les 8 parties du périmètre, 2024–2025 (présence 50 %)");
     } finally {
       db.close();
     }

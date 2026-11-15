@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
-import { routeQuestion } from "../src/lib/agent/query";
+import { type Coverage, coverageLookup, routeQuestion } from "../src/lib/agent/query";
 import { bindTool, TOOLS } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer, ResolvedTeam } from "../src/lib/agent/types";
 import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
@@ -10,7 +10,7 @@ import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 
 const SCHEMA = { v_games: ["game_id"] };
-const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }) };
+const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
 
 const team = (mention: string, name: string, members = [name]): ResolvedTeam => ({ mention, team: name, members });
 const player = (name: string): ResolvedPlayer => ({ mention: name, player: name, matchedAlias: name, realName: null, nativeName: null, otherCandidates: [], ambiguity: null });
@@ -145,6 +145,43 @@ describe("one team and a roster word: its players by role, decided by the rules"
   });
 });
 
+describe("in-game statistics of one team: absent data is said", () => {
+  const UP = team("Ultra Prime", "Ultra Prime");
+  const stub = (team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage) => ({ ...COVERAGE, team });
+
+  test("a team with games but no Riot data at all (an LPL team): data absent", () => {
+    const route = routeQuestion("first blood de Ultra Prime", entities({ teams: [UP] }), SCHEMA, stub(() => ({ games: 362, ingame: 0 })));
+
+    expect(route).toMatchObject({ kind: "missing", coverage: true, concepts: ["les statistiques in-game (first blood) de Ultra Prime"] });
+  });
+
+  test("games in the scope asked but none with Riot data: data absent, with the competition named", () => {
+    const route = routeQuestion("first blood de T1 au MSI 2016", entities({ teams: [T1_NOW], ...MSI, ...year(2016) }), SCHEMA, stub((_, l) => (l ? { games: 12, ingame: 0 } : { games: 900, ingame: 600 })));
+
+    expect(route).toMatchObject({ kind: "missing", coverage: true, concepts: ["les statistiques in-game (first blood) de T1 en MSI"] });
+  });
+
+  test("no game in the scope asked but Riot data elsewhere: the tool, whose relaxations widen the scope", () => {
+    const members: string[][] = [];
+
+    const route = routeQuestion(
+      "first blood de T1 au MSI 2020",
+      entities({ teams: [T1_NOW], ...MSI, ...year(2020) }),
+      SCHEMA,
+      stub((m, l, from, to) => (members.push(m), l == null && from == null && to == null ? { games: 50, ingame: 40 } : { games: 0, ingame: 0 })),
+    );
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_ingame_stats", input: { team: "T1" } } });
+    expect(members).toEqual([["T1", "SK Telecom T1"], ["T1", "SK Telecom T1"]]);
+  });
+
+  test("a team with Riot data in the scope: the tool", () => {
+    const route = routeQuestion("first blood de T1 aux Worlds 2023", entities({ teams: [T1_NOW], ...league("World Championship", "Worlds"), ...year(2023) }), SCHEMA, stub(() => ({ games: 15, ingame: 15 })));
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_ingame_stats", input: { team: "T1", league: "World Championship", yearFrom: 2023, yearTo: 2023 } } });
+  });
+});
+
 /**
  * Samsung Ozone (Spring 2014) then Samsung White (Summer 2014, Worlds 2014): the same five, plus Homme (two
  * games at top) and Dade (mid, Spring only). Samsung Blue (another team) and a 2015 game must not count.
@@ -179,6 +216,29 @@ function seed(db: DatabaseSync) {
   line.run(5, 8, 3, "Bot", 1, 0);
   five(6, 2, [1, 2, 3, 4, 5], 1, 1);
 }
+
+describe("team coverage on a seeded database", () => {
+  test("every name of the franchise counts, and only games with Riot data count as in-game", () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const coverage = coverageLookup(db);
+      const names = ["Samsung Ozone", "Samsung White"];
+
+      expect(coverage.team(names, null, null, null)).toEqual({ games: 6, ingame: 0 });
+      expect(coverage.team(["Samsung White"], null, null, null)).toEqual({ games: 4, ingame: 0 });
+      expect(coverage.team(names, "World Championship", 2014, 2014)).toEqual({ games: 2, ingame: 0 });
+      expect(coverage.team(names, null, 2016, null)).toEqual({ games: 0, ingame: 0 });
+
+      db.exec("INSERT INTO game_riot VALUES (4,'k4','V5 data:W14_1',5,1,0),(1,'k1','V5 data:OGN14Sp_1',5,1,0)");
+      expect(coverage.team(names, null, null, null)).toEqual({ games: 6, ingame: 2 });
+      expect(coverage.team(names, "World Championship", 2014, 2014)).toEqual({ games: 2, ingame: 1 });
+    } finally {
+      db.close();
+    }
+  });
+});
 
 describe("roster of a team on a seeded database", () => {
   test("old names count for the team; each role lists its starter first, then the others, with games and tournaments", async () => {

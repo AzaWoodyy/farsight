@@ -101,7 +101,7 @@ test("router prioritizes timeline, missing coverage, unsupported data and tools"
     createSchema(db); createQuerySchema(db);
     const schema = readSchema(db);
     const base: Entities = { players:[],teams:[],champion:null,unresolved:[],league:"World Championship",leagueShort:"Worlds",leagueMention:"Worlds",yearFrom:2024,yearTo:2024,split:null,outOfScope:null };
-    const coverage = {league:()=>({games:100,ingame:0}),player:()=>({games:100,ingame:0})};
+    const coverage = {league:()=>({games:100,ingame:0}),player:()=>({games:100,ingame:0}),team:()=>({games:100,ingame:0})};
 
     for (const [q, entities, kind] of [
       ["palmarès Worlds 2024", base, "tool"],

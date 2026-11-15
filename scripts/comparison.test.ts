@@ -17,7 +17,7 @@ const entities = (players: ResolvedPlayer[], league: LeagueName | null = null, l
 });
 
 const SCHEMA = { v_games: ["game_id"], v_game_player_stats: ["penta_kills"] };
-const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }) };
+const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }), team: () => ({ games: 0, ingame: 0 }) };
 const LEC = ["LoL EMEA Championship", "LEC"] as const;
 
 const FAKER_CHOVY = entities([player("Faker"), player("Chovy")]);
@@ -170,6 +170,31 @@ test("two players who never met: the scope's statistics only, and a sentence say
     expect(out.versus!.global.rows.map((r) => r[out.versus!.global.columns.indexOf("avg_solo_kills")])).toEqual([0, 0]);
     expect(out.totals).toMatchObject({ h2h_games: 0, h2h_listed: 0, solo_kills_a: 0, solo_kills_b: 0 });
     expect(out.facts).toContain("Humanoid et Elyoya en LEC ne se sont jamais affrontés.");
+  } finally {
+    db.close();
+  }
+});
+
+test("the closing sentence on Riot data: partial coverage is said, no coverage at all reads n/d", async () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+
+    const run = async () => {
+      const tool = compare(db, "Caps", "Humanoid");
+
+      return (await tool.format(db, db.prepare(tool.sql).all(tool.params))).facts;
+    };
+
+    expect(await run()).toEndWith(" Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement.");
+
+    // No game of the scope has Riot data (an LPL comparison): nothing is computed "on the games with Riot data".
+    db.exec("DELETE FROM game_riot");
+    const facts = await run();
+
+    expect(facts).toEndWith(" Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre.");
+    expect(facts).not.toContain("données Riot seulement");
   } finally {
     db.close();
   }
