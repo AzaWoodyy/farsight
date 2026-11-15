@@ -99,6 +99,27 @@ export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "stale
   return problems;
 }
 
+/** A new release may lose a few games to wiki edits, not more. */
+export const MIN_GAMES_RATIO = 0.98;
+
+/** Counts that dropped too much since the previous release: a sign of a partial ingestion. */
+export function regressionProblems(counts: Manifest["counts"], previous: Manifest, opts: { allowIngameDrop: boolean }): string[] {
+  const problems: string[] = [];
+  const min = Math.floor(previous.counts.games * MIN_GAMES_RATIO);
+
+  if (counts.games < min)
+    problems.push(`${counts.games} games, previous release ${previous.tag} had ${previous.counts.games} (minimum ${min})`);
+
+  if (counts.leagues < previous.counts.leagues)
+    problems.push(`${counts.leagues} leagues, previous release ${previous.tag} had ${previous.counts.leagues}`);
+  const previousIngame = previous.counts.ingame_games ?? 0;
+
+  if (!opts.allowIngameDrop && (counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
+    problems.push(`${counts.ingame_games} games with in-game stats, previous release ${previous.tag} had ${previousIngame}`);
+
+  return problems;
+}
+
 /** Reads the version, journal mode and headline counts of a database, read-only. */
 export function readFacts(path: string): DbFacts {
   const db = new DatabaseSync(path, { readOnly: true });
