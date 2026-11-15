@@ -8,16 +8,17 @@
  *   bun run data:pull --force              replace a local file that is already usable
  *
  * Environment:
- *   DATA_GITHUB_TOKEN  read-only token on this repository (required to download)
+ *   DATA_GITHUB_TOKEN  optional GitHub token: the releases are public, a token only lifts the
+ *                      anonymous API quota (60 requests per hour and per IP)
  *   DATA_RELEASE       pinned release tag (same as --release)
  *   DATA_REPO          owner/name (default: the Vercel Git repository, then AzaWoodyy/farsight)
  *   DATA_GITHUB_API    API base URL (default https://api.github.com)
  *
  * Outside Vercel, a local database with the expected schema is kept as is (it
  * may be a fresh `data:build`), so `bun run build` works offline. On Vercel the
- * release is resolved when a token is set, and the download is skipped when
- * the local file already has the release's sha256. Without a token, only a
- * usable local file (a local `vercel build`) lets the build go on.
+ * release is resolved, and the download is skipped when the local file already
+ * has the release's sha256. A local `vercel build` without a token keeps a
+ * usable local file as is.
  */
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -66,18 +67,30 @@ type Release = z.infer<typeof Release>;
 
 type Asset = z.infer<typeof Asset>;
 
-const headers = (accept: string) => ({
-  Accept: accept,
-  Authorization: `Bearer ${token}`,
-  "X-GitHub-Api-Version": "2022-11-28",
-  "User-Agent": "farsight-data-pull",
-});
+/** Anonymous without a token: the releases of a public repository need none. */
+function headers(accept: string): Headers {
+  const result = new Headers({
+    Accept: accept,
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "farsight-data-pull",
+  });
+
+  if (token) result.set("Authorization", `Bearer ${token}`);
+
+  return result;
+}
 
 /** GitHub error body without anything from the request (no token in logs). */
 async function describe(res: Response): Promise<string> {
   const body = await res.text().catch(() => "");
   const message = z.object({ message: z.string() }).safeParse(body ? JSON.parse(body) : {});
-  const hint = res.status === 401 ? " (token invalid or expired)" : res.status === 404 ? " (not found, or the token cannot read this repository)" : "";
+  const quota = !token && (res.status === 403 || res.status === 429);
+
+  const hint =
+    res.status === 401 ? " (token invalid or expired)"
+    : res.status === 404 ? (token ? " (not found, or the token cannot read this repository)" : " (not found, or the repository is private: set DATA_GITHUB_TOKEN)")
+    : quota ? " (anonymous GitHub API quota: set DATA_GITHUB_TOKEN)"
+    : "";
 
   return `HTTP ${res.status}${message.success ? ` ${message.data.message}` : ""}${hint}`;
 }
@@ -248,8 +261,6 @@ async function main() {
 
     return;
   }
-
-  if (plan.kind === "fail") throw new PullError(plan.message);
 
   const { release, manifest } = await resolveRelease();
   log(`${pinned ? "pinned" : "latest"} release ${release.tag_name}: schema v${manifest.schema_version}, built ${manifest.created_at}`);

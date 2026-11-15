@@ -103,11 +103,14 @@ Le script `build` lance `bun run data:pull && next build`. `data:pull` :
 - hors Vercel, garde une base locale au bon schéma sans rien télécharger (elle
   peut venir d'un `data:build` plus récent). `--force` la remplace. Sans token,
   une base locale utilisable est aussi gardée avec `VERCEL=1` (cas d'un
-  `vercel build` local) ; sans base utilisable et sans token, il s'arrête et
-  propose `data:build`.
+  `vercel build` local) ; sans base utilisable, il télécharge la release.
 
-Le token n'est lu que depuis `DATA_GITHUB_TOKEN`, n'est jamais affiché, et
-n'est pas envoyé au stockage vers lequel GitHub redirige le téléchargement.
+Le dépôt est public : le téléchargement fonctionne sans token. Sans token,
+l'API GitHub est limitée à 60 requêtes par heure et par IP, et les machines de
+build Vercel partagent leurs IP : le projet Vercel garde donc un
+`DATA_GITHUB_TOKEN`. Il n'est lu que depuis cette variable, n'est jamais
+affiché, et n'est pas envoyé au stockage vers lequel GitHub redirige le
+téléchargement.
 
 `next.config.ts` garde un garde-fou : un build Vercel sans
 `data/lol.sqlite` échoue au lieu de déployer un agent sans données.
@@ -294,7 +297,7 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 
 | Variable | Rôle | Secret | Utilisée au | Environnements |
 |---|---|---|---|---|
-| `DATA_GITHUB_TOKEN` | télécharge la release de données (`data:pull`) | oui, Sensitive | build | Production, Preview |
+| `DATA_GITHUB_TOKEN` | lève le quota anonyme de l'API GitHub pour `data:pull` (facultatif, recommandé sur Vercel) | oui, Sensitive | build | Production, Preview |
 | `OPENROUTER_API_KEY` | clé OpenRouter dédiée et plafonnée ; absente, l'agent reste déterministe | oui, Sensitive | runtime | Production (Preview : voir plus bas) |
 | `OPENROUTER_MODEL` | modèle (défaut `anthropic/claude-haiku-5.5`) | non | runtime | facultatif |
 | `DATA_RELEASE` | épingle une release `data-*` (retour arrière) | non | build | facultatif |
@@ -323,10 +326,9 @@ seulement pour tester le LLM avant la production.
    (*Fine-grained token*) :
    - nom `lolesport-vercel-data`, propriétaire `AzaWoodyy` ;
    - expiration : un an au plus, noter la date de renouvellement ;
-   - **Repository access** → *Only select repositories* →
-     `AzaWoodyy/farsight`, et rien d'autre ;
-   - **Permissions** → *Repository permissions* → **Contents : Read-only**
-     (*Metadata : Read-only* s'ajoute tout seul). Aucune autre permission.
+   - **Repository access** → *Public repositories*, et rien d'autre ;
+   - aucune permission : le token ne sert qu'à identifier les appels pour le
+     quota de l'API, les releases étant publiques.
 2. **Vercel** : projet → **Settings** → **Environment Variables** → ajouter
    `DATA_GITHUB_TOKEN` avec ce token, environnements *Production* et
    *Preview*, case *Sensitive* cochée. Ne le mettre ni dans le dépôt, ni dans
@@ -339,7 +341,8 @@ seulement pour tester le LLM avant la production.
 4. **Vérifier** : `vercel deploy` (preview). Le log de build doit afficher
    `data:pull: installed … from data-YYYYMMDD`.
 
-Pour tester `data:pull` en local : `DATA_GITHUB_TOKEN=$(gh auth token) bun run data:pull --force`
+Pour tester `data:pull` en local : `bun run data:pull --force` (anonyme).
+Avec un token : `DATA_GITHUB_TOKEN=$(gh auth token) bun run data:pull --force`
 (le token reste dans la commande, pas dans un fichier).
 
 ### 0 bis. Secrets du workflow « Deploy »

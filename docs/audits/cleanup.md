@@ -33,7 +33,7 @@ Le contournement du LIMIT par commentaire ouvert est rejeté. Les avis exigent u
 
 CSP statique compatible avec le bootstrap Next (`unsafe-inline` nécessaire), frame-ancestors, nosniff, referrer et permissions ajoutés. Une CSP à nonces demanderait du rendu dynamique et est reportée. L’interface annonce OpenRouter/fournisseur du modèle. Secrets R2/GitHub limités aux étapes utiles, CLI Vercel épinglé au lockfile et jeton transmis par environnement.
 
-B2 (e-mail historique) reste une décision d’Enzo avant publication : aucune réécriture d’historique ni autre branche modifiée. Aucun changement des réglages OpenRouter, R2, Langfuse ou Vercel hors dépôt.
+B2 (e-mail historique) : décision d’Enzo du 15 novembre 2026, l’adresse reste dans l’historique, sans réécriture. Le rapport de sécurité est publié tel quel avec le dépôt ; sa mention « à ne pas pousser » valait tant que B1 et B2 étaient ouverts. Aucun changement des réglages OpenRouter, R2, Langfuse ou Vercel hors dépôt.
 
 ## Performance et identités
 

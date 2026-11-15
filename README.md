@@ -21,7 +21,7 @@ bun run data:pull
 bun run dev
 ```
 
-Le dépôt est actuellement privé : `data:pull` requiert un `DATA_GITHUB_TOKEN` en lecture seule sur les releases lorsqu’aucune base locale n’existe. Il vérifie le manifeste, le SHA-256, la version du schéma et le mode de journal SQLite. Une base locale utilisable est conservée ; `--force` la remplace. `DATA_RELEASE` épingle une release particulière.
+`data:pull` télécharge la base publiée dans les [releases](https://github.com/AzaWoodyy/farsight/releases) du dépôt, sans jeton. Un `DATA_GITHUB_TOKEN` sans aucune permission n’est utile que pour dépasser le quota anonyme de l’API GitHub (60 requêtes par heure et par IP). Il vérifie le manifeste, le SHA-256, la version du schéma et le mode de journal SQLite. Une base locale utilisable est conservée ; `--force` la remplace. `DATA_RELEASE` épingle une release particulière.
 
 Sans clé OpenRouter, les outils déterministes restent utilisables et le secours text-to-SQL est explicitement indisponible. Pour activer le modèle, renseigner `OPENROUTER_API_KEY` avec une clé plafonnée ; `OPENROUTER_MODEL` peut remplacer le modèle par défaut. Les valeurs restent exclusivement dans `.env` et ne doivent pas être commitées.
 
@@ -65,5 +65,11 @@ La couverture dépend de Leaguepedia et n’est pas exhaustive ni en temps réel
 Les questions peuvent être envoyées à OpenRouter et au fournisseur du modèle, et, si activé, à Langfuse. Le traçage masque certaines données personnelles courantes ; il ne faut pas saisir de renseignements sensibles. Aucun identifiant de visiteur ni IP n’est envoyé dans une trace. Les avis portent une signature expirante ; les compteurs de débit dans le code sont par instance et complètent les règles du pare-feu Vercel.
 
 Les contrôles de taille gardent la base sous 190 Mo et la fonction sous 250 Mo non compressés. Les quotas Hobby et le plafond de clé peuvent rendre le modèle temporairement indisponible. Les synthèses chiffrées sont conservatrices : une reformulation qui ne préserve pas le texte des faits est remplacée par la phrase déterministe.
+
+## Licence
+
+Le code est sous licence [MIT](LICENSE). La base, les releases de données et les fixtures dérivées de Leaguepedia restent sous [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), avec attribution à Leaguepedia. Les noms et icônes de League of Legends appartiennent à Riot Games et ne sont pas couverts par ces licences.
+
+## Audits
 
 Les [audits](docs/audits/) et le [bilan des décisions](docs/audits/cleanup.md) consignent les correctifs, exclusions et vérifications. Le regroupement physique des objets par joueur reste une optimisation de taille possible, hors de ce nettoyage.
