@@ -99,24 +99,26 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
       </section>
     );
 
+  // Header and meta stay outside the summary: a link inside a summary (a button) is unreliable for assistive
+  // technology, so only the games line folds the series.
   return (
-    <details open={open} className="group border border-line">
-      <summary className="cursor-pointer list-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-        {header}
-        {meta}
-        <span className="block border-t border-dashed border-line px-3 py-1.5 text-[11px] text-muted">
+    <section aria-label={`${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`} className="border border-line">
+      {header}
+      {meta}
+      <details open={open} className="group">
+        <summary className="block cursor-pointer list-none border-t border-dashed border-line px-3 py-1.5 text-[11px] text-muted pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
           <span aria-hidden className="inline-block w-3 group-open:rotate-90">
             ›
           </span>
           {s.games.length} game{s.games.length > 1 ? "s" : ""} · picks, bans et durée
-        </span>
-      </summary>
-      <ol className="border-t border-line">
-        {s.games.map((g, i) => (
-          <GameRow key={`${g.n}-${g.playedAt}-${i}`} g={g} s={s} before={s.games!.slice(0, i)} />
-        ))}
-      </ol>
-    </details>
+        </summary>
+        <ol className="border-t border-line">
+          {s.games.map((g, i) => (
+            <GameRow key={`${g.n}-${g.playedAt}-${i}`} g={g} s={s} before={s.games!.slice(0, i)} />
+          ))}
+        </ol>
+      </details>
+    </section>
   );
 }
 

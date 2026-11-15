@@ -207,6 +207,11 @@ export function AgentConsole() {
       {/* At least a screen tall: the footer stays below the fold instead of sliding under the growing answer. */}
       {askedText && (
         <div className="mt-8 min-h-svh">
+          {/* Mounted as long as the question is shown: a live region only announces changes to an element already
+              there, so the end of the run (answer ready, or nothing) is heard too. Hidden, so it never moves the page. */}
+          <p role="status" className="sr-only">
+            {running ? progressLabel(steps) : answer ? `Réponse prête : ${answer.title}` : ""}
+          </p>
           {/* A long question takes the whole line and pushes the button under it, instead of a narrow column. */}
           <div className="flex flex-wrap items-start justify-between gap-x-4">
             <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
@@ -277,19 +282,23 @@ function Spinner() {
   );
 }
 
-/** The one line shown while the agent works, read from the step that is running. */
-function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
+/** What the agent is doing, read from the step that is running. */
+function progressLabel(steps: Map<StepName, StepPart>): string {
   // The latest step started; once it is done and before the next one streams, the next one is what comes.
   const lastIndex = STEPS.findLastIndex((name) => steps.has(name));
   const last = lastIndex < 0 ? undefined : STEPS[lastIndex];
   const current = last && steps.get(last)?.state === "done" ? (STEPS[lastIndex + 1] ?? last) : last;
   const retrying = current === "execute" && steps.get("execute")?.entries.some((e) => e.status === "fix");
-  const label = !current ? "Je lis ta question…" : retrying ? "Je réessaie autrement…" : PROGRESS[current];
 
+  return !current ? "Je lis ta question…" : retrying ? "Je réessaie autrement…" : PROGRESS[current];
+}
+
+/** The one line shown while the agent works. Screen readers hear it from the status region of the console. */
+function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   return (
     <p className="mt-6 flex items-center gap-2 text-sm">
       <Spinner />
-      <span role="status">{label}</span>
+      <span>{progressLabel(steps)}</span>
     </p>
   );
 }
@@ -355,30 +364,39 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                 <span className="min-w-0">{interrupted ? "interrompue" : part.title}</span>
               </div>
               <ul className="mt-1 ml-[4.5rem] space-y-0.5 border-l border-line pl-3">
-                {part.entries.map((e, j) => (
-                  <li key={`${e.at}-${j}`}>
-                    <details className="group">
-                      <summary className="flex min-h-6 cursor-pointer list-none items-center gap-2 marker:hidden pointer-coarse:min-h-11">
-                        <span className={`${STATUS[e.status].cls} w-5 shrink-0`}>{STATUS[e.status].mark}</span>
-                        <span className="min-w-0">
-                          {e.title}
-                          {e.level && (
-                            <span className="ml-2 text-muted">
-                              [{e.level}
-                              {e.confidence != null && ` ${e.confidence.toFixed(2)}`}]
-                            </span>
-                          )}
-                          {e.detail && <span className="ml-2 text-muted group-open:hidden">[+]</span>}
-                        </span>
-                      </summary>
-                      {e.detail && (
-                        <pre className="mt-1 mb-2 ml-7 overflow-x-auto text-xs leading-relaxed text-muted">
-                          {e.detail}
-                        </pre>
+                {part.entries.map((e, j) => {
+                  const line = (
+                    <>
+                      <span className={`${STATUS[e.status].cls} w-5 shrink-0`}>{STATUS[e.status].mark}</span>
+                      <span className="min-w-0">
+                        {e.title}
+                        {e.level && (
+                          <span className="ml-2 text-muted">
+                            [{e.level}
+                            {e.confidence != null && ` ${e.confidence.toFixed(2)}`}]
+                          </span>
+                        )}
+                        {e.detail && <span className="ml-2 text-muted group-open:hidden">[+]</span>}
+                      </span>
+                    </>
+                  );
+
+                  // Only an entry with a detail is a disclosure; the others are plain rows, skipped by Tab.
+                  return (
+                    <li key={`${e.at}-${j}`}>
+                      {e.detail ? (
+                        <details className="group">
+                          <summary className="flex min-h-6 cursor-pointer list-none items-center gap-2 marker:hidden pointer-coarse:min-h-11">
+                            {line}
+                          </summary>
+                          <pre className="mt-1 mb-2 ml-7 overflow-x-auto text-xs leading-relaxed text-muted">{e.detail}</pre>
+                        </details>
+                      ) : (
+                        <div className="flex min-h-6 items-center gap-2">{line}</div>
                       )}
-                    </details>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </li>
           );
