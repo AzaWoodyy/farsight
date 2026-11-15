@@ -161,7 +161,7 @@ describe("a champion's most built items", () => {
       leagueMention: "Worlds", yearFrom: 2026, yearTo: 2026, split: null, outOfScope: null,
     };
 
-    const coverage = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }) };
+    const coverage = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
 
     for (const q of ["Items de Yunara aux Worlds 2026", "build Yunara worlds 2026", "yunara worlds 2026"])
       expect(routeQuestion(q, e, { v_games: ["game_id"] }, coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });

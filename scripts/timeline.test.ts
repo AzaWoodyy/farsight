@@ -299,7 +299,7 @@ const entities = (over: Partial<Entities>): Entities => ({
 });
 
 const SCHEMA = { v_games: ["game_id", "game_n", "blue_dragons"], v_game_player_stats: ["penta_kills"] };
-const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }) };
+const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }), team: () => ({ games: 0, ingame: 0 }) };
 
 test("timeline questions route to game_timeline before the in-game statistics", () => {
   const worlds = { league: "World Championship" as const, leagueShort: "Worlds", yearFrom: 2024, yearTo: 2024 };

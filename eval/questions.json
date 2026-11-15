@@ -1263,6 +1263,27 @@
       }
     },
     {
+      "id": "ingame-team-no-riot-data",
+      "question": "first blood de Ultra Prime",
+      "tags": [
+        "ingame",
+        "team",
+        "missing"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "teams": [
+          "Ultra Prime"
+        ],
+        "noFigure": true,
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "Ultra Prime",
+          "aucune pour la LPL"
+        ]
+      }
+    },
+    {
       "id": "ingame-lpl-ruler-pentakills",
       "question": "pentakills de Ruler en LPL",
       "tags": [
