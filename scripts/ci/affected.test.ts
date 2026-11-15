@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { affected, attribution, CHECKS, CODE_CHECKS } from "./affected";
+import { affected, attribution, CHECKS, CODE_CHECKS, withSnapshotSchema } from "./affected";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
@@ -38,4 +38,14 @@ test("the attribution guard targets credits, while technical model names remain 
   expect(attribution.test("Co-Authored-By: Claude <noreply@anthropic.com>")).toBe(true);
   expect(attribution.test("Generated with Codex")).toBe(true);
   expect(attribution.test("Support OpenRouter and Claude models")).toBe(false);
+});
+
+test("a snapshot of another schema version rebuilds the database for the checks that open it", () => {
+  const app = affected(["src/lib/agent/query.ts"]);
+
+  expect(withSnapshotSchema(app, 6, 6).has("database")).toBe(false);
+  expect(withSnapshotSchema(app, 5, 6).has("database")).toBe(true);
+  // Lint and tests alone never open the pinned database.
+  expect(sorted(withSnapshotSchema(affected(["scripts/roster.test.ts"]), 5, 6))).toEqual(["lint", "test", "typecheck"]);
+  expect(sorted(withSnapshotSchema(affected(["README.md"]), 5, 6))).toEqual([]);
 });

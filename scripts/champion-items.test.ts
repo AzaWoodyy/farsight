@@ -26,6 +26,10 @@ describe("item kinds from Data Dragon", () => {
     "2055": { tags: ["Consumable", "Lane", "Vision"], gold: { total: 75, purchasable: true } },
     "3363": { tags: ["Active", "Trinket", "Vision"], gold: { total: 0, purchasable: true } },
     "4638": { tags: ["Health", "Vision"], into: ["4643"], gold: { total: 1100, purchasable: true } },
+    // Relic Shield → Targon's Buckler → Bulwark of the Mountain (13.24.1): only the last stage is completed.
+    "3858": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: true } },
+    "3859": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: false }, specialRecipe: 3858 },
+    "3860": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: false }, specialRecipe: 3859 },
     "1001": { tags: ["Boots"], into: ["3047"], gold: { total: 300, purchasable: true } },
     "3047": { tags: ["Armor", "Boots"], into: ["3174"], from: ["1001"], depth: 2, gold: { total: 1200, purchasable: true } },
   } satisfies Record<string, ItemMeta>;
@@ -48,6 +52,9 @@ describe("item kinds from Data Dragon", () => {
     ["3363", "consumable"],
     // Watchful Wardstone: Data Dragon marks it `consumed`, it is a component of the Vigilant Wardstone.
     ["4638", "component"],
+    ["3858", "starter"],
+    ["3859", "starter"],
+    ["3860", "complete"],
     ["1001", "boots"],
     ["3047", "boots"],
   ] as const)("%s → %s", (id, kind) => expect(itemKinds(catalog)[id]).toBe(kind));

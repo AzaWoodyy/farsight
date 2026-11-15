@@ -32,4 +32,15 @@ export function affected(paths: string[]): Set<Check> {
   return selected;
 }
 
+/**
+ * The pinned snapshot holds the database of its schema version. While the code expects another one (a schema change
+ * merged before the snapshot is re-pinned to a release of the new schema), every check that opens the database
+ * rebuilds it offline from the snapshot's raw data.
+ */
+export function withSnapshotSchema(selected: Set<Check>, snapshotSchema: number, codeSchema: number): Set<Check> {
+  if (snapshotSchema === codeSchema || !(selected.has("eval") || selected.has("build"))) return selected;
+
+  return new Set([...selected, "database"]);
+}
+
 export const attribution = /co-authored-by:.*(?:claude|anthropic|copilot|cursor|codex|openai|chatgpt|gemini|devin|aider)|generated (?:with|by).*(?:claude|copilot|cursor|codex|chatgpt|openai|gemini|\bAI\b)|noreply@anthropic\.com|claude\.com\/claude-code/i;

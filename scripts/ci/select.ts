@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { affected, attribution, CHECKS } from "./affected";
+import { SCHEMA_VERSION } from "../../src/lib/db/schema";
+import { affected, attribution, CHECKS, withSnapshotSchema } from "./affected";
 
 const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, "utf8"));
 let selected = new Set(CHECKS);
@@ -22,6 +23,12 @@ if (event.pull_request) {
   const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${event.before}..${event.after}`], { encoding: "utf8" }).split("\0").filter(Boolean);
   selected = affected(paths);
 }
+
+const snapshotSchema = Number(JSON.parse(readFileSync("ci/data.json", "utf8")).schemaVersion);
+
+selected = withSnapshotSchema(selected, snapshotSchema, SCHEMA_VERSION);
+
+if (snapshotSchema !== SCHEMA_VERSION) console.log(`CI snapshot is schema v${snapshotSchema}, the code expects v${SCHEMA_VERSION}: database checks rebuild it offline.`);
 
 for (const check of CHECKS) appendFileSync(process.env.GITHUB_OUTPUT!, `${check}=${selected.has(check)}\n`);
 

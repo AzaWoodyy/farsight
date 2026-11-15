@@ -256,7 +256,9 @@ items retirés gardent un `kind` NULL, et ceux du dernier patch sont classés.
 Comme pour la v5, `data:pull` ne prend que les releases v6. Une fois le code
 sur `main`, lancer **Data release** une fois avant le premier déploiement v6.
 Le workflow ne restaure pas les résumés in-game d'une release v5 : il les
-relit sur R2 (environ 6 min).
+relit sur R2 (environ 6 min). Jusqu'à ce que `ci/data.json` épingle une
+release v6, la CI reconstruit la base depuis `ci/raw.tar.zst` à chaque
+exécution qui l'ouvre (voir `ci/README.md`).
 
 ### Première release v5
 

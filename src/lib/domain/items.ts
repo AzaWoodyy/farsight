@@ -27,6 +27,8 @@ export const ItemMeta = z.object({
   from: Ids.optional(),
   depth: z.number().optional(),
   gold: z.object({ total: z.number().optional(), purchasable: z.boolean().optional() }).optional(),
+  /** A transformation (Muramana, a support item's next stage): the id of the item it comes from. */
+  specialRecipe: z.union([z.number(), z.string()]).optional(),
   /** Ornn's upgrades: built by an ally, never bought. */
   requiredAlly: z.string().nullable().optional(),
   /** Summoner's Rift (map 11): the same name can have an ARAM or Arena entry with another recipe. */
@@ -37,9 +39,9 @@ export type ItemMeta = z.infer<typeof ItemMeta>;
 
 /** The subset of an `item.json` entry stored for older patches. */
 export function itemMeta(item: ItemMeta): ItemMeta {
-  const { tags, into, from, depth, gold, requiredAlly, maps } = item;
+  const { tags, into, from, depth, gold, specialRecipe, requiredAlly, maps } = item;
 
-  return { tags, into, from, depth, gold: gold && { total: gold.total, purchasable: gold.purchasable }, requiredAlly, maps: maps && { 11: maps["11"] === true } };
+  return { tags, into, from, depth, gold: gold && { total: gold.total, purchasable: gold.purchasable }, specialRecipe, requiredAlly, maps: maps && { 11: maps["11"] === true } };
 }
 
 /** Starter items cost at most this much (Doran's items, Cull, Dark Seal, jungle pets, support items). */
@@ -51,8 +53,9 @@ const COMPLETE_MIN_GOLD = 1000;
 /**
  * The kind of every item of one patch's `item.json`. Consumables and trinkets first, then boots
  * (every tier), then the items nothing buyable builds from (completed: an Ornn upgrade or an
- * unpurchasable transformation does not count), then cheap items bought at the start, the rest
- * being components.
+ * unpurchasable transformation does not count), among them the last stage of a transformation
+ * chain whatever its price (Bulwark of the Mountain after Relic Shield and Targon's Buckler), then
+ * cheap items bought at the start, the rest being components.
  */
 export function itemKinds(catalog: Record<string, ItemMeta>): Record<string, ItemKind> {
   const buyable = (id: string) => {
@@ -61,6 +64,9 @@ export function itemKinds(catalog: Record<string, ItemMeta>): Record<string, Ite
     // A target missing from the patch still counts: the item builds into something.
     return !target || (target.gold?.purchasable !== false && !target.requiredAlly);
   };
+
+  // Items another one transforms from: a support item's first and middle stages.
+  const transformed = new Set(Object.values(catalog).flatMap((item) => (item.specialRecipe == null ? [] : [String(item.specialRecipe)])));
 
   return Object.fromEntries(
     Object.entries(catalog).map(([id, item]) => {
@@ -71,7 +77,7 @@ export function itemKinds(catalog: Record<string, ItemMeta>): Record<string, Ite
 
       if (tags.has("Consumable") || tags.has("Trinket")) kind = "consumable";
       else if (tags.has("Boots")) kind = "boots";
-      else if (builds === 0 && ((item.depth ?? 1) >= 2 || total >= COMPLETE_MIN_GOLD)) kind = "complete";
+      else if (builds === 0 && ((item.depth ?? 1) >= 2 || total >= COMPLETE_MIN_GOLD || (item.specialRecipe != null && !transformed.has(id)))) kind = "complete";
       // Long Sword is a "Lane" item too: a lane starter builds into one item at most (Dark Seal into Mejai's).
       else if (!item.from?.length && total <= STARTER_MAX_GOLD && (tags.has("Jungle") || tags.has("GoldPer") || (tags.has("Lane") && builds <= 1))) kind = "starter";
       else kind = "component";

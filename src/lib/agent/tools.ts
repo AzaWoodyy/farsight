@@ -1428,9 +1428,6 @@ const roundTo = (n: number | null, digits: number) => (n == null ? null : Math.r
 export const frNumber = (n: number | null, signedValue = false) =>
   n == null ? "n/d" : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { maximumFractionDigits: 2 }).replace(/[\u202f\u00a0]/g, " ")}`;
 
-/** At most this many items per champion reach the browser: the long tail is one-off components. */
-const CHAMPION_ITEMS_MAX = 60;
-
 /** Since 2026, a bot laner's boots sit in the role quest slot (Riot `roleBoundItem`), which Leaguepedia's Items field leaves out. */
 const BOT_BOOTS_SLOT_YEAR = 2026;
 
@@ -1451,7 +1448,7 @@ function championItems(db: DatabaseSync, input: ChampionStatsInput, picks: numbe
     `SELECT pi.item, pi.icon_url AS icon, pi.kind, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
      FROM v_game_players gp JOIN v_player_items pi ON ${owned}
      WHERE ${where}
-     GROUP BY pi.item ORDER BY games DESC, pi.item LIMIT ${CHAMPION_ITEMS_MAX}`,
+     GROUP BY pi.item ORDER BY games DESC, pi.item`,
     params,
   );
 
