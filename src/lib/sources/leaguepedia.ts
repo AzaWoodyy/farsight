@@ -84,7 +84,20 @@ export const cargoStats = { requests: 0, cached: 0, bytes: 0 };
 
 let lastRequestAt = 0;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The network and the clock of this module, replaceable in tests. Production code never reassigns them. */
+export const transport = {
+  fetch: (url: string, init: RequestInit): Promise<Response> => fetch(url, init),
+  sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)),
+  now: (): number => Date.now(),
+};
+
+/** Test-only: forgets the last request time and zeroes `cargoStats`. */
+export function resetThrottle(): void {
+  lastRequestAt = 0;
+  cargoStats.requests = 0;
+  cargoStats.cached = 0;
+  cargoStats.bytes = 0;
+}
 
 async function fetchPage(
   q: CargoQuery,
@@ -138,17 +151,17 @@ async function fetchPage(
  */
 async function politeGet<T>(url: string, parse: (text: string) => T | null): Promise<T> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const wait = lastRequestAt + DELAY_MS - Date.now();
+    const wait = lastRequestAt + DELAY_MS - transport.now();
 
-    if (wait > 0) await sleep(wait);
-    lastRequestAt = Date.now();
+    if (wait > 0) await transport.sleep(wait);
+    lastRequestAt = transport.now();
     cargoStats.requests++;
 
     let status = "network error";
     let retryAfter = 0;
 
     try {
-      const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+      const res = await transport.fetch(url, { headers: { "User-Agent": USER_AGENT } });
       const text = await res.text();
       cargoStats.bytes += text.length;
       retryAfter = Number(res.headers.get("retry-after")) || 0;
@@ -166,7 +179,7 @@ async function politeGet<T>(url: string, parse: (text: string) => T | null): Pro
 
     const backoff = Math.max(DELAY_MS * 2 ** (attempt + 1), retryAfter * 1000);
     console.warn(`  leaguepedia: ${status}, retrying in ${Math.round(backoff / 1000)}s`);
-    await sleep(backoff);
+    await transport.sleep(backoff);
   }
 
   throw new Error(`Leaguepedia request failed after retries: ${url}`);
