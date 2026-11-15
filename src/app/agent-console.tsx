@@ -13,8 +13,14 @@ type Modules = { chat: typeof import("./chat-engine"); views: typeof import("./a
 
 let loading: Promise<Modules> | null = null;
 
+// A failed load (connection lost) is forgotten, so the next question tries again.
 const loadModules = () =>
-  (loading ??= Promise.all([import("./chat-engine"), import("./answer-view")]).then(([chat, views]) => ({ chat, views })));
+  (loading ??= Promise.all([import("./chat-engine"), import("./answer-view")])
+    .then(([chat, views]) => ({ chat, views }))
+    .catch(() => {
+      loading = null;
+      throw new Error("chat modules failed to load");
+    }));
 
 const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
@@ -52,10 +58,12 @@ export function AgentConsole() {
   const [first, setFirst] = useState<{ text: string; sessionId: string } | null>(null);
   const [{ messages, status, error }, setChatState] = useState<ChatState>(IDLE);
   const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
-  const waiting = first != null && messages.length === 0 && !error;
+  // The chat could not load: the question waits for nothing, say so (asking again retries).
+  const [loadFailed, setLoadFailed] = useState(false);
+  const waiting = first != null && messages.length === 0 && !error && !loadFailed;
   const running = waiting || status === "submitted" || status === "streaming";
   const [modules, setModules] = useState<Modules | null>(null);
-  const preload = useCallback(() => void loadModules().then(setModules), []);
+  const preload = useCallback(() => void loadModules().then(setModules, () => setLoadFailed(true)), []);
 
   useEffect(() => {
     const idle = () => ("requestIdleCallback" in window ? requestIdleCallback(preload) : setTimeout(preload, 200));
@@ -71,6 +79,7 @@ export function AgentConsole() {
 
     if (!text) return;
 
+    setLoadFailed(false);
     preload();
     setQuestion("");
     sessionId.current ??= crypto.randomUUID();
@@ -85,6 +94,7 @@ export function AgentConsole() {
     // The chat unmounts with `first`: its last state would otherwise stay on screen.
     setFirst(null);
     setChatState(IDLE);
+    setLoadFailed(false);
     setQuestion("");
     sessionId.current = null;
   }
@@ -103,7 +113,7 @@ export function AgentConsole() {
     if (part.type === "data-trace") trace = part.data;
   }
 
-  const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : waiting ? first.text : undefined;
+  const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : first && messages.length === 0 ? first.text : undefined;
 
   return (
     <section>
@@ -208,6 +218,20 @@ export function AgentConsole() {
             <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
             </p>
+          )}
+          {loadFailed && first && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 text-sm">
+              <p role="alert" className="text-error">
+                <span aria-hidden>xx</span> Chargement impossible : vérifie ta connexion, puis réessaie.
+              </p>
+              <button
+                type="button"
+                onClick={() => ask(first.text)}
+                className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
+              >
+                Réessayer
+              </button>
+            </div>
           )}
           {/* The chat and the views load together: an answer always has its views. */}
           {answer && modules && <modules.views.AnswerView answer={answer} onAsk={ask} />}
