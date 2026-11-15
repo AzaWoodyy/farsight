@@ -10,10 +10,11 @@
  *
  * `decide()` runs them in order and stops at the first result whose
  * confidence reaches the threshold. A decider that is unavailable (no key, no
- * model) or fails returns null and the cascade moves on. When nobody reaches
+ * model) or fails returns null and the cascade moves on, except when the
+ * request itself was cancelled: that error is rethrown. When nobody reaches
  * the threshold, the most confident result wins.
  */
-import { describeLlmError } from "./llm";
+import { describeLlmError, requestAborted } from "./llm";
 
 export type DecisionLevel = "rules" | "model" | "llm";
 
@@ -55,6 +56,8 @@ export async function decide<I, O>(
     try {
       decision = await d.run(input);
     } catch (err) {
+      // A cancelled request is not a failed decider: stop the cascade and the pipeline.
+      if (requestAborted()) throw err;
       const error = err instanceof Error ? err : new Error(String(err));
       attempts.push({ name: d.name, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
       continue;
