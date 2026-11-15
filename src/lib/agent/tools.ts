@@ -172,6 +172,21 @@ export const PlayerLeaderboardInput = z.object({
 
 export type PlayerLeaderboardInput = z.infer<typeof PlayerLeaderboardInput>;
 
+export const TEAM_CRITERIA = ["winrate", "wins", "games", "kills", "gpm"] as const;
+
+export type TeamCriterion = (typeof TEAM_CRITERIA)[number];
+
+export const TeamLeaderboardInput = z.object({
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+  criterion: z
+    .enum(TEAM_CRITERIA)
+    .describe("What 'best' means: winrate (default), wins (most wins), games (most games), kills (kills per game), gpm (team gold per minute)"),
+  minGames: z.number().int().min(1).max(200).nullable().describe("Minimum games to be ranked, null for the default"),
+});
+
+export type TeamLeaderboardInput = z.infer<typeof TeamLeaderboardInput>;
+
 export const StandingsInput = z.object({
   league: League,
   ...Period,
@@ -2791,6 +2806,144 @@ LIMIT 20`),
   normalize: (_db, input) => ({ ...input, minGames: input.minGames != null && input.minGames >= 3 ? input.minGames : null }),
 };
 
+// 7c. Teams ranked on an end-of-game criterion --------------------------------------------
+
+export const TEAM_CRITERION_DEFS: Record<TeamCriterion, CriterionDef> = {
+  winrate: { label: "% victoires", definition: "victoires / parties", sql: "ROUND(100.0 * SUM(b.win) / COUNT(*), 1)", unit: " %" },
+  wins: { label: "victoires", definition: "nombre de victoires", sql: "SUM(b.win)", total: true },
+  games: { label: "parties", definition: "nombre de parties jouées", sql: "COUNT(*)", total: true },
+  kills: { label: "kills / partie", definition: "kills de l'équipe par partie", sql: "ROUND(AVG(b.kills), 1)" },
+  gpm: { label: "or/min", definition: "or de l'équipe par minute", sql: perMinute("gold", 0) },
+};
+
+/** Every criterion but the counts is a column of the table, the ranking one first. */
+const TEAM_LEADERBOARD_COLUMNS: TeamCriterion[] = ["winrate", "kills", "gpm"];
+
+const TeamLeaderRow = z.object({ team: Text, games: z.number(), wins: z.number() }).catchall(z.number().nullable());
+
+/** As for players: 5 games in one international event, 10 in one league season, else 20; none for a count. */
+export function minGamesOfTeamLeaderboard(input: TeamLeaderboardInput): number {
+  if (input.minGames != null) return input.minGames;
+
+  if (TEAM_CRITERION_DEFS[input.criterion].total) return 1;
+
+  const oneSeason = input.yearFrom != null && input.yearFrom === input.yearTo;
+
+  if (input.league && oneSeason) return isInternational(input.league) ? 5 : 10;
+
+  return 20;
+}
+
+const teamLeaderboard: ToolDef<TeamLeaderboardInput> = {
+  name: "team_leaderboard",
+  label: "classement d'équipes",
+  description:
+    "Ranks the teams of a competition and period on an end-of-game criterion: win rate (default for 'best'), wins, games, kills per game, " +
+    "gold per minute. A renamed team counts once (SK Telecom T1 and T1). A minimum of games applies to rates and averages. " +
+    "Use it for 'meilleur winrate d'équipe en LCK 2024', 'équipes avec le plus de victoires aux Worlds', 'which team has the most kills'. " +
+    "For a competition's winners use tournament_standings; for in-game metrics (first dragon, gold difference at 15) use ingame_leaderboard.",
+  plan: (db, input) => {
+    const params: Params = {};
+
+    Object.assign(params, { minGames: minGamesOfTeamLeaderboard(input) });
+    const order = TEAM_CRITERION_DEFS[input.criterion].sql;
+    const stats = [...new Set<TeamCriterion>([input.criterion, ...TEAM_LEADERBOARD_COLUMNS])];
+    const scope = rankingScope(input, params, "g");
+    const name = franchiseName(db, "s.team", params);
+
+    return {
+      params,
+      sql: tidy(`WITH g AS (
+  SELECT g.game_id, g.blue_team, g.red_team, g.winner, g.length_s, g.played_at FROM v_games g WHERE ${scope}
+),
+sides AS (
+  SELECT g.game_id, g.blue_team AS team, CASE WHEN g.winner = g.blue_team THEN 1 ELSE 0 END AS win, g.length_s, g.played_at FROM g
+  UNION ALL
+  SELECT g.game_id, g.red_team AS team, CASE WHEN g.winner = g.red_team THEN 1 ELSE 0 END AS win, g.length_s, g.played_at FROM g
+),
+totals AS (
+  SELECT p.game_id, p.team, SUM(p.kills) AS kills, SUM(p.gold) AS gold FROM v_game_players p
+  WHERE p.game_id IN (SELECT game_id FROM g) GROUP BY p.game_id, p.team
+),
+b AS (
+  SELECT ${name} AS team, s.win, s.length_s, s.played_at, t.kills, t.gold
+  FROM sides s LEFT JOIN totals t ON t.game_id = s.game_id AND t.team = s.team
+  WHERE s.team IS NOT NULL
+)
+SELECT b.team, MAX(b.played_at) AS last_game, COUNT(*) AS games, SUM(b.win) AS wins,
+       ${stats.map((c) => `${TEAM_CRITERION_DEFS[c].sql} AS ${c}`).join(",\n       ")}
+FROM b
+GROUP BY b.team
+HAVING COUNT(*) >= :minGames AND ${order} IS NOT NULL
+ORDER BY ${input.criterion} DESC, games DESC, b.team
+LIMIT 20`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (input.minGames == null && minGamesOfTeamLeaderboard(input) > 3)
+      out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par équipe dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(TeamLeaderRow).parse(sqlRows);
+    const league = leagueShortName(db, input.league);
+    const scope = scopeLabel(league, input);
+    const def = TEAM_CRITERION_DEFS[input.criterion];
+    const minGames = minGamesOfTeamLeaderboard(input);
+    // Games and wins are already in their own columns ("Parties", "V-D").
+    const columns = [...new Set<TeamCriterion>([input.criterion, ...TEAM_LEADERBOARD_COLUMNS])].filter((c) => c !== "games" && c !== "wins");
+    const value = (r: z.infer<typeof TeamLeaderRow>, c: TeamCriterion) => (c === "games" ? r.games : c === "wins" ? r.wins : (r[c] ?? null));
+    const params: Params = {};
+
+    const pages = selectAll(
+      db,
+      z.object({ event_page: Text }),
+      `SELECT DISTINCT g.event_page FROM v_games g WHERE ${rankingScope(input, params, "g")} ORDER BY g.played_at DESC LIMIT 12`,
+      params,
+    ).map((r) => r.event_page);
+
+    const gameParams: Params = {};
+    const ongoing = inProgressNote(db, rankingScope(input, gameParams, "g"), gameParams);
+
+    const line = (r: z.infer<typeof TeamLeaderRow>, i: number) =>
+      `${i + 1}. ${displayTeam(r.team)} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`;
+
+    const facts =
+      `${def.total ? `Équipes avec le plus de ${def.label}` : "Meilleures équipes"} ${scope || "toutes compétitions"} selon le critère ${def.label} (${def.definition})` +
+      `${minGames > 1 ? `, minimum ${minGames} parties` : ""} : ${rows.slice(0, 3).map(line).join(" ; ")}. ${rows.length} équipes classées, anciens noms d'une même équipe regroupés.` +
+      (ongoing ? ` ${ongoing}` : "");
+
+    return {
+      title: `${def.total ? `Équipes avec le plus de ${def.label}` : "Classement des équipes"} — ${def.label}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Rang", "Équipe", "Parties", "V-D", ...columns.map((c) => TEAM_CRITERION_DEFS[c].label)],
+        rows: rows.map((r, i) => [i + 1, displayTeam(r.team), r.games, `${r.wins}-${r.games - r.wins}`, ...columns.map((c) => value(r, c))]),
+      },
+      facts,
+      sources: [...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.team}`, url: wikiUrl(r.team) })), ...eventSources(pages, 12)],
+      followUps: [
+        ...(rows.length >= 2 ? [`${displayTeam(rows[0].team)} vs ${displayTeam(rows[1].team)}${scope ? ` ${scope}` : ""}`] : []),
+        ...rows.slice(0, 1).map((r) => `Roster de ${displayTeam(r.team)}${scope ? ` ${scope}` : ""}`),
+      ],
+      totals: {
+        leader: rows[0] ? displayTeam(rows[0].team) : "",
+        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? "n/d") : "n/d",
+        leader_games: rows[0]?.games ?? 0,
+        rows: rows.length,
+        min_games: minGames,
+        criterion: input.criterion,
+        in_progress: ongoing ? "yes" : "no",
+      },
+    };
+  },
+  normalize: (_db, input) => ({ ...input, minGames: input.minGames != null && input.minGames >= 3 ? input.minGames : null }),
+};
+
 // 8. A team's in-game stats --------------------------------------------------------------
 
 const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "gold_diff", "kills_before_10", "plates"];
@@ -3813,6 +3966,7 @@ export const TOOLS = {
   champion_ranking: defineTool(ChampionRankingInput, championRanking),
   champion_pool: defineTool(ChampionPoolInput, championPool),
   player_leaderboard: defineTool(PlayerLeaderboardInput, playerLeaderboard),
+  team_leaderboard: defineTool(TeamLeaderboardInput, teamLeaderboard),
   tournament_standings: defineTool(StandingsInput, tournamentStandings),
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
   ingame_leaderboard: defineTool(LeaderboardInput, ingameLeaderboard),

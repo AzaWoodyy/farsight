@@ -6,7 +6,7 @@ import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
-import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
+import { aiTools, type BoundTool, bindTool, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type TeamCriterion, type ToolCall } from "./tools";
 import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
@@ -262,6 +262,31 @@ function playerLeaderboardRoute(question: string, e: Entities): Route {
     confidence: 0.85,
     reason: `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion})`,
     // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
+    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+  };
+}
+
+/** What "best" means for a team ranking, most specific first; null when the question names no criterion (the standings answer it). */
+export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
+  ["wins", word("(?:le plus de|most|plus de|par|by) (?:victoires|wins)|(?:le plus|most) (?:gagn[ée]|won)|won the most|gagn[ée] le plus(?! de)")],
+  ["winrate", word("win ?rates?|taux de victoires?|pourcentage de victoires?|% (?:de )?victoires?|victoires?|wins?")],
+  ["games", word("(?:le plus de|most|plus de) (?:parties|games|matchs)|(?:le plus|most) jou[ée]")],
+  ["kills", word("kills?")],
+  ["gpm", word("gpm|gold|golds|or (?:par|per) minute|d'or")],
+];
+
+/** A ranking of trophies, not of games: the standings or text-to-SQL answer it. */
+const TITLES = word("titres?|titles?|troph[ée]es?|palmar[eè]s|sacres?");
+
+const teamCriterionOf = (question: string): TeamCriterion | null => TEAM_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? null;
+
+/** Teams ranked on an explicit end-of-game criterion. */
+function teamLeaderboardRoute(criterion: TeamCriterion, question: string, e: Entities): Route {
+  return {
+    kind: "tool",
+    call: { tool: "team_leaderboard", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games") } },
+    confidence: 0.85,
+    reason: `classement d'équipes (critère : ${criterion})`,
     notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
   };
 }
@@ -664,6 +689,12 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   )
     return playerLeaderboardRoute(question, e);
 
+  // Teams ranked on an end-of-game criterion ("meilleur winrate d'équipe en LCK 2024"). Without a criterion,
+  // "classement des équipes" stays the standings; trophies ("le plus de titres") and in-game metrics keep their routes.
+  const teamCriterion = noEntity && !cue && TEAM_WORDS.test(question) && RANKING.test(question) && !TITLES.test(question) ? teamCriterionOf(question) : null;
+
+  if (teamCriterion) return teamLeaderboardRoute(teamCriterion, question, e);
+
   const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
 
   if (ingame) return ingame;
@@ -809,6 +840,17 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
       "du monde|in the world|de tous les temps|of all time|all[- ]time|ever|selon|crit[èe]res?|en termes de|in terms of|stats?|statistiques?|" +
         "jou[ée]e?s?|played|parties|games|matchs|par minute|per minute|au moins|at least|minimum|plus de|more than|over|avec|with|" +
         "postes?|r[ôo]les?|lanes?|classement|ranking|liste|list",
+    ),
+  ],
+  team_leaderboard: [
+    // Criteria first: "won the most" is a criterion, not "most" then a stray "won".
+    ...TEAM_CRITERION_CUES.map(([, re]) => re),
+    RANKING,
+    TEAM_WORDS,
+    word(
+      "du monde|in the world|de tous les temps|of all time|all[- ]time|ever|selon|crit[èe]res?|en termes de|in terms of|par|by|stats?|statistiques?|" +
+        "jou[ée]e?s?|played|parties|games|matchs|par (?:partie|game|match)|per game|par minute|per minute|au moins|at least|minimum|plus de|more than|over|avec|with|" +
+        "classement|ranking|liste|list|d'[ée]quipes?",
     ),
   ],
   tournament_standings: [

@@ -5184,6 +5184,151 @@
         ],
         "rows": 0
       }
+    },
+    {
+      "id": "team-lb-winrate-lck-2024",
+      "question": "meilleur winrate d'équipe en LCK 2024",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "criterion": "winrate",
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rowsMin": 3,
+        "totals": {
+          "leader": "Gen.G",
+          "leader_value": 83.5,
+          "leader_games": 103,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "83,5"
+        ]
+      }
+    },
+    {
+      "id": "team-lb-wins-worlds",
+      "question": "équipes avec le plus de victoires aux Worlds",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "World Championship",
+        "input": {
+          "criterion": "wins",
+          "yearFrom": null,
+          "yearTo": null
+        },
+        "rowsMin": 3,
+        "totals": {
+          "leader": "T1",
+          "leader_value": 138,
+          "leader_games": 188,
+          "min_games": 1
+        },
+        "summaryIncludes": [
+          "138"
+        ]
+      }
+    },
+    {
+      "id": "team-lb-kills-lec-2023",
+      "question": "classement des équipes par kills en LEC 2023",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "criterion": "kills",
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "rowsMin": 3,
+        "totals": {
+          "leader": "G2 Esports",
+          "leader_value": 18,
+          "leader_games": 76,
+          "min_games": 10
+        }
+      }
+    },
+    {
+      "id": "team-lb-winrate-worlds-2023",
+      "question": "quelle équipe a le meilleur winrate aux Worlds 2023",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "World Championship",
+        "input": {
+          "criterion": "winrate",
+          "yearFrom": 2023,
+          "yearTo": 2023
+        },
+        "rowsMin": 3,
+        "totals": {
+          "leader": "T1",
+          "leader_value": 86.7,
+          "leader_games": 15,
+          "min_games": 5
+        }
+      }
+    },
+    {
+      "id": "team-lb-wins-lpl-2024",
+      "question": "which team has the most wins in LPL 2024",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "Tencent LoL Pro League",
+        "input": {
+          "criterion": "wins",
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rowsMin": 3,
+        "totals": {
+          "leader": "Bilibili Gaming",
+          "leader_value": 63,
+          "leader_games": 80
+        }
+      }
+    },
+    {
+      "id": "team-lb-guard-standings",
+      "question": "classement des équipes LCK 2024",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2024,
+          "yearTo": 2024
+        }
+      }
+    },
+    {
+      "id": "team-lb-guard-titles",
+      "question": "quelle équipe a gagné le plus de titres en LCK",
+      "tags": [
+        "spike-team"
+      ],
+      "expect": {
+        "route": "sql"
+      }
     }
   ]
 }
