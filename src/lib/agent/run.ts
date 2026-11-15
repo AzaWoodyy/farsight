@@ -263,7 +263,7 @@ async function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan:
   }
 }
 
-async function execute(db: DatabaseSync, question: string, entities: Entities, first: QueryPlan, emit: Emit, notes: string[]) {
+export async function execute(db: DatabaseSync, question: string, entities: Entities, first: QueryPlan, emit: Emit, notes: string[]) {
   const step = new Step("execute", "Exécution…", emit);
   const schema = readSchema(db);
   let plan = first;
