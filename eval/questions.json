@@ -5049,6 +5049,141 @@
           "ne contient pas « pentakills »"
         ]
       }
+    },
+    {
+      "id": "ingame-chovy-gold-diff-at-10",
+      "question": "gold diff à 10 de Chovy en LCK 2024",
+      "tags": [
+        "ingame",
+        "player",
+        "lck",
+        "minute"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Chovy"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "metric": "gold_diff",
+          "minute": 10
+        },
+        "rows": 1,
+        "totals": {
+          "games": 103,
+          "gold_diff": 148
+        },
+        "summaryIncludes": [
+          "+148 à 10 min"
+        ],
+        "summaryExcludes": [
+          "à 15 min"
+        ]
+      }
+    },
+    {
+      "id": "ingame-chovy-cs-diff-at-20",
+      "question": "cs diff @20 de Chovy en LCK 2024",
+      "tags": [
+        "ingame",
+        "player",
+        "lck",
+        "minute"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Chovy"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "metric": "cs_diff",
+          "minute": 20
+        },
+        "rows": 1,
+        "totals": {
+          "games": 103
+        },
+        "summaryIncludes": [
+          "+18.2 à 20 min"
+        ],
+        "summaryExcludes": [
+          "à 15 min"
+        ]
+      }
+    },
+    {
+      "id": "ingame-t1-gold-diff-at-10",
+      "question": "gold diff à 10 de T1 en LCK 2024",
+      "tags": [
+        "ingame",
+        "team",
+        "lck",
+        "minute"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "teams": [
+          "T1"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "minute": 10
+        },
+        "summaryIncludes": [
+          "+600 à 10 min"
+        ],
+        "summaryExcludes": [
+          "à 15 min"
+        ]
+      }
+    },
+    {
+      "id": "lane-jungle-gold-diff-at-10-lck-2024",
+      "question": "meilleur écart d'or à 10 min des junglers en LCK 2024",
+      "tags": [
+        "lck",
+        "lane",
+        "ingame",
+        "minute"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "subject": "player",
+          "metric": "gold_diff",
+          "minute": 10,
+          "role": "Jungle"
+        },
+        "totals": {
+          "leader": "Willer",
+          "leader_value": 149.2
+        }
+      }
+    },
+    {
+      "id": "ingame-minute-not-held",
+      "question": "gold diff à 25 min de Chovy en LCK 2024",
+      "tags": [
+        "ingame",
+        "player",
+        "missing",
+        "minute"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "players": [
+          "Chovy"
+        ],
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "à 25 min",
+          "seulement à 10, 15 et 20 min"
+        ],
+        "rows": 0
+      }
     }
   ]
 }
