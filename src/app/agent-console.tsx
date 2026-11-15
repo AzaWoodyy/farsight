@@ -125,6 +125,7 @@ export function AgentConsole() {
     if (part.type === "data-trace") trace = part.data;
   }
 
+  const traceBelow = answer != null && modules != null && !running && steps.size > 0;
   const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : first && messages.length === 0 ? first.text : undefined;
 
   return (
@@ -222,10 +223,11 @@ export function AgentConsole() {
               Nouvelle conversation
             </button>
           </div>
-          {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top, the
-              steps stream in under it, and the trace folds where it is when the answer appears under it. */}
+          {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top and the
+              steps stream in under it. Once the run is over and the answer is shown, the trace goes folded under
+              the answer: the visitor reads the result first, the way it was found after. */}
           {running && <Progress steps={steps} />}
-          {steps.size > 0 && <HowIFoundIt steps={steps} running={running} />}
+          {steps.size > 0 && !traceBelow && <HowIFoundIt steps={steps} running={running} />}
           {error && !answer && (
             <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
@@ -247,6 +249,7 @@ export function AgentConsole() {
           )}
           {/* The chat and the views load together: an answer always has its views. */}
           {answer && modules && <modules.views.AnswerView answer={answer} onAsk={ask} />}
+          {traceBelow && <HowIFoundIt steps={steps} running={false} />}
           {answer && trace && modules && <modules.views.Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
         </div>
       )}
