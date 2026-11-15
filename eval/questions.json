@@ -1084,6 +1084,72 @@
       }
     },
     {
+      "id": "ingame-t1-lck-2022",
+      "question": "first blood de T1 en LCK 2022",
+      "tags": [
+        "ingame",
+        "team"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "teams": [
+          "T1"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "yearFrom": 2022,
+          "yearTo": 2022
+        },
+        "rows": 1,
+        "totals": {
+          "games": 102,
+          "first_blood": 57.8
+        }
+      }
+    },
+    {
+      "id": "ingame-g2-gold-diff-10",
+      "question": "écart d'or à 10 minutes de G2 aux Worlds 2022",
+      "tags": [
+        "ingame",
+        "team"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "teams": [
+          "G2 Esports"
+        ],
+        "input": {
+          "yearFrom": 2022,
+          "yearTo": 2022,
+          "minute": 10
+        },
+        "totals": {
+          "games": 6,
+          "gold_diff": -1072
+        }
+      }
+    },
+    {
+      "id": "ingame-team-relaxed-period",
+      "question": "first blood de Fnatic aux Worlds 2016",
+      "tags": [
+        "ingame",
+        "team",
+        "self_correction"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "attempts": 2,
+        "input": {
+          "yearFrom": null
+        },
+        "notes": [
+          "Rien entre 2016 et 2016"
+        ]
+      }
+    },
+    {
       "id": "ingame-chovy-gold-diff",
       "question": "écart d'or à 15 minutes de Chovy en LCK 2024",
       "tags": [
