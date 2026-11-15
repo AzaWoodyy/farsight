@@ -5211,6 +5211,373 @@
         ],
         "rows": 0
       }
+    },
+    {
+      "id": "matchup-azir-orianna-lck-2024",
+      "question": "Azir contre Orianna en LCK 2024",
+      "tags": [
+        "champion",
+        "matchup",
+        "lck"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "LoL Champions Korea",
+        "input": {
+          "champion": "Azir",
+          "opponent": "Orianna",
+          "role": null,
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rows": 24,
+        "totals": {
+          "games": 24,
+          "wins": 9,
+          "losses": 15,
+          "kda": 2.26,
+          "opponent_kda": 4.88,
+          "gold_diff_15": -358
+        },
+        "attempts": 1,
+        "summaryIncludes": [
+          "24 parties, Azir en gagne 9 (38 %) et Orianna 15",
+          "KDA d'Azir : 2,26, d'Orianna : 4,88"
+        ]
+      }
+    },
+    {
+      "id": "matchup-jax-renekton-top-worlds-en",
+      "question": "Jax vs Renekton en top aux Worlds",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "lane"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Jax",
+          "opponent": "Renekton",
+          "role": "Top"
+        },
+        "rows": 18,
+        "totals": {
+          "games": 18,
+          "wins": 12,
+          "ingame_games": 15
+        },
+        "summaryIncludes": [
+          "sur 15 parties avec données Riot"
+        ]
+      }
+    },
+    {
+      "id": "matchup-list-azir-mid-worlds",
+      "question": "Matchups d'Azir en mid aux Worlds",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "lane"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Azir",
+          "opponent": null,
+          "role": "Mid"
+        },
+        "rows": 20,
+        "totals": {
+          "games": 149,
+          "opponents": 25,
+          "top_opponent": "Orianna",
+          "top_opponent_games": 31,
+          "best_matchup": "Jayce",
+          "worst_matchup": "Yone"
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "records-kills-worlds",
+      "question": "Record de kills en une partie aux Worlds",
+      "tags": [
+        "worlds",
+        "player",
+        "record"
+      ],
+      "expect": {
+        "route": "game_records",
+        "league": "World Championship",
+        "input": {
+          "metric": "kills",
+          "player": null,
+          "role": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "DanDy",
+          "leader_value": 19,
+          "leader_champion": "Evelynn",
+          "leader_event": "Worlds 2013"
+        },
+        "summaryIncludes": [
+          "1. DanDy : 19 (Evelynn, Samsung Ozone contre Mineski, Worlds 2013, 21 sept. 2013)",
+          "2 parties à égalité en tête"
+        ]
+      }
+    },
+    {
+      "id": "records-kills-faker",
+      "question": "meilleure game de Faker en kills",
+      "tags": [
+        "player",
+        "record"
+      ],
+      "expect": {
+        "route": "game_records",
+        "players": [
+          "Faker"
+        ],
+        "input": {
+          "metric": "kills",
+          "player": "Faker",
+          "league": null
+        },
+        "totals": {
+          "leader": "Faker",
+          "leader_value": 16,
+          "leader_champion": "Ahri",
+          "leader_event": "LCK 2025"
+        }
+      }
+    },
+    {
+      "id": "recent-faker-worlds-2025",
+      "question": "5 dernières parties de Faker aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "player",
+        "recent"
+      ],
+      "expect": {
+        "route": "player_recent_games",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "player": "Faker",
+          "count": 5,
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rows": 5,
+        "totals": {
+          "games": 5,
+          "wins": 3,
+          "losses": 2,
+          "kda": 4.62,
+          "streak": 2,
+          "streak_kind": "wins",
+          "last_champion": "Galio",
+          "last_opponent": "KT Rolster"
+        },
+        "summaryIncludes": [
+          "3 victoires, 2 défaites, KDA 4,62",
+          "Série en cours : 2 victoires de suite"
+        ]
+      }
+    },
+    {
+      "id": "teams-winrate-blue-lec-2025",
+      "question": "Équipes avec le meilleur winrate côté bleu en LEC 2025",
+      "tags": [
+        "lec",
+        "team",
+        "ranking",
+        "side"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "criterion": "winrate",
+          "order": "desc",
+          "side": "blue",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "rows": 10,
+        "totals": {
+          "leader": "G2 Esports",
+          "leader_value": 75,
+          "leader_games": 32,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "côté bleu selon le critère % victoires"
+        ]
+      }
+    },
+    {
+      "id": "teams-shortest-games-lck-2025",
+      "question": "Quelle équipe a les parties les plus courtes en LCK 2025",
+      "tags": [
+        "lck",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL Champions Korea",
+        "input": {
+          "criterion": "game_length",
+          "order": "asc",
+          "side": null
+        },
+        "rows": 10,
+        "totals": {
+          "leader": "Nongshim RedForce",
+          "leader_value": 31.3,
+          "leader_games": 114
+        },
+        "summaryIncludes": [
+          "du plus bas au plus haut"
+        ]
+      }
+    },
+    {
+      "id": "teams-standings-kept",
+      "question": "Meilleures équipes aux Worlds 2024",
+      "tags": [
+        "worlds",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship"
+      }
+    },
+    {
+      "id": "players-gold-share-adc-worlds-2025",
+      "question": "Quel ADC a la plus grosse part de l'or aux Worlds 2025 ?",
+      "tags": [
+        "worlds",
+        "lane",
+        "ranking"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "World Championship",
+        "input": {
+          "criterion": "gold_share",
+          "role": "Bot",
+          "side": null
+        },
+        "rows": 16,
+        "totals": {
+          "leader": "Eddie",
+          "leader_value": 25.2,
+          "leader_games": 6,
+          "min_games": 5
+        },
+        "summaryIncludes": [
+          "part de l'or de son équipe"
+        ]
+      }
+    },
+    {
+      "id": "players-adc-red-side-worlds-2025",
+      "question": "Meilleurs ADC côté rouge aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "lane",
+        "ranking",
+        "side"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "World Championship",
+        "input": {
+          "criterion": "kda",
+          "role": "Bot",
+          "side": "red"
+        },
+        "rows": 6,
+        "totals": {
+          "leader": "Deokdam",
+          "leader_value": 6.13,
+          "leader_games": 7
+        },
+        "summaryIncludes": [
+          "Meilleurs ADC côté rouge aux Worlds en 2025"
+        ]
+      }
+    },
+    {
+      "id": "champ-gold-diff-15-mid-lec-2025",
+      "question": "Champions avec le meilleur écart d'or à 15 min en mid en LEC 2025",
+      "tags": [
+        "lec",
+        "champion",
+        "lane",
+        "ingame"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "sort": "gold_diff_15",
+          "role": "Mid",
+          "side": null
+        },
+        "rows": 18,
+        "totals": {
+          "leader": "Akali",
+          "leader_value": 398,
+          "leader_picks": 15,
+          "games": 308,
+          "min_picks": 7
+        },
+        "summaryIncludes": [
+          "1. Akali (+398 d'or à 15 min, 15 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-dpm-worlds-2025",
+      "question": "Champions avec le plus de dégâts par minute aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "dpm",
+          "role": null,
+          "side": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Varus",
+          "leader_value": 943,
+          "leader_picks": 14,
+          "games": 84,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : dégâts aux champions par minute, minimum 5 picks"
+        ]
+      }
     }
   ]
 }

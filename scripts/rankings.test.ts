@@ -1,0 +1,426 @@
+import { describe, expect, test } from "bun:test";
+import { DatabaseSync } from "node:sqlite";
+import { guardQuery } from "../src/lib/agent/guard";
+import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf } from "../src/lib/agent/query";
+import { detectMetric } from "../src/lib/agent/metrics";
+import { bindTool } from "../src/lib/agent/tools";
+import type { Entities, LeagueName, ResolvedPlayer } from "../src/lib/agent/types";
+import { understandQuestion } from "../src/lib/agent/understand";
+import { detectChampionRanking } from "../src/lib/champions";
+import { readSchema } from "../src/lib/db";
+import { createQuerySchema, createSchema } from "../src/lib/db/schema";
+import { LEAGUES } from "../src/lib/domain/leagues";
+
+const SCHEMA = { v_games: ["game_id"] };
+const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
+
+const scope = (league: LeagueName | null, leagueShort: string | null, year: number | null = null): Entities => ({
+  players: [], teams: [], champion: null, unresolved: [], league, leagueShort, leagueMention: leagueShort, yearFrom: year, yearTo: year, split: null, outOfScope: null,
+});
+
+const player = (name: string): ResolvedPlayer => ({ mention: name, player: name, matchedAlias: name, realName: null, nativeName: null, otherCandidates: [], ambiguity: null });
+
+const NONE = scope(null, null);
+const LEC25 = scope("LoL EMEA Championship", "LEC", 2025);
+const WORLDS = scope("World Championship", "Worlds");
+const champion = (name: string) => ({ mention: name, champion: name });
+const route = (question: string, e: Entities) => routeQuestion(question, e, SCHEMA, COVERAGE);
+
+describe("cues of the rankings", () => {
+  test.each([
+    ["meilleurs mids côté bleu", "blue"],
+    ["best ADC on red side", "red"],
+    ["winrate en rouge", "red"],
+    ["côté bleu ou côté rouge", null],
+    ["meilleurs mids", null],
+  ])("side of %p", (question, side) => {
+    expect<string | null>(sideOf(question)).toBe(side);
+  });
+
+  test.each([
+    ["équipes avec le meilleur winrate", "winrate"],
+    ["quelle équipe a les parties les plus courtes", "game_length"],
+    ["quelle équipe joue le plus de champions différents", "champions"],
+    ["équipe qui prend le plus de dragons", "dragons"],
+    ["teams with the most barons", "barons"],
+    ["équipes avec le plus de kills par partie", "kills"],
+    ["meilleures équipes", null],
+  ])("team criterion of %p", (question, criterion) => {
+    expect<string | null>(teamCriterionOf(question)).toBe(criterion);
+  });
+
+  test.each([
+    ["champions avec le plus de dégâts par minute", "dpm"],
+    ["champions avec le meilleur écart d'or à 15 min", "gold_diff_15"],
+    ["champions avec le plus de solo kills", "solo_kills"],
+    ["champions joués par le plus de joueurs", "players"],
+    // Another minute than 15, or the lowest figure: not a column of the ranking.
+    ["champions avec le meilleur écart d'or à 10 min", null],
+    ["champions avec le moins de dégâts par minute", null],
+    ["champions les plus joués", null],
+  ])("extra champion sort of %p", (question, sort) => {
+    expect<string | null>(championExtraSortOf(question, detectMetric(question))).toBe(sort);
+  });
+
+  test.each([
+    ["record de kills en une partie", "kills"],
+    ["most damage in a single game", "damage"],
+    ["meilleur écart d'or à 15 min sur une partie", "gold_diff_15"],
+    // Two figures, or a minute the records do not hold.
+    ["record de kills et d'assists", null],
+    ["meilleur écart d'or à 10 min sur une partie", null],
+  ])("record metric of %p", (question, metric) => {
+    expect<string | null>(recordMetricOf(question, detectMetric(question))).toBe(metric);
+  });
+
+  test.each([
+    ["5 dernières parties de Caps", 5],
+    ["last 7 games of Chovy", 7],
+    ["dernières 50 parties", 20],
+    ["2 dernières parties", 3],
+    ["forme récente de Faker", null],
+  ])("count of %p", (question, count) => {
+    expect(recentCountOf(question)).toBe(count);
+  });
+});
+
+describe("routes of the rankings", () => {
+  test("a side of the map filters the player, champion and in-game rankings", () => {
+    expect(route("meilleurs mids côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { role: "Mid", side: "blue", criterion: "kda" } } });
+    expect(route("champions les plus joués côté rouge en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "picks", side: "red" } } });
+    expect(route("qui a le plus de solo kills côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "ingame_leaderboard", input: { metric: "solo_kills", side: "blue" } } });
+    expect(route("meilleurs mids en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { side: null } } });
+  });
+
+  test("a share of the team's damage or gold is a criterion of the players, not a team ranking", () => {
+    expect(route("joueurs avec la plus grosse part des dégâts de leur équipe en LEC 2025", LEC25)).toMatchObject({
+      kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { criterion: "dmg_share" } },
+    });
+    expect(route("quel ADC a la plus grosse part de l'or en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "gold_share", role: "Bot" } } });
+    // Damage alone stays the per-minute figure.
+    expect(route("joueurs avec le plus de dégâts en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "dpm" } } });
+  });
+
+  test("champions ranked on a figure of their picks", () => {
+    expect(route("champions avec le meilleur écart d'or à 15 min en mid en LEC 2025", LEC25)).toMatchObject({
+      kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "gold_diff_15", role: "Mid" } },
+    });
+    expect(route("champions avec le plus de dégâts par minute en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "dpm" } } });
+    // The ranking has no snapshot at 10 min, and pentakills are not a column: generated SQL.
+    expect(route("champions avec le meilleur écart d'or à 10 min en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(route("quel champion a le plus de pentakills en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+  });
+
+  test("teams ranked on a named criterion; the standings keep 'meilleures équipes'", () => {
+    expect(route("équipes avec le meilleur winrate côté bleu en LEC 2025", LEC25)).toMatchObject({
+      kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "winrate", order: "desc", side: "blue", league: "LoL EMEA Championship" } },
+    });
+    expect(route("quelle équipe a les parties les plus courtes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "game_length", order: "asc" } } });
+    expect(route("équipe avec le moins de morts par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "deaths", order: "asc" } } });
+    expect(route("équipes avec le meilleur winrate", NONE)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { league: "World Championship" } }, notes: ["Aucune compétition précisée : classement sur les Worlds."] });
+    expect(route("meilleures équipes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "tournament_standings" } });
+    // An in-game metric keeps its own leaderboard.
+    expect(route("quelle équipe prend le plus souvent le premier dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "first_dragon" } } });
+  });
+
+  test("champion matchups: two champions set against each other, or one and a matchup word", () => {
+    const azir = { ...NONE, champion: champion("Azir") };
+    const duel = { ...azir, opponentChampion: champion("Orianna") };
+
+    expect(route("Azir contre Orianna", duel)).toMatchObject({
+      kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { champion: "Azir", opponent: "Orianna", role: null, league: null } },
+      notes: ["Aucune compétition précisée : toutes compétitions confondues."],
+    });
+    expect(route("winrate d'Azir face à Orianna en mid en LEC 2025", { ...LEC25, champion: champion("Azir"), opponentChampion: champion("Orianna") })).toMatchObject({
+      kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { opponent: "Orianna", role: "Mid", league: "LoL EMEA Championship", yearFrom: 2025 } }, notes: [],
+    });
+    expect(route("matchups d'Azir", azir)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { champion: "Azir", opponent: null } } });
+    expect(route("counters d'Azir en mid", azir)).toMatchObject({ kind: "tool", call: { tool: "champion_matchup", input: { opponent: null, role: "Mid" } } });
+    // Without an opposing word, the first champion's profile, as before.
+    expect(route("stats d'Azir et Orianna", duel)).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats", input: { champion: "Azir" } } });
+    expect(route("stats d'Azir aux Worlds", { ...WORLDS, champion: champion("Azir") })).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats" } });
+  });
+
+  test("single-game records, of everyone or of one player", () => {
+    expect(route("record de kills en une partie aux Worlds", WORLDS)).toMatchObject({
+      kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: null, league: "World Championship" } }, notes: [],
+    });
+    expect(route("most damage in a single game", NONE)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "damage", league: null } } });
+    expect(route("record de kills des mids en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "kills", role: "Mid" } } });
+    expect(route("meilleure game de Faker en kills", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: "Faker", role: null } } });
+    // A total over the scope stays the player ranking, and a team's "record" is its results.
+    expect(route("qui a le plus de kills aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "kills" } } });
+    expect(route("record de T1", { ...NONE, teams: [{ mention: "T1", team: "T1", members: ["T1"] }] })).toMatchObject({ kind: "tool", call: { tool: "team_history" } });
+  });
+
+  test("a player's latest games", () => {
+    const faker = { ...NONE, players: [player("Faker")] };
+
+    expect(route("forme récente de Faker", faker)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "player_recent_games", input: { player: "Faker", league: null, count: null } } });
+    expect(route("5 dernières parties de Faker en LEC", { ...scope("LoL EMEA Championship", "LEC"), players: [player("Faker")] })).toMatchObject({
+      kind: "tool", confidence: 0.9, call: { tool: "player_recent_games", input: { count: 5, league: "LoL EMEA Championship" } },
+    });
+    expect(route("last 5 games of Faker", faker)).toMatchObject({ kind: "tool", call: { tool: "player_recent_games", input: { count: 5 } } });
+    // Their results at an event stay the history.
+    expect(route("résultats de Faker aux Worlds", { ...WORLDS, players: [player("Faker")] })).toMatchObject({ kind: "tool", call: { tool: "player_event_history" } });
+  });
+});
+
+/**
+ * Three LEC 2025 games between G2 (Caps mid, BrokenBlade top) and Fnatic (Humanoid mid, Oscarinin top):
+ * G2 wins game 1 on blue and game 2 on red, Fnatic wins game 3 on red. Every game has Riot data.
+ */
+function seed(db: DatabaseSync) {
+  createSchema(db);
+  createQuerySchema(db);
+  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
+  const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+
+  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC25','LEC25','season',?,2025)").run(lec);
+  db.exec(`
+    INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic');
+    INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade'),(4,'Oscarinin');
+    INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL);
+    INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at,blue_dragons,red_dragons,blue_barons,red_barons,blue_towers,red_towers)
+      VALUES (1,1,'Week 1',1,2,1,1800,1735776000,3,1,1,0,9,2),(2,1,'Week 1',2,1,2,1500,1735862400,1,2,0,1,3,8),(3,1,'Week 2',1,2,2,2400,1736380800,1,4,0,2,4,11);
+    INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0),(2,'K2','V5 data:K2',5,1,0),(3,'K3','V5 data:K3',5,1,0);
+    INSERT INTO game_player_stats(game_id,player_id,gold_diff_15,solo_kills,first_blood_kill)
+      VALUES (1,1,300,2,1),(2,1,100,0,0),(3,1,-100,0,0),(1,2,-300,0,0),(2,2,-100,0,0),(3,2,100,1,1);
+    INSERT INTO game_team_stats(game_id,side,first_dragon,first_herald,first_baron,gold_diff_15) VALUES (1,1,1,1,1,1000),(1,2,0,0,0,-1000);
+    -- game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone
+    INSERT INTO game_players VALUES
+      (1,1,1,1,'Mid',1,1,5,1,5,15000,300,30000,30,NULL),
+      (1,3,1,1,'Top',3,1,3,0,2,13000,280,20000,20,NULL),
+      (1,2,2,2,'Mid',2,0,1,3,2,12000,270,18000,25,NULL),
+      (1,4,2,2,'Top',4,0,0,5,1,9000,240,12000,15,NULL),
+      (2,1,1,2,'Mid',1,1,4,2,6,14000,290,25000,30,NULL),
+      (2,3,1,2,'Top',3,1,2,1,3,12000,250,15000,20,NULL),
+      (2,2,2,1,'Mid',2,0,2,2,1,11000,250,15000,20,NULL),
+      (2,4,2,1,'Top',4,0,1,4,0,10000,230,12000,15,NULL),
+      (3,1,1,1,'Mid',1,0,1,4,3,12000,320,20000,40,NULL),
+      (3,3,1,1,'Top',4,0,0,3,1,9000,200,10000,10,NULL),
+      (3,2,2,2,'Mid',2,1,6,1,4,15000,330,26000,35,NULL),
+      (3,4,2,2,'Top',3,1,3,0,5,12000,300,14000,20,NULL);
+  `);
+}
+
+async function run(db: DatabaseSync, call: Parameters<typeof bindTool>[1]) {
+  const tool = bindTool(db, call);
+
+  // Typed queries go through the same guard as generated ones.
+  expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+
+  return tool.format(db, db.prepare(tool.sql).all(tool.params));
+}
+
+async function seeded<T>(body: (db: DatabaseSync) => Promise<T>): Promise<T> {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+
+    return await body(db);
+  } finally {
+    db.close();
+  }
+}
+
+const LEC = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025 };
+
+describe("rankings on a seeded season", () => {
+  test("champion ranking: per-minute figures, lane figures of the Riot data, players, and one side of the map", () =>
+    seeded(async (db) => {
+      const input = { ...LEC, role: null, side: null, minPicks: null };
+      const out = await run(db, { tool: "champion_ranking", input: { ...input, sort: "picks" } });
+      const cell = (row: number, column: string) => out.table!.rows[row][out.table!.columns.indexOf(column)];
+
+      expect(out.table!.columns).toEqual(["rank", "champion", "picks", "bans", "presence", "winrate", "kda", "dpm", "gpm", "cspm", "gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", "players"]);
+      // Azir, Caps' three games: 75 000 damage, 41 000 gold and 910 CS in 95 min; +300, +100 and −100 gold at 15 min; one first blood.
+      expect(out.table!.rows[0].slice(0, 7)).toEqual([1, "Azir", 3, 0, 100, 66.7, 3.43]);
+      expect(["dpm", "gpm", "cspm", "gold_diff_15", "cs_diff_15", "first_blood", "solo_kills", "players"].map((c) => cell(0, c))).toEqual([789, 432, 9.58, 100, null, 33.3, 0.67, 1]);
+      // Gnar was played by both top laners; no lane figure in the Riot data seeded for them.
+      expect([cell(1, "champion"), cell(1, "players"), cell(1, "gold_diff_15")]).toEqual(["Gnar", 2, null]);
+      expect(out.sources.some((s) => s.label.includes("données Riot"))).toBe(true);
+
+      // The champion layout reads every column, the ranking one from the tool's sort.
+      const lead = await run(db, { tool: "champion_ranking", input: { ...input, sort: "gold_diff_15", minPicks: 3 } });
+
+      expect(lead.table!.rows.map((r) => r[1])).toEqual(["Azir", "Orianna"]);
+      expect(lead.facts).toContain("1. Azir (+100 d'or à 15 min, 3 picks");
+      expect(lead.facts).toContain("Critère : écart d'or moyen à 15 min face à l'adversaire direct, sur les parties avec données Riot, minimum 3 picks.");
+      const layout = detectChampionRanking(lead.table!, lead.icons!, "gold_diff_15")!;
+
+      expect(layout.metrics[layout.primary]).toEqual({ key: "gold_diff_15", label: "écart or @15", percent: false });
+      expect(layout.metrics.find((m) => m.key === "first_blood")).toEqual({ key: "first_blood", label: "first blood", percent: true });
+      // A column without any figure (the CS and XP differences here) is left out of the layout.
+      expect(layout.metrics.map((m) => m.key)).not.toContain("cs_diff_15");
+
+      // Blue side: Azir's games 1 and 3, one win; bans and presence stay on every game.
+      const blue = await run(db, { tool: "champion_ranking", input: { ...input, sort: "picks", side: "blue" } });
+
+      expect(blue.table!.rows[0].slice(0, 7)).toEqual([1, "Azir", 2, 0, 100, 50, 2.8]);
+      expect(blue.title).toBe("Champions les plus joués côté bleu — LEC 2025");
+      expect(blue.facts).toContain("côté bleu seulement ; bans et présence tous côtés confondus");
+    }));
+
+  test("player leaderboard: share of the team's damage and gold, and one side of the map", () =>
+    seeded(async (db) => {
+      const input = { ...LEC, role: null, minGames: 2, side: null };
+      const out = await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "dmg_share" } });
+      const col = (name: string) => out.table!.columns.indexOf(name);
+
+      // Caps: 75 000 of G2's 120 000 damage, 41 000 of its 75 000 gold.
+      expect(out.table!.rows[0].slice(0, 2)).toEqual([1, "Caps"]);
+      expect([out.table!.rows[0][col("DMG %")], out.table!.rows[0][col("or %")]]).toEqual([62.5, 54.7]);
+      expect(out.facts).toContain("selon le critère DMG % (part des dégâts aux champions de son équipe)");
+      expect(out.facts).toContain("1. Caps (G2 Esports) : 62,5 %, 3 parties");
+
+      // Blue side only: Caps' games 1 and 3, (5 + 5 + 1 + 3) / (1 + 4).
+      const blue = await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "kda", role: "Mid", side: "blue" } });
+
+      expect(blue.table!.rows.map((r) => [r[1], r[3], r[blue.table!.columns.indexOf("KDA")]])).toEqual([["Caps", 2, 2.8]]);
+      expect(blue.title).toBe("Meilleurs mids côté bleu — KDA (LEC)");
+    }));
+
+  test("in-game leaderboard on one side of the map", () =>
+    seeded(async (db) => {
+      const out = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "player", metric: "solo_kills", minute: null, role: null, minGames: null, side: "red" } });
+
+      // Humanoid's solo kill came on red side; Caps' two on blue.
+      expect(out.table!.rows.map((r) => [r[1], r[4]])).toEqual([["Humanoid", 1]]);
+      expect(out.title).toBe("Classement — solo kills côté rouge (LEC)");
+    }));
+
+  test("team leaderboard: every criterion as a column, lowest first on request, one side of the map", () =>
+    seeded(async (db) => {
+      const input = { ...LEC, order: "desc" as const, side: null, minGames: 3 };
+      const out = await run(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate" } });
+      const row = (n: number) => Object.fromEntries(out.table!.columns.map((c, i) => [c, out.table!.rows[n][i]]));
+
+      expect(out.table!.columns.slice(0, 4)).toEqual(["Rang", "Équipe", "Parties", "% victoires"]);
+      // G2: two wins in three, one of its two blue games, its red game; 15 kills and 11 deaths; Azir, Gnar and Jax.
+      expect(row(0)).toMatchObject({
+        Équipe: "G2 Esports", Parties: 3, "% victoires": 66.7, "% côté bleu": 50, "% côté rouge": 100, KDA: 3.18, "kills / partie": 5, "morts / partie": 3.7,
+        "durée (min)": 31.7, champions: 3, "dragons / partie": 2, "barons / partie": 0.67, "tours / partie": 7, "grubs / partie": null, "1er dragon %": 100, "écart or @15": 1000,
+      });
+      expect(row(1)).toMatchObject({ Équipe: "Fnatic", "% victoires": 33.3, "1er dragon %": 0 });
+      expect(out.facts).toContain("Équipes classées en LEC en 2025 selon le critère % victoires (victoires / parties), minimum 3 parties : 1. G2 Esports : 66,7 %, 3 parties ; 2. Fnatic : 33,3 %, 3 parties.");
+      expect(out.totals).toMatchObject({ leader: "G2 Esports", leader_value: 66.7, rows: 2, criterion: "winrate" });
+
+      const deaths = await run(db, { tool: "team_leaderboard", input: { ...input, criterion: "deaths", order: "asc" } });
+
+      expect(deaths.table!.rows.map((r) => [r[1], r[3]])).toEqual([["G2 Esports", 3.7], ["Fnatic", 5]]);
+      expect(deaths.facts).toContain("du plus bas au plus haut");
+
+      // Red side: Fnatic's games 1 and 3 (one win), G2's game 2. A side's own win rate is not a column then.
+      const red = await run(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate", side: "red", minGames: 1 } });
+
+      expect(red.table!.rows.map((r) => [r[1], r[2], r[3]])).toEqual([["G2 Esports", 1, 100], ["Fnatic", 2, 50]]);
+      expect(red.table!.columns).not.toContain("% côté bleu");
+      expect(red.title).toBe("Classement des équipes — % victoires côté rouge (LEC)");
+
+      // The default minimum of a league season (10 games) leaves nobody: the first correction lowers it.
+      const strict = bindTool(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate", minGames: null } });
+
+      expect(db.prepare(strict.sql).all(strict.params)).toEqual([]);
+      expect(strict.relaxations(LEC25)[0]).toMatchObject({ key: "minGames" });
+    }));
+
+  test("champion matchup against one champion: the games, both KDAs and the gold difference at 15", () =>
+    seeded(async (db) => {
+      const out = await run(db, { tool: "champion_matchup", input: { ...LEC, champion: "Azir", opponent: "Orianna", role: null } });
+
+      expect(out.title).toBe("Azir contre Orianna — LEC");
+      expect(out.totals).toMatchObject({ games: 3, wins: 2, losses: 1, winrate: 67, kda: 3.43, opponent_kda: 2.67, gold_diff_15: 100, ingame_games: 3 });
+      expect(out.facts).toContain("Azir contre Orianna en LEC en 2025 (même rôle, équipes opposées) : 3 parties, Azir en gagne 2 (67 %) et Orianna 1.");
+      expect(out.facts).toContain("KDA d'Azir : 3,43, d'Orianna : 2,67. Écart d'or moyen d'Azir à 15 min : +100, sur 3 parties avec données Riot.");
+      // Newest first: game 3, won by Orianna.
+      expect(out.table!.rows[0]).toEqual(["9 janv. 2025", "LEC 2025", "Mid", "Caps (G2 Esports)", "1/4/3", "Humanoid (Fnatic)", "6/1/4", "Orianna", -100]);
+      expect(out.icons).toEqual({ Azir: "https://ddragon/Azir.png", Orianna: "https://ddragon/Orianna.png" });
+
+      // The other way round, the same games.
+      const back = await run(db, { tool: "champion_matchup", input: { ...LEC, champion: "Orianna", opponent: "Azir", role: "Mid" } });
+
+      expect(back.totals).toMatchObject({ games: 3, wins: 1, gold_diff_15: -100 });
+
+      // Never in the same role: nothing, then the role filter is the first correction.
+      const top = bindTool(db, { tool: "champion_matchup", input: { ...LEC, champion: "Azir", opponent: "Orianna", role: "Top" } });
+
+      expect(db.prepare(top.sql).all(top.params)).toEqual([]);
+      expect(top.relaxations(LEC25).map((r) => r.key)).toEqual(["role", "period", "league"]);
+    }));
+
+  test("champion matchups without an opponent: the champions it faced, as a champion ranking", () =>
+    seeded(async (db) => {
+      const out = await run(db, { tool: "champion_matchup", input: { ...LEC, champion: "Gnar", opponent: null, role: null } });
+
+      // Gnar faced Jax in all three games (BrokenBlade twice, Oscarinin once) and won them all.
+      expect(out.table).toEqual({ columns: ["rank", "champion", "games", "wins", "winrate", "kda", "gold_diff_15"], rows: [[1, "Jax", 3, 3, 100, 18, null]] });
+      expect(out.totals).toMatchObject({ games: 3, wins: 3, winrate: 100, opponents: 1, top_opponent: "Jax", top_opponent_games: 3 });
+      expect(out.facts).toContain("Gnar en LEC en 2025 : 3 parties face à un adversaire direct (même rôle, équipe opposée), 100 % de victoires, 1 champions affrontés.");
+      expect(out.followUps[0]).toBe("Gnar contre Jax");
+    }));
+
+  test("champion matchup: names resolved, the same champion twice is no opponent", () =>
+    seeded(async (db) => {
+      const { TOOLS } = await import("../src/lib/agent/tools");
+      const input = { ...LEC, role: null };
+
+      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "azir", opponent: "ORIANNA" })).toMatchObject({ input: { champion: "Azir", opponent: "Orianna" } });
+      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Azir" })).toMatchObject({ input: { champion: "Azir", opponent: null } });
+      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Nobody" })).toBeNull();
+    }));
+
+  test("game records: one line per game, of everyone, of a role or of one player", () =>
+    seeded(async (db) => {
+      const input = { ...LEC, player: null, role: null };
+      const out = await run(db, { tool: "game_records", input: { ...input, metric: "kills" } });
+
+      expect(out.table!.columns).toEqual(["Rang", "Joueur", "Champion joué", "Équipe", "Adversaire", "Compétition", "Date", "Kills", "K/D/A", "Durée", "Résultat"]);
+      expect(out.table!.rows.slice(0, 2)).toEqual([
+        [1, "Humanoid", "Orianna", "Fnatic", "G2 Esports", "LEC 2025", "9 janv. 2025", 6, "6/1/4", "40:00", "Victoire"],
+        [2, "Caps", "Azir", "G2 Esports", "Fnatic", "LEC 2025", "2 janv. 2025", 5, "5/1/5", "30:00", "Victoire"],
+      ]);
+      expect(out.facts).toContain("Meilleures parties en LEC en 2025 sur le critère kills, une ligne par partie : 1. Humanoid : 6 (Orianna, Fnatic contre G2 Esports, LEC 2025, 9 janv. 2025)");
+      expect(out.totals).toMatchObject({ leader: "Humanoid", leader_value: 6, leader_champion: "Orianna", rows: 12, metric: "kills" });
+
+      const tops = await run(db, { tool: "game_records", input: { ...input, metric: "kills", role: "Top" } });
+
+      // Two games with 3 kills: the older one first, and the tie is said.
+      expect(tops.table!.rows.slice(0, 2).map((r) => [r[1], r[7]])).toEqual([["BrokenBlade", 3], ["Oscarinin", 3]]);
+      expect(tops.facts).toContain("2 parties à égalité en tête.");
+
+      const caps = await run(db, { tool: "game_records", input: { ...input, metric: "gold_diff_15", player: "Caps" } });
+
+      expect(caps.table!.rows.map((r) => r[7])).toEqual([300, 100, -100]);
+      expect(caps.title).toBe("Records sur une partie — écart or @15 de Caps (LEC)");
+      expect(caps.facts).toContain("1. Caps : +300 (Azir, G2 Esports contre Fnatic, LEC 2025, 2 janv. 2025)");
+      expect(caps.sources.some((s) => s.label.includes("données Riot"))).toBe(true);
+    }));
+
+  test("a player's latest games: record, KDA and streak over the games listed", () =>
+    seeded(async (db) => {
+      const out = await run(db, { tool: "player_recent_games", input: { player: "Caps", league: null, yearFrom: null, yearTo: null, count: null } });
+
+      expect(out.title).toBe("Caps — 3 dernières parties");
+      expect(out.table!.rows[0]).toEqual(["9 janv. 2025", "LEC 2025 · semaine 2", "G2 Esports", "Fnatic", "Azir", "Défaite", "1/4/3", 320, 20000, "40:00"]);
+      expect(out.totals).toMatchObject({ games: 3, wins: 2, losses: 1, kda: 3.43, streak: 1, streak_kind: "losses", last_champion: "Azir", last_opponent: "Fnatic" });
+      expect(out.facts).toContain("Caps : ses 3 dernières parties (du 2 janv. 2025 au 9 janv. 2025) : 2 victoires, 1 défaite, KDA 3,43 (3,3 / 2,3 / 4,7 par partie).");
+      expect(out.facts).toContain("Dernière partie : défaite contre Fnatic sur Azir (LEC 2025).");
+      expect(out.facts).not.toContain("Série en cours");
+
+      // BrokenBlade ends on a loss too, after two wins; Humanoid's two losses before his win are no current streak either.
+      const hum = await run(db, { tool: "player_recent_games", input: { player: "Humanoid", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025, count: 3 } });
+
+      expect(hum.totals).toMatchObject({ wins: 1, losses: 2, streak: 1, streak_kind: "wins" });
+    }));
+
+  test("a second champion in the question is the opponent, in the order written", () =>
+    seeded(async (db) => {
+      const read = async (question: string) => (await understandQuestion(db, question, new Date("2026-11-15")))?.result;
+
+      expect(await read("Azir contre Orianna")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: { champion: "Orianna" }, players: [] });
+      expect(await read("Orianna vs Azir en mid")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { champion: "Azir" } });
+      expect(await read("stats d'Azir")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+    }));
+});

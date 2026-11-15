@@ -6,7 +6,21 @@ import { readSchema, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
-import { aiTools, type BoundTool, bindTool, type ChampionAverageSort, type ChampionSort, type GamePhase, normalizeToolCall, type PlayerCriterion, type ToolCall } from "./tools";
+import {
+  aiTools,
+  type BoundTool,
+  bindTool,
+  type ChampionAverageSort,
+  type ChampionExtraSort,
+  type ChampionSort,
+  type GamePhase,
+  type MapSide,
+  normalizeToolCall,
+  type PlayerCriterion,
+  type RecordMetric,
+  type TeamCriterion,
+  type ToolCall,
+} from "./tools";
 import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
@@ -225,6 +239,59 @@ export function championAverageSortOf(question: string): ChampionAverageSort | n
   return asked.length === 1 && PER_GAME.test(question) && !LOWEST.test(question) ? asked[0][0] : null;
 }
 
+/** "par minute", "/min", and the per-minute figures by name. */
+const PER_MINUTE = word("par min(?:ute)?|per min(?:ute)?|/ ?min(?:ute)?|dpm|gpm|cspm");
+
+/** "joués par le plus de joueurs", "most different players": how many players picked a champion. */
+const MOST_PLAYERS = word("(?:le )?plus de joueurs|joueurs diff[ée]rents|most (?:different )?players|different players");
+
+/** The lane figures of the Riot data a champion ranking holds, at 15 min only. */
+const CHAMPION_INGAME_SORT: Partial<Record<NonNullable<MetricCue["player"]>, ChampionExtraSort>> = {
+  gold_diff: "gold_diff_15",
+  cs_diff: "cs_diff_15",
+  xp_diff: "xp_diff_15",
+  solo_kills: "solo_kills",
+  first_bloods: "first_blood",
+};
+
+/**
+ * A figure of the picks a champion ranking sorts by beyond its averages: damage, gold or CS per minute, a lane
+ * figure of the Riot data ("écart d'or à 15 min", "solo kills", "first blood"), or the number of players. Null when
+ * the question wants the lowest figure or a snapshot at another minute than 15: those stay with generated SQL.
+ */
+export function championExtraSortOf(question: string, cue: MetricCue | null): ChampionExtraSort | null {
+  if (LOWEST.test(question)) return null;
+
+  if (cue) {
+    const sort = cue.player ? CHAMPION_INGAME_SORT[cue.player] : undefined;
+
+    return sort && (cue.askedMinute == null || cue.askedMinute === 15 || !isSnapshot(cue)) ? sort : null;
+  }
+
+  if (MOST_PLAYERS.test(question)) return "players";
+
+  if (!PER_MINUTE.test(question)) return null;
+
+  if (word("dpm|d[ée]g[âa]ts|damages?|dmg").test(question)) return "dpm";
+
+  if (word("gpm|golds?|d['’]or|or").test(question)) return "gpm";
+
+  return word("cspm|cs|farm").test(question) ? "cspm" : null;
+}
+
+/** One side of the map: "côté bleu", "blue side", "en rouge". */
+export const SIDE_CUES: [MapSide, RegExp][] = [
+  ["blue", word("c[ôo]t[ée] bleu|blue ?side|side bleu|en bleu|(?:du|au|le) bleu")],
+  ["red", word("c[ôo]t[ée] rouge|red ?side|side rouge|en rouge|(?:du|au|le) rouge")],
+];
+
+/** The side a question asks about, null when it names none or both. */
+export function sideOf(question: string): MapSide | null {
+  const asked = SIDE_CUES.filter(([, re]) => re.test(question));
+
+  return asked.length === 1 ? asked[0][0] : null;
+}
+
 const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
 
 /** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
@@ -255,6 +322,8 @@ export function minimumOf(question: string, unit: "games" | "picks"): number | n
 export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
   ["kda", word("kda")],
   ["kp", word("kp|kill participation|participation aux kills|participation")],
+  ["dmg_share", word("parts? (?:des?|aux|de ses|de leurs) d[ée]g[âa]ts|(?:damage|dmg) share|share of (?:the )?(?:team(?:'s)? )?damage|dmg ?%|d[ée]g[âa]ts ?%|% (?:des? )?d[ée]g[âa]ts|d[ée]g[âa]ts de (?:son|leur|l') ?[ée]quipe")],
+  ["gold_share", word("parts? (?:de l'|des? |d')(?:or|golds?)|gold share|share of (?:the )?(?:team(?:'s)? )?gold|gold ?%|% (?:de l'|des? |d')(?:or|golds?)|(?:or|golds?) de (?:son|leur|l') ?[ée]quipe")],
   ["dpm", word("d[ée]g[âa]ts|damages?|dpm|dmg")],
   ["cspm", word("cs ?(?:/|par|per) ?min(?:ute)?|cspm|cs|farm(?:ers?|eurs?|ing)?")],
   ["gpm", word("gpm|gold|golds|or (?:par|per) minute|d'or")],
@@ -265,17 +334,22 @@ export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
   ["assists", word("assists?")],
 ];
 
+/** "part des dégâts de leur équipe" names a criterion of the players, not a ranking of teams. */
+const withoutTeamShare = (question: string) =>
+  PLAYER_CRITERION_CUES.filter(([c]) => c === "dmg_share" || c === "gold_share").reduce((q, [, re]) => q.replace(new RegExp(re.source, "giu"), " "), question).replace(/(?:de|d')\s*(?:son|leur|l')\s*[ée]quipe/giu, " ");
+
 export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
 
 /** Champions ranked on picks, bans, presence, win rate, KDA or a per-game average, optionally in one role. */
 function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question)): Route {
   const role = roleOf(question);
+  const side = sideOf(question);
 
   return {
     kind: "tool",
-    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, role, minPicks: minimumOf(question, "picks") } },
+    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, role, side, minPicks: minimumOf(question, "picks") } },
     confidence: 0.9,
-    reason: `classement de champions (tri : ${sort}${role ? `, rôle ${role}` : ""})`,
+    reason: `classement de champions (tri : ${sort}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
     notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
   };
 }
@@ -284,12 +358,13 @@ function championRankingRoute(question: string, e: Entities, sort: ChampionSort 
 function playerLeaderboardRoute(question: string, e: Entities): Route {
   const criterion = playerCriterionOf(question);
   const role = roleOf(question);
+  const side = sideOf(question);
 
   return {
     kind: "tool",
-    call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games") } },
+    call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games"), side } },
     confidence: 0.85,
-    reason: `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion})`,
+    reason: `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion}${side ? `, côté ${side}` : ""})`,
     // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
     notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
   };
@@ -394,7 +469,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
 
     return {
       kind: "tool",
-      call: { tool: "ingame_leaderboard", input: { subject: team ? "team" : "player", metric, minute: cue.minute, league, ...period, role, minGames: null } },
+      call: { tool: "ingame_leaderboard", input: { subject: team ? "team" : "player", metric, minute: cue.minute, league, ...period, role, minGames: null, side: sideOf(question) } },
       confidence: 0.85,
       reason: `classement sur une statistique in-game (« ${cue.mention} »)`,
       notes: league ? [] : ["Aucune compétition précisée : classement sur toutes les compétitions avec données in-game."],
@@ -610,6 +685,135 @@ function poolRoute(question: string, e: Entities): Route {
   };
 }
 
+// Teams ranked ---------------------------------------------------------------------------
+
+/** What a team ranking is ordered by, most specific first. Without one of these words the standings keep "meilleures équipes". */
+export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
+  ["game_length", word("dur[ée]es?|durations?|longues?|courtes?|rapides?|lentes?|rapidement|vite|longest|shortest|fastest|slowest|long|short|fast|slow|game ?time|temps de jeu")],
+  ["champions", word("champions? (?:diff[ée]rents?|uniques?|distincts?)|(?:different|unique|distinct) champions?|plus de champions|most champions|champion pools?|pools? de champions?|diversit[ée]")],
+  ["void_grubs", word("grubs?|larves?|void ?grubs?")],
+  ["heralds", word("h[ée]rauts?|heralds?")],
+  ["dragons", word("dragons?|drakes?")],
+  ["barons", word("barons?|nashors?")],
+  ["towers", word("tou?rs|tourelles?|towers?|turrets?")],
+  ["kda", word("kda")],
+  ["deaths", word("morts?|deaths?|meurent|die")],
+  ["kills", word("kills?|sanglantes?|bloodiest|tuent")],
+  ["games", word("(?:le plus de|most) (?:parties|games|matchs)|(?:le plus|most) jou[ée]|played the most")],
+  ["winrate", word("win ?rates?|taux de victoire|victoires?|wins?|gagn\\p{L}*|winning")],
+];
+
+/** "les plus courtes", "le moins de morts": the lowest figure first. */
+const ASCENDING = word("courtes?|rapides?|rapidement|vite|shortest|fastest|short|fast|(?<!au )moins|(?<!at )least|fewest|lowest");
+
+export const teamCriterionOf = (question: string): TeamCriterion | null => TEAM_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? null;
+
+/** Teams ranked on an explicit end-of-game criterion ("équipes avec le meilleur winrate côté bleu en LEC 2025"). */
+function teamLeaderboardRoute(question: string, e: Entities, criterion: TeamCriterion): Route {
+  const side = sideOf(question);
+  const order = ASCENDING.test(question) ? "asc" : "desc";
+
+  return {
+    kind: "tool",
+    call: { tool: "team_leaderboard", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, order, side, minGames: minimumOf(question, "games") } },
+    confidence: 0.85,
+    reason: `classement d'équipes (critère : ${criterion}${order === "asc" ? ", ordre croissant" : ""}${side ? `, côté ${side}` : ""})`,
+    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+  };
+}
+
+// Champion matchups ------------------------------------------------------------------------
+
+/** Words asking who a champion faces: "matchups d'Azir", "counters de K'Sante", "contre qui Jax perd le plus". */
+export const MATCHUP = word(
+  "match[- ]?ups?|counters?|contres?|contre (?:qui|quels? champions?|quoi)|face [àa] (?:qui|quels? champions?|quoi)|against (?:who|whom|which champions?|what champions?|what)|" +
+    "adversaires? directs?|lane opponents?|vis[- ][àa][- ]vis|b[êe]tes? noires?|pires? adversaires?|meilleurs? adversaires?",
+);
+
+/**
+ * A champion against its direct opponents: two champions set against each other ("Azir contre Orianna"), or one
+ * champion and a matchup word ("matchups d'Azir"). Every competition unless the question names one: a matchup has few games.
+ */
+function matchupRoute(question: string, e: Entities): Route {
+  const role = roleOf(question);
+  const opponent = e.opponentChampion?.champion ?? null;
+  const cue = MATCHUP.exec(question)?.[0] ?? VERSUS.exec(question)?.[0];
+
+  return {
+    kind: "tool",
+    call: { tool: "champion_matchup", input: { champion: e.champion!.champion, opponent, role, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: 0.9,
+    reason: opponent ? `deux champions opposés (« ${cue} ») → leur matchup` : `un champion et « ${cue} » → ses adversaires directs`,
+    notes: e.league ? [] : ["Aucune compétition précisée : toutes compétitions confondues."],
+    forced: true,
+  };
+}
+
+// Single-game records ------------------------------------------------------------------------
+
+/** "en une partie", "in a single game": one game's figure, not a total over the scope. */
+const SINGLE_GAME = word(
+  "(?:en|sur|dans|lors d') ?(?:une|1) (?:seule |m[êe]me )?(?:partie|game|manche|map)|in (?:a|one|1) (?:single )?(?:game|match|map)|single[- ]game|" +
+    "records?|meilleures? (?:parties?|games?|perfs?|performances?)|best (?:games?|performances?)|pires? (?:parties?|games?)",
+);
+
+/** The figure a single-game record is asked on, when the question names exactly one. */
+export function recordMetricOf(question: string, cue: MetricCue | null): RecordMetric | null {
+  if (cue) {
+    const sort = cue.player ? CHAMPION_INGAME_SORT[cue.player] : undefined;
+
+    return (sort === "gold_diff_15" || sort === "cs_diff_15") && (cue.askedMinute == null || cue.askedMinute === 15) ? sort : sort === "solo_kills" ? sort : null;
+  }
+
+  const asked = CHAMPION_AVERAGE_CUES.filter(([, re]) => re.test(question));
+
+  return asked.length === 1 ? asked[0][0] : null;
+}
+
+/** The best single games on one figure, of everyone or of the one player named. */
+function recordsRoute(e: Entities, metric: RecordMetric, role: ReturnType<typeof roleOf>): Route {
+  const player = e.players[0]?.player ?? null;
+
+  return {
+    kind: "tool",
+    call: { tool: "game_records", input: { metric, player, role: player ? null : role, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    confidence: 0.9,
+    reason: `record sur une partie (${metric})${player ? ` de ${player}` : ""}`,
+    notes: e.league ? [] : ["Aucune compétition précisée : toutes compétitions confondues."],
+    forced: true,
+  };
+}
+
+// A player's latest games --------------------------------------------------------------------
+
+/** "forme récente", "dernières parties", "last 5 games", "en ce moment". */
+export const RECENT = word(
+  "formes?(?: r[ée]cente| actuelle| du moment)?|en forme|" +
+    "(?:\\d{1,2} )?derni[èe]re?s? (?:\\d{1,2} )?(?:parties?|games?|matchs?|matches|rencontres?|manches?)|(?:parties?|games?|matchs?) r[ée]cente?s?|" +
+    "last (?:\\d{1,2} )?(?:games?|matches|match)|recent (?:games?|matches|form|results?)|r[ée]cemment|recently|lately|en ce moment|right now|these days|ces derniers temps|ces temps-ci",
+);
+
+/** "5 dernières parties", "last 5 games": how many games, within what the tool lists. */
+export function recentCountOf(question: string): number | null {
+  const m = /(\d{1,2})\s+derni|derni\p{L}+\s+(\d{1,2})|last\s+(\d{1,2})/iu.exec(question);
+  const n = Number(m?.slice(1).find(Boolean));
+
+  return Number.isInteger(n) && n > 0 ? Math.min(20, Math.max(3, n)) : null;
+}
+
+function recentRoute(question: string, e: Entities): Route {
+  const player = e.players[0].player;
+
+  return {
+    kind: "tool",
+    call: { tool: "player_recent_games", input: { player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, count: recentCountOf(question) } },
+    confidence: 0.9,
+    reason: `un joueur et « ${RECENT.exec(question)![0]} » → ses dernières parties`,
+    notes: e.teams.length ? [`Équipe « ${e.teams[0].mention} » ignorée : dernières parties de ${player} toutes équipes confondues.`] : [],
+    forced: true,
+  };
+}
+
 /** A champion alone: its stats in the competition (the Worlds when the question names none). */
 function championRoute(e: Entities): Route {
   return {
@@ -649,6 +853,14 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   if (series) return series;
 
+  // A champion against its direct opponents: two champions set against each other, or one and a matchup word.
+  if (e.champion && !e.players.length && !e.teams.length && (MATCHUP.test(question) || (e.opponentChampion && VERSUS.test(question)))) return matchupRoute(question, e);
+
+  // "record de kills en une partie aux Worlds", "meilleure game de Faker en dégâts": one game's figure, of everyone or of one player.
+  const record = !e.champion && !e.teams.length && e.players.length <= 1 && SINGLE_GAME.test(question) && !LOWEST.test(question) ? recordMetricOf(question, detectMetric(question)) : null;
+
+  if (record) return recordsRoute(e, record, roleOf(question));
+
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
 
@@ -659,6 +871,9 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // before the roster: "quels champions joue le mid de T1" asks for champions, not players.
   // Not with a champion named (a player on one champion), nor with an in-game metric the pool does not hold.
   if (!e.champion && !detectMetric(question) && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
+
+  // One player and a word about their latest games ("forme récente de Faker", "5 dernières parties de Caps").
+  if (e.players.length === 1 && !e.champion && !detectMetric(question) && RECENT.test(question)) return recentRoute(question, e);
 
   // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
   // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?", "top fpx 2019", "jg de G2"): the roster, that role first.
@@ -677,9 +892,19 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
   if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e);
 
+  // Teams ranked on a criterion the question names ("équipes avec le meilleur winrate", "quelle équipe a les parties les plus courtes").
+  // In-game metrics keep their leaderboard, and "meilleures équipes" alone keeps the standings.
+  const teamCriterion = noEntity && !cue && TEAM_WORDS.test(question) && RANKING.test(question) && !PLAYER_WORDS.test(question) ? teamCriterionOf(question) : null;
+
+  if (teamCriterion) return teamLeaderboardRoute(question, e, teamCriterion);
+
   if (noEntity && CHAMPION_RANKING.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
     const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
     const average = cue ? null : championAverageSortOf(question);
+    const extra = championExtraSortOf(question, cue);
+
+    // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
+    if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, extra);
 
     // "champion avec le plus de morts par game": an average the ranking sorts by, with its minimum of picks.
     if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);
@@ -699,7 +924,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a
   // tournament's standings: only without a role or a player word.
   if (
-    forPlayers && !cue && (RANKING.test(question) || (ranksPlayers && COMPARE.test(question))) && !TEAM_WORDS.test(question) &&
+    forPlayers && !cue && (RANKING.test(question) || (ranksPlayers && COMPARE.test(question))) && !TEAM_WORDS.test(withoutTeamShare(question)) &&
     (ranksPlayers || !STANDINGS.test(question)) && (ranksPlayers || PLAYER_CRITERION_CUES.some(([, re]) => re.test(question)))
   )
     return playerLeaderboardRoute(question, e);
@@ -829,8 +1054,12 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ...CHAMPION_SORT_CUES.map(([, re]) => re),
     ...CHAMPION_AVERAGE_CUES.map(([, re]) => re),
     PER_GAME,
+    PER_MINUTE,
+    MOST_PLAYERS,
+    MINUTE,
+    ...SIDE_CUES.map(([, re]) => re),
     ...ROLE_CUES.map((r) => r.pattern),
-    word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?"),
+    word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often"),
   ],
   champion_pool: [
     POOL,
@@ -847,10 +1076,11 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     COMPARE,
     PLAYER_WORDS,
     ...PLAYER_CRITERION_CUES.map(([, re]) => re),
+    ...SIDE_CUES.map(([, re]) => re),
     word(
       "du monde|in the world|de tous les temps|of all time|all[- ]time|ever|selon|crit[èe]res?|en termes de|in terms of|stats?|statistiques?|" +
         "jou[ée]e?s?|played|parties|games|matchs|par minute|per minute|au moins|at least|minimum|plus de|more than|over|avec|with|" +
-        "postes?|r[ôo]les?|lanes?|classement|ranking|liste|list",
+        "postes?|r[ôo]les?|lanes?|classement|ranking|liste|list|gros(?:se)?s?|grande?s?|biggest|largest|(?:de|d') ?(?:son|leur|l') ?[ée]quipe|of (?:his|their|the) team",
     ),
   ],
   tournament_standings: [
@@ -863,7 +1093,43 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   ],
   player_ingame_stats: [MINUTE, INGAME_WORDS],
   team_ingame_stats: [MINUTE, INGAME_WORDS, TEAM_WORDS],
-  ingame_leaderboard: [MINUTE, RANKING, INGAME_WORDS, TEAM_WORDS, word("souvent|often")],
+  ingame_leaderboard: [MINUTE, RANKING, INGAME_WORDS, TEAM_WORDS, ...SIDE_CUES.map(([, re]) => re), word("souvent|often")],
+  team_leaderboard: [
+    RANKING,
+    TEAM_WORDS,
+    ...TEAM_CRITERION_CUES.map(([, re]) => re),
+    ASCENDING,
+    PER_GAME,
+    GAME_WORDS,
+    ...SIDE_CUES.map(([, re]) => re),
+    word("classement|ranking|liste|list|stats?|statistiques?|au moins|at least|minimum|plus de|more than|over|avec|with|jou[ée]e?s?|played|pris|prend|prennent|taken|takes?"),
+  ],
+  champion_matchup: [
+    MATCHUP,
+    VERSUS,
+    OPPOSE,
+    GAME_WORDS,
+    ...ROLE_CUES.map((r) => r.pattern),
+    word(
+      "champions?|champs?|stats?|statistiques?|win ?rates?|taux de victoire|victoires?|d[ée]faites?|wins?|losses|gagne(?:nt)?|perd(?:ent)?|bat(?:tent)?|beats?|loses?|" +
+        "le plus|most|souvent|often|bilan|r[ée]sultats?|results?|lanes?|postes?|r[ôo]les?|en|in|au|at|fort|strong|bon|good",
+    ),
+  ],
+  game_records: [
+    SINGLE_GAME,
+    RANKING,
+    PLAYER_WORDS,
+    ...CHAMPION_AVERAGE_CUES.map(([, re]) => re),
+    ...ROLE_CUES.map((r) => r.pattern),
+    MINUTE,
+    word("historique|history|all[- ]time|de tous les temps|of all time|ever|absolu|nombre|number|total|performances?|perfs?|en termes de|in terms of"),
+  ],
+  player_recent_games: [
+    RECENT,
+    HISTORY_WORDS,
+    GAME_WORDS,
+    word("comment|how|joue|plays?|playing|va|doing|niveau|level|actuel(?:le)?s?|current|liste|list|montre|show"),
+  ],
   series: [...PHASES.map((p) => p.pattern), SERIES_WORDS, VERSUS, OPPOSE, GAME_WORDS, ...SPLIT_CUES.map((c) => c.pattern)],
   game_timeline: [TIMELINE, ...GAME_NUMBER, ...ORDINALS.map(([pattern]) => pattern), ...PHASES.map((p) => p.pattern), VERSUS, GAME_WORDS],
 };
@@ -888,7 +1154,8 @@ export function unreadWords(question: string, e: Entities, call: ToolCall | null
   };
 
   if (call) {
-    const ingame = call.tool === "player_ingame_stats" || call.tool === "team_ingame_stats" || call.tool === "ingame_leaderboard";
+    // The in-game cue is read by the in-game tools, and by a champion ranking or a record on a lane figure.
+    const ingame = ["player_ingame_stats", "team_ingame_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool);
     const cue = ingame ? detectMetric(question) : null;
 
     if (cue) take(word(cue.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
