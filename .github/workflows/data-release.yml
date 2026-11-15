@@ -43,7 +43,7 @@ jobs:
     env:
       # One request at a time, 3 s apart, cached in data/raw.
       LEAGUEPEDIA_DELAY_MS: "3000"
-      LEAGUEPEDIA_USER_AGENT: "farsight/1.0 (+https://farsight.enzoneault.dev; weekly batch ingestion, one request every 3 s)"
+      LEAGUEPEDIA_USER_AGENT: "farsight/1.0 (+https://askfarsight.com; weekly batch ingestion, one request every 3 s)"
       # Minutes of Riot JSON downloads per run (2 games per request, about 1.5 s per game).
       RIOT_BUDGET_MINUTES: "90"
     steps:

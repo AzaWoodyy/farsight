@@ -45,7 +45,7 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     env:
-      SITE_URL: https://farsight.enzoneault.dev
+      SITE_URL: https://askfarsight.com
     steps:
       # CI-driven deploys use the validated SHA. A data release/manual call
       # takes the tip of main, rather than rolling back to the ingestion start.
