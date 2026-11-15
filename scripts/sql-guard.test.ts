@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery, MAX_ROWS, VIEWS } from "../src/lib/agent/guard";
-import { executeGeneratedQuery, SqlTimeoutError, SQL_TIMEOUT_MS } from "../src/lib/db/generated-query";
+import { executeGeneratedQuery, MAX_SQL_CHILDREN, SqlTimeoutError, SQL_TIMEOUT_MS } from "../src/lib/db/generated-query";
 import { openReadOnlyDb, readSchema } from "../src/lib/db";
 import { SCHEMA_VERSION } from "../src/lib/db/schema";
 
@@ -104,6 +104,43 @@ test("aborting a generated query kills its child", async () => {
     await expect(executeGeneratedQuery("SELECT count(*) AS n FROM v_game_players a, v_game_players b, v_game_players c", [], { databasePath: path, signal: controller.signal })).rejects.toThrow(/aborted/i);
   } finally { clearTimeout(timer); }
 });
+
+const SLOW_SQL = "SELECT count(*) AS n FROM v_game_players a, v_game_players b, v_game_players c, v_game_players d";
+
+test("generated queries beyond the cap wait and share the deadline", async () => {
+  const { db, path } = fixture(1_000);
+  db.close();
+  const slow = Array.from({ length: MAX_SQL_CHILDREN }, () => executeGeneratedQuery(SLOW_SQL, [], { databasePath: path }));
+  // Trivial, but it waits for a slot until the shared deadline.
+  const queued = executeGeneratedQuery("SELECT 1 AS n", [], { databasePath: path });
+  const settled = await Promise.allSettled([...slow, queued]);
+
+  for (const result of settled) {
+    expect(result.status).toBe("rejected");
+
+    if (result.status === "rejected") expect(result.reason).toBeInstanceOf(SqlTimeoutError);
+  }
+
+  // Every slot was released.
+  expect(await executeGeneratedQuery("SELECT 1 AS n", [], { databasePath: path })).toEqual([{ n: 1 }]);
+}, SQL_TIMEOUT_MS + 6_000);
+
+test("aborting a queued generated query rejects without waiting", async () => {
+  const { db, path } = fixture(1_000);
+  db.close();
+  const slow = Array.from({ length: MAX_SQL_CHILDREN }, () => executeGeneratedQuery(SLOW_SQL, [], { databasePath: path }));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 40);
+  const started = performance.now();
+
+  try {
+    await expect(executeGeneratedQuery("SELECT 1 AS n", [], { databasePath: path, signal: controller.signal })).rejects.toThrow(/aborted/i);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  } finally {
+    clearTimeout(timer);
+    await Promise.allSettled(slow);
+  }
+}, SQL_TIMEOUT_MS + 6_000);
 
 
 test("read-only opening checks the schema version and enforces SQLite length limits", () => {
