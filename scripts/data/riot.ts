@@ -340,25 +340,33 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   let lastLog = 0;
   let failures = 0;
 
-  const store = async (raw: RawGame, body: Uint8Array) => {
+  /** Caches the game locally and uploads it; false when the upload failed (the game is then left for the next run). */
+  const store = async (raw: RawGame, body: Uint8Array): Promise<boolean> => {
     const key = rawGameKey(raw.key);
     await local.put(key, body, RAW_GAME_CONTENT_TYPE);
 
-    if (!opts.remote) return;
+    if (!opts.remote) return true;
 
     try {
       await opts.remote.put(key, body, RAW_GAME_CONTENT_TYPE);
       counts.uploaded++;
+
+      return true;
     } catch (err) {
       counts.upload_errors++;
-      console.warn(`  riot: upload of ${key} failed (${err instanceof Error ? err.message : String(err)}), \`bun run data:sync\` will retry`);
+      console.warn(
+        `  riot: upload of ${key} failed (${err instanceof Error ? err.message : String(err)}), left for the next run ` +
+          "(on a machine that keeps data/raw/riot, `bun run data:sync` uploads it)",
+      );
+
+      return false;
     }
   };
 
   while (todo.length) {
     if (Date.now() > deadline) {
-      counts.left = todo.length;
-      console.log(`riot: time budget reached, ${counts.left} games left for the next run`);
+      counts.left += todo.length;
+      console.log(`riot: time budget reached, ${todo.length} games left for the next run`);
       break;
     }
 
@@ -399,7 +407,12 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
         continue;
       }
 
-      await store(result, encodeRawGame(result));
+      // No summary without the object on R2: an `ok` line would make every later run skip the game.
+      if (!(await store(result, encodeRawGame(result)))) {
+        counts.left++;
+        continue;
+      }
+
       counts.from_wiki++;
       summarize(result, summaries, counts);
     }
