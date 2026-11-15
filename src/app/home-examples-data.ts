@@ -24,6 +24,7 @@ export const EXAMPLES: Example[] = [
   { category: "champions", question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
   { category: "champions", question: "Champions les plus joués aux Worlds 2024", display: "méta d'un tournoi" },
   { category: "champions", question: "Items de Yunara aux Worlds 2026", display: "fiche champion et items" },
+  { category: "champions", question: "Champions avec le plus de morts par game aux Worlds 2026", display: "moyenne par partie" },
   { category: "parties", question: "Finale des Worlds 2025", display: "série en BO, game par game" },
   { category: "parties", question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
   { category: "parties", question: "Classement des Worlds 2023", display: "classement de tournoi" },
