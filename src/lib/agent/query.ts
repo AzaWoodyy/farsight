@@ -383,6 +383,18 @@ function scopeOf(e: Entities): string {
   return short === "MSI" ? "le MSI" : `la ${short}`;
 }
 
+/** The competition asked has no game with Riot data (the LPL, older seasons): the figure is absent, said without widening the scope. */
+function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): Route | null {
+  if (!e.league || coverage.league(e.league, e.yearFrom, e.yearTo).ingame > 0) return null;
+
+  return {
+    kind: "missing",
+    concepts: [`les statistiques in-game (${mention}) pour ${scopeOf(e)}`],
+    reason: `aucune partie de ${e.leagueShort ?? e.league} ${e.yearFrom ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
+    coverage: true,
+  };
+}
+
 /**
  * In-game questions (Riot data): the typed in-game tools, or "missing" when
  * the scope has no in-game data at all (the LPL, older seasons, some events).
@@ -400,13 +412,9 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       reason: `minute ${cue.askedMinute} absente des données in-game`,
     };
 
-  if (league && coverage.league(league, e.yearFrom, e.yearTo).ingame === 0)
-    return {
-      kind: "missing",
-      concepts: [`${what} pour ${scopeOf(e)}`],
-      reason: `aucune partie de ${e.leagueShort ?? league} ${e.yearFrom ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
-      coverage: true,
-    };
+  const absent = ingameAbsent(e, cue.mention, coverage);
+
+  if (absent) return absent;
 
   if (e.players.length === 1 && e.teams.length === 0 && !e.champion) {
     const p = e.players[0].player;
@@ -857,9 +865,14 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   if (e.champion && !e.players.length && !e.teams.length && (MATCHUP.test(question) || (e.opponentChampion && VERSUS.test(question)))) return matchupRoute(question, e);
 
   // "record de kills en une partie aux Worlds", "meilleure game de Faker en dégâts": one game's figure, of everyone or of one player.
-  const record = !e.champion && !e.teams.length && e.players.length <= 1 && SINGLE_GAME.test(question) && !LOWEST.test(question) ? recordMetricOf(question, detectMetric(question)) : null;
+  const recordCue = detectMetric(question);
+  const asksRecord = !e.champion && !e.teams.length && e.players.length <= 1 && SINGLE_GAME.test(question) && !LOWEST.test(question);
+  const record = asksRecord ? recordMetricOf(question, recordCue) : null;
 
-  if (record) return recordsRoute(e, record, roleOf(question));
+  // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
+  if (record && PER_MINUTE.test(question)) return { kind: "sql", reason: "record sur une partie d'un chiffre par minute : pas d'outil typé" };
+
+  if (record) return (recordCue && ingameAbsent(e, recordCue.mention, coverage)) ?? recordsRoute(e, record, roleOf(question));
 
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
@@ -904,7 +917,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     const extra = championExtraSortOf(question, cue);
 
     // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
-    if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, extra);
+    if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, extra);
 
     // "champion avec le plus de morts par game": an average the ranking sorts by, with its minimum of picks.
     if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);

@@ -147,6 +147,10 @@ describe("routes of the rankings", () => {
     });
     expect(route("most damage in a single game", NONE)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "damage", league: null } } });
     expect(route("record de kills des mids en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "kills", role: "Mid" } } });
+    // A per-minute figure is not one the records hold, and a competition without Riot data has no lane record.
+    expect(route("record de dégâts par minute en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "sql" });
+    expect(routeQuestion("record de solo kills en une partie aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(routeQuestion("champions avec le meilleur écart d'or à 15 min aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
     expect(route("meilleure game de Faker en kills", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: "Faker", role: null } } });
     // A total over the scope stays the player ranking, and a team's "record" is its results.
     expect(route("qui a le plus de kills aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "kills" } } });
@@ -255,12 +259,12 @@ describe("rankings on a seeded season", () => {
       // A column without any figure (the CS and XP differences here) is left out of the layout.
       expect(layout.metrics.map((m) => m.key)).not.toContain("cs_diff_15");
 
-      // Blue side: Azir's games 1 and 3, one win; bans and presence stay on every game.
+      // Blue side: Azir's games 1 and 3, one win; presence counts the blue picks and bans only.
       const blue = await run(db, { tool: "champion_ranking", input: { ...input, sort: "picks", side: "blue" } });
 
-      expect(blue.table!.rows[0].slice(0, 7)).toEqual([1, "Azir", 2, 0, 100, 50, 2.8]);
+      expect(blue.table!.rows[0].slice(0, 7)).toEqual([1, "Azir", 2, 0, 66.7, 50, 2.8]);
       expect(blue.title).toBe("Champions les plus joués côté bleu — LEC 2025");
-      expect(blue.facts).toContain("côté bleu seulement ; bans et présence tous côtés confondus");
+      expect(blue.facts).toContain("Picks, bans et présence côté bleu seulement, sur les 3 parties.");
     }));
 
   test("player leaderboard: share of the team's damage and gold, and one side of the map", () =>

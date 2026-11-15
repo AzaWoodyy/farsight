@@ -1963,6 +1963,8 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     // The picks the figures are about: one role, one side of the map, or every pick.
     const mine = (alias: string) => [input.role ? `${alias}.role = :role` : "", input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : ""].filter(Boolean).join(" AND ") || "1";
     const role = mine("gp");
+    // Bans and presence follow the side asked; a ban has no role.
+    const side = (alias: string) => (input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : "1");
 
     const perMinuteOf = (column: string) =>
       `60.0 * SUM(CASE WHEN ${role} AND ev.length_s > 0 THEN gp.${column} END) / SUM(CASE WHEN ${role} AND ev.length_s > 0 AND gp.${column} IS NOT NULL THEN ev.length_s END)`;
@@ -1981,7 +1983,7 @@ const championRanking: ToolDef<ChampionRankingInput> = {
 ),
 n AS (SELECT COUNT(*) AS games FROM ev),
 picks AS (
-  SELECT gp.champion, COUNT(*) AS all_picks, SUM(${role}) AS picks,
+  SELECT gp.champion, SUM(${side("gp")}) AS all_picks, SUM(${role}) AS picks,
          SUM(CASE WHEN ${role} THEN gp.win END) AS wins,
          SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
          SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths,
@@ -2000,7 +2002,7 @@ ig AS (
   GROUP BY s.champion
 ),
 bans AS (
-  SELECT d.champion, COUNT(DISTINCT d.game_id) AS bans FROM v_draft d JOIN ev ON ev.game_id = d.game_id WHERE d.kind = 'ban' GROUP BY d.champion
+  SELECT d.champion, COUNT(DISTINCT d.game_id) AS bans FROM v_draft d JOIN ev ON ev.game_id = d.game_id WHERE d.kind = 'ban' AND ${side("d")} GROUP BY d.champion
 ),
 lines AS (
   SELECT c.name AS champion, c.icon_url AS icon, COALESCE(p.picks, 0) AS picks, COALESCE(p.all_picks, 0) AS all_picks,
@@ -2018,7 +2020,7 @@ lines AS (
   LEFT JOIN picks p ON p.champion = c.name
   LEFT JOIN bans b ON b.champion = c.name
   LEFT JOIN ig i ON i.champion = c.name
-  WHERE ${input.role || input.side ? "COALESCE(p.picks, 0) > 0" : "COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0) > 0"}
+  WHERE ${input.role ? "COALESCE(p.picks, 0) > 0" : "COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0) > 0"}
 )
 SELECT *, ${order} AS sort_value FROM lines
 WHERE picks >= min_picks AND ${order} IS NOT NULL
@@ -2067,9 +2069,11 @@ LIMIT 20`),
     const facts =
       `Champions ${label.title}${role} ${scope || "toutes compétitions"} (${games} parties) : ${rows.slice(0, 3).map(line).join(", ")}. ` +
       `Critère : ${label.criterion}${minPicks ? `, minimum ${minPicks} picks` : ""}.` +
-      (input.role || input.side
-        ? ` Picks, victoires, KDA et moyennes${role} seulement ; bans et présence tous ${input.role ? "rôles" : "côtés"} confondus.`
-        : "") +
+      (input.role
+        ? ` Picks, victoires, KDA et moyennes${role} seulement ; bans et présence${sideLabel(input.side)} tous rôles confondus.`
+        : input.side
+          ? ` Picks, bans et présence${role} seulement, sur les ${games} parties.`
+          : "") +
       (CHAMPION_INGAME_SORTS.includes(input.sort) && ingamePicks === 0 ? " Aucune partie de ce périmètre n'a de données Riot : pas d'écart à 15 min, de first blood ni de solo kills." : "") +
       (ongoing ? ` ${ongoing}` : "");
 
@@ -4475,7 +4479,8 @@ LIMIT 20`),
 
     if (input.role) out.push({ key: "role", input: { ...input, role: null }, note: "Aucune partie à ce poste dans ce périmètre : tous les postes.", reason: "filtre de rôle retiré" });
 
-    if (input.league)
+    // A competition without Riot data has no lane figure: another competition's records would answer another question.
+    if (input.league && !RECORD_DEFS[input.metric].ingame)
       out.push({ key: "league", input: { ...input, league: null }, note: "Aucune partie dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
 
     return out;
