@@ -10,6 +10,7 @@ export type StepName = (typeof STEPS)[number];
 
 export { LEAGUE_NAMES, type LeagueName } from "../domain/leagues";
 
+import type { ItemKind } from "../domain/items";
 import type { LeagueName } from "../domain/leagues";
 
 export type TraceStatus = "ok" | "warn" | "error" | "fix";
@@ -388,6 +389,27 @@ export type ChampionPlayer = {
   kda: number | null;
 };
 
+/** One item of a champion's end-of-game inventories: in how many of its games, and how they ended. */
+export type ChampionItem = {
+  item: string;
+  icon: string;
+  /** Data Dragon kind (src/lib/domain/items.ts); null for an item Data Dragon does not know. */
+  kind: ItemKind | null;
+  /** Games on the champion that ended with the item (two copies count once). */
+  games: number;
+  wins: number;
+};
+
+/** A champion's most built items in the scope: final inventories listed by Leaguepedia. */
+export type ChampionItems = {
+  /** Games on the champion that have an inventory, the share denominator (≤ picks). */
+  games: number;
+  /** Most games first, every kind; the view filters by kind. */
+  items: ChampionItem[];
+  /** Why the list is empty or incomplete for part of the scope (no inventory listed, boots of bot laners since 2026). */
+  notes: string[];
+};
+
 /** One champion in a competition and period (champion_event_stats tool); null figures are not in the data ("n/d"). */
 export type ChampionProfile = {
   champion: string;
@@ -406,6 +428,7 @@ export type ChampionProfile = {
   players: ChampionPlayer[];
   /** Roles it was played in, most games first. */
   roles: { role: string; games: number }[];
+  items: ChampionItems;
 };
 
 /** One champion of a pool: how often and how well the player (or the team) played it. */

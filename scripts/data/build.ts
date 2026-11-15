@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { normalizeAlias } from "../../src/lib/aliases";
+import { enchantedKind, type ItemKind, ItemMeta, itemKinds } from "../../src/lib/domain/items";
 import { DB_MAX_BYTES, DB_WARN_BYTES } from "./artifact";
 import { playerIdentity } from "./identity";
 import { loadIngame } from "./riot";
@@ -353,8 +354,9 @@ const DdragonData = z.object({
   champion: z.object({
     data: z.record(z.string(), z.object({ id: z.string(), key: z.string(), name: z.string(), image: z.object({ full: z.string() }) })),
   }),
-  item: z.object({ data: z.record(z.string(), z.object({ name: z.string() })) }),
-  legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()) })),
+  item: z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) }),
+  // `meta` is absent from raw caches fetched before items had a kind: their retired items get a NULL kind.
+  legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()), meta: z.record(z.string(), ItemMeta).optional() })),
 });
 
 const dd = load("ddragon", DdragonData);
@@ -390,13 +392,49 @@ for (const src of itemSources)
     if (!itemIcon.has(key)) itemIcon.set(key, { id, version: src.version, legacy: src.legacy });
   }
 
-const insItemRow = db.prepare("INSERT INTO items (id, name, icon_url) VALUES (?, ?, ?)");
+// Kind from the newest patch that has the item (ARAM and Arena variants share names with another recipe).
+const kindSources: { meta: Record<string, ItemMeta>; items: Record<string, string> }[] = [
+  {
+    meta: Object.fromEntries(Object.entries(dd.item.data).flatMap(([id, it]) => {
+      const meta = ItemMeta.safeParse(it);
+
+      return meta.success ? [[id, meta.data]] : [];
+    })),
+    items: Object.fromEntries(Object.entries(dd.item.data).map(([k, v]) => [k, v.name])),
+  },
+  ...dd.legacyItems.map((l) => ({ meta: l.meta ?? {}, items: l.items })),
+];
+
+const itemKindByName = new Map<string, ItemKind>();
+
+// Summoner's Rift entries of every patch first, then the other maps' entries for names the Rift never had.
+for (const rift of [true, false])
+  for (const src of kindSources) {
+    const kinds = itemKinds(src.meta);
+
+    for (const [id, name] of Object.entries(src.items)) {
+      const key = normalizeAlias(name);
+
+      if (kinds[id] && (src.meta[id].maps?.["11"] === true) === rift && !itemKindByName.has(key)) itemKindByName.set(key, kinds[id]);
+    }
+  }
+
+const kindOfItem = (name: string) => {
+  const kindOf = (n: string) => itemKindByName.get(normalizeAlias(n));
+
+  return kindOf(name) ?? enchantedKind(name, kindOf) ?? null;
+};
+
+const insItemRow = db.prepare("INSERT INTO items (id, name, icon_url, kind) VALUES (?, ?, ?, ?)");
 const itemIcons = { ddragon: 0, ddragon_legacy: 0, fallback: 0 };
+const kindCounts: Record<string, number> = {};
 
 for (const [name, id] of itemIds) {
   const icon = itemIcon.get(normalizeAlias(name));
-  insItemRow.run(id, name, icon ? `${cdn}/${icon.version}/img/item/${icon.id}.png` : ITEM_FALLBACK_ICON);
+  const kind = kindOfItem(name);
+  insItemRow.run(id, name, icon ? `${cdn}/${icon.version}/img/item/${icon.id}.png` : ITEM_FALLBACK_ICON, kind);
   itemIcons[icon ? (icon.legacy ? "ddragon_legacy" : "ddragon") : "fallback"]++;
+  kindCounts[kind ?? "unknown"] = (kindCounts[kind ?? "unknown"] ?? 0) + 1;
 }
 
 // In-game stats (Riot JSON summaries) --------------------------------------------
@@ -545,7 +583,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, ingame: ingameCounts, identity }),
+  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, ingame: ingameCounts, identity }),
 );
 
 db.exec("COMMIT");
@@ -581,6 +619,8 @@ console.log(`skipped: ${skippedGames} games, ${skippedLines} player lines (outsi
 console.log("rows:", rowCounts);
 
 console.log("item icons:", itemIcons);
+
+console.log("item kinds:", kindCounts);
 
 console.log("in-game:", ingameCounts);
 

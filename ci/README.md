@@ -12,4 +12,6 @@ The stable `PR checks` job always runs, including for documentation edits. Produ
 
 Make `PR checks` required in the GitHub ruleset for `main`, prohibit direct pushes, and require review of CI changes before publication. These repository settings are separate from the workflow. The Deploy workflow waits for successful CI on main and checks out that exact validated SHA; manual and data-release invocations also require successful CI for the exact checked-out commit.
 
+While the pinned snapshot has another schema version than the code (a schema change merged before a release of the new schema exists), `scripts/ci/select.ts` adds the offline rebuild to every run that evaluates or builds, so the pinned database is never opened by code that refuses it. Re-pin `data.json` to the first release of the new schema, with its eval expectations, to drop that rebuild.
+
 CI runs `data:package --check-only` after a rebuild: size, SQLite integrity, schema, derivation, coverage and orphan checks run without writing assets. Full zstd level 19 compression remains in Data release; Deploy still downloads the published database and never consumes a PR artifact. Compression/archive creation is therefore validated on data releases, rather than every PR push.
