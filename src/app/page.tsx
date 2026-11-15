@@ -38,7 +38,12 @@ export default function Home() {
             Riot Data Dragon
           </a>
           . Projet non affilié à Riot Games, réalisé par{" "}
-          <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://enzoneault.dev" target="_blank" rel="noreferrer">
+          <a
+            className="font-medium text-accent underline decoration-accent underline-offset-2 hover:decoration-2"
+            href="https://enzoneault.dev"
+            target="_blank"
+            rel="noreferrer"
+          >
             Enzo Neault
           </a>
           .
