@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { affected, attribution, CHECKS, CODE_CHECKS, withSnapshotSchema } from "./affected";
+import { affected, attribution, CHECKS, CODE_CHECKS, pushBase, withSnapshotSchema } from "./affected";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
 
@@ -48,4 +48,23 @@ test("a snapshot of another schema version rebuilds the database for the checks 
   // Lint and tests alone never open the pinned database.
   expect(sorted(withSnapshotSchema(affected(["scripts/roster.test.ts"]), 5, 6))).toEqual(["lint", "test", "typecheck"]);
   expect(sorted(withSnapshotSchema(affected(["README.md"]), 5, 6))).toEqual([]);
+});
+
+test("a push on main is compared with the newest validated ancestor, and with nothing when there is none", () => {
+  const [newest, older, oldest, after] = ["a", "b", "c", "d"].map(char => char.repeat(40));
+  const ancestors = new Set([newest, older, oldest]);
+  const isAncestor = (sha: string) => ancestors.has(sha);
+  const always = () => true;
+
+  expect(pushBase([newest, older], after, isAncestor, always)).toBe(newest);
+  // A commit force-pushed away from main is no longer an ancestor.
+  expect(pushBase(["e".repeat(40), older], after, isAncestor, always)).toBe(older);
+  // A re-run of the pushed commit itself is not a base.
+  expect(pushBase([after, oldest], after, always, always)).toBe(oldest);
+  expect(pushBase(["not-a-sha", "A".repeat(40), oldest], after, isAncestor, always)).toBe(oldest);
+  expect(pushBase([], after, isAncestor, always)).toBeNull();
+  expect(pushBase(["e".repeat(40)], after, isAncestor, always)).toBeNull();
+  // A green run from before this rule may have skipped a failed range: the first push under the rule runs every check.
+  expect(pushBase([newest, older], after, isAncestor, sha => sha === older)).toBe(older);
+  expect(pushBase([newest, older], after, isAncestor, () => false)).toBeNull();
 });
