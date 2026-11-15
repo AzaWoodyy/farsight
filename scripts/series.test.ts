@@ -55,6 +55,16 @@ describe("a stage of a competition routes to its series", () => {
     expect(route("T1 vs Gen.G LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({ tool: "head_to_head" });
   });
 
+  test("two teams and a best-of word in a season: their series there; without a season, their head-to-head", () => {
+    const kcT1 = [team("Karmine Corp"), team("T1")];
+
+    for (const q of ["BO KC T1 worlds 2026", "bo5 KC T1 worlds 2026", "best of KC vs T1 worlds 2026"])
+      expect(route(q, entities(WORLDS, 2026, kcT1))).toMatchObject({ tool: "series", input: { teamA: "Karmine Corp", teamB: "T1", league: WORLDS, yearFrom: 2026, yearTo: 2026, phase: null } });
+
+    expect(route("BO KC T1 worlds", entities(WORLDS, null, kcT1))).toMatchObject({ tool: "head_to_head" });
+    expect(route("BO T1 worlds 2026", entities(WORLDS, 2026, [team("T1")])).tool).not.toBe("series");
+  });
+
   test("standings words keep the standings, a game number keeps the timeline, a metric keeps its route", () => {
     expect(route("classement des Worlds 2025", entities(WORLDS, 2025))).toMatchObject({ tool: "tournament_standings" });
     expect(route("palmarès des finales des Worlds", entities(WORLDS, null))).toMatchObject({ tool: "tournament_standings" });

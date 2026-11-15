@@ -452,20 +452,25 @@ const STANDINGS_ONLY = word("palmar[eè]s|classements?|standings|podiums?|rankin
 
 /** Words of a series: its score, its winner, its games and drafts. */
 const SERIES_WORDS = word(
-  "bo ?[135]|best[- ]of ?[135]?|s[ée]ries?|scores?|r[ée]sultats?|results?|qui a gagn[ée]|who won|vainqueurs?|gagnants?|winners?|gagn[ée]e?s?|won|" +
+  "bo ?[135]?|best[- ]of ?[135]?|s[ée]ries?|scores?|r[ée]sultats?|results?|qui a gagn[ée]|who won|vainqueurs?|gagnants?|winners?|gagn[ée]e?s?|won|" +
     "remport[ée]e?s?|perdu|lost|d[ée]tails?|picks?|bans?|drafts?|champions?|games?|parties|matchs?|grande|grand|petite",
 );
+
+/** A best-of asked by name: "BO KC T1 worlds 2026", "bo5 T1 Gen.G 2024". */
+const BEST_OF = word("bo ?[135]?|best[- ]of(?: ?[135])?");
 
 /**
  * A stage of a competition ("finale des Worlds 2025", "Final worlds 2025", "demi-finales MSI 2024", "quarts LCK 2024") or a match
  * named by its stage ("T1 vs Gen.G finale LCK 2024"): its series as best-of units. Needs a competition or a team, no player or
  * champion; a game number or a timeline cue went to the game's timeline before. In-game metrics, pools, rosters and standings
- * words keep their own route.
+ * words keep their own route. Without a stage, two teams and a best-of word in a season asked ("BO KC T1 worlds 2026") give
+ * the series they played there; without a season their whole record stays the head-to-head.
  */
 function routeSeries(question: string, e: Entities): Route | null {
   const phase = phaseOf(question);
+  const bestOf = !phase && e.teams.length >= 2 && (e.yearFrom != null || e.yearTo != null) ? BEST_OF.exec(question)?.[0] : null;
 
-  if (!phase || e.players.length || e.champion) return null;
+  if ((!phase && !bestOf) || e.players.length || e.champion) return null;
 
   if (e.teams.length === 0 && !e.league) return null;
 
@@ -477,7 +482,9 @@ function routeSeries(question: string, e: Entities): Route | null {
     kind: "tool",
     call: { tool: "series", input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, phase, split: e.split } },
     confidence: 0.9,
-    reason: `phase de compétition (« ${PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0]} ») → séries en BO`,
+    reason: phase
+      ? `phase de compétition (« ${PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0]} ») → séries en BO`
+      : `deux équipes et « ${bestOf} » sur une saison → leurs séries en BO`,
     notes,
   };
 }
