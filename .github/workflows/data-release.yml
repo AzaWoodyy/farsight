@@ -108,8 +108,9 @@ jobs:
         run: bun run data:package --tag="$TAG" ${PREVIOUS:+--previous="$PREVIOUS"} --out=data/release
 
       # The agent itself reads the new file (rules level, no LLM key) before anything is published.
+      # Closed editions only: a game played since the CI snapshot must not block the release.
       - name: Ask the reference question on the new database
-        run: bun run eval --only=worlds-chovy --deterministic --strict
+        run: bun run eval --only=worlds-chovy-closed --deterministic --strict
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

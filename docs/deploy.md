@@ -71,8 +71,11 @@ demande (**Actions** → **Data release** → **Run workflow**) :
    séparément pour les releases publiées et les prereleases.
 
 Avant de publier, le workflow pose la question de référence (« résultats de
-Chovy à tous les Worlds », `bun run eval --only=worlds-chovy --deterministic
---strict`) à l'agent sur la nouvelle base ; un échec arrête tout. Sur `main`,
+Chovy aux Worlds de 2019 à 2025 », `bun run eval --only=worlds-chovy-closed
+--deterministic --strict`) à l'agent sur la nouvelle base ; un échec arrête
+tout. Elle ne porte que sur des éditions terminées : ses chiffres, figés sur le
+snapshot de CI, ne bougent pas quand de nouvelles parties arrivent (« Chovy à
+tous les Worlds » bloquait la release dès sa partie suivante). Sur `main`,
 une release réussie redéploie ensuite la production (voir « Déploiement
 automatique »).
 
