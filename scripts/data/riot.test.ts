@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
-import { FsStore, R2Store } from "../../src/lib/storage";
+import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
 import { type RiotGameRow, fetchRiotGames, loadIngame } from "./riot";
 
 /** A minimal S3-compatible server: GET, HEAD, PUT and ListObjectsV2 on one bucket. */
@@ -148,6 +148,58 @@ test("a game absent from R2 goes to the wiki", async () => {
 
     expect(wikiCalls).toEqual([["V5 data:TEST 2", "V5 data:TEST 2/Timeline"]]);
     expect(counts).toMatchObject({ from_r2: 0, from_wiki: 0, missing: 1 });
+  } finally {
+    r2.stop();
+  }
+});
+
+test("a game whose upload to R2 fails is left for the next run", async () => {
+  const failing: ObjectStore = {
+    label: "r2:failing",
+    get: async () => null,
+    put: async () => {
+      throw new Error("R2 PUT: HTTP 500");
+    },
+    has: async () => false,
+    list: async () => [],
+  };
+
+  const raw = game("TEST_3");
+  const local = new FsStore(join(dir, "riot3"));
+  const ingameFile = join(dir, "ingame3.jsonl");
+
+  const counts = await fetchRiotGames([row("TEST_3")], {
+    budgetMinutes: 1,
+    remote: failing,
+    rederive: false,
+    local,
+    ingameFile,
+    fetchPages: async (titles) =>
+      new Map(titles.map((t) => [t, { title: t, revid: 1, timestamp: "2026-11-14T00:00:00Z", content: JSON.stringify(t.endsWith("/Timeline") ? raw.timeline : raw.stats) }])),
+  });
+
+  expect(counts).toMatchObject({ upload_errors: 1, uploaded: 0, from_wiki: 0, left: 1 });
+  // No summary line, so the next run looks at the game again; the raw JSON stays in the local cache.
+  expect(loadIngame(ingameFile).get("TEST_3")).toBeUndefined();
+  expect(await local.get(rawGameKey("TEST_3"))).not.toBeNull();
+
+  // A machine that keeps the local cache summarizes it without the wiki (and `data:sync` uploads it).
+  const r2 = fakeR2(new Map());
+
+  try {
+    const again = await fetchRiotGames([row("TEST_3")], {
+      budgetMinutes: 1,
+      remote: r2.store,
+      rederive: false,
+      local,
+      ingameFile,
+      fetchPages: async () => {
+        throw new Error("the wiki must not be called");
+      },
+    });
+
+    expect(again).toMatchObject({ from_cache: 1, from_wiki: 0, left: 0 });
+    expect(loadIngame(ingameFile).get("TEST_3")?.status).toBe("ok");
   } finally {
     r2.stop();
   }
