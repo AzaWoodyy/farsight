@@ -1,30 +1,28 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  type AgentUIMessage,
-  type Answer,
-  type ResultRow,
-  STEPS,
-  type StepName,
-  type StepPart,
-  type TableCell,
-  type TraceStatus,
-} from "@/lib/agent/types";
-import { z } from "zod";
-import { detectChampionRanking } from "@/lib/champions";
-import { detectComparison } from "@/lib/comparison";
-import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
-import { GameScoreboard } from "./game-scoreboard";
-import { SeriesView } from "./series-view";
-import { GameTimeline } from "./game-timeline";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
+import type { ChatControls, ChatState } from "./chat-engine";
 import { HomeExamples } from "./home-examples";
-import { PlayerComparison } from "./player-comparison";
-import { TeamHeadToHead } from "./team-h2h";
-import { TeamRoster } from "./team-roster";
-import { Versus } from "./versus";
+
+// The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
+// itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
+// focuses the field or asks a question, whichever comes first. Kept in state rather than behind next/dynamic:
+// a Suspense boundary held each answer back about 300 ms after the stream had ended.
+type Modules = { chat: typeof import("./chat-engine"); views: typeof import("./answer-view") };
+
+let loading: Promise<Modules> | null = null;
+
+// A failed load (connection lost) is forgotten, so the next question tries again.
+const loadModules = () =>
+  (loading ??= Promise.all([import("./chat-engine"), import("./answer-view")])
+    .then(([chat, views]) => ({ chat, views }))
+    .catch(() => {
+      loading = null;
+      throw new Error("chat modules failed to load");
+    }));
+
+const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
 /** What the visitor reads while a step runs: what the agent is doing, in plain words. */
 const PROGRESS: Record<StepName, string> = {
@@ -33,9 +31,6 @@ const PROGRESS: Record<StepName, string> = {
   execute: "Je cherche dans les matchs…",
   format: "Je mets la réponse en forme…",
 };
-
-const CHIP =
-  "press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-left text-muted hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-8";
 
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   ok: { mark: "ok", cls: "text-ok" },
@@ -51,48 +46,6 @@ const STEP_LABEL: Record<StepName, string> = {
   format: "4 mettre en forme",
 };
 
-type SortKey = "year" | "team" | "place" | "record" | "winrate";
-
-const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
-
-/** What the chat shows for a failed POST /api/ask, by HTTP status. */
-function httpErrorMessage(status: number): string {
-  if (status === 429) return "Trop de questions, réessaie dans quelques minutes.";
-
-  if (status === 403) return "Requête refusée par la protection anti-robots. Recharge la page, puis réessaie.";
-
-  if (status === 400) return "Question invalide : écris une question, puis réessaie.";
-
-  if (status === 504) return "L'agent a mis trop de temps à répondre. Réessaie, ou pose une question plus simple.";
-
-  if (status >= 500) return `Le serveur n'a pas pu répondre (HTTP ${status}). Réessaie dans un instant.`;
-
-  return `La requête a échoué (HTTP ${status}).`;
-}
-
-/**
- * fetch for the chat transport: a non-2xx answer (a 429 from the firewall
- * rate limit, a 403 from BotID…) becomes a readable error instead of the
- * raw response body the transport would show.
- */
-async function askFetchImpl(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  let res: Response;
-
-  try {
-    res = await fetch(input, init);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new Error("Connexion impossible : vérifie ta connexion, puis réessaie.");
-  }
-
-  if (!res.ok) throw new Error(httpErrorMessage(res.status));
-
-  return res;
-}
-
-// The transport wants `typeof fetch`, which also carries `preconnect`.
-const askFetch: typeof fetch = Object.assign(askFetchImpl, { preconnect: fetch.preconnect });
-
 export function AgentConsole() {
   const [question, setQuestion] = useState("");
   // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
@@ -100,28 +53,60 @@ export function AgentConsole() {
   // says nothing of the visitor.
   const sessionId = useRef<string | null>(null);
 
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
-    transport: new DefaultChatTransport({ api: "/api/ask", fetch: askFetch }),
-  });
+  const chat = useRef<ChatControls>(null);
+  // The latest question asked; the chat, loaded with the first one, sends that one when it mounts.
+  const [first, setFirst] = useState<{ text: string; sessionId: string } | null>(null);
+  const [{ messages, status, error }, setChatState] = useState<ChatState>(IDLE);
+  const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
+  // The chat could not load: the question waits for nothing, say so (asking again retries).
+  const [loadFailed, setLoadFailed] = useState(false);
+  const waiting = first != null && messages.length === 0 && !error && !loadFailed;
+  const running = waiting || status === "submitted" || status === "streaming";
+  const [modules, setModules] = useState<Modules | null>(null);
 
-  const running = status === "submitted" || status === "streaming";
+  const preload = useCallback(
+    () =>
+      void loadModules().then(
+        (loaded) => {
+          setModules(loaded);
+          // A later load (focus on the field after a failure) succeeded: the error no longer holds.
+          setLoadFailed(false);
+        },
+        () => setLoadFailed(true),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    const idle = () => ("requestIdleCallback" in window ? requestIdleCallback(preload) : setTimeout(preload, 200));
+
+    if (document.readyState === "complete") idle();
+    else window.addEventListener("load", idle, { once: true });
+
+    return () => window.removeEventListener("load", idle);
+  }, [preload]);
 
   function ask(q: string) {
     const text = q.trim();
 
     if (!text) return;
 
-    if (running) stop();
-    // One question at a time: the agent does not use the chat history.
-    setMessages([]);
+    setLoadFailed(false);
+    preload();
     setQuestion("");
     sessionId.current ??= crypto.randomUUID();
-    sendMessage({ text }, { body: { sessionId: sessionId.current } });
+
+    // Also the question shown until the chat has taken it in (the chat reads `first` only when it mounts).
+    setFirst({ text, sessionId: sessionId.current });
+    chat.current?.ask(text, sessionId.current);
   }
 
   function restart() {
-    if (running) stop();
-    setMessages([]);
+    chat.current?.reset();
+    // The chat unmounts with `first`: its last state would otherwise stay on screen.
+    setFirst(null);
+    setChatState(IDLE);
+    setLoadFailed(false);
     setQuestion("");
     sessionId.current = null;
   }
@@ -140,11 +125,12 @@ export function AgentConsole() {
     if (part.type === "data-trace") trace = part.data;
   }
 
-  const askedText = asked?.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ");
+  const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : first && messages.length === 0 ? first.text : undefined;
 
   return (
     <section>
-      {asked ? (
+      {first && modules && <modules.chat.ChatEngine controls={chat} onChange={onChatChange} first={first} />}
+      {askedText ? (
         <h1 className="sr-only">{askedText}</h1>
       ) : (
         <div className="mt-10 sm:mt-16">
@@ -167,7 +153,7 @@ export function AgentConsole() {
           e.preventDefault();
           ask(question);
         }}
-        className={`${asked ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
+        className={`${askedText ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
       >
         <span aria-hidden className="text-accent">
           &gt;
@@ -180,6 +166,7 @@ export function AgentConsole() {
           value={question}
           maxLength={500}
           onChange={(e) => setQuestion(e.target.value)}
+          onFocus={preload}
           placeholder="Faker contre Chovy"
           autoComplete="off"
           enterKeyHint="search"
@@ -188,13 +175,13 @@ export function AgentConsole() {
         <button
           type="submit"
           disabled={running || !question.trim()}
-          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-9"
+          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:pointer-fine:min-h-9"
         >
           {running ? "…" : "Demander"}
         </button>
       </form>
 
-      {!asked && (
+      {!askedText && (
         <div className="mt-8">
           <HomeExamples onAsk={ask} />
           <p className="mt-6 max-w-[70ch] text-xs leading-relaxed text-muted">
@@ -216,10 +203,12 @@ export function AgentConsole() {
         </div>
       )}
 
-      {asked && (
-        <div className="mt-8">
-          <div className="flex items-start justify-between gap-4">
-            <p className="min-w-0 pt-2.5 text-sm sm:pt-1">
+      {/* At least a screen tall: the footer stays below the fold instead of sliding under the growing answer. */}
+      {askedText && (
+        <div className="mt-8 min-h-svh">
+          {/* A long question takes the whole line and pushes the button under it, instead of a narrow column. */}
+          <div className="flex flex-wrap items-start justify-between gap-x-4">
+            <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
               <span aria-hidden className="text-muted">
                 ?
               </span>{" "}
@@ -228,20 +217,37 @@ export function AgentConsole() {
             <button
               type="button"
               onClick={restart}
-              className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:min-h-8"
+              className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:pointer-fine:min-h-8"
             >
               Nouvelle conversation
             </button>
           </div>
+          {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top, the
+              steps stream in under it, and the trace folds where it is when the answer appears under it. */}
           {running && <Progress steps={steps} />}
+          {steps.size > 0 && <HowIFoundIt steps={steps} running={running} />}
           {error && !answer && (
             <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
             </p>
           )}
-          {answer && <AnswerView answer={answer} onAsk={ask} />}
-          {answer && trace && <Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
-          {steps.size > 0 && <HowIFoundIt steps={steps} running={running} />}
+          {loadFailed && first && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 text-sm">
+              <p role="alert" className="text-error">
+                <span aria-hidden>xx</span> Chargement impossible : vérifie ta connexion, puis réessaie.
+              </p>
+              <button
+                type="button"
+                onClick={() => ask(first.text)}
+                className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
+          {/* The chat and the views load together: an answer always has its views. */}
+          {answer && modules && <modules.views.AnswerView answer={answer} onAsk={ask} />}
+          {answer && trace && modules && <modules.views.Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
         </div>
       )}
     </section>
@@ -300,8 +306,8 @@ function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; runni
   }, [running]);
 
   return (
-    <details ref={ref} data-how className={`${running ? "mt-4" : "mt-8"} border-t border-dashed border-line pt-4`}>
-      <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-accent sm:min-h-8">
+    <details ref={ref} data-how className="mt-4 border-t border-dashed border-line pt-2">
+      <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs text-muted hover:text-accent sm:pointer-fine:min-h-8">
         <span aria-hidden data-chevron className="inline-block">
           ›
         </span>
@@ -322,7 +328,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
 
           if (!part)
             return (
-              <li key={name} className="flex gap-2 text-muted/60">
+              <li key={name} className="flex gap-2 text-muted">
                 <span aria-hidden>{branch}</span>
                 <span className="w-5 shrink-0">··</span>
                 <span className="w-32 shrink-0">{STEP_LABEL[name]}</span>
@@ -349,7 +355,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                 {part.entries.map((e, j) => (
                   <li key={`${e.at}-${j}`}>
                     <details className="group">
-                      <summary className="flex cursor-pointer list-none gap-2 marker:hidden">
+                      <summary className="flex min-h-6 cursor-pointer list-none items-center gap-2 marker:hidden pointer-coarse:min-h-11">
                         <span className={`${STATUS[e.status].cls} w-5 shrink-0`}>{STATUS[e.status].mark}</span>
                         <span className="min-w-0">
                           {e.title}
@@ -363,7 +369,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                         </span>
                       </summary>
                       {e.detail && (
-                        <pre className="mt-1 mb-2 ml-7 overflow-x-auto text-[11px] leading-relaxed text-muted">
+                        <pre className="mt-1 mb-2 ml-7 overflow-x-auto text-xs leading-relaxed text-muted">
                           {e.detail}
                         </pre>
                       )}
@@ -375,339 +381,6 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
           );
         })}
       </ol>
-    </div>
-  );
-}
-
-function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => void }) {
-  return (
-    <div className="mt-8">
-      <h2 className="text-base font-semibold">
-        <span className="text-accent">#</span> {answer.title}
-      </h2>
-      {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
-      {answer.champion && <ChampionProfileView p={answer.champion} />}
-      {answer.series ? (
-        <SeriesView list={answer.series} table={answer.table && <GenericTable table={answer.table} />} />
-      ) : answer.pool ? (
-        <ChampionPoolView pool={answer.pool} fallback={answer.table && <GenericTable table={answer.table} />} />
-      ) : answer.versus ? (
-        <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
-      ) : answer.teams ? (
-        <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
-      ) : answer.roster ? (
-        <TeamRoster r={answer.roster} />
-      ) : (
-        answer.table && <TableAnswer answer={answer} table={answer.table} />
-      )}
-      {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
-      {answer.timeline && <GameTimeline timeline={answer.timeline} />}
-      <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
-      {answer.notes.map((n) => (
-        <p key={n} className="mt-2 text-xs text-warn">
-          note : {n}
-        </p>
-      ))}
-      {answer.sources.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs text-muted">── Sources</h3>
-          <ul className="mt-2 space-y-1 text-xs leading-6">
-            {answer.sources.map((s) => (
-              <li key={s.url}>
-                <a href={s.url} target="_blank" rel="noreferrer" className="underline decoration-line underline-offset-2 hover:text-accent">
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className="mt-6">
-        <h3 className="text-xs text-muted">── Questions de suivi</h3>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          {answer.followUps.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => onAsk(f)}
-              className={CHIP}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type Rating = "up" | "down";
-
-const RATINGS: { rating: Rating; label: string }[] = [
-  { rating: "up", label: "[+] oui" },
-  { rating: "down", label: "[-] non" },
-];
-
-/**
- * Thumbs up / down on the answer, shown only when the question was traced.
- * The rating goes to /api/feedback with the trace id and nothing else; a
- * second click replaces the first.
- */
-type FeedbackState =
-  | { kind: "idle"; recorded: Rating | null }
-  | { kind: "sending"; recorded: Rating | null; rating: Rating }
-  | { kind: "failed"; recorded: Rating | null };
-
-function Feedback({ traceId, token }: { traceId: string; token: string }) {
-  const [state, setState] = useState<FeedbackState>({ kind: "idle", recorded: null });
-
-  async function rate(rating: Rating) {
-    setState({ kind: "sending", rating, recorded: state.recorded });
-
-    try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ traceId, token, rating }),
-      });
-
-      setState({ kind: res.ok ? "idle" : "failed", recorded: res.ok ? rating : state.recorded });
-    } catch {
-      setState({ kind: "failed", recorded: state.recorded });
-    }
-  }
-
-  return (
-    <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-muted">── Réponse correcte ?</span>
-      {RATINGS.map(({ rating, label }) => (
-        <button
-          key={rating}
-          type="button"
-          onClick={() => rate(rating)}
-          disabled={state.kind === "sending"}
-          aria-pressed={state.recorded === rating}
-          className={`press inline-flex min-h-11 items-center border px-3 hover:border-accent hover:text-accent disabled:opacity-40 sm:min-h-8 ${
-            state.recorded === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-      <span role="status" className={state.kind === "failed" ? "text-error" : "text-muted"}>
-        {state.kind === "failed" ? "avis non enregistré, réessaie" : state.recorded ? "merci, avis enregistré" : ""}
-      </span>
-    </div>
-  );
-}
-
-function ResultsTable({ rows }: { rows: ResultRow[] }) {
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "year", dir: 1 });
-
-  const sorted = useMemo(() => {
-    const value = (r: ResultRow): number | string => {
-      switch (sort.key) {
-        case "year":
-          return r.year;
-        case "team":
-          return displayTeam(r.team).toLowerCase();
-        case "place":
-          return r.placeNumber ?? Number.POSITIVE_INFINITY;
-        case "record":
-          return r.wins - r.losses;
-        case "winrate":
-          return r.wins / Math.max(1, r.wins + r.losses);
-      }
-    };
-
-    return [...rows].sort((a, b) => {
-      const va = value(a);
-      const vb = value(b);
-
-      return (va < vb ? -1 : va > vb ? 1 : a.year - b.year) * sort.dir;
-    });
-  }, [rows, sort]);
-
-  const header = (key: SortKey, label: string, className = "") => {
-    const active = sort.key === key;
-
-    return (
-      <th scope="col" className={`px-3 py-2 font-normal ${className}`} aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-        <button
-          type="button"
-          onClick={() => setSort({ key, dir: active ? (sort.dir === 1 ? -1 : 1) : 1 })}
-          className={`uppercase tracking-wider hover:text-accent ${active ? "text-foreground" : "text-muted"}`}
-        >
-          {label}
-          <span aria-hidden className="ml-1 inline-block w-2">
-            {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
-          </span>
-        </button>
-      </th>
-    );
-  };
-
-  return (
-    <div className="mt-4 overflow-x-auto border border-line">
-      <table className="w-full min-w-[720px] border-collapse text-left text-xs">
-        <thead className="border-b border-line">
-          <tr>
-            {header("year", "Année")}
-            {header("team", "Équipe")}
-            {header("place", "Place")}
-            {header("record", "V-D", "text-right")}
-            {header("winrate", "%", "text-right")}
-            <th scope="col" className="px-3 py-2 font-normal uppercase tracking-wider text-muted">
-              Champions
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((r) => (
-            <tr key={`${r.event}-${r.team}`} className="border-b border-dashed border-line last:border-0 align-top">
-              <td className="px-3 py-2 tabular-nums">{r.year}</td>
-              <td className="px-3 py-2 whitespace-nowrap">{displayTeam(r.team)}</td>
-              <td className="px-3 py-2 whitespace-nowrap">
-                <span className={r.place === "1" ? "text-accent" : ""}>{r.placeLabel}</span>
-                {r.place && <span className="ml-1 text-muted">({r.place})</span>}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {r.wins}-{r.losses}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {Math.round((100 * r.wins) / Math.max(1, r.wins + r.losses))}
-              </td>
-              <td className="px-3 py-2">
-                <ul className="flex flex-wrap gap-1.5">
-                  {r.champions.map((c) => (
-                    <li key={c.name} title={`${c.name} : ${c.games} partie(s), ${c.wins} victoire(s)`} className="flex items-center gap-1">
-                      {c.imageUrl ? (
-                        // 20 px Data Dragon icons: next/image would spend the Vercel Hobby image-optimization quota
-                        // (shared with the portfolio) without any LCP gain.
-                        // oxlint-disable-next-line nextjs/no-img-element
-                        <img src={c.imageUrl} alt={c.name} width={20} height={20} className="h-5 w-5" loading="lazy" />
-                      ) : (
-                        <span>{c.name}</span>
-                      )}
-                      <span className="text-muted tabular-nums">×{c.games}</span>
-                    </li>
-                  ))}
-                </ul>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** The ranking order a tool was asked for, when it has one (champion_ranking): the champion layout's bar. */
-const sortHint = (answer: Answer) => {
-  const input = answer.meta.input;
-
-  return input && "sort" in input ? input.sort : undefined;
-};
-
-/**
- * A two-player comparison or a champion ranking gets its own layout, detected from the table itself (typed
- * tool or generated SQL); any other table stays the sortable generic one.
- */
-function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Answer["table"]> }) {
-  const comparison = useMemo(() => detectComparison(table, answer.profiles), [table, answer.profiles]);
-  const champions = useMemo(() => detectChampionRanking(table, answer.icons, sortHint(answer)), [table, answer]);
-
-  if (comparison) return <PlayerComparison comparison={comparison} />;
-
-  if (champions) return <ChampionRankingView ranking={champions} fallback={<GenericTable table={table} />} />;
-
-  return <GenericTable table={table} />;
-}
-
-const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
-
-const asNumber = (v: TableCell) => z.number().safeParse(v).data ?? null;
-
-/** Headers of the machine-named columns the champion and comparison layouts read, when shown as a plain table. */
-const COLUMN_LABEL = new Map([
-  ["rank", "rang"],
-  ["presence", "présence %"],
-  ["winrate", "% victoires"],
-  ["player", "joueur"],
-  ["games", "parties"],
-  ["wins", "victoires"],
-  ["losses", "défaites"],
-  ["share", "part %"],
-  ["players", "joueurs"],
-]);
-
-const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
-
-/** A cell as shown: numbers in French notation (years as written), a missing figure as n/d. */
-const cellText = (v: TableCell, column: string) => {
-  const n = asNumber(v);
-
-  return v == null ? "n/d" : n != null && !YEAR_COLUMN.test(column) ? NUMBER.format(n) : String(v);
-};
-
-/** Any table, sortable by each column (numbers before text, missing figures last). */
-function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
-  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
-
-  const rows = useMemo(() => {
-    if (!sort) return table.rows;
-
-    return [...table.rows].sort((a, b) => {
-      const [x, y] = [a[sort.col], b[sort.col]];
-
-      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
-
-      const [nx, ny] = [asNumber(x), asNumber(y)];
-
-      if (nx != null && ny != null) return (nx - ny) * sort.dir;
-
-      return String(x).localeCompare(String(y), "fr", { numeric: true }) * sort.dir;
-    });
-  }, [table.rows, sort]);
-
-  return (
-    <div className="mt-4 overflow-x-auto border border-line">
-      <table className="w-full border-collapse text-left text-xs">
-        <thead className="border-b border-line">
-          <tr>
-            {table.columns.map((c, i) => {
-              const active = sort?.col === i;
-
-              return (
-                <th key={c} scope="col" className="px-3 py-2 font-normal" aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-                  <button
-                    type="button"
-                    // Numbers sort high to low first: a ranking reads from the top.
-                    onClick={() => setSort({ col: i, dir: active ? (sort.dir === 1 ? -1 : 1) : asNumber(table.rows[0]?.[i] ?? null) != null ? -1 : 1 })}
-                    className={`whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : "text-muted"}`}
-                  >
-                    {COLUMN_LABEL.get(c) ?? c}
-                    <span aria-hidden className="ml-1 inline-block w-2">
-                      {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
-                    </span>
-                  </button>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-b border-dashed border-line last:border-0">
-              {r.map((v, j) => (
-                <td key={j} className={`px-3 py-2 tabular-nums ${v == null ? "text-muted" : ""}`}>
-                  {cellText(v, table.columns[j])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

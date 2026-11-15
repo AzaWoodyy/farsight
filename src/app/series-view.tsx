@@ -74,7 +74,7 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
   );
 
   const meta = (
-    <p className="flex flex-wrap gap-x-2 border-t border-dashed border-line px-3 py-2 text-xs text-muted">
+    <p className="flex flex-wrap items-center gap-x-2 border-t border-dashed border-line px-3 py-2 text-xs text-muted">
       <span>{s.label}</span>
       <span aria-hidden>·</span>
       <span>{s.bestOf ? `BO${s.bestOf}` : "format n/d"}</span>
@@ -85,7 +85,7 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
         </>
       )}
       <span aria-hidden>·</span>
-      <a href={s.source.url} target="_blank" rel="noreferrer" title={s.source.label} className="underline decoration-line underline-offset-2 hover:text-accent">
+      <a href={s.source.url} target="_blank" rel="noreferrer" title={s.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
         source
       </a>
     </p>
@@ -127,7 +127,7 @@ function GameRow({ g, s, before }: { g: SeriesGame; s: SeriesDetail; before: Ser
 
   return (
     <li className="border-b border-dashed border-line px-3 py-2.5 text-xs last:border-0">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pointer-coarse:items-center">
         <span className="w-14 shrink-0 font-semibold">game {g.n ?? "?"}</span>
         <span>
           <span className={SIDE_TEXT.blue} translate="no">
@@ -158,7 +158,7 @@ function GameRow({ g, s, before }: { g: SeriesGame; s: SeriesDetail; before: Ser
         </span>
         <span className="tabular-nums text-muted">{g.durationS ? clock(g.durationS) : "durée n/d"}</span>
         {g.patch && <span className="text-muted">patch {g.patch}</span>}
-        <a href={g.source.url} target="_blank" rel="noreferrer" title={g.source.label} className="text-muted underline decoration-line underline-offset-2 hover:text-accent">
+        <a href={g.source.url} target="_blank" rel="noreferrer" title={g.source.label} className="tap text-muted underline decoration-line underline-offset-2 hover:text-accent">
           source
         </a>
       </div>

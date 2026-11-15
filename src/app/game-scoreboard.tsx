@@ -98,7 +98,8 @@ function TeamBlock({
           ))}
         </dl>
       </div>
-      <div className="overflow-x-auto">
+      {/* relative: keeps the sr-only caption inside the scroller (see team-h2h). */}
+      <div className="relative overflow-x-auto">
         {/* Fixed column widths: both teams' tables line up column for column. */}
         <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-xs">
           <caption className="sr-only">
@@ -187,6 +188,11 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
             <div className="ml-9 truncate text-[11px] text-muted" translate="no">
               {p.champion ?? "champion n/d"}
               {p.keystone && !p.keystoneIcon ? ` · ${p.keystone}` : ""}
+            </div>
+            {/* Phone width: the K/D/A column is off screen, behind the horizontal scroll; repeat it here. */}
+            <div className="ml-9 text-[11px] tabular-nums sm:hidden" aria-hidden>
+              {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
+              <span className="text-muted"> · {kilo(p.gold)} or</span>
             </div>
           </div>
         </div>
