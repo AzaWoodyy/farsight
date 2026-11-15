@@ -10,7 +10,7 @@ import { openDb, readSchema, selectAll, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
-import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE, llmSignal, withLlmSignal } from "./llm";
+import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE, llmSignal, requestAborted, withLlmSignal } from "./llm";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
@@ -237,6 +237,9 @@ async function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan:
 
   const started = performance.now();
 
+  // Throws when the request was cancelled: no SQL for a visitor who left.
+  llmSignal();
+
   try {
     const rows = plan.tool ? db.prepare(guard.sql).all(plan.params) : await executeGeneratedQuery(guard.sql, plan.params, { signal: llmSignal() });
     const ms = Math.round(performance.now() - started);
@@ -251,6 +254,7 @@ async function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan:
 
     return { rows: null, problem: { kind: "empty", message: "résultat vide" } };
   } catch (err) {
+    if (requestAborted()) throw err;
     const message = err instanceof Error ? err.message : String(err);
 
     step.add(entry({ status: "error", title: "Erreur SQLite", detail: message }));
