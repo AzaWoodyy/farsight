@@ -65,6 +65,8 @@ export type Coverage = { games: number; ingame: number };
 export type CoverageLookup = {
   league: (league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
   player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+  /** Games of a team (every name of the franchise) and how many have Riot data. */
+  team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
 };
 
 const CoverageRow = z.object({ games: z.number().nullable(), ingame: z.number().nullable() });
@@ -109,6 +111,18 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
       return read(
         `SELECT COUNT(*) AS games, SUM(g.has_ingame) AS ingame FROM v_game_players p JOIN v_games g ON g.game_id = p.game_id
          WHERE p.player = ?${where}${period("p.year", yearFrom, yearTo, params)}`,
+        params,
+      );
+    },
+    team: (names, league, yearFrom, yearTo) => {
+      const marks = names.map(() => "?").join(",");
+      const params: (string | number)[] = [...names, ...names];
+      const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
+      const where = league ? (params.push(...members), ` AND g.league IN (${members.map(() => "?").join(",")})`) : "";
+
+      return read(
+        `SELECT COUNT(*) AS games, SUM(g.has_ingame) AS ingame FROM v_games g
+         WHERE (g.blue_team IN (${marks}) OR g.red_team IN (${marks}))${where}${period("g.year", yearFrom, yearTo, params)}`,
         params,
       );
     },
@@ -299,9 +313,22 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
   if (e.teams.length === 1 && e.players.length === 0 && !e.champion) {
     if (!cue.team) return { kind: "sql", reason: `métrique individuelle (« ${cue.mention} ») demandée pour une équipe` };
 
+    const { team, members } = e.teams[0];
+    const asked = coverage.team(members, league, e.yearFrom, e.yearTo);
+
+    // Games but no Riot data in the scope asked, or no Riot data at all for this team (an LPL team): the data is absent.
+    // A scope where the team did not play at all stays with the tool, whose relaxations widen it.
+    if (asked.ingame === 0 && (asked.games > 0 || coverage.team(members, null, null, null).ingame === 0))
+      return {
+        kind: "missing",
+        concepts: [`${what} de ${team}${league ? ` en ${e.leagueShort}` : ""}`],
+        reason: `aucune partie de ${team} avec données Riot dans ce périmètre`,
+        coverage: true,
+      };
+
     return {
       kind: "tool",
-      call: { tool: "team_ingame_stats", input: { team: e.teams[0].team, league, ...period, minute: cue.minute } },
+      call: { tool: "team_ingame_stats", input: { team, league, ...period, minute: cue.minute } },
       confidence: 0.85,
       reason: `profil in-game d'une équipe (« ${cue.mention} »)`,
       notes: [],

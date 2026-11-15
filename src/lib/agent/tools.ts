@@ -1335,7 +1335,9 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
           laneFacts(lanes, met, [mainRole(input.playerA), mainRole(input.playerB)], [input.playerA, input.playerB])
         : `${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`) +
       (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
-      ([...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
+      ([...rows, ...faced].every((r) => r.ingame_games === 0)
+        ? " Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre."
+        : [...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
 
     return {
       title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
