@@ -120,7 +120,7 @@ export function AgentConsole() {
             <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
           </h1>
           <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
-            Minimap cherche dans les résultats et les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond
+            Farsight cherche dans les résultats et les matchs pros (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond
             avec un tableau, une phrase de résumé et les pages d&apos;où viennent les chiffres.
           </p>
         </div>

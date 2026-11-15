@@ -8,7 +8,7 @@ import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
-import { ROLE_WORDS } from "./roles";
+import { ROLE_WORDS, SHORT_ROLE_MENTION } from "./roles";
 import {
   type Ambiguity,
   type Entities,
@@ -51,9 +51,24 @@ const STOPWORDS = new Set(
   ).split(/\s+/),
 );
 
+/** "champ", "champion(s)" and their near typos ("chamion", "champoin"); read only inside a pool phrase. */
+const CHAMP = "champ(?:ion|oin|ino|ian|io|on|in)?s?|champ?ions?|chapions?|chmap(?:ion)?s?|cahmp(?:ion)?s?";
+
+/** "pool" and its near typos ("pol", "poool"); read only next to a champion word. */
+const POOL_WORD = "pools?|pol|poll|poo+ls?|pooll";
+
+/**
+ * A champion pool asked in either order, with "champ" or a near typo: "champion pool", "champ pool",
+ * "champs pool", "championpool", "pool champ", "pool champion", "pool de champions", "pool of champions".
+ */
+export const CHAMPION_POOL = `(?:${CHAMP})[- ]?(?:${POOL_WORD})|(?:${POOL_WORD})[- ](?:(?:de|d'|des|of) ?)?(?:${CHAMP})`;
+
+/** "pool" alone: with a handle and nothing else ("pool Bin") it still asks for a champion pool. */
+const BARE_POOL = /^pools?$/i;
+
 /** Words that make a question about LoL esports even without a known entity. */
 export const LOL_DOMAIN = new RegExp(
-  "(?<![\\p{L}\\p{N}])(?:lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|" +
+  `(?<![\\p{L}\\p{N}])(?:${CHAMPION_POOL}|lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|` +
     `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
   "iu",
 );
@@ -539,10 +554,13 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       detectMetric(question) != null ||
       LOL_DOMAIN.test(question);
 
-    const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t));
+    const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t) || BARE_POOL.test(t));
 
     if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
   }
+
+  // Next to a team, "top", "sup" or "jg" name its player at that role ("top fpx 2019"), not the handle Top or Sup.
+  if (found.teams.length) found.players = found.players.filter((m) => !SHORT_ROLE_MENTION.test(m));
 
   // Keep the order of the question (it decides sides in a head-to-head).
   const pos = (m: string) => question.indexOf(m);
@@ -740,8 +758,9 @@ export function maskUnderstood(question: string, e: Entities) {
 
   const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
 
-  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa".
-  for (const m of mentions) if (m) take(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+"), "iu"));
+  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa". Whole words only: "TL" is not the one in "botlaner".
+  for (const m of mentions)
+    if (m) take(new RegExp(`(?<![\\p{L}\\p{N}])${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+")}(?![\\p{L}\\p{N}])`, "iu"));
 
   if (e.yearFrom != null || e.yearTo != null) for (const p of [YEAR, ...RELATIVE_YEARS.map((r) => r.pattern)]) take(p);
 

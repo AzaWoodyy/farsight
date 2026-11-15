@@ -24,6 +24,7 @@ const EXAMPLES: Example[] = [
   { category: "champions", question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
   { category: "champions", question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
   { category: "champions", question: "Champions les plus joués aux Worlds 2024", display: "méta d'un tournoi" },
+  { category: "parties", question: "Finale des Worlds 2025", display: "série en BO, game par game" },
   { category: "parties", question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
   { category: "parties", question: "Classement des Worlds 2023", display: "classement de tournoi" },
 ];

@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer, ResolvedTeam } from "../src/lib/agent/types";
+import { understandQuestion } from "../src/lib/agent/understand";
 import { readSchema } from "../src/lib/db";
 import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
@@ -43,6 +44,37 @@ describe("champion pool questions route to champion_pool, decided by the rules",
     expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_pool", input } });
     // Every word read: the LLM router is not asked to second-guess it.
     expect(route.kind === "tool" && route.unread).toBeFalsy();
+  });
+
+  test.each([
+    "pool champ Bin",
+    "Bin champ pool",
+    "champ pool Bin",
+    "champs pool Bin",
+    "pool champion Bin",
+    "pool champions de Bin",
+    "Bin pool de champions",
+    "pool of champions Bin",
+    "championpool Bin",
+    "champion-pool Bin",
+    "pool Bin",
+    // Near typos.
+    "chamion pool Bin",
+    "champoin pool Bin",
+    "champion pol Bin",
+    "pool chmapion Bin",
+  ])("%s", (q) => {
+    const route = routeQuestion(q, scope({ players: ["Bin"] }), SCHEMA, COVERAGE);
+
+    expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_pool", input: { subject: "player", name: "Bin" } } });
+    expect(route.kind === "tool" && route.unread).toBeFalsy();
+  });
+
+  test("a team's pool, with the short word and in either order", () => {
+    for (const q of ["pool champ T1 aux Worlds 2023", "T1 champs pool aux Worlds 2023"])
+      expect(routeQuestion(q, scope({ teams: [team("T1")], ...WORLDS, year: 2023 }), SCHEMA, COVERAGE)).toMatchObject({
+        call: { tool: "champion_pool", input: { subject: "team", name: "T1", yearFrom: 2023 } },
+      });
   });
 
   test("without a competition, every competition, said in a note; a team named with the player is ignored, said too", () => {
@@ -96,6 +128,33 @@ describe("the other rules keep their questions", () => {
 
     expect(routeQuestion("quels champions joue Faker à part Azir", fakerAzir, SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
     expect(routeQuestion("gold diff at 15 de Faker par champion", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
+  });
+});
+
+describe("a pool phrase is a LoL cue: a short or everyday handle next to it is a player", () => {
+  const db = new DatabaseSync(":memory:");
+
+  createSchema(db);
+  createQuerySchema(db);
+  db.exec(`
+    INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Faker');
+    INSERT INTO player_aliases VALUES ('bin','Bin',1),('faker','Faker',2);
+  `);
+
+  afterAll(() => db.close());
+
+  const players = async (q: string) => (await understandQuestion(db, q, new Date("2026-11-14")))?.result.players.map((p) => p.player) ?? [];
+
+  test.each(["pool champ bin", "bin champ pool", "champs pool bin", "pool de champions bin", "chamion pool bin", "pool bin", "pool champion faker"])(
+    "%s",
+    async (q) => {
+      expect(await players(q)).toEqual([q.includes("faker") ? "Faker" : "Bin"]);
+    },
+  );
+
+  test("not \"pool\" with other everyday words, nor a sentence about something else", async () => {
+    expect(await players("pool party bin")).toEqual([]);
+    expect(await players("vider le bin")).toEqual([]);
   });
 });
 
