@@ -5,7 +5,9 @@ import { PALETTE, SITE } from "./brand/site";
 import "./globals.css";
 
 // The whole page is set in Geist Mono: Geist Sans would only add a preloaded font nobody reads.
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// symbols2 holds the box-drawing dashes of the headings ("── joueurs"): preloaded with latin, or they are drawn
+// in a fallback font first and the heading shifts sideways when that file arrives.
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "symbols2"] });
 
 const title = `${SITE.name} · ${SITE.tagline}`;
 
@@ -27,7 +29,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="fr" className={`${geistMono.variable} h-full antialiased`}>
+    // The page's draw script sets the home examples' attributes on <html> before hydration (see home-examples-data).
+    <html lang="fr" className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
         {children}
         <SiteAnalytics />
