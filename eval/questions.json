@@ -4939,6 +4939,36 @@
         },
         "unread": []
       }
+    },
+    {
+      "id": "champion-unranked-metric",
+      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "tags": [
+        "champion",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship"
+      }
+    },
+    {
+      "id": "comparison-metric-not-held",
+      "question": "Faker vs Chovy pentakills",
+      "tags": [
+        "head_to_head",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "notes": [
+          "ne contient pas « pentakills »"
+        ]
+      }
     }
   ]
 }
