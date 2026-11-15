@@ -4,14 +4,17 @@
  *
  *   bun run eval                   uses OPENROUTER_API_KEY if it is set, else deterministic
  *   bun run eval --deterministic   ignores the key (rules level only)
- *   bun run eval --only=worlds-chovy,alias-hangul
- *   bun run eval --strict          exit 1 unless every check passes
+ *   bun run eval --only=worlds-chovy,alias-hangul   exit 1 on an unknown id
+ *   bun run eval --strict          exit 1 unless every check passes, or when no case could be judged
  *   bun run eval --verbose         print every check, not only the failing ones
  *   bun run eval --llm-only        only the cases marked `llm` (the ones the rules hand to the LLM)
  *
  * A case marked `llm` cannot pass on the rules alone: without a key only what
  * the rules decide is scored (entities, unread words) and the case is listed
  * as needing the LLM instead of being counted as passed.
+ *
+ * A selection that keeps no case (`--only`, `--exclude-tags`, `--llm-only`)
+ * always exits 1: a gate that runs nothing must not pass.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -89,6 +92,18 @@ const questions = QuestionsFile.parse(JSON.parse(readFileSync(file, "utf8")));
 const now = new Date(questions.now);
 const excludedTags = args.find((a) => a.startsWith("--exclude-tags="))?.slice(15).split(",") ?? [];
 const cases = questions.questions.filter((c) => !c.tags.some((t) => excludedTags.includes(t)) && (!only || only.includes(c.id)) && (!flag("llm-only") || c.llm));
+
+const unknown = only?.filter((id) => !questions.questions.some((c) => c.id === id)) ?? [];
+
+if (unknown.length) {
+  console.error(`--only : cas inconnu(s) : ${unknown.join(", ")}`);
+  process.exit(1);
+}
+
+if (!cases.length) {
+  console.error("aucun cas sélectionné");
+  process.exit(1);
+}
 
 type Shown = Scalar | Scalar[] | undefined;
 
@@ -245,4 +260,6 @@ if (needLlm.length) console.log(`demandent le LLM, non vérifiés sans clé (${n
 
 if (failures.length) console.log(`échecs : ${failures.join(", ")}`);
 
-if (flag("strict") && failures.length) process.exit(1);
+if (flag("strict") && !judged) console.error("--strict : aucun cas vérifié (tous demandent le LLM)");
+
+if (flag("strict") && (failures.length || !judged)) process.exit(1);
