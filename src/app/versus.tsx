@@ -3,12 +3,12 @@
 import { type ReactNode, useMemo, useState } from "react";
 import type { Answer, VersusGame, VersusSide, VersusView } from "@/lib/agent/types";
 import { type Comparison, detectComparison } from "@/lib/comparison";
+import { dateFormat } from "@/lib/locale";
+import { useLocale, useUi } from "./i18n/locale-context";
 import { ComparisonNote, FaceOff } from "./player-comparison";
 
 /** Games listed before "show all". */
 const FIRST_GAMES = 10;
-
-const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
  * Two players set against each other. When they met: the face-to-face over those games (with a tab for
@@ -16,8 +16,10 @@ const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", 
  * scope and a sentence saying they never met.
  */
 export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Answer["profiles"]; fallback: ReactNode }) {
-  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus) : null), [v.h2h, profiles, v.focus]);
-  const global = useMemo(() => detectComparison(v.global, profiles, v.focus), [v.global, profiles, v.focus]);
+  const locale = useLocale();
+  const ui = useUi();
+  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus, locale) : null), [v.h2h, profiles, v.focus, locale]);
+  const global = useMemo(() => detectComparison(v.global, profiles, v.focus, locale), [v.global, profiles, v.focus, locale]);
   const [tab, setTab] = useState<"h2h" | "global">("h2h");
   const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
@@ -26,14 +28,14 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
   if (!shown) return <>{fallback}</>;
 
   const tabs = [
-    { id: "h2h" as const, label: `face à face · ${met} partie${met > 1 ? "s" : ""}` },
-    { id: "global" as const, label: `global · ${v.scope || "toutes compétitions"}` },
+    { id: "h2h" as const, label: ui.versus.faceToFace(met) },
+    { id: "global" as const, label: ui.versus.overall(v.scope || ui.allCompetitions) },
   ];
 
   return (
     <div className="mt-4">
       {h2h ? (
-        <div role="group" aria-label="Statistiques comparées" className="mb-2 flex flex-wrap gap-2 text-xs">
+        <div role="group" aria-label={ui.versus.compared} className="mb-2 flex flex-wrap gap-2 text-xs">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -50,8 +52,7 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
         </div>
       ) : (
         <p className="mb-2 text-xs text-muted">
-          <span translate="no">{v.playerA}</span> et <span translate="no">{v.playerB}</span> ne se sont jamais affrontés
-          {v.scope ? ` ${v.scope}` : ""} : statistiques sur toutes leurs parties.
+          <span translate="no">{v.playerA}</span> {ui.versus.and} <span translate="no">{v.playerB}</span> {ui.versus.neverMet(v.scope)}
         </p>
       )}
       {met > 0 && <Lanes v={v} met={met} />}
@@ -72,27 +73,28 @@ function first(c: Comparison | null, focus: string | null): Comparison | null {
 
 /** Whether their games against each other were lane face-offs: same role on both sides. */
 function Lanes({ v, met }: { v: VersusView; met: number }) {
+  const ui = useUi();
   const { same, roles } = v.lanes;
 
   return (
     <p className="mb-2 text-xs text-muted">
-      même lane :{" "}
+      {ui.versus.sameLane}{" "}
       <span className={same ? "text-foreground" : ""}>
-        {same} partie{same > 1 ? "s" : ""} sur {met}
-      </span>
+{ui.versus.sameLaneGames(same, met)}</span>
       {roles.length > 0 && ` (${roles.map((r) => (roles.length > 1 ? `${r.role} ${r.games}` : r.role)).join(", ")})`}
-      {same === 0 && " : ils ne se sont jamais affrontés au même poste"}
+      {same === 0 && ui.versus.neverSameRole}
     </p>
   );
 }
 
 function Games({ v }: { v: VersusView }) {
+  const ui = useUi();
   const [all, setAll] = useState(false);
   const list = all ? v.games : v.games.slice(0, FIRST_GAMES);
 
   return (
     <div className="mt-6">
-      <h3 className="text-xs uppercase tracking-widest text-muted">── leurs parties face à face</h3>
+      <h3 className="text-xs uppercase tracking-widest text-muted">── {ui.versus.theirGames}</h3>
       {/* relative: the sr-only "source" header is absolutely positioned; without a positioned scroller it is laid
           out against the page and widens it (horizontal scroll on phones). */}
       <div className="relative mt-2 overflow-x-auto border border-line">
@@ -100,10 +102,10 @@ function Games({ v }: { v: VersusView }) {
           <thead className="border-b border-line text-[11px] text-muted">
             <tr>
               <th scope="col" className="px-3 py-2 font-normal">
-                date
+                {ui.date}
               </th>
               <th scope="col" className="px-3 py-2 font-normal">
-                compétition
+                {ui.competition}
               </th>
               <th scope="col" className="px-3 py-2 font-normal" translate="no">
                 {v.playerA}
@@ -112,7 +114,7 @@ function Games({ v }: { v: VersusView }) {
                 {v.playerB}
               </th>
               <th scope="col" className="px-3 py-2 font-normal">
-                vainqueur
+                {ui.winner}
               </th>
               <th scope="col" className="px-3 py-2 font-normal">
                 <span className="sr-only">source</span>
@@ -133,7 +135,7 @@ function Games({ v }: { v: VersusView }) {
           aria-expanded={all}
           className="tap mt-2 border border-dashed border-line px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
         >
-          {all ? `afficher les ${FIRST_GAMES} dernières` : `afficher les ${v.games.length} parties`}
+          {all ? ui.showLast(FIRST_GAMES) : ui.versus.showAll(v.games.length)}
         </button>
       )}
     </div>
@@ -141,11 +143,12 @@ function Games({ v }: { v: VersusView }) {
 }
 
 function GameRow({ g, v }: { g: VersusGame; v: VersusView }) {
+  const date = dateFormat(useLocale(), { day: "2-digit", month: "short", year: "numeric" });
   const winner = g.winA == null ? null : g.winA ? v.playerA : v.playerB;
 
   return (
     <tr className="border-b border-dashed border-line last:border-0 align-middle">
-      <td className="px-3 py-1.5 whitespace-nowrap tabular-nums text-muted">{g.playedAt ? DATE.format(new Date(g.playedAt * 1000)) : "—"}</td>
+      <td className="px-3 py-1.5 whitespace-nowrap tabular-nums text-muted">{g.playedAt ? date.format(new Date(g.playedAt * 1000)) : "—"}</td>
       <td className="px-3 py-1.5">{g.label}</td>
       <td className="px-3 py-1.5">
         <Side s={g.a} won={g.winA === true} />

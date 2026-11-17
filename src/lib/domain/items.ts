@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Locale } from "../locale";
 
 /**
  * What an item is in a build, from its Riot Data Dragon entry (`item.json`), so that a champion's
@@ -9,12 +10,9 @@ export const ITEM_KINDS = ["complete", "boots", "component", "starter", "consuma
 
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
-export const ITEM_KIND_LABEL: Record<ItemKind, string> = {
-  complete: "complets",
-  boots: "bottes",
-  component: "composants",
-  starter: "départ",
-  consumable: "consommables",
+export const ITEM_KIND_LABEL: Record<Locale, Record<ItemKind, string>> = {
+  fr: { complete: "complets", boots: "bottes", component: "composants", starter: "départ", consumable: "consommables" },
+  en: { complete: "completed", boots: "boots", component: "components", starter: "starter", consumable: "consumables" },
 };
 
 /** Older patches have null entries in recipes. */

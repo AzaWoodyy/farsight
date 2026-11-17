@@ -1,4 +1,5 @@
-import type { EventKind } from "@/lib/sources/timeline";
+import { useUi } from "./i18n/locale-context";
+import type { Ui } from "./i18n/ui";
 import type { Side, TimelineView } from "@/lib/agent/types";
 
 const W = 720;
@@ -7,46 +8,21 @@ const PAD = { left: 52, right: 12, top: 26, bottom: 30 };
 const PLOT_W = W - PAD.left - PAD.right;
 const PLOT_H = H - PAD.top - PAD.bottom;
 
-/** Chart marker of each event kind; towers are a plain tick. */
-const MARK: Record<EventKind, string> = {
-  first_blood: "FB",
-  tower: "",
-  inhibitor: "I",
-  dragon: "D",
-  elder: "DA",
-  herald: "H",
-  grubs: "L",
-  baron: "B",
-  atakhan: "At",
-  ace: "ACE",
-};
-
-const LABEL: Record<EventKind, string> = {
-  first_blood: "first blood",
-  tower: "tour",
-  inhibitor: "inhibiteur",
-  dragon: "dragon",
-  elder: "dragon ancestral",
-  herald: "héraut",
-  grubs: "larves du néant",
-  baron: "baron Nashor",
-  atakhan: "Atakhan",
-  ace: "ace",
-};
-
 const SIDE_CLS: Record<Side, string> = { blue: "text-blue", red: "text-red" };
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 const gold = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${(Math.abs(n) / 1000).toFixed(1)}k`;
 
-function eventText(e: TimelineView["events"][number]): string {
-  if (e.kind === "grubs") return e.detail ?? LABEL.grubs;
+function eventText(e: TimelineView["events"][number], labels: Ui["timeline"]["events"]): string {
+  if (e.kind === "grubs") return e.detail ?? labels.grubs;
 
-  return e.detail ? `${LABEL[e.kind]} ${e.detail}` : LABEL[e.kind];
+  return e.detail ? `${labels[e.kind]} ${e.detail}` : labels[e.kind];
 }
 
 export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
+  const ui = useUi();
+  const { marks, events } = ui.timeline;
   const end = Math.max(t.durationS ?? 0, t.gold.at(-1)?.s ?? 0, 60);
   const peak = Math.max(2000, ...t.gold.map((g) => Math.abs(g.diff)));
   const max = Math.ceil(peak / 2000) * 2000;
@@ -64,13 +40,13 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
     <div className="mt-4 border border-line">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-3 py-2 text-xs">
         <span>
-          <span className="text-blue">{t.blue}</span> <span className="text-muted">(bleu) vs</span> <span className="text-red">{t.red}</span>{" "}
-          <span className="text-muted">(rouge)</span>
+          <span className="text-blue">{t.blue}</span> <span className="text-muted">({ui.side.blue}) vs</span> <span className="text-red">{t.red}</span>{" "}
+          <span className="text-muted">({ui.side.red})</span>
         </span>
         <span className="text-muted">
           {t.label}
           {t.durationS ? ` · ${clock(t.durationS)}` : ""}
-          {winner ? " · victoire " : ""}
+          {winner ? ui.timeline.victory : ""}
           {winner && <span className={SIDE_CLS[t.winner!]}>{winner}</span>}
           {` · match-v${t.version}`}
         </span>
@@ -81,7 +57,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full"
           role="img"
-          aria-label={`Écart d'or par minute, ${t.blue} au-dessus de zéro, ${t.red} en dessous${at15 ? ` ; à 15 min : ${gold(at15.diff)}` : ""}.`}
+          aria-label={ui.timeline.chart(t.blue, t.red, at15 ? gold(at15.diff) : null)}
         >
           <defs>
             <clipPath id="gold-blue">
@@ -122,7 +98,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           <path d={line} fill="none" className="stroke-foreground" strokeWidth={1.5} strokeLinejoin="round" />
           {t.gold.map((g) => (
             <circle key={g.s} cx={x(g.s)} cy={y(g.diff)} r={2.2} className="fill-foreground">
-              <title>{`${clock(g.s)} : ${gold(g.diff)} (${g.diff === 0 ? "égalité" : name(g.diff > 0 ? "blue" : "red")})`}</title>
+              <title>{`${clock(g.s)} : ${gold(g.diff)} (${g.diff === 0 ? ui.timeline.tie : name(g.diff > 0 ? "blue" : "red")})`}</title>
             </circle>
           ))}
 
@@ -135,10 +111,10 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
 
             return (
               <g key={`${e.s}-${e.kind}-${i}`}>
-                <title>{`${clock(e.s)} ${name(e.side)} : ${eventText(e)}`}</title>
-                {MARK[e.kind] ? (
+                <title>{`${clock(e.s)} ${name(e.side)} : ${eventText(e, events)}`}</title>
+                {marks[e.kind] ? (
                   <text x={cx} y={top ? cy + 4 : cy + 22} textAnchor="middle" className={`${cls} text-[9px] font-semibold`}>
-                    {MARK[e.kind]}
+                    {marks[e.kind]}
                   </text>
                 ) : (
                   <line x1={cx} x2={cx} y1={top ? PAD.top - 6 : H - PAD.bottom - 6} y2={top ? PAD.top : H - PAD.bottom} className={top ? "stroke-blue" : "stroke-red"} />
@@ -148,13 +124,12 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           })}
         </svg>
         <figcaption className="px-2 pb-2 text-[11px] text-muted">
-          écart d&apos;or {t.blue} − {t.red} par minute · FB first blood · D dragon · DA ancestral · H héraut · L larves · B baron · At Atakhan · I inhibiteur · ACE ·
-          trait : tour
+          {ui.timeline.caption(t.blue, t.red)}
         </figcaption>
       </figure>
 
       <div className="border-t border-line px-3 py-2">
-        <h3 className="text-xs uppercase tracking-widest text-muted">── événements clés</h3>
+        <h3 className="text-xs uppercase tracking-widest text-muted">── {ui.timeline.keyEvents}</h3>
         <ol className="mt-2 grid grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-0.5 text-xs">
           <li className="contents text-muted">
             <span className="text-right text-blue">{t.blue}</span>
@@ -163,9 +138,9 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           </li>
           {t.events.map((e, i) => (
             <li key={`${e.s}-${e.kind}-${i}`} className="contents">
-              <span className={`text-right ${e.side === "blue" ? SIDE_CLS.blue : ""}`}>{e.side === "blue" ? `${eventText(e)} ◂` : ""}</span>
+              <span className={`text-right ${e.side === "blue" ? SIDE_CLS.blue : ""}`}>{e.side === "blue" ? `${eventText(e, events)} ◂` : ""}</span>
               <span className="text-center tabular-nums text-muted">{clock(e.s)}</span>
-              <span className={e.side === "red" ? SIDE_CLS.red : ""}>{e.side === "red" ? `▸ ${eventText(e)}` : ""}</span>
+              <span className={e.side === "red" ? SIDE_CLS.red : ""}>{e.side === "red" ? `▸ ${eventText(e, events)}` : ""}</span>
             </li>
           ))}
         </ol>

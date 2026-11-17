@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Answer, PlayerProfile, TableCell } from "./agent/types";
+import { DEFAULT_LOCALE, type Locale, NO_DATA, numberFormat, percent, sameLabel } from "./locale";
 
 /**
  * Reads a generic result table as a two-player comparison, when it is one: two rows, one column naming
@@ -36,39 +37,39 @@ export type Comparison = {
 const PLAYER_COLUMN = /^(player|joueur|player_name|name|ign|handle|pseudo)$/i;
 
 /** `count`: a sum over the player's games when not averaged, so not comparable across different game counts. */
-type Meaning = { label: string; better: Better; percent?: boolean; signed?: boolean; count?: boolean };
+type Meaning = { label: Record<Locale, string>; better: Better; percent?: boolean; signed?: boolean; count?: boolean };
 
 /** Column name (without avg_/total_ prefixes) → what it means. Order matters: first match wins. */
 const MEANINGS: [RegExp, Meaning][] = [
-  [/^(games|games_played|parties|nb_games|game_count)$/, { label: "parties", better: null }],
-  [/^ingame_games$/, { label: "parties Riot", better: null }],
-  [/^(wins|victoires|won)$/, { label: "victoires", better: "higher", count: true }],
-  [/^(losses|defaites|lost)$/, { label: "défaites", better: "lower", count: true }],
-  [/^(win_?rate|winrate_pct|win_pct|pct_wins)$/, { label: "winrate", better: "higher", percent: true }],
-  [/^kda$/, { label: "KDA", better: "higher" }],
-  [/^(kills|deaths|assists)_(\d+)$/, { label: "$1 @$2", better: "higher" }],
-  [/^kills(_per_game)?$/, { label: "kills", better: "higher", count: true }],
-  [/^deaths(_per_game)?$/, { label: "morts", better: "lower", count: true }],
-  [/^assists(_per_game)?$/, { label: "assists", better: "higher", count: true }],
-  [/^gold_diff_?(\d+)$/, { label: "écart d'or @$1", better: "higher", signed: true }],
-  [/^cs_diff_?(\d+)$/, { label: "écart CS @$1", better: "higher", signed: true }],
-  [/^xp_diff_?(\d+)$/, { label: "écart XP @$1", better: "higher", signed: true }],
-  [/^gold_?(\d+)$/, { label: "or @$1", better: "higher" }],
-  [/^cs_?(\d+)$/, { label: "CS @$1", better: "higher" }],
-  [/^xp_?(\d+)$/, { label: "XP @$1", better: "higher" }],
-  [/^gold(_earned)?$/, { label: "or", better: "higher" }],
-  [/^(cs|creep_score|minions)$/, { label: "CS", better: "higher" }],
-  [/^(damage|damage_dealt|dmg)$/, { label: "dégâts", better: "higher" }],
-  [/^damage_taken$/, { label: "dégâts subis", better: null }],
-  [/^(vision|vision_score)$/, { label: "vision", better: "higher" }],
-  [/^wards_placed$/, { label: "wards posées", better: "higher" }],
-  [/^wards_killed$/, { label: "wards détruites", better: "higher" }],
-  [/^control_wards$/, { label: "control wards", better: "higher" }],
-  [/^solo_kills$/, { label: "solo kills", better: "higher", count: true }],
-  [/^first_blood(_kill)?s?$/, { label: "first bloods", better: "higher", count: true }],
-  [/^(penta|quadra|triple|double)_kills$/, { label: "$1 kills", better: "higher", count: true }],
-  [/^kills_before_10$/, { label: "kills < 10 min", better: "higher", count: true }],
-  [/^plates$/, { label: "plaques", better: "higher", count: true }],
+  [/^(games|games_played|parties|nb_games|game_count)$/, { label: { fr: "parties", en: "games" }, better: null }],
+  [/^ingame_games$/, { label: { fr: "parties Riot", en: "Riot games" }, better: null }],
+  [/^(wins|victoires|won)$/, { label: { fr: "victoires", en: "wins" }, better: "higher", count: true }],
+  [/^(losses|defaites|lost)$/, { label: { fr: "défaites", en: "losses" }, better: "lower", count: true }],
+  [/^(win_?rate|winrate_pct|win_pct|pct_wins)$/, { label: sameLabel("winrate"), better: "higher", percent: true }],
+  [/^kda$/, { label: sameLabel("KDA"), better: "higher" }],
+  [/^(kills|deaths|assists)_(\d+)$/, { label: sameLabel("$1 @$2"), better: "higher" }],
+  [/^kills(_per_game)?$/, { label: sameLabel("kills"), better: "higher", count: true }],
+  [/^deaths(_per_game)?$/, { label: { fr: "morts", en: "deaths" }, better: "lower", count: true }],
+  [/^assists(_per_game)?$/, { label: sameLabel("assists"), better: "higher", count: true }],
+  [/^gold_diff_?(\d+)$/, { label: { fr: "écart d'or @$1", en: "gold diff @$1" }, better: "higher", signed: true }],
+  [/^cs_diff_?(\d+)$/, { label: { fr: "écart CS @$1", en: "CS diff @$1" }, better: "higher", signed: true }],
+  [/^xp_diff_?(\d+)$/, { label: { fr: "écart XP @$1", en: "XP diff @$1" }, better: "higher", signed: true }],
+  [/^gold_?(\d+)$/, { label: { fr: "or @$1", en: "gold @$1" }, better: "higher" }],
+  [/^cs_?(\d+)$/, { label: sameLabel("CS @$1"), better: "higher" }],
+  [/^xp_?(\d+)$/, { label: sameLabel("XP @$1"), better: "higher" }],
+  [/^gold(_earned)?$/, { label: { fr: "or", en: "gold" }, better: "higher" }],
+  [/^(cs|creep_score|minions)$/, { label: sameLabel("CS"), better: "higher" }],
+  [/^(damage|damage_dealt|dmg)$/, { label: { fr: "dégâts", en: "damage" }, better: "higher" }],
+  [/^damage_taken$/, { label: { fr: "dégâts subis", en: "damage taken" }, better: null }],
+  [/^(vision|vision_score)$/, { label: sameLabel("vision"), better: "higher" }],
+  [/^wards_placed$/, { label: { fr: "wards posées", en: "wards placed" }, better: "higher" }],
+  [/^wards_killed$/, { label: { fr: "wards détruites", en: "wards killed" }, better: "higher" }],
+  [/^control_wards$/, { label: sameLabel("control wards"), better: "higher" }],
+  [/^solo_kills$/, { label: sameLabel("solo kills"), better: "higher", count: true }],
+  [/^first_blood(_kill)?s?$/, { label: sameLabel("first bloods"), better: "higher", count: true }],
+  [/^(penta|quadra|triple|double)_kills$/, { label: sameLabel("$1 kills"), better: "higher", count: true }],
+  [/^kills_before_10$/, { label: sameLabel("kills < 10 min"), better: "higher", count: true }],
+  [/^plates$/, { label: { fr: "plaques", en: "plates" }, better: "higher", count: true }],
 ];
 
 /** "avg_gold_diff_10" → { base: "gold_diff_10", average: true } */
@@ -79,16 +80,18 @@ function baseName(column: string) {
   return { base: lower.replace(/^(avg|average|moy|mean|total|sum|nb)_/, "").replace(/_(avg|average|per_game|pg|total)$/, ""), average };
 }
 
-function meaningOf(column: string): Meaning & { average: boolean } {
+function meaningOf(column: string, locale: Locale): Omit<Meaning, "label"> & { label: string; average: boolean } {
   const { base, average } = baseName(column);
 
   for (const [re, meaning] of MEANINGS) {
     const m = re.exec(base);
 
     if (m) {
-      const label = meaning.label.replace("$1", m[1] ?? "").replace("$2", m[2] ?? "").replace(/^deaths @/, "morts @");
+      const deaths = m[1] === "deaths";
+      const label = meaning.label[locale].replace("$1", deaths && locale === "fr" ? "morts" : (m[1] ?? "")).replace("$2", m[2] ?? "");
 
-      return { ...meaning, label, better: label.startsWith("morts") ? "lower" : meaning.better, average };
+      // "deaths @10" is the one row of its pattern where the lower value wins.
+      return { ...meaning, label, better: deaths ? "lower" : meaning.better, average };
     }
   }
 
@@ -108,7 +111,7 @@ type Pair<T> = [T, T];
 const both = <T>(f: (i: 0 | 1) => T): Pair<T> => [f(0), f(1)];
 
 /** `keep`: a column shown even when both values are n/d (the statistic the question names, without data in the scope). */
-export function detectComparison(table: Answer["table"], profiles: PlayerProfile[], keep: string | null = null): Comparison | null {
+export function detectComparison(table: Answer["table"], profiles: PlayerProfile[], keep: string | null = null, locale: Locale = DEFAULT_LOCALE): Comparison | null {
   if (!table || table.rows.length !== 2) return null;
 
   const named = new Set(profiles.map((p) => p.player.toLowerCase()));
@@ -144,7 +147,7 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
     // Text columns (team, role…) are not stats; one null cell is allowed (n/d for one player).
     if (cells.some((v, r) => v != null && pair[r] == null) || (pair.every((v) => v == null) && column !== keep)) return;
 
-    const meaning = meaningOf(column);
+    const meaning = meaningOf(column, locale);
 
     byBase.set(baseName(column).base, { values: pair, average: meaning.average });
     const total = (meaning.count ?? false) && !meaning.average;
@@ -230,17 +233,13 @@ export function rowWinner(s: ComparedStat): 0 | 1 | null {
   return (s.better === "higher") === a > b ? 0 : 1;
 }
 
-const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
-
-const BIG = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-
 /** "2,93", "13 777", "+72", "66,3 %" */
-export function formatStat(s: ComparedStat, v: number | null): string {
-  if (v == null) return "n/d";
+export function formatStat(s: ComparedStat, v: number | null, locale: Locale = DEFAULT_LOCALE): string {
+  if (v == null) return NO_DATA[locale];
 
-  if (s.percent) return `${NUMBER.format(Math.round(v * 10) / 10)} %`;
+  if (s.percent) return percent(locale, numberFormat(locale, 2).format(Math.round(v * 10) / 10));
 
-  const text = Math.abs(v) >= 1000 ? BIG.format(Math.abs(v)) : NUMBER.format(Math.abs(v));
+  const text = numberFormat(locale, Math.abs(v) >= 1000 ? 0 : 2).format(Math.abs(v));
   const sign = v < 0 ? "−" : s.signed && v > 0 ? "+" : "";
 
   return `${sign}${text}`;

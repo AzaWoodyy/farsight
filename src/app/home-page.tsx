@@ -17,7 +17,7 @@ export function HomePage({ locale }: { locale: Locale }) {
       <script dangerouslySetInnerHTML={{ __html: PICK_SCRIPT }} />
       <SiteHeader locale={locale} page="home" trail={SHELL[locale].tagline.toLowerCase()} />
       <main className="flex-1 pb-16">
-        <AgentConsole />
+        <AgentConsole locale={locale} />
       </main>
       <SiteFooter locale={locale} />
     </div>

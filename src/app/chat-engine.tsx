@@ -5,6 +5,9 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { type Ref, useEffect, useImperativeHandle } from "react";
 import type { AgentUIMessage } from "@/lib/agent/types";
+import { type Locale, LOCALES } from "@/lib/locale";
+import { useLocale } from "./i18n/locale-context";
+import { UI, type Ui } from "./i18n/ui";
 
 /** What the console reads from the chat. */
 export type ChatState = {
@@ -20,44 +23,49 @@ export type ChatControls = {
 };
 
 /** What the chat shows for a failed POST /api/ask, by HTTP status. */
-function httpErrorMessage(status: number): string {
-  if (status === 429) return "Trop de questions, réessaie dans quelques minutes.";
+function httpErrorMessage(status: number, errors: Ui["errors"]): string {
+  if (status === 429) return errors.tooMany;
 
-  if (status === 403) return "Requête refusée par la protection anti-robots. Recharge la page, puis réessaie.";
+  if (status === 403) return errors.refused;
 
-  if (status === 400) return "Question invalide : écris une question, puis réessaie.";
+  if (status === 400) return errors.invalid;
 
-  if (status === 504) return "L'agent a mis trop de temps à répondre. Réessaie, ou pose une question plus simple.";
+  if (status === 504) return errors.timeout;
 
-  if (status >= 500) return `Le serveur n'a pas pu répondre (HTTP ${status}). Réessaie dans un instant.`;
+  if (status >= 500) return errors.server(status);
 
-  return `La requête a échoué (HTTP ${status}).`;
+  return errors.other(status);
 }
 
 /**
  * fetch for the chat transport: a non-2xx answer (a 429 from the firewall
  * rate limit, a 403 from BotID…) becomes a readable error instead of the
- * raw response body the transport would show.
+ * raw response body the transport would show, in the language of the page.
  */
-async function askFetchImpl(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+const askFetchIn = (locale: Locale) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const { errors } = UI[locale];
   let res: Response;
 
   try {
     res = await fetch(input, init);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new Error("Connexion impossible : vérifie ta connexion, puis réessaie.");
+    throw new Error(errors.offline);
   }
 
-  if (!res.ok) throw new Error(httpErrorMessage(res.status));
+  if (!res.ok) throw new Error(httpErrorMessage(res.status, errors));
 
   return res;
-}
+};
 
+// One transport per language, made once: useChat keeps the one it was first given.
 // The transport wants `typeof fetch`, which also carries `preconnect`.
-const askFetch: typeof fetch = Object.assign(askFetchImpl, { preconnect: fetch.preconnect });
-
-const transport = new DefaultChatTransport<AgentUIMessage>({ api: "/api/ask", fetch: askFetch });
+const transports = new Map(
+  LOCALES.map((locale) => [
+    locale,
+    new DefaultChatTransport<AgentUIMessage>({ api: "/api/ask", fetch: Object.assign(askFetchIn(locale), { preconnect: fetch.preconnect }) }),
+  ]),
+);
 
 /**
  * The chat itself (AI SDK and its stream parsing), without any markup. The console loads it apart from the
@@ -72,7 +80,7 @@ export function ChatEngine({
   onChange: (state: ChatState) => void;
   first: { text: string; sessionId: string } | null;
 }) {
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport });
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport: transports.get(useLocale()) });
   const running = status === "submitted" || status === "streaming";
 
   useImperativeHandle(
