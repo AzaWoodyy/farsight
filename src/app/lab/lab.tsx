@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Answer, StepName, StepPart } from "@/lib/agent/types";
 import { HowIFoundIt, Progress } from "../agent-console";
 import { AnswerView, Feedback } from "../answer-view";
+import { LocaleProvider } from "../i18n/locale-context";
 import { LAB_FIXTURES, LAB_VARIANTS, type LabState } from "./catalog";
 import { LabMenu } from "./lab-menu";
 
@@ -100,6 +101,7 @@ export function Lab() {
   };
 
   return (
+    <LocaleProvider locale="fr">
     <section>
       <h1 className="sr-only">Lab des affichages : {variant.groupTitle}, {variant.label}</h1>
       {/* The console's question field, as it sits above an answer; inert here. */}
@@ -136,6 +138,7 @@ export function Lab() {
       </div>
       <LabMenu index={index} onSelect={select} />
     </section>
+    </LocaleProvider>
   );
 }
 

@@ -31,6 +31,7 @@ export const DATASETS = [
   "lines",
   "players",
   "redirects",
+  "player_images",
   "ddragon",
   "riot_games",
   "runs",

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { HomeLink } from "../home-link";
-import { SiteFooter } from "../site-footer";
-import { ThemeToggle } from "../theme-toggle";
-import { Lab } from "./lab";
+import { Lab } from "../../lab/lab";
+import { SiteFooter } from "../../site-footer";
+import { SiteHeader } from "../../site-header";
 
 export const metadata: Metadata = { title: "Lab", robots: { index: false, follow: false } };
 
@@ -19,18 +18,12 @@ export default function LabPage() {
     // Same frame as the home page, so every layout is judged at the width and beside the neighbours it ships with.
     // No extra room for the floating menu: the page ends where production ends (H hides the menu).
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
-      <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
-        <HomeLink />
-        <div className="flex items-center gap-4">
-          <span className="hidden text-xs text-muted sm:block">~/ lab des affichages</span>
-          <ThemeToggle />
-        </div>
-      </header>
+      <SiteHeader locale="fr" page="home" trail="lab des affichages" />
       {/* Not stretched to the screen: under a short answer the footer follows it, instead of an empty screen between the two. */}
       <main className="pb-8">
         <Lab />
       </main>
-      <SiteFooter />
+      <SiteFooter locale="fr" />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Answer, TableCell } from "./agent/types";
+import { DEFAULT_LOCALE, type Locale, NO_DATA, numberFormat, percent, sameLabel } from "./locale";
 
 /**
  * Reads a result table as a champion ranking, when it is one: a column of champion names that have an
@@ -23,51 +24,54 @@ export type ChampionRanking = {
   lines: ChampionRankingLine[];
 };
 
-const LABELS: [RegExp, string, boolean][] = [
-  [/^(picks?|nb_picks|pick_count|times_picked)$/, "picks", false],
-  [/^(bans?|nb_bans|ban_count|times_banned)$/, "bans", false],
-  [/^(presence|presence_pct|presence_rate)$/, "présence", true],
-  [/^(win_?rate|winrate_pct|win_pct)$/, "winrate", true],
-  [/^(pick_?rate|pick_pct)$/, "pick rate", true],
-  [/^(ban_?rate|ban_pct)$/, "ban rate", true],
-  [/^kda$/, "KDA", false],
-  [/^(games|parties|games_played)$/, "parties", false],
-  [/^(wins|victoires)$/, "victoires", false],
-  [/^(deaths|morts)$/, "morts", false],
-  [/^gold$/, "or", false],
-  [/^cs$/, "CS", false],
-  [/^(damage|degats)$/, "dégâts", false],
-  [/^dpm$/, "dégâts/min", false],
-  [/^gpm$/, "or/min", false],
-  [/^cspm$/, "CS/min", false],
-  [/^gold_diff_15$/, "écart or @15", false],
-  [/^cs_diff_15$/, "écart CS @15", false],
-  [/^xp_diff_15$/, "écart XP @15", false],
-  [/^first_blood$/, "first blood", true],
-  [/^solo_kills$/, "solo kills", false],
-  [/^(players|joueurs)$/, "joueurs", false],
-  [/^kills$/, "kills", false],
-  [/^assists$/, "assists", false],
-  [/^vision$/, "vision", false],
-  [/^penta_kills$/, "pentakills", false],
-  [/^quadra_kills$/, "quadrakills", false],
-  [/^triple_kills$/, "triple kills", false],
-  [/^double_kills$/, "double kills", false],
+/** Column name → its label (one text when both languages say it the same) and whether it is a percentage. */
+const LABELS: [RegExp, Record<Locale, string>, boolean][] = [
+  [/^(picks?|nb_picks|pick_count|times_picked)$/, sameLabel("picks"), false],
+  [/^(bans?|nb_bans|ban_count|times_banned)$/, sameLabel("bans"), false],
+  [/^(presence|presence_pct|presence_rate)$/, { fr: "présence", en: "presence" }, true],
+  [/^(win_?rate|winrate_pct|win_pct)$/, sameLabel("winrate"), true],
+  [/^(pick_?rate|pick_pct)$/, sameLabel("pick rate"), true],
+  [/^(ban_?rate|ban_pct)$/, sameLabel("ban rate"), true],
+  [/^kda$/, sameLabel("KDA"), false],
+  [/^(games|parties|games_played)$/, { fr: "parties", en: "games" }, false],
+  [/^(wins|victoires)$/, { fr: "victoires", en: "wins" }, false],
+  [/^(deaths|morts)$/, { fr: "morts", en: "deaths" }, false],
+  [/^gold$/, { fr: "or", en: "gold" }, false],
+  [/^cs$/, sameLabel("CS"), false],
+  [/^(damage|degats)$/, { fr: "dégâts", en: "damage" }, false],
+  [/^dpm$/, { fr: "dégâts/min", en: "damage/min" }, false],
+  [/^gpm$/, { fr: "or/min", en: "gold/min" }, false],
+  [/^cspm$/, sameLabel("CS/min"), false],
+  [/^gold_diff_15$/, { fr: "écart or @15", en: "gold diff @15" }, false],
+  [/^cs_diff_15$/, { fr: "écart CS @15", en: "CS diff @15" }, false],
+  [/^xp_diff_15$/, { fr: "écart XP @15", en: "XP diff @15" }, false],
+  [/^first_blood$/, sameLabel("first blood"), true],
+  [/^solo_kills$/, sameLabel("solo kills"), false],
+  [/^(players|joueurs)$/, { fr: "joueurs", en: "players" }, false],
+  [/^kills$/, sameLabel("kills"), false],
+  [/^assists$/, sameLabel("assists"), false],
+  [/^vision$/, sameLabel("vision"), false],
+  [/^penta_kills$/, sameLabel("pentakills"), false],
+  [/^quadra_kills$/, sameLabel("quadrakills"), false],
+  [/^triple_kills$/, sameLabel("triple kills"), false],
+  [/^double_kills$/, sameLabel("double kills"), false],
 ];
 
-function metricOf(column: string): ChampionMetric {
+function metricOf(column: string, locale: Locale): ChampionMetric {
+  const labelOf = (name: string) => LABELS.find(([re]) => re.test(name))?.[1][locale];
+
   const key = column.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
   // A total over the scope (champion_ranking): the figure's own label, never a percentage ("total_first_blood" counts them).
   if (key.startsWith("total_")) {
-    const base = LABELS.find(([re]) => re.test(key.slice(6)))?.[1] ?? key.slice(6).replace(/_/g, " ");
+    const base = labelOf(key.slice(6)) ?? key.slice(6).replace(/_/g, " ");
 
     return { key: column, label: `${base} (total)`, percent: false };
   }
 
   const hit = LABELS.find(([re]) => re.test(key));
 
-  return { key: column, label: hit?.[1] ?? column.replace(/_/g, " "), percent: hit?.[2] ?? /pct|percent|rate/.test(key) };
+  return { key: column, label: labelOf(key) ?? column.replace(/_/g, " "), percent: hit?.[2] ?? /pct|percent|rate/.test(key) };
 }
 
 const Finite = z.number().finite();
@@ -76,7 +80,7 @@ const numberOf = (v: TableCell) => Finite.safeParse(v).data ?? null;
 
 const textOf = (v: TableCell) => z.string().min(1).safeParse(v).data ?? null;
 
-export function detectChampionRanking(table: Answer["table"], icons: Record<string, string>, sortKey?: string): ChampionRanking | null {
+export function detectChampionRanking(table: Answer["table"], icons: Record<string, string>, sortKey?: string, locale: Locale = DEFAULT_LOCALE): ChampionRanking | null {
   if (!table || table.rows.length === 0) return null;
 
   const nameIndex = table.columns.findIndex((c) => CHAMPION_COLUMN.test(c));
@@ -104,7 +108,7 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
 
   if (!metricIndexes.length) return null;
 
-  const metrics = metricIndexes.map((i) => metricOf(table.columns[i]));
+  const metrics = metricIndexes.map((i) => metricOf(table.columns[i], locale));
 
   const lines = table.rows.map((r, n) => ({
     rank: (rankIndex >= 0 ? numberOf(r[rankIndex]) : null) ?? n + 1,
@@ -123,11 +127,10 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
   return { metrics, primary: hinted >= 0 ? hinted : Math.max(0, sorted), lines };
 }
 
-const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
-
 /** "1 233", "43,9 %", "n/d" */
-export function formatChampionValue(v: number | null, percent: boolean): string {
-  if (v == null) return "n/d";
+export function formatChampionValue(v: number | null, isPercent: boolean, locale: Locale = DEFAULT_LOCALE): string {
+  if (v == null) return NO_DATA[locale];
+  const number = numberFormat(locale, 2);
 
-  return percent ? `${NUMBER.format(Math.round(v * 10) / 10)} %` : NUMBER.format(v);
+  return isPercent ? percent(locale, number.format(Math.round(v * 10) / 10)) : number.format(v);
 }

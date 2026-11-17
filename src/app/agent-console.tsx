@@ -5,6 +5,9 @@ import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } fr
 import type { ChatControls, ChatState } from "./chat-engine";
 import { HomeExamples } from "./home-examples";
 import { HOME_EVENT } from "./home-link";
+import { LocaleProvider, useUi } from "./i18n/locale-context";
+import type { Ui } from "./i18n/ui";
+import type { Locale } from "@/lib/locale";
 
 // The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
 // itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
@@ -25,14 +28,6 @@ const loadModules = () =>
 
 const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
-/** What the visitor reads while a step runs: what the agent is doing, in plain words. */
-const PROGRESS: Record<StepName, string> = {
-  understand: "Je repère les joueurs, équipes et compétitions…",
-  build: "Je prépare la recherche…",
-  execute: "Je cherche dans les matchs…",
-  format: "Je mets la réponse en forme…",
-};
-
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   ok: { mark: "ok", cls: "text-ok" },
   warn: { mark: "!!", cls: "text-warn" },
@@ -40,14 +35,17 @@ const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   fix: { mark: "~>", cls: "text-fix" },
 };
 
-const STEP_LABEL: Record<StepName, string> = {
-  understand: "1 comprendre",
-  build: "2 construire",
-  execute: "3 exécuter",
-  format: "4 mettre en forme",
-};
+/** The console in the language of the page; every view under it reads that language from the context. */
+export function AgentConsole({ locale }: { locale: Locale }) {
+  return (
+    <LocaleProvider locale={locale}>
+      <Console />
+    </LocaleProvider>
+  );
+}
 
-export function AgentConsole() {
+function Console() {
+  const ui = useUi();
   const [question, setQuestion] = useState("");
   // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
   // so a reload or "nouvelle conversation" starts another. It groups the traces of the conversation, and
@@ -152,12 +150,11 @@ export function AgentConsole() {
             <span aria-hidden className="text-accent">
               &gt;{" "}
             </span>
-            Pose une question sur l&apos;esport League of Legends.
+            {ui.console.heading}
             <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
           </h1>
           <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
-            Farsight cherche dans les résultats et les matchs pros de LoL (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond
-            avec un tableau, une phrase de résumé et les pages d&apos;où viennent les chiffres.
+            {ui.console.intro}
           </p>
         </div>
       )}
@@ -173,7 +170,7 @@ export function AgentConsole() {
           &gt;
         </span>
         <label htmlFor="question" className="sr-only">
-          Ta question
+          {ui.console.questionLabel}
         </label>
         <input
           id="question"
@@ -181,7 +178,7 @@ export function AgentConsole() {
           maxLength={500}
           onChange={(e) => setQuestion(e.target.value)}
           onFocus={preload}
-          placeholder="Faker contre Chovy"
+          placeholder={ui.console.placeholder}
           autoComplete="off"
           enterKeyHint="search"
           className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:text-sm"
@@ -191,7 +188,7 @@ export function AgentConsole() {
           disabled={running || !question.trim()}
           className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:pointer-fine:min-h-9"
         >
-          {running ? "…" : "Demander"}
+          {running ? "…" : ui.console.ask}
         </button>
       </form>
 
@@ -199,7 +196,7 @@ export function AgentConsole() {
         <div className="mt-8">
           <HomeExamples onAsk={ask} />
           <p className="mt-6 max-w-[70ch] text-xs leading-relaxed text-muted">
-            Résultats, compositions et stats de partie :{" "}
+            {ui.console.dataFrom}{" "}
             <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://lol.fandom.com" target="_blank" rel="noreferrer">
               Leaguepedia
             </a>{" "}
@@ -212,7 +209,7 @@ export function AgentConsole() {
             >
               CC BY-SA 3.0
             </a>
-            ). Noms et icônes des champions, objets et runes :{" "}
+            ). {ui.console.iconsFrom}{" "}
             <a
               className="underline decoration-line underline-offset-2 hover:text-accent"
               href="https://developer.riotgames.com/docs/lol#data-dragon"
@@ -221,7 +218,7 @@ export function AgentConsole() {
             >
               Riot Data Dragon
             </a>
-            . Chaque réponse cite ses pages.
+            . {ui.console.photos} {ui.console.cited}
           </p>
         </div>
       )}
@@ -234,7 +231,7 @@ export function AgentConsole() {
           {/* Mounted as long as the question is shown: a live region only announces changes to an element already
               there, so the end of the run (answer ready, or nothing) is heard too. Hidden, so it never moves the page. */}
           <p role="status" className="sr-only">
-            {running ? progressLabel(steps) : answer ? `Réponse prête : ${answer.title}` : ""}
+            {running ? progressLabel(steps, ui) : answer ? ui.console.ready(answer.title) : ""}
           </p>
           {/* A long question takes the whole line and pushes the button under it, instead of a narrow column. */}
           <div className="flex flex-wrap items-start justify-between gap-x-4">
@@ -249,7 +246,7 @@ export function AgentConsole() {
               onClick={restart}
               className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:pointer-fine:min-h-8"
             >
-              Nouvelle conversation
+              {ui.console.restart}
             </button>
           </div>
           {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top and the
@@ -266,14 +263,14 @@ export function AgentConsole() {
           {loadFailed && first && (
             <div className="mt-4 flex flex-wrap items-center gap-x-3 text-sm">
               <p role="alert" className="text-error">
-                <span aria-hidden>xx</span> Chargement impossible : vérifie ta connexion, puis réessaie.
+                <span aria-hidden>xx</span> {ui.console.loadFailed}
               </p>
               <button
                 type="button"
                 onClick={() => ask(first.text)}
                 className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
               >
-                Réessayer
+                {ui.console.retry}
               </button>
             </div>
           )}
@@ -315,22 +312,24 @@ function Spinner() {
 }
 
 /** What the agent is doing, read from the step that is running. */
-function progressLabel(steps: Map<StepName, StepPart>): string {
+function progressLabel(steps: Map<StepName, StepPart>, ui: Ui): string {
   // The latest step started; once it is done and before the next one streams, the next one is what comes.
   const lastIndex = STEPS.findLastIndex((name) => steps.has(name));
   const last = lastIndex < 0 ? undefined : STEPS[lastIndex];
   const current = last && steps.get(last)?.state === "done" ? (STEPS[lastIndex + 1] ?? last) : last;
   const retrying = current === "execute" && steps.get("execute")?.entries.some((e) => e.status === "fix");
 
-  return !current ? "Je lis ta question…" : retrying ? "Je réessaie autrement…" : PROGRESS[current];
+  return !current ? ui.console.reading : retrying ? ui.console.retrying : ui.console.progress[current];
 }
 
 /** The one line shown while the agent works. Screen readers hear it from the status region of the console. */
 export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
+  const ui = useUi();
+
   return (
     <p className="mt-6 flex items-center gap-2 text-sm">
       <Spinner />
-      <span>{progressLabel(steps)}</span>
+      <span>{progressLabel(steps, ui)}</span>
     </p>
   );
 }
@@ -340,6 +339,7 @@ export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
  * progress, folded once the answer is in. The visitor can still open or close it by hand.
  */
 export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+  const ui = useUi();
   const ref = useRef<HTMLDetailsElement>(null);
 
   // A run starting opens the trace, a run ending folds it. Set on the element after commit and left
@@ -355,7 +355,7 @@ export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>
         <span aria-hidden data-chevron className="inline-block">
           ›
         </span>
-        {running ? "Comment je cherche" : "Voir comment j\u2019ai trouvé"}
+        {running ? ui.console.howRunning : ui.console.howDone}
       </summary>
       <Steps steps={steps} running={running} />
     </details>
@@ -363,6 +363,8 @@ export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>
 }
 
 function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+  const ui = useUi();
+
   return (
     <div className="mt-2 overflow-x-auto">
       <ol className="space-y-2 text-xs">
@@ -375,8 +377,8 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
               <li key={name} className="flex gap-2 text-muted">
                 <span aria-hidden>{branch}</span>
                 <span className="w-5 shrink-0">··</span>
-                <span className="w-32 shrink-0">{STEP_LABEL[name]}</span>
-                <span>{running ? "en attente" : "non exécutée"}</span>
+                <span className="w-32 shrink-0">{ui.console.steps[name]}</span>
+                <span>{running ? ui.console.pending : ui.console.skipped}</span>
               </li>
             );
           const interrupted = part.state === "running" && !running;
@@ -389,9 +391,9 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                 {branch}
               </span>
               <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>{active ? ".." : s.mark}</span>
-              <span className="w-32 shrink-0 text-muted">{STEP_LABEL[name]}</span>
+              <span className="w-32 shrink-0 text-muted">{ui.console.steps[name]}</span>
               <span className="min-w-0">
-                {interrupted ? "interrompue" : part.title}
+                {interrupted ? ui.console.interrupted : part.title}
                 {part.entries.length > 0 && <span className="ml-2 text-muted group-open/step:hidden">[+]</span>}
               </span>
             </>

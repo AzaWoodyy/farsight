@@ -6,7 +6,7 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 
 ## Ce que contient le déploiement
 
-- **Fonction `/api/ask`** (Node 24, `engines.node` dans `package.json`) : la
+- **Fonction `/api/ask`** (Node 26, `engines.node` dans `package.json`) : la
   base `data/lol.sqlite` est ajoutée au bundle par `outputFileTracingIncludes`
   (`next.config.ts`), puis ouverte en lecture seule (`src/lib/db/index.ts`).
   - Budget : base sous 190 Mo, fonction sous 250 Mo décompressés (limite de
@@ -250,6 +250,34 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Première release v9
+
+Le schéma v9 ajoute les photos des joueurs : `player_images` (joueur, nom du
+fichier Leaguepedia, début du tournoi pour lequel la photo a été prise). La
+comparaison de deux joueurs, l'effectif d'une équipe et le scoreboard d'une
+partie montrent la photo de l'époque : la dernière prise avant la partie, ou
+avant la dernière partie du joueur sur la période de la question. `data:fetch`
+lit toute la table Cargo `PlayerImages` (environ 30 000 lignes, une poignée de
+requêtes) dans `data/raw/player_images.json`, et `data:build` rattache chaque
+image à son joueur comme un lien de scoreboard (casse, ancien pseudo), en
+écartant les plans larges et les images sans date.
+
+Les images sont en fair use (Riot Games et les ligues), pas en CC BY-SA : la
+base ne garde que les noms de fichiers, et le navigateur charge la miniature
+depuis le CDN de Fandom (`static.wikia.nocookie.net`, autorisé dans `img-src`).
+Ce CDN refuse une requête sans en-tête `Referer` ; l'avatar affiche alors les
+initiales du joueur.
+
+Une seule **Data release** sur `main`, une fois le code v9 fusionné et avant le
+premier déploiement v9 : la release précédente ayant un autre schéma, ses
+résumés in-game ne sont pas restaurés et sont relus sur R2 (environ 6 min).
+`data:package` refuse une release sans photo, et une release qui perd plus de
+2 % des joueurs avec photo par rapport à la précédente (`players_with_photo`
+dans le manifeste). L'instantané de CI (`ci/raw.tar.zst`) n'a pas
+`player_images.json` : la reconstruction hors ligne de la CI n'a donc aucune
+photo, et `data:package --check-only` se contente d'un avertissement. Ré-épingler
+`ci/data.json` sur la première release v9 supprime la reconstruction.
+
 ### Première release v8
 
 Le schéma v8 ajoute les dragons par élément et l'âme du dragon : `game_dragons`
@@ -322,7 +350,7 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 
 - Framework `nextjs`, installation `bun install --frozen-lockfile`, build
   `bun run build` (lance `data:pull`, ne pas la remplacer par `next build`).
-  Node 24.x vient de `engines.node` dans `package.json`.
+  Node 26.x vient de `engines.node` dans `package.json`.
 - Région des fonctions `cdg1` (Paris). Le plan Hobby n'en autorise qu'une.
 - `git.deploymentEnabled: false` : même si le dépôt est connecté au projet,
   l'intégration Git ne déploie rien. La production est déployée par le

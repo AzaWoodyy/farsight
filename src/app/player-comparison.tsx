@@ -1,5 +1,7 @@
 import type { ComparedPlayer, ComparedStat, Comparison } from "@/lib/comparison";
 import { formatStat, rowWinner } from "@/lib/comparison";
+import { useLocale, useUi } from "./i18n/locale-context";
+import { PlayerAvatar } from "./player-avatar";
 
 /**
  * Two players face to face: one row per stat, mirrored bars from a central label, the better value in the
@@ -16,24 +18,30 @@ export function PlayerComparison({ comparison }: { comparison: Comparison }) {
 
 /** What the page computed itself, and where the teams and roles come from. */
 export function ComparisonNote({ c }: { c: Comparison }) {
+  const ui = useUi();
+
   return (
     <p className="mt-2 text-[11px] text-muted">
-      <span aria-hidden>*</span> calculé par la page à partir des colonnes renvoyées
-      {c.players.some((p) => p.profile) ? " · équipes et rôle lus dans la base, sur la compétition et la période de la question" : ""}
+      <span aria-hidden>*</span> {ui.comparison.computed}
+      {c.players.some((p) => p.profile) ? ui.comparison.profiles : ""}
     </p>
   );
 }
 
-const Label = ({ s }: { s: ComparedStat }) => (
-  <>
-    {s.label}
-    {s.derived && (
-      <span aria-label=" (calculé)" className="text-muted">
-        *
-      </span>
-    )}
-  </>
-);
+function Label({ s }: { s: ComparedStat }) {
+  const ui = useUi();
+
+  return (
+    <>
+      {s.label}
+      {s.derived && (
+        <span aria-label={ui.comparison.computedMark} className="text-muted">
+          *
+        </span>
+      )}
+    </>
+  );
+}
 
 /** Text and weight of a value: the better one in the accent color. */
 const tone = (s: ComparedStat, i: 0 | 1) => {
@@ -52,21 +60,25 @@ function share(s: ComparedStat, i: 0 | 1): number {
 
 function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
   return (
-    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      <div className="truncate text-sm font-semibold" translate="no">
-        {p.name}
-      </div>
-      {p.profile && (
-        <div className="truncate text-[11px] text-muted">
-          {[p.profile.role, p.profile.teams.join(", ")].filter(Boolean).join(" · ")}
+    <div className={`flex min-w-0 items-center gap-2 ${align === "right" ? "flex-row-reverse text-right" : ""}`}>
+      <PlayerAvatar name={p.name} photo={p.profile?.photo} size={44} />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold" translate="no">
+          {p.name}
         </div>
-      )}
+        {p.profile && (
+          <div className="truncate text-[11px] text-muted">
+            {[p.profile.role, p.profile.teams.join(", ")].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 /** `focus`: key of the statistic the question names, set apart from the rest. */
 export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | null }) {
+  const ui = useUi();
   const [a, b] = c.players;
 
   return (
@@ -94,10 +106,10 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
       </ul>
       <p className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
         {c.leader == null ? (
-          <>égalité sur les lignes comparées ({c.wins[0]}–{c.wins[1]})</>
+          <>{ui.comparison.tie(c.wins[0], c.wins[1])}</>
         ) : (
           <>
-            <span className="text-accent">{c.players[c.leader].name}</span> devant sur {c.wins[c.leader]} lignes sur {c.wins[0] + c.wins[1]}
+            <span className="text-accent">{c.players[c.leader].name}</span> {ui.comparison.ahead(c.wins[c.leader], c.wins[0] + c.wins[1])}
           </>
         )}
       </p>
@@ -111,9 +123,11 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
  * there is nothing to measure them against.
  */
 export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; absent: 0 | 1; scope: string; focus?: string | null }) {
+  const ui = useUi();
+  const locale = useLocale();
   const present = absent === 0 ? 1 : 0;
   const [a, b] = c.players;
-  const nothing = <div className="truncate text-[11px] text-muted">aucune partie{scope ? ` ${scope}` : ""}</div>;
+  const nothing = <div className="truncate text-[11px] text-muted">{ui.versus.noGames(scope)}</div>;
 
   return (
     <div className="border border-line">
@@ -135,7 +149,7 @@ export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; ab
           }`}
         >
           <span>
-            <span translate="no">{c.players[absent].name}</span> n&apos;a aucune partie{scope ? ` ${scope}` : ""} : rien à comparer.
+            <span translate="no">{c.players[absent].name}</span> {ui.versus.nothingToCompare(scope)}
           </span>
         </p>
         <dl className="px-3 py-2 text-xs">
@@ -144,7 +158,7 @@ export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; ab
               <dt className={s.key === focus ? "text-foreground" : "text-muted"}>
                 <Label s={s} />
               </dt>
-              <dd className="tabular-nums">{formatStat(s, s.values[present])}</dd>
+              <dd className="tabular-nums">{formatStat(s, s.values[present], locale)}</dd>
             </div>
           ))}
         </dl>
@@ -154,6 +168,7 @@ export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; ab
 }
 
 function MirrorBar({ s, i }: { s: ComparedStat; i: 0 | 1 }) {
+  const locale = useLocale();
   const winner = rowWinner(s) === i;
   const left = i === 0;
 
@@ -165,7 +180,7 @@ function MirrorBar({ s, i }: { s: ComparedStat; i: 0 | 1 }) {
           style={{ width: `${(share(s, i) * 100).toFixed(1)}%` }}
         />
       </div>
-      <span className={`w-14 shrink-0 tabular-nums ${left ? "text-right" : ""} ${tone(s, i)}`}>{formatStat(s, s.values[i])}</span>
+      <span className={`w-14 shrink-0 tabular-nums ${left ? "text-right" : ""} ${tone(s, i)}`}>{formatStat(s, s.values[i], locale)}</span>
     </div>
   );
 }
