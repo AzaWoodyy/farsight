@@ -12,7 +12,7 @@ export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default function Home() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       {/* Structured data for search engines (schema.org WebSite + WebApplication). */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript() }} />
       {/* Random draw of the home examples, made before they are painted (see home-examples-data). */}

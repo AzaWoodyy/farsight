@@ -57,7 +57,7 @@ function Section({ id, children }: { id: SectionId; children: ReactNode }) {
 
 export default function MentionsLegales() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
         <HomeLink />
         <div className="flex items-center gap-4">
