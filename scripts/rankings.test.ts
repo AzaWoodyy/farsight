@@ -356,6 +356,11 @@ describe("rankings on a seeded season", () => {
       const rate = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "dragon_soul", minute: null, role: null, minGames: 1, side: null } });
 
       expect(rate.table!.rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([["Fnatic", 3, 1, 33.3], ["G2 Esports", 3, 1, 33.3]]);
+      // A game where the soul is unknown (no timeline, or before patch 9.23) is not in the rate nor in its games.
+      db.exec("UPDATE game_team_stats SET dragon_soul = NULL, soul = NULL WHERE game_id = 2");
+      const known = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "dragon_soul", minute: null, role: null, minGames: 1, side: null } });
+
+      expect(known.table!.rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([["Fnatic", 2, 1, 50], ["G2 Esports", 2, 1, 50]]);
       const elders = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "elder_dragons", minute: null, role: null, minGames: null, side: null } });
 
       expect(elders.table!.rows.map((r) => [r[1], r[3]])).toEqual([["G2 Esports", 1]]);
