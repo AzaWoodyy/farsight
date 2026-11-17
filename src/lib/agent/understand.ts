@@ -526,6 +526,9 @@ const NOT_OPPONENTS = new Set(
   "agir annee aren done driven else given gone hard juin name none real rely rien seen sent sept sert sets sinon sons sont soon tell then thin well when zero".split(" "),
 );
 
+/** Also the name of a team (Winners, 2015-2021): read as that team only when the question names no competition. */
+const WINNERS = /^winners?$/;
+
 /** A matchup word: the opponent may then follow the champion directly ("match up oriana lock"). */
 const MATCHUP_CUE = /(?<![\p{L}\p{N}])match[- ]?ups?(?![\p{L}\p{N}])/iu;
 
@@ -562,6 +565,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
   const { teams } = getIndexes(db);
+  const { league } = detectLeague(question);
 
   for (let size = 3; size >= 1; size--) {
     for (let i = 0; i + size <= tokens.length; i++) {
@@ -598,6 +602,9 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         span.forEach((k) => used.add(k));
         continue;
       }
+
+      // "MSI winners", "winners of the LCK": the winners of the competition named, not the team Winners.
+      if (WINNERS.test(norm) && league) continue;
 
       const team = teams.get(norm);
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
