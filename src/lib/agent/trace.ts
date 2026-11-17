@@ -191,6 +191,8 @@ export function outcomeTags(answer: Answer, entities: Entities, steps: Map<StepN
     "missing-data": meta.route === "missing_data",
     "no-query": !queried && meta.route !== "out_of_scope" && meta.route !== "missing_data",
     "empty-result": queried && meta.rowCount === 0,
+    // The scope explains the empty result: no game, qualifiers only, a real zero.
+    "empty-explained": meta.empty != null && meta.empty !== "unexplained",
     error: [...steps.values()].some((s) => s.status === "error"),
     "self-corrected": meta.attempts > 1,
     "sql-fallback": meta.route === "sql",

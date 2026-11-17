@@ -2,6 +2,7 @@ import { executeGeneratedQuery, SqlTimeoutError } from "../db/generated-query";
 import { periodProblem } from "../domain/years";
 import { leagueMembers, SCOPE_LABEL } from "../domain/leagues";
 import { claimsBeyondFacts } from "./summary";
+import { type EmptyExplanation, explainEmpty, unrecognizedNote } from "./empty";
 import { CHAMPION_COLUMN } from "../champions";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText } from "ai";
@@ -265,7 +266,9 @@ async function attempt(db: DatabaseSync, schema: Record<string, string[]>, plan:
   }
 }
 
-export async function execute(db: DatabaseSync, question: string, entities: Entities, first: QueryPlan, emit: Emit, notes: string[]) {
+type Executed = { rows: SqlRow[]; plan: QueryPlan; problem: Problem | null; empty: EmptyExplanation | null };
+
+export async function execute(db: DatabaseSync, question: string, entities: Entities, first: QueryPlan, emit: Emit, notes: string[]): Promise<Executed> {
   const step = new Step("execute", "Exécution…", emit);
   const schema = readSchema(db);
   let plan = first;
@@ -276,13 +279,24 @@ export async function execute(db: DatabaseSync, question: string, entities: Enti
     if (rows) {
       step.done(plan.attempt > 1 ? "fix" : "ok", `${rows.length} ligne(s)${plan.attempt > 1 ? `, après ${plan.attempt - 1} correction(s)` : ""}`);
 
-      return { rows, plan, problem: null };
+      return { rows, plan, problem: null, empty: null };
+    }
+
+    // An empty generated query whose scope explains it: another query would come back empty too.
+    const empty = problem.kind === "empty" && !plan.tool ? explainEmpty(db, entities, plan.sql) : null;
+
+    if (empty?.conclusive) {
+      step.add(entry({ status: "warn", title: "Résultat vide expliqué par le périmètre, sans autre tentative", detail: empty.summary }));
+      step.done("warn", empty.title);
+
+      return { rows: [], plan, problem, empty };
     }
 
     if (problem.kind === "timeout" || plan.attempt >= MAX_ATTEMPTS) {
-      step.done("error", `Abandon après ${plan.attempt} tentatives`);
+      // An empty result is no failure of the query: the answer then says what the scope holds.
+      step.done(problem.kind === "empty" ? "warn" : "error", problem.kind === "empty" ? `Aucune ligne après ${plan.attempt} tentatives` : `Abandon après ${plan.attempt} tentatives`);
 
-      return { rows: [], plan, problem };
+      return { rows: [], plan, problem, empty: null };
     }
 
     const fix = await correctQuery({ db, question, entities, plan, problem });
@@ -291,7 +305,7 @@ export async function execute(db: DatabaseSync, question: string, entities: Enti
       step.add(entry({ status: "error", title: "Aucune correction possible", detail: problem.message }));
       step.done(problem.kind === "empty" ? "warn" : "error", problem.kind === "empty" ? "Aucune ligne" : "Échec");
 
-      return { rows: [], plan, problem };
+      return { rows: [], plan, problem, empty: null };
     }
 
     if (fix.result.note) notes.push(fix.result.note);
@@ -446,6 +460,7 @@ async function format(
   notes: string[],
   missing: string[],
   problem: Problem | null,
+  explained: EmptyExplanation | null,
 ): Promise<Answer> {
   const step = new Step("format", "Mise en forme…", emit);
   const amb = ambiguityNotes(question, entities);
@@ -466,6 +481,7 @@ async function format(
     ambiguities: amb.ambiguities,
     attempts: plan?.attempt ?? 0,
     unread: route.kind === "tool" || route.kind === "sql" ? (route.unread ?? []) : [],
+    empty: null,
   };
 
   if (missing.length) {
@@ -494,13 +510,25 @@ async function format(
   }
 
   if (!raw.length || !plan) {
-    step.add(entry({ status: "warn", title: "Réponse vide mise en forme" }));
-    step.done("warn", route.kind === "out_of_scope" ? "Hors périmètre" : "Pas de résultat");
+    // What the scope holds says why nothing came back; a typed tool is explained once its relaxations are spent.
+    const why = explained ?? (plan ? explainEmpty(db, entities, plan.sql) : null);
+    const unrecognized = route.kind === "out_of_scope" ? null : unrecognizedNote(entities, meta.unread);
+    const summary = [why?.summary ?? emptySummary(entities, route, plan), unrecognized].filter(Boolean).join(" ");
+    const title = route.kind === "out_of_scope" ? "Hors périmètre" : why && why.reason !== "unexplained" ? why.title : unrecognized ? "Question non reconnue" : "Pas de résultat";
+    meta.empty = why?.reason ?? null;
+
+    step.add(entry({ status: "warn", title: why ? `Réponse vide expliquée (${why.reason})` : "Réponse vide mise en forme", detail: summary }));
+    step.done("warn", title);
 
     return {
       ...EMPTY_VIEWS,
-      title: route.kind === "out_of_scope" ? "Hors périmètre" : "Pas de résultat",
-      summary: emptySummary(entities, route, plan),
+      title,
+      summary,
+      table: why?.table ?? null,
+      icons: why?.table ? championIcons(db, why.table.columns, why.table.rows.map((r) => Object.fromEntries(why.table!.columns.map((c, i) => [c, r[i]])))) : {},
+      sources: why?.sources.length
+        ? why.sources.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
+        : [],
       followUps: [...amb.followUps, ...EXAMPLES].slice(0, 4),
       notes,
       meta,
@@ -622,14 +650,14 @@ async function run(question: string, emit: Emit, now: Date): Promise<Answer> {
       (plan) => buildReport(route, plan, steps.get("build")),
     );
 
-    const { rows, plan, problem } = await traceStep(
+    const { rows, plan, problem, empty } = await traceStep(
       "execute",
       { sql: first?.sql ?? null, params: first?.params ?? {} },
       async () => {
         if (first) return execute(db, question, entities, first, traced, notes);
         new Step("execute", "Exécution…", traced).done("warn", "Rien à exécuter");
 
-        return { rows: [], plan: null, problem: null };
+        return { rows: [], plan: null, problem: null, empty: null };
       },
       (result) => executeReport(result.plan, result.rows.length, steps.get("execute")),
     );
@@ -637,7 +665,7 @@ async function run(question: string, emit: Emit, now: Date): Promise<Answer> {
     const answer = await traceStep(
       "format",
       { route: plan?.intent ?? route.kind, rowCount: rows.length },
-      () => format(db, question, entities, route, plan, rows, traced, notes, missing, problem),
+      () => format(db, question, entities, route, plan, rows, traced, notes, missing, problem, empty),
       (a) => formatReport(a, steps.get("format")),
     );
 

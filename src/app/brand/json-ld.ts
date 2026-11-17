@@ -14,8 +14,9 @@ export const JSON_LD = {
       "@id": `${SITE.url}/#website`,
       url: SITE.url,
       name: SITE.name,
-      // The name Google may show instead of the bare domain, and the domain as its accepted alternative.
-      alternateName: new URL(SITE.url).host,
+      // The name Google may show instead of the bare domain, and its accepted alternatives: the brand as it is
+      // searched ("farsight lol") and the domain.
+      alternateName: [`${SITE.name} LoL`, new URL(SITE.url).host],
       description: SITE.description,
       inLanguage: "fr",
       author,
@@ -24,6 +25,7 @@ export const JSON_LD = {
       "@type": "WebApplication",
       "@id": `${SITE.url}/#app`,
       name: SITE.name,
+      alternateName: `${SITE.name} LoL`,
       url: SITE.url,
       description: SITE.description,
       inLanguage: "fr",
@@ -31,7 +33,7 @@ export const JSON_LD = {
       operatingSystem: "Web",
       isAccessibleForFree: true,
       offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" },
-      about: { "@type": "VideoGame", name: "League of Legends" },
+      about: { "@type": "VideoGame", name: "League of Legends", alternateName: "LoL" },
       author,
       isBasedOn: {
         "@type": "Dataset",

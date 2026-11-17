@@ -123,11 +123,31 @@ export const HeadToHeadInput = z.object({
   ...Period,
 });
 
+const MinuteInput = z
+  .union([z.literal(10), z.literal(15), z.literal(20)])
+  .nullable()
+  .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
+
+/** End-of-game averages a comparison can put first ("Faker vs Chovy morts"); gold and CS stay in the overview. */
+export const COMPARISON_END_STATS = ["kills", "deaths", "assists", "damage", "vision"] as const;
+
+export type ComparisonEndStat = (typeof COMPARISON_END_STATS)[number];
+
+/** What a comparison puts first: an in-game metric of the Riot data, or an end-of-game average. */
+export const COMPARISON_METRICS = [...PLAYER_METRICS, ...COMPARISON_END_STATS] as const;
+
+export type ComparisonMetric = (typeof COMPARISON_METRICS)[number];
+
 export const PlayerComparisonInput = z.object({
   playerA: z.string().min(1).describe("First player's handle or Leaguepedia page"),
   playerB: z.string().min(1).describe("Second player's handle or Leaguepedia page"),
   league: League.nullable().describe("Restrict to one competition, null for every competition"),
   ...Period,
+  metric: z
+    .enum(COMPARISON_METRICS)
+    .nullable()
+    .describe("The statistic the question names (penta_kills, solo_kills, first_bloods, deaths...), shown first; null for the overview"),
+  minute: MinuteInput,
 });
 
 export const ChampionStatsInput = z.object({
@@ -150,7 +170,17 @@ export const CHAMPION_EXTRA_SORTS = ["dpm", "gpm", "cspm", "gold_diff_15", "cs_d
 
 export type ChampionExtraSort = (typeof CHAMPION_EXTRA_SORTS)[number];
 
-export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda", ...CHAMPION_AVERAGE_SORTS, ...CHAMPION_EXTRA_SORTS] as const;
+/** Multikills of the Riot game data: rare enough that only their total over the scope means something. */
+export const CHAMPION_MULTIKILL_SORTS = ["penta_kills", "quadra_kills", "triple_kills", "double_kills"] as const;
+
+export type ChampionMultikillSort = (typeof CHAMPION_MULTIKILL_SORTS)[number];
+
+export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda", ...CHAMPION_AVERAGE_SORTS, ...CHAMPION_EXTRA_SORTS, ...CHAMPION_MULTIKILL_SORTS] as const;
+
+/** The sorts a ranking can order by their total over the scope instead of a per-game figure: the counts and sums of a pick. */
+export const CHAMPION_TOTAL_SORTS = [...CHAMPION_AVERAGE_SORTS, "solo_kills", "first_blood", ...CHAMPION_MULTIKILL_SORTS] as const;
+
+export type ChampionTotalSort = (typeof CHAMPION_TOTAL_SORTS)[number];
 
 export type ChampionSort = (typeof CHAMPION_SORTS)[number];
 
@@ -163,12 +193,27 @@ export const ChampionRankingInput = z.object({
       "Ranking order: picks (most played), bans (most banned), presence (picks + bans share of games), winrate, kda, " +
         "a per-game average (kills, deaths, assists, gold, cs, damage, vision), a per-minute figure (dpm damage, gpm gold, cspm CS), " +
         "a lane figure from the Riot game data (gold_diff_15, cs_diff_15, xp_diff_15 against the lane opponent at 15 min, first_blood share of games " +
-        "with the first blood kill, solo_kills per game) or players (how many different players picked it), highest first; " +
-        "all but picks, bans and presence need a minimum of picks",
+        "with the first blood kill, solo_kills per game), a multikill count from the Riot game data (penta_kills, quadra_kills, triple_kills, " +
+        "double_kills, always a total) or players (how many different players picked it), highest first; " +
+        "all but picks, bans, presence and totals need a minimum of picks",
+    ),
+  total: z
+    .boolean()
+    .nullable()
+    .describe(
+      "true: order by the total over the scope instead of the per-game figure ('le plus de morts' without 'par partie', 'le plus de pentakills'), " +
+        "for kills, deaths, assists, gold, cs, damage, vision, solo_kills, first_blood (number of first bloods) and the multikills; " +
+        "null or false for the per-game figure",
     ),
   role: z.enum(["Top", "Jungle", "Mid", "Bot", "Support"]).nullable().describe("Only the picks played in this role, null for every role"),
   side: MapSideInput,
-  minPicks: z.number().int().min(1).max(200).nullable().describe("Minimum picks for winrate, kda and per-game average rankings, null for the default"),
+  minPicks: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .nullable()
+    .describe("Minimum picks (games on the champion: 'plus de 4 parties' is 5) for winrate, kda, per-game and total rankings, null for the default (none for a total)"),
 });
 
 export type ChampionRankingInput = z.infer<typeof ChampionRankingInput>;
@@ -210,11 +255,6 @@ export const StandingsInput = z.object({
   split: z.enum(["Spring", "Summer", "Winter"]).nullable(),
   full: z.boolean().describe("true: every placement of the event(s); false: champion and finalist of each event"),
 });
-
-const MinuteInput = z
-  .union([z.literal(10), z.literal(15), z.literal(20)])
-  .nullable()
-  .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
 
 const ROLES = ["Top", "Jungle", "Mid", "Bot", "Support"] as const;
 
@@ -1268,6 +1308,10 @@ const ComparisonRow = z.object({
   avg_solo_kills: z.number().nullable(),
   solo_kills: z.number().nullable(),
   ingame_games: z.number(),
+  /** The statistic the question names (null without one): total, average, and the games it is counted on. */
+  focus_total: z.number().nullable(),
+  focus_avg: z.number().nullable(),
+  focus_games: z.number(),
   pages: pageList,
 });
 
@@ -1304,6 +1348,61 @@ const VersusGameRow = z.object({
   assists_b: z.number().nullable(),
 });
 
+/**
+ * The statistic a comparison puts first, when the question names one ("Faker vs Chovy pentakills").
+ * `stat`: the column read, of v_game_player_stats for an in-game metric (counted on the games with Riot
+ * data only), of v_game_players otherwise. `column`: the table column the comparison layout reads.
+ */
+type ComparisonFocus = { label: string; ingame: boolean; aggregate: "sum" | "avg"; stat: string; column: string; digits: number; signed: boolean };
+
+const END_STAT_FOCUS: Record<ComparisonEndStat, { label: string; digits: number }> = {
+  kills: { label: "kills", digits: 2 },
+  deaths: { label: "morts", digits: 2 },
+  assists: { label: "assists", digits: 2 },
+  damage: { label: "dégâts aux champions", digits: 0 },
+  vision: { label: "score de vision", digits: 1 },
+};
+
+function comparisonFocus(input: PlayerComparisonInput): ComparisonFocus | null {
+  const end = COMPARISON_END_STATS.find((s) => s === input.metric);
+
+  if (end) return { label: END_STAT_FOCUS[end].label, ingame: false, aggregate: "avg", stat: end, column: `avg_${end}`, digits: END_STAT_FOCUS[end].digits, signed: false };
+  const metric = PLAYER_METRICS.find((m) => m === input.metric);
+
+  if (!metric) return null;
+  const def = PLAYER_METRIC_DEFS[metric];
+  const stat = metricColumn(def, input.minute);
+  const sum = def.aggregate === "sum";
+
+  // A count keeps the metric's name as its column (first_bloods, kills_before_10), an average its source column.
+  return { label: metricLabel(def, input.minute), ingame: true, aggregate: sum ? "sum" : "avg", stat, column: sum ? metric : `avg_${stat}`, digits: /gold|xp/.test(stat) ? 0 : 1, signed: /_diff_/.test(stat) };
+}
+
+/** The focus value of a row: the total of a count, the rounded average otherwise; null when nothing counts it. */
+const focusValue = (r: ComparisonRow, f: ComparisonFocus) => (r.focus_games === 0 ? null : f.aggregate === "sum" ? r.focus_total : roundTo(r.focus_avg, f.digits));
+
+/**
+ * The sentence the facts open with when the question names a statistic: face to face when they met, then over
+ * the scope. An in-game figure is n/d for a player without Riot data, and says on how many games it is counted.
+ */
+function focusFacts(f: ComparisonFocus, pair: string, names: [string, string], faced: ComparisonRow[], rows: ComparisonRow[]): string {
+  if (f.ingame && [...rows, ...faced].every((r) => r.focus_games === 0)) return `${pair}, ${f.label} : n/d, aucune partie avec données Riot dans ce périmètre. `;
+
+  const one = (name: string, r: ComparisonRow | undefined) => {
+    if (!r) return `${name} n/d`;
+
+    if (r.focus_games === 0) return `${name} n/d (aucune partie avec données Riot)`;
+    const v = frNumber(focusValue(r, f), f.signed);
+    const shown = f.aggregate === "sum" ? v : `${v} ${f.ingame ? "en moyenne" : "par partie"}${f.ingame ? "" : ` (${frNumber(r.focus_total)} au total)`}`;
+
+    return `${name} ${shown}${f.ingame && r.focus_games < r.games ? ` (sur ${r.focus_games} partie${r.focus_games > 1 ? "s" : ""} avec données Riot)` : ""}`;
+  };
+
+  const both = (list: ComparisonRow[]) => names.map((n) => one(n, list.find((r) => r.player === n))).join(", ");
+
+  return `${pair}, ${f.label} : ${faced.length ? `face à face, ${both(faced)} ; ` : ""}sur toutes leurs parties, ${both(rows)}. `;
+}
+
 /** Most games listed under the comparison (Faker and Chovy met 146 times). */
 const MAX_VERSUS_GAMES = 200;
 
@@ -1319,11 +1418,14 @@ const FACED = `EXISTS (SELECT 1 FROM v_game_players o
  * own joins stay small.
  */
 function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
+  const focus = comparisonFocus(input);
+  const focusSql = focus == null ? "NULL" : focus.ingame ? "st.focus" : `p.${focus.stat}`;
+
   return tidy(`WITH st AS (
-  SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills FROM v_game_player_stats WHERE player IN (:a, :b)
+  SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills${focus?.ingame ? `, ${focus.stat} AS focus` : ""} FROM v_game_player_stats WHERE player IN (:a, :b)
 ), g AS (
   SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
-         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame
+         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame, ${focusSql} AS focus
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
   WHERE p.player IN (:a, :b) AND ${competitionScope("p", input, params)}${faced ? `\n    AND ${FACED}` : ""}
@@ -1333,18 +1435,33 @@ SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(gold), 0) AS avg_gold, ROUND(AVG(cs), 1) AS avg_cs, ROUND(AVG(damage), 0) AS avg_damage, ROUND(AVG(vision), 1) AS avg_vision,
        ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
        ROUND(AVG(solo_kills), 2) AS avg_solo_kills, SUM(solo_kills) AS solo_kills,
-       SUM(ingame) AS ingame_games, json_group_array(DISTINCT event_page) AS pages
+       SUM(ingame) AS ingame_games, SUM(focus) AS focus_total, ROUND(AVG(focus), 2) AS focus_avg, COUNT(focus) AS focus_games,
+       json_group_array(DISTINCT event_page) AS pages
 FROM g GROUP BY player
 ORDER BY player = :a DESC`);
 }
 
-const comparisonTable = (rows: ComparisonRow[]) => ({
-  columns: [...COMPARISON_COLUMNS],
-  rows: rows.map((r) => COMPARISON_COLUMNS.map((c) => (c === "player" ? r.player : r[c]))),
-});
+/** The comparison table; the statistic the question names comes right after the record, with the games it is counted on when in-game. */
+function comparisonTable(rows: ComparisonRow[], focus: ComparisonFocus | null) {
+  const lead = focus ? [focus.column, ...(focus.ingame ? ["ingame_games"] : [])] : [];
+  const [head, rest] = [COMPARISON_COLUMNS.slice(0, 3), COMPARISON_COLUMNS.slice(3).filter((c) => !lead.includes(c))];
+
+  const cell = (r: ComparisonRow, c: string) => {
+    if (focus && c === focus.column) return focusValue(r, focus);
+
+    if (c === "ingame_games") return r.focus_games;
+    const known = COMPARISON_COLUMNS.find((k) => k === c);
+
+    return known == null ? null : known === "player" ? r.player : r[known];
+  };
+
+  const columns = [...head, ...lead, ...rest];
+
+  return { columns, rows: rows.map((r) => columns.map((c) => cell(r, c))) };
+}
 
 /** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
-function scopeLabel(league: string, input: Period): string {
+export function scopeLabel(league: string, input: Period): string {
   const { yearFrom: from, yearTo: to } = input;
 
   const period =
@@ -1431,7 +1548,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   description:
     "Sets two players against each other in a competition and period: their statistics in the games they played against each other " +
     "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min, solo kills), the list of those games, " +
-    "and their statistics over every game of the scope. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
+    "and their statistics over every game of the scope. When the question names a statistic (pentakills, solo kills, first bloods, deaths, " +
+    "gold difference at 10 min...), set metric: it is shown first. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
     "'X contre Y', 'X or Y who is better', 'head to head', 'h2h', 'confrontations'.",
   plan: (_db, input) => {
     const params: Params = {};
@@ -1481,8 +1599,17 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
     const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
     const pair = `${input.playerA} et ${input.playerB}${scope ? ` ${scope}` : ""}`;
+    const focus = comparisonFocus(input);
+
+    const valueOf = (list: ComparisonRow[], player: string) => {
+      const r = list.find((x) => x.player === player);
+
+      return (focus && r && focusValue(r, focus)) ?? "n/d";
+    };
 
     const facts =
+      // The statistic the question names opens the facts, so the summary leads with it.
+      (focus ? focusFacts(focus, pair, [input.playerA, input.playerB], met ? faced : [], rows) : "") +
       (met
         ? `${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. ` +
           `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.` +
@@ -1496,13 +1623,14 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     return {
       title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
       // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
-      table: comparisonTable(rows),
+      table: comparisonTable(rows, focus),
       versus: {
         playerA: input.playerA,
         playerB: input.playerB,
         scope,
-        global: comparisonTable(rows),
-        h2h: met ? comparisonTable(faced) : null,
+        focus: focus?.column ?? null,
+        global: comparisonTable(rows, focus),
+        h2h: met ? comparisonTable(faced, focus) : null,
         lanes,
         games,
       },
@@ -1525,6 +1653,13 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         // The face-to-face when they met, else the scope: what the comparison shows first.
         solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? "n/d",
         solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? "n/d",
+        // The statistic the question names, over the scope and face to face.
+        ...(focus && {
+          metric_a: valueOf(rows, input.playerA),
+          metric_b: valueOf(rows, input.playerB),
+          h2h_metric_a: valueOf(faced, input.playerA),
+          h2h_metric_b: valueOf(faced, input.playerB),
+        }),
       },
     };
   },
@@ -1976,7 +2111,50 @@ const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: stri
   first_blood: { title: "qui prennent le plus souvent le first blood", criterion: "part des parties où le champion fait le first blood, sur les parties avec données Riot" },
   solo_kills: { title: "avec le plus de solo kills par partie", criterion: "solo kills par partie, sur les parties avec données Riot" },
   players: { title: "joués par le plus de joueurs", criterion: "nombre de joueurs différents à l'avoir joué" },
+  penta_kills: { title: "avec le plus de pentakills", criterion: "pentakills au total, sur les parties avec données Riot" },
+  quadra_kills: { title: "avec le plus de quadrakills", criterion: "quadrakills au total, sur les parties avec données Riot" },
+  triple_kills: { title: "avec le plus de triple kills", criterion: "triple kills au total, sur les parties avec données Riot" },
+  double_kills: { title: "avec le plus de double kills", criterion: "double kills au total, sur les parties avec données Riot" },
 };
+
+/**
+ * A total over the scope: the column it sums, in v_game_players (end-of-game) or v_game_player_stats (Riot data,
+ * named as metrics.ts defines it), its title, and how a figure reads (`one` for a count of 1, when it differs).
+ */
+function ingameTotal(metric: keyof typeof PLAYER_METRIC_DEFS) {
+  const { column, label } = PLAYER_METRIC_DEFS[metric];
+
+  return { ingame: true, column, title: `avec le plus de ${label}`, unit: label, one: label.replace(/s$/, "") };
+}
+
+const CHAMPION_TOTAL: Record<ChampionTotalSort, { ingame: boolean; column: string; title: string; unit: string; one?: string }> = {
+  kills: { ingame: false, column: "kills", title: "avec le plus de kills", unit: "kills", one: "kill" },
+  deaths: { ingame: false, column: "deaths", title: "avec le plus de morts", unit: "morts", one: "mort" },
+  assists: { ingame: false, column: "assists", title: "avec le plus d'assists", unit: "assists", one: "assist" },
+  gold: { ingame: false, column: "gold", title: "avec le plus d'or", unit: "d'or" },
+  cs: { ingame: false, column: "cs", title: "avec le plus de CS", unit: "CS" },
+  damage: { ingame: false, column: "damage", title: "avec le plus de dégâts", unit: "de dégâts" },
+  vision: { ingame: false, column: "vision", title: "avec le plus de score de vision", unit: "de score de vision" },
+  solo_kills: ingameTotal("solo_kills"),
+  first_blood: ingameTotal("first_bloods"),
+  penta_kills: ingameTotal("penta_kills"),
+  quadra_kills: ingameTotal("quadra_kills"),
+  triple_kills: ingameTotal("triple_kills"),
+  double_kills: ingameTotal("double_kills"),
+};
+
+const totalSortOf = (input: Pick<ChampionRankingInput, "sort" | "total">): ChampionTotalSort | null =>
+  input.total ? (CHAMPION_TOTAL_SORTS.find((s) => s === input.sort) ?? null) : null;
+
+/** "3 pentakills", "1 pentakill", "0 pentakill", "45 210 d'or". */
+const totalText = (sort: ChampionTotalSort, n: number | null) => {
+  const t = CHAMPION_TOTAL[sort];
+
+  return `${frNumber(n)} ${t.one && (n ?? 0) < 2 ? t.one : t.unit}`;
+};
+
+const totalCriterion = (sort: ChampionTotalSort) =>
+  `${CHAMPION_TOTAL[sort].unit} au total sur le périmètre${CHAMPION_TOTAL[sort].ingame ? ", sur les parties avec données Riot" : ""}`;
 
 /** How each extra figure reads in a sentence. */
 const CHAMPION_EXTRA_TEXT: Record<ChampionExtraSort, (v: number | null) => string> = {
@@ -1994,7 +2172,7 @@ const CHAMPION_EXTRA_TEXT: Record<ChampionExtraSort, (v: number | null) => strin
 const extraSortOf = (sort: ChampionSort): ChampionExtraSort | null => CHAMPION_EXTRA_SORTS.find((s) => s === sort) ?? null;
 
 /** The extra figures that come from the Riot game data: none where Leaguepedia hosts no game JSON (the LPL). */
-const CHAMPION_INGAME_SORTS: ChampionSort[] = ["gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills"];
+const CHAMPION_INGAME_SORTS: ChampionSort[] = ["gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", ...CHAMPION_MULTIKILL_SORTS];
 
 /** What a per-game average is called in a sentence, and its decimals. */
 const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; digits: number }> = {
@@ -2024,6 +2202,8 @@ const ChampionRankingRow = z.object({
   winrate: z.number().nullable(),
   kda: z.number().nullable(),
   average: z.number().nullable(),
+  /** The total over the scope a total ranking is ordered by, null otherwise. */
+  total: z.number().nullable(),
   dpm: z.number().nullable(),
   gpm: z.number().nullable(),
   cspm: z.number().nullable(),
@@ -2035,6 +2215,8 @@ const ChampionRankingRow = z.object({
   players: z.number(),
   /** Games on the champion that have Riot data: what the lane figures are computed on. */
   ingame_picks: z.number(),
+  /** Games of the scope that have Riot data: 0 where Leaguepedia hosts none (the LPL). */
+  ingame_games: z.number(),
   /** The figure the ranking is ordered by. */
   sort_value: z.number().nullable(),
   min_picks: z.number(),
@@ -2046,7 +2228,8 @@ const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
 /** A per-game average swings more on a few games: at least 5 picks, the cut Riot's own Worlds stats page applies. */
 const DEFAULT_MIN_PICKS_AVERAGE = "MAX(5, (n.games + 49) / 50)";
 
-const needsMinPicks = (sort: ChampionSort) => !["picks", "bans", "presence", "players"].includes(sort);
+/** A total needs no minimum: more picks is what makes it. A minimum the question sets still applies. */
+const needsMinPicks = (input: Pick<ChampionRankingInput, "sort" | "total">) => !["picks", "bans", "presence", "players"].includes(input.sort) && !totalSortOf(input);
 
 const championRanking: ToolDef<ChampionRankingInput> = {
   name: "champion_ranking",
@@ -2054,10 +2237,13 @@ const championRanking: ToolDef<ChampionRankingInput> = {
   description:
     "Ranks the champions of a competition and period: most played (picks), most banned (bans), most present (picks + bans share of games), " +
     "best win rate or KDA, highest per-game average of kills, deaths, assists, gold, CS, damage or vision, highest damage, gold or CS per minute, " +
-    "best gold, CS or XP difference at 15 min, first blood share, solo kills per game, or most different players (with a minimum of picks). " +
+    "best gold, CS or XP difference at 15 min, first blood share, solo kills per game, or most different players (with a minimum of picks), " +
+    "or the highest total over the scope (total: true) of kills, deaths, assists, gold, CS, damage, vision, solo kills, first bloods, " +
+    "pentakills, quadrakills, triple or double kills; the Riot game figures are absent in the LPL, and a total of 0 is said as such. " +
     "Each line has picks, bans, presence, win rate, KDA, the per-minute figures, the lane figures at 15 min and the number of players. " +
     "Optionally one role only ('champions les plus joués en mid') or one side of the map ('côté bleu'). " +
-    "Use it for 'most played / banned / picked champions', 'meta', 'priority picks', 'champion avec le plus de morts par partie'.",
+    "Use it for 'most played / banned / picked champions', 'meta', 'priority picks', 'champion avec le plus de morts par partie', " +
+    "'champion avec le plus de morts' (total), 'quel champion a le plus de pentakills'.",
   plan: (_db, input) => {
     const params: Params = {};
     // The picks the figures are about: one role, one side of the map, or every pick.
@@ -2072,9 +2258,13 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     if (input.role) params.role = input.role;
 
     if (input.minPicks != null) params.minPicks = input.minPicks;
-    const average = averageSortOf(input.sort);
-    const minPicks = input.minPicks != null ? ":minPicks" : average || extraSortOf(input.sort) ? DEFAULT_MIN_PICKS_AVERAGE : DEFAULT_MIN_PICKS;
-    const order = average ? "average" : input.sort;
+    const totalSort = totalSortOf(input);
+    const total = totalSort ? CHAMPION_TOTAL[totalSort] : null;
+    const average = totalSort ? null : averageSortOf(input.sort);
+    const minPicks = input.minPicks != null ? ":minPicks" : totalSort ? "0" : average || extraSortOf(input.sort) ? DEFAULT_MIN_PICKS_AVERAGE : DEFAULT_MIN_PICKS;
+    const order = totalSort ? "total" : average ? "average" : input.sort;
+    // A figure of the Riot data: kept where the scope has none, so the answer says it is absent rather than widen the scope.
+    const ingame = CHAMPION_INGAME_SORTS.includes(input.sort);
 
     return {
       params,
@@ -2088,6 +2278,7 @@ picks AS (
          SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
          SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths,
          ${average ? `AVG(CASE WHEN ${role} THEN gp.${average} END)` : "NULL"} AS average,
+         ${total && !total.ingame ? `SUM(CASE WHEN ${role} THEN gp.${total.column} END)` : "NULL"} AS total,
          ${perMinuteOf("damage")} AS dpm, ${perMinuteOf("gold")} AS gpm, ${perMinuteOf("cs")} AS cspm,
          COUNT(DISTINCT CASE WHEN ${role} THEN gp.player END) AS players
   FROM v_game_players gp JOIN ev ON ev.game_id = gp.game_id WHERE ${competitionScope("gp", leagueAndPeriod(input), params)}
@@ -2097,10 +2288,12 @@ ig AS (
   SELECT s.champion, SUM(${mine("s")}) AS ingame_picks,
          AVG(CASE WHEN ${mine("s")} THEN s.gold_diff_15 END) AS gold_diff_15, AVG(CASE WHEN ${mine("s")} THEN s.cs_diff_15 END) AS cs_diff_15,
          AVG(CASE WHEN ${mine("s")} THEN s.xp_diff_15 END) AS xp_diff_15, 100.0 * AVG(CASE WHEN ${mine("s")} THEN s.first_blood_kill END) AS first_blood,
-         AVG(CASE WHEN ${mine("s")} THEN s.solo_kills END) AS solo_kills
+         AVG(CASE WHEN ${mine("s")} THEN s.solo_kills END) AS solo_kills,
+         ${total?.ingame ? `SUM(CASE WHEN ${mine("s")} THEN s.${total.column} END)` : "NULL"} AS total
   FROM v_game_player_stats s WHERE ${competitionScope("s", leagueAndPeriod(input), params)}
   GROUP BY s.champion
 ),
+ign AS (SELECT COUNT(DISTINCT s.game_id) AS games FROM v_game_player_stats s WHERE ${competitionScope("s", leagueAndPeriod(input), params)}),
 bans AS (
   SELECT d.champion, COUNT(DISTINCT d.game_id) AS bans FROM v_draft d JOIN ev ON ev.game_id = d.game_id WHERE d.kind = 'ban' AND ${side("d")} GROUP BY d.champion
 ),
@@ -2111,19 +2304,20 @@ lines AS (
          CASE WHEN p.picks > 0 THEN ROUND(100.0 * p.wins / p.picks, 1) END AS winrate,
          CASE WHEN p.picks > 0 AND p.ka IS NOT NULL THEN ROUND(1.0 * p.ka / MAX(1, p.deaths), 2) END AS kda,
          ${average ? `ROUND(p.average, ${CHAMPION_AVERAGE_UNIT[average].digits})` : "NULL"} AS average,
+         ${total ? (total.ingame ? "i.total" : "p.total") : "NULL"} AS total,
          ROUND(p.dpm, 0) AS dpm, ROUND(p.gpm, 0) AS gpm, ROUND(p.cspm, 2) AS cspm,
          ROUND(i.gold_diff_15, 0) AS gold_diff_15, ROUND(i.cs_diff_15, 1) AS cs_diff_15, ROUND(i.xp_diff_15, 0) AS xp_diff_15,
          ROUND(i.first_blood, 1) AS first_blood, ROUND(i.solo_kills, 2) AS solo_kills,
-         COALESCE(p.players, 0) AS players, COALESCE(i.ingame_picks, 0) AS ingame_picks,
-         ${needsMinPicks(input.sort) ? minPicks : "0"} AS min_picks
-  FROM champions c CROSS JOIN n
+         COALESCE(p.players, 0) AS players, COALESCE(i.ingame_picks, 0) AS ingame_picks, ign.games AS ingame_games,
+         ${needsMinPicks(input) || totalSort ? minPicks : "0"} AS min_picks
+  FROM champions c CROSS JOIN n CROSS JOIN ign
   LEFT JOIN picks p ON p.champion = c.name
   LEFT JOIN bans b ON b.champion = c.name
   LEFT JOIN ig i ON i.champion = c.name
   WHERE ${input.role ? "COALESCE(p.picks, 0) > 0" : "COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0) > 0"}
 )
 SELECT *, ${order} AS sort_value FROM lines
-WHERE picks >= min_picks AND ${order} IS NOT NULL
+WHERE picks >= min_picks AND (${order} IS NOT NULL${ingame ? " OR ingame_games = 0" : ""})
 ORDER BY ${order} DESC, picks DESC, bans DESC, champion
 LIMIT 20`),
     };
@@ -2131,7 +2325,7 @@ LIMIT 20`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (needsMinPicks(input.sort) && input.minPicks !== 1)
+    if ((needsMinPicks(input) || (totalSortOf(input) && input.minPicks != null)) && input.minPicks !== 1)
       out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: "Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", reason: "seuil de picks abaissé" });
 
     if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
@@ -2139,17 +2333,26 @@ LIMIT 20`),
     return out;
   },
   format: (db, input, sqlRows): ToolOutput => {
-    const rows = z.array(ChampionRankingRow).parse(sqlRows);
+    const all = z.array(ChampionRankingRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
     const scope = scopeLabel(league, input);
-    const label = CHAMPION_SORT_LABEL[input.sort];
-    const games = rows[0]?.games ?? 0;
-    const minPicks = rows[0]?.min_picks ?? 0;
-    const average = averageSortOf(input.sort);
-    const extra = extraSortOf(input.sort);
+    const totalSort = totalSortOf(input);
+    const label = totalSort ? { title: CHAMPION_TOTAL[totalSort].title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL[input.sort];
+    const games = all[0]?.games ?? 0;
+    const minPicks = all[0]?.min_picks ?? 0;
+    const ingameGames = all[0]?.ingame_games ?? 0;
+    const average = totalSort ? null : averageSortOf(input.sort);
+    const extra = totalSort ? null : extraSortOf(input.sort);
     const role = `${input.role ? ` en ${ROLE_LABEL[input.role]}` : ""}${sideLabel(input.side)}`;
     const params: Params = {};
+    // The Riot data has no game of the scope (the LPL): the figure is absent, not zero.
+    const absent = CHAMPION_INGAME_SORTS.includes(input.sort) && ingameGames === 0;
+    // A total ranks the champions that have one: none at all is a true zero over the scope, said as such.
+    const rows = absent ? [] : totalSort ? all.filter((r) => (r.total ?? 0) > 0) : all;
     const ingamePicks = rows.reduce((n, r) => n + r.ingame_picks, 0);
+
+    const counted =
+      totalSort && CHAMPION_TOTAL[totalSort].ingame ? `${ingameGames}${ingameGames < games ? ` sur ${games}` : ""} parties avec données Riot` : `${games} parties`;
 
     const pages = selectAll(
       db,
@@ -2162,37 +2365,80 @@ LIMIT 20`),
     const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
-      `${i + 1}. ${r.champion} (${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].unit} par partie, ` : ""}${extra ? `${CHAMPION_EXTRA_TEXT[extra](r[extra])}, ` : ""}` +
+      `${i + 1}. ${r.champion} (${totalSort ? `${totalText(totalSort, r.total)}, ` : ""}` +
+      `${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].unit} par partie, ` : ""}${extra ? `${CHAMPION_EXTRA_TEXT[extra](r[extra])}, ` : ""}` +
       `${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
       `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
 
+    const threshold = minPicks ? `, minimum ${minPicks} picks` : "";
+    const head = `Champions ${label.title}${role} ${scope || "toutes compétitions"}`;
+
+    const ranking = absent
+      ? `Aucune partie ${scope || "de ce périmètre"} n'a de données Riot sur Leaguepedia (${games} parties) : pas de ${CHAMPION_SORT_LABEL[input.sort].criterion.split(",")[0]} par champion.`
+      : totalSort && !rows.length
+        ? `Aucun ${CHAMPION_TOTAL[totalSort].one ?? CHAMPION_TOTAL[totalSort].unit}${role} ${scope || "toutes compétitions"} : 0 au total sur les ${counted}${threshold}.`
+        : `${head} (${counted}) : ${rows.slice(0, 3).map(line).join(", ")}. Critère : ${label.criterion}${threshold}.`;
+
     const facts =
-      `Champions ${label.title}${role} ${scope || "toutes compétitions"} (${games} parties) : ${rows.slice(0, 3).map(line).join(", ")}. ` +
-      `Critère : ${label.criterion}${minPicks ? `, minimum ${minPicks} picks` : ""}.` +
-      (input.role
+      ranking +
+      (rows.length && input.role
         ? ` Picks, victoires, KDA et moyennes${role} seulement ; bans et présence${sideLabel(input.side)} tous rôles confondus.`
-        : input.side
+        : rows.length && input.side
           ? ` Picks, bans et présence${role} seulement, sur les ${games} parties.`
           : "") +
-      (CHAMPION_INGAME_SORTS.includes(input.sort) && ingamePicks === 0 ? " Aucune partie de ce périmètre n'a de données Riot : pas d'écart à 15 min, de first blood ni de solo kills." : "") +
       (ongoing ? ` ${ongoing}` : "");
 
-    return {
+    const multikill = CHAMPION_MULTIKILL_SORTS.findIndex((m) => m === totalSort);
+    const lowerMultikill = multikill >= 0 ? (CHAMPION_MULTIKILL_SORTS[multikill + 1] ?? null) : null;
+    const where = `${inLeague(league) || "aux Worlds"}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`;
+
+    // A total or a per-game average is one more column, named as the sort: the champion layout gives it the bar.
+    const figure = totalSort ? `total_${totalSort}` : average;
+
+    const out: ToolOutput = {
       title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
-      table: {
-        // A per-game average is one more column, named as the sort: the champion layout gives it the bar.
-        columns: average ? ["rank", "champion", average, ...CHAMPION_RANKING_COLUMNS.slice(2)] : [...CHAMPION_RANKING_COLUMNS],
-        rows: rows.map((r, i) => [i + 1, r.champion, ...(average ? [r.average] : []), r.picks, r.bans, r.presence, r.winrate, r.kda, ...CHAMPION_EXTRA_SORTS.map((c) => r[c])]),
-      },
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
-      sources: [...eventSources(pages, 12), ...(ingamePicks ? [RIOT_DATA_SOURCE] : []), { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` }],
-      followUps: rows.slice(0, 2).map((r) => `Stats de ${r.champion} ${inLeague(league) || "aux Worlds"}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`),
-      totals: { leader: rows[0]?.champion ?? "", leader_value: rows[0]?.sort_value ?? 0, leader_picks: rows[0]?.picks ?? 0, leader_bans: rows[0]?.bans ?? 0, rows: rows.length, games, min_picks: minPicks },
+      sources: [
+        ...eventSources(pages, 12),
+        ...(ingamePicks || (totalSort && CHAMPION_TOTAL[totalSort].ingame && ingameGames) ? [RIOT_DATA_SOURCE] : []),
+        { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` },
+      ],
+      followUps: rows.length
+        ? rows.slice(0, 2).map((r) => `Stats de ${r.champion} ${where}`)
+        : [
+            // No champion to look at: the next multikill down, and the champions of the same scope.
+            ...(lowerMultikill ? [`Champions avec le plus de ${CHAMPION_TOTAL[lowerMultikill].unit} ${where}`] : []),
+            `Champions les plus joués ${where}`,
+          ],
+      totals: {
+        leader: rows[0]?.champion ?? "",
+        leader_value: rows[0]?.sort_value ?? 0,
+        leader_picks: rows[0]?.picks ?? 0,
+        leader_bans: rows[0]?.bans ?? 0,
+        rows: rows.length,
+        games,
+        ingame_games: ingameGames,
+        min_picks: minPicks,
+      },
     };
+
+    // An absent figure or a true zero is said in the facts: no empty table under it.
+    if (!absent && (rows.length || !totalSort))
+      out.table = {
+        columns: figure ? ["rank", "champion", figure, ...CHAMPION_RANKING_COLUMNS.slice(2)] : [...CHAMPION_RANKING_COLUMNS],
+        rows: rows.map((r, i) => [i + 1, r.champion, ...(figure ? [totalSort ? r.total : r.average] : []), r.picks, r.bans, r.presence, r.winrate, r.kda, ...CHAMPION_EXTRA_SORTS.map((c) => r[c])]),
+      };
+
+    return out;
   },
   // The router model tends to set a minimum of 1 for "top 5": below 3 picks, the default threshold keeps a winrate meaningful.
-  normalize: (_db, input) => ({ ...input, minPicks: input.minPicks != null && input.minPicks >= 3 ? input.minPicks : null }),
+  // A multikill is only ever a total; `total` means nothing for a figure that is not a count or a sum.
+  normalize: (_db, input) => ({
+    ...input,
+    total: CHAMPION_TOTAL_SORTS.some((s) => s === input.sort) && (input.total === true || CHAMPION_MULTIKILL_SORTS.some((s) => s === input.sort)),
+    minPicks: input.minPicks != null && input.minPicks >= 3 ? input.minPicks : null,
+  }),
 };
 
 // 4c. A player's or a team's champion pool ---------------------------------------------

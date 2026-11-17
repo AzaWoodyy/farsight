@@ -498,20 +498,38 @@ function oneEditApart(a: string, b: string): boolean {
   return short.slice(i) === long.slice(i + 1);
 }
 
-/** A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close. */
-function resolveChampionTypo(db: DatabaseSync, mention: string): ResolvedChampion | null {
+/**
+ * A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close.
+ * `opponent` reads the champion set against one already named: four letters and an everyday word are enough there ("lock").
+ */
+function resolveChampionTypo(db: DatabaseSync, mention: string, opponent = false): ResolvedChampion | null {
   const norm = normalizeAlias(mention);
+  const min = opponent ? OPPONENT_TYPO_MIN : CHAMPION_TYPO_MIN;
 
-  if (norm.length < CHAMPION_TYPO_MIN || COMMON_WORDS.has(norm) || STOPWORDS.has(norm)) return null;
+  if (norm.length < min || (opponent && !/^[a-z]+$/.test(norm)) || STOPWORDS.has(norm) || (opponent ? NOT_OPPONENTS : COMMON_WORDS).has(norm)) return null;
   const names = new Set<string>();
 
-  for (const [alias, name] of getIndexes(db).champions) if (alias.length >= CHAMPION_TYPO_MIN && oneEditApart(norm, alias)) names.add(name);
+  for (const [alias, name] of getIndexes(db).champions) if (alias.length >= min && oneEditApart(norm, alias)) names.add(name);
 
   return names.size === 1 ? { mention, champion: [...names][0] } : null;
 }
 
 /** Shorter words are too often another word one letter away ("Zoe", "Sion"). */
 const CHAMPION_TYPO_MIN = 5;
+
+/** Next to a champion and a matchup word, a four-letter word one letter away is the opponent ("oriana vs lock"). */
+const OPPONENT_TYPO_MIN = 4;
+
+/** Grammar words one letter away from a champion, that follow one in a sentence ("Azir when", "Azir sont"). */
+const NOT_OPPONENTS = new Set(
+  "agir annee aren done driven else given gone hard juin name none real rely rien seen sent sept sert sets sinon sons sont soon tell then thin well when zero".split(" "),
+);
+
+/** A matchup word: the opponent may then follow the champion directly ("match up oriana lock"). */
+const MATCHUP_CUE = /(?<![\p{L}\p{N}])match[- ]?ups?(?![\p{L}\p{N}])/iu;
+
+/** The connector between two champions, as a token ("oriana vs lock"). */
+const VERSUS_TOKENS = new Set(["vs", "versus", "contre", "against"]);
 
 // Mentions ----------------------------------------------------------------------
 
@@ -540,6 +558,8 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   const used = new Set<number>();
   // Where each mention starts, in tokens: the order of the question.
   const at = new Map<string, number>();
+  // The tokens of the first champion: its opponent is written next to it ("oriana lock").
+  const championAt = new Set<number>();
   const { teams } = getIndexes(db);
 
   for (let size = 3; size >= 1; size--) {
@@ -566,6 +586,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         found.champion = champion;
         at.set(mention, i);
         span.forEach((k) => used.add(k));
+        span.forEach((k) => championAt.add(k));
         continue;
       }
 
@@ -607,9 +628,36 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
     if (!champion || champion.champion === found.champion?.champion) continue;
 
     if (found.champion) found.opponentChampion = champion;
-    else found.champion = champion;
+    else {
+      found.champion = champion;
+      championAt.add(i);
+    }
+
     at.set(tokens[i], i);
     used.add(i);
+  }
+
+  // The opponent of a champion, misspelled and short or an everyday word ("oriana vs lock"): only in a question about
+  // champions alone, right after or before "vs", or next to the champion after "match up", so that "lock" or "then"
+  // in a normal question stays a word ("Azir lock in vs G2").
+  if (found.champion && !found.opponentChampion && !found.players.length && !found.teams.length) {
+    const matchup = MATCHUP_CUE.test(question);
+
+    const next = (i: number, d: number) => {
+      const k = i + d;
+
+      return (matchup && championAt.has(k)) || VERSUS_TOKENS.has(tokens[k]?.toLowerCase());
+    };
+
+    for (let i = 0; i < tokens.length && !found.opponentChampion; i++) {
+      if (used.has(i) || !(next(i, -1) || next(i, 1))) continue;
+      const champion = resolveChampionTypo(db, tokens[i], true);
+
+      if (!champion || champion.champion === found.champion.champion) continue;
+      found.opponentChampion = champion;
+      at.set(tokens[i], i);
+      used.add(i);
+    }
   }
 
   // A handle that is also an everyday word ("Paris", "Life") or very short
