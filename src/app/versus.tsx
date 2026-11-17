@@ -16,8 +16,8 @@ const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", 
  * scope and a sentence saying they never met.
  */
 export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Answer["profiles"]; fallback: ReactNode }) {
-  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles) : null), [v.h2h, profiles]);
-  const global = useMemo(() => detectComparison(v.global, profiles), [v.global, profiles]);
+  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus) : null), [v.h2h, profiles, v.focus]);
+  const global = useMemo(() => detectComparison(v.global, profiles, v.focus), [v.global, profiles, v.focus]);
   const [tab, setTab] = useState<"h2h" | "global">("h2h");
   const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
