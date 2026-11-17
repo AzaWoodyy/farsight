@@ -2263,6 +2263,187 @@
       }
     },
     {
+      "id": "en-series-final",
+      "question": "Worlds 2025 final",
+      "locale": "en",
+      "tags": [
+        "series",
+        "english"
+      ],
+      "expect": {
+        "route": "series",
+        "summaryIncludes": [
+          "The final of Worlds 2025: T1 beats KT Rolster 3-2 (BO5), on November 9, 2025",
+          "Game 5: T1 (red) in 36:47"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-series-phase",
+      "question": "MSI 2024 semifinals",
+      "locale": "en",
+      "tags": [
+        "series",
+        "english"
+      ],
+      "expect": {
+        "route": "series",
+        "summaryIncludes": [
+          "Semifinals of MSI 2024: 2 series. Gen.G 3-1 Bilibili Gaming; Bilibili Gaming 3-2 T1."
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1,
+        "notes": [
+          "no semifinals named on Leaguepedia"
+        ]
+      }
+    },
+    {
+      "id": "en-team-leaderboard",
+      "question": "Teams with the best blue side winrate in LEC 2025",
+      "locale": "en",
+      "tags": [
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "summaryIncludes": [
+          "Teams ranked in LEC in 2025 blue side by win % (wins / games), minimum 10 games: 1. G2 Esports: 75%, 32 games",
+          "teams ranked"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-champion-matchup",
+      "question": "Azir vs Orianna mid",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "matchup",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "summaryIncludes": [
+          "Azir against Orianna in mid all competitions (same role, opposite teams):",
+          "KDA of Azir:",
+          "most recent games are listed"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-champion-matchups",
+      "question": "Azir matchups at Worlds 2025",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "matchup",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "summaryIncludes": [
+          "Azir at Worlds in 2025: 14 games against a lane opponent (same role, opposite team), 50% wins, 5 champions faced",
+          "best record against"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-game-records",
+      "question": "Most kills in a game at Worlds",
+      "locale": "en",
+      "tags": [
+        "records",
+        "english"
+      ],
+      "expect": {
+        "route": "game_records",
+        "summaryIncludes": [
+          "Best games at Worlds by kills, one line per game: 1. DanDy: 19 (Evelynn, Samsung Ozone vs Mineski, Worlds 2013, Sep 21, 2013)",
+          "games tied for first"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-recent-games",
+      "question": "Faker's recent form",
+      "locale": "en",
+      "tags": [
+        "recent",
+        "english"
+      ],
+      "expect": {
+        "route": "player_recent_games",
+        "summaryIncludes": [
+          "Faker: their last 10 games",
+          "per game",
+          "Latest game:"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-empty-no-game",
+      "question": "Faker's results in LFL",
+      "locale": "en",
+      "tags": [
+        "empty",
+        "english"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "summaryIncludes": [
+          "No game of Faker in LFL in the database."
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " contre "
+        ],
+        "rows": 0
+      }
+    },
+    {
       "id": "out-of-scope-topic",
       "question": "quelle est la météo à Paris",
       "tags": [

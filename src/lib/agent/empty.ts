@@ -11,7 +11,8 @@ import { z } from "zod";
 import { selectAll } from "../db";
 import { leagueMembers } from "../domain/leagues";
 import { PLAYER_METRIC_DEFS, TEAM_METRIC_DEFS } from "./metrics";
-import { scopeLabel } from "./tools";
+import { say } from "./messages";
+import { allCompetitions, scopeLabel } from "./tools";
 import type { Entities } from "./types";
 
 export type EmptyReason = "no_games" | "qualifier_only" | "zero_count" | "no_ingame" | "unexplained";
@@ -86,21 +87,23 @@ function scopeFilter(e: Entities, alias: string, view: "player" | "team") {
 /** "Faker sur Azir aux Worlds en 2024", "Orianna aux Worlds en 2026", "aux Worlds en 2024". */
 function scopeText(e: Entities) {
   const players = e.players.map((p) => p.player);
-  const named = [...players, ...e.teams.map((t) => t.team)].join(" et ");
-  const champion = e.champion ? (named ? ` sur ${e.champion.champion}` : e.champion.champion) : "";
+  const named = [...players, ...e.teams.map((t) => t.team)].join(say(" et ", " and "));
+  const champion = e.champion ? (named ? say(` sur ${e.champion.champion}`, ` on ${e.champion.champion}`) : e.champion.champion) : "";
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
-  const where = [e.split ? `au split ${e.split}` : "", scopeLabel(e.leagueShort ?? e.league ?? "toutes compétitions", period)].filter(Boolean).join(" ");
+  const where = [e.split ? say(`au split ${e.split}`, `in the ${e.split} split`) : "", scopeLabel(e.leagueShort ?? e.league ?? allCompetitions(), period)].filter(Boolean).join(" ");
 
   return { subject: `${named}${champion}`, where };
 }
 
-/** "de Faker…", "d'Orianna…". */
-const of = (s: string) => (/^[aeiouyhàâéèêîôû]/i.test(s) ? `d'${s}` : `de ${s}`);
+/** "de Faker…", "d'Orianna…" / "of Faker…". */
+const of = (s: string) => say(/^[aeiouyhàâéèêîôû]/i.test(s) ? `d'${s}` : `de ${s}`, `of ${s}`);
 
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`;
+/** "3 parties" / "3 games", "1 partie" / "1 game". */
+const games = (n: number) => say(`${n} partie${n > 1 ? "s" : ""}`, `${n} game${n === 1 ? "" : "s"}`);
 
-/** "pentakills" → "aucun pentakill", "plaques de tourelle" → "aucune plaque de tourelle". */
-const none = (label: string) => `${/^(?:plaque|première)/.test(label) ? "aucune" : "aucun"} ${label.replace(/(kill|blood|plaque)s\b/, "$1")}`;
+/** "pentakills" → "aucun pentakill", "plaques de tourelle" → "aucune plaque de tourelle" / "no pentakill", "no turret plate". */
+const none = (label: { label: string; en: string }) =>
+  say(`${/^(?:plaque|première)/.test(label.label) ? "aucune" : "aucun"} ${label.label.replace(/(kill|blood|plaque)s\b/, "$1")}`, `no ${label.en.replace(/(kill|blood|plate|dragon)s\b/, "$1")}`);
 
 const capitalized = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -132,13 +135,13 @@ const QualifierMatch = z.object({
 const date = (s: number | null) => (s == null ? null : new Date(s * 1000).toISOString().slice(0, 10));
 
 /** The in-game view a generated query reads, and the count columns it sums there. */
-function countedColumns(sql: string): { view: "v_game_player_stats" | "v_game_team_stats"; columns: { column: string; label: string }[] } | null {
+function countedColumns(sql: string): { view: "v_game_player_stats" | "v_game_team_stats"; columns: { column: string; label: string; en: string }[] } | null {
   const view = /\bfrom\s+(v_game_player_stats|v_game_team_stats)\b/i.exec(sql)?.[1]?.toLowerCase();
 
   if (view !== "v_game_player_stats" && view !== "v_game_team_stats") return null;
   const defs = Object.values(view === "v_game_player_stats" ? PLAYER_METRIC_DEFS : TEAM_METRIC_DEFS).filter((d) => d.aggregate !== "avg" && !d.snapshot);
   const summed = [...sql.matchAll(/\b(?:sum|total)\s*\(\s*(?:\w+\.)?(\w+)\s*\)/gi)].map((m) => m[1].toLowerCase());
-  const columns = [...new Set(summed)].flatMap((c) => defs.filter((d) => d.column === c).map((d) => ({ column: c, label: d.label })));
+  const columns = [...new Set(summed)].flatMap((c) => defs.filter((d) => d.column === c).map((d) => ({ column: c, label: d.label, en: d.en })));
 
   return columns.length ? { view, columns } : null;
 }
@@ -170,10 +173,14 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
   const empty = { table: null, sources: [] };
 
   if (!main && !qualifier)
-    return { ...empty, reason: "no_games", conclusive: true, title: "Aucune partie", summary: `Aucune partie ${subject ? of(scope) : where} dans la base.` };
+    return { ...empty, reason: "no_games", conclusive: true, title: say("Aucune partie", "No game"), summary: say(`Aucune partie ${subject ? of(scope) : where} dans la base.`, `No game ${subject ? of(scope) : where} in the database.`) };
 
   if (!main) {
-    const lead = qualifier === 1 ? `La seule partie ${subject ? of(scope) : where} est` : `Les ${qualifier} parties ${subject ? of(scope) : where} sont toutes`;
+    const lead = say(
+      qualifier === 1 ? `La seule partie ${subject ? of(scope) : where} est` : `Les ${qualifier} parties ${subject ? of(scope) : where} sont toutes`,
+      qualifier === 1 ? `The only game ${subject ? of(scope) : where} is` : `The ${qualifier} games ${subject ? of(scope) : where} are all`,
+    );
+
     const qualifiers = [...filter.where, "gp.stage = 'qualifier'"].join(" AND ");
     let table: EmptyExplanation["table"];
     let pages: { tournament: string | null; tournament_page: string }[];
@@ -190,14 +197,14 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
 
       pages = games;
       table = {
-        columns: ["date", "tournoi", "joueur", "équipe", "champion", "résultat", "K/D/A", "rune"],
+        columns: say(["date", "tournoi", "joueur", "équipe", "champion", "résultat", "K/D/A", "rune"], ["date", "tournament", "player", "team", "champion", "result", "K/D/A", "rune"]),
         rows: games.map((g) => [
           date(g.played_at),
           g.tournament,
           g.player,
           g.team,
           g.champion,
-          g.win == null ? null : g.win ? "victoire" : "défaite",
+          g.win == null ? null : g.win ? say("victoire", "win") : say("défaite", "loss"),
           g.kills == null ? null : `${g.kills}/${g.deaths}/${g.assists}`,
           g.keystone,
         ]),
@@ -213,19 +220,26 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
 
       pages = games;
       table = {
-        columns: ["date", "tournoi", "bleu", "rouge", "vainqueur"],
+        columns: say(["date", "tournoi", "bleu", "rouge", "vainqueur"], ["date", "tournament", "blue", "red", "winner"]),
         rows: games.map((g) => [date(g.played_at), g.tournament, g.blue_team, g.red_team, g.winner]),
       };
     }
 
     const tournaments = [...new Set(pages.map((g) => g.tournament ?? g.tournament_page))];
-    const shown = qualifier === 1 ? "la voici" : qualifier > SHOWN_GAMES ? `voici les ${SHOWN_GAMES} premières` : "les voici";
+
+    const shown = say(
+      qualifier === 1 ? "la voici" : qualifier > SHOWN_GAMES ? `voici les ${SHOWN_GAMES} premières` : "les voici",
+      qualifier === 1 ? "here it is" : qualifier > SHOWN_GAMES ? `here are the first ${SHOWN_GAMES}` : "here they are",
+    );
 
     return {
       reason: "qualifier_only",
       conclusive: true,
-      title: "Seulement en qualifications",
-      summary: `${lead} en qualifications régionales (${tournaments.join(", ")}), que les réponses excluent par défaut : ${shown}.`,
+      title: say("Seulement en qualifications", "Only in qualifiers"),
+      summary: say(
+        `${lead} en qualifications régionales (${tournaments.join(", ")}), que les réponses excluent par défaut : ${shown}.`,
+        `${lead} in regional qualifiers (${tournaments.join(", ")}), which answers exclude by default: ${shown}.`,
+      ),
       table,
       sources: [...new Set(pages.map((g) => g.tournament_page))],
     };
@@ -259,12 +273,15 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
         ...empty,
         reason: "no_ingame",
         conclusive: true,
-        title: "Pas de données in-game",
-        summary: `${main === 1 ? `La seule partie ${scopeOf} n'a pas` : `Aucune des ${main} parties ${scopeOf} n'a`} de données in-game (les statistiques Riot que Leaguepedia publie) : le total demandé ne peut pas être calculé.`,
+        title: say("Pas de données in-game", "No in-game data"),
+        summary: say(
+          `${main === 1 ? `La seule partie ${scopeOf} n'a pas` : `Aucune des ${main} parties ${scopeOf} n'a`} de données in-game (les statistiques Riot que Leaguepedia publie) : le total demandé ne peut pas être calculé.`,
+          `${main === 1 ? `The only game ${scopeOf} has no` : `None of the ${main} games ${scopeOf} has`} in-game data (the Riot statistics Leaguepedia publishes): the total asked cannot be computed.`,
+        ),
       };
 
     if (measuredGames > 0 && counted.columns.every((_, i) => row[`c${i}`] === 0)) {
-      const what = capitalized(counted.columns.map((c) => none(c.label)).join(", "));
+      const what = capitalized(counted.columns.map((c) => none(c)).join(", "));
       const unmeasured = main - measuredGames;
 
       return {
@@ -272,9 +289,12 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
         reason: "zero_count",
         conclusive: true,
         title: what,
-        summary:
+        summary: say(
           `${what} sur ${measuredGames === 1 ? "la seule partie" : `les ${measuredGames} parties`} avec données in-game ${scopeOf} (qualifications exclues` +
-          `${unmeasured > 0 ? `, ${unmeasured} ${unmeasured > 1 ? "autres parties" : "autre partie"} sans cette donnée` : ""}).`,
+            `${unmeasured > 0 ? `, ${unmeasured} ${unmeasured > 1 ? "autres parties" : "autre partie"} sans cette donnée` : ""}).`,
+          `${what} over ${measuredGames === 1 ? "the only game" : `the ${measuredGames} games`} with in-game data ${scopeOf} (qualifiers excluded` +
+            `${unmeasured > 0 ? `, ${unmeasured} other game${unmeasured === 1 ? "" : "s"} without this data` : ""}).`,
+        ),
       };
     }
   }
@@ -283,8 +303,11 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
     ...empty,
     reason: "unexplained",
     conclusive: false,
-    title: "Pas de résultat",
-    summary: `La requête n'a renvoyé aucune ligne, alors que la base compte ${plural(main, "partie")} ${subject ? of(scope) : where} (qualifications exclues).`,
+    title: say("Pas de résultat", "No result"),
+    summary: say(
+      `La requête n'a renvoyé aucune ligne, alors que la base compte ${games(main)} ${subject ? of(scope) : where} (qualifications exclues).`,
+      `The query returned no row, although the database holds ${games(main)} ${subject ? of(scope) : where} (qualifiers excluded).`,
+    ),
   };
 }
 
@@ -297,5 +320,8 @@ export function unrecognizedNote(entities: Entities, unread: string[]): string |
 
   if (!words.length) return null;
 
-  return `${words.length > 1 ? "Mots non reconnus" : "Mot non reconnu"} comme joueur, équipe ou champion : ${words.map((w) => `« ${w} »`).join(", ")}.`;
+  return say(
+    `${words.length > 1 ? "Mots non reconnus" : "Mot non reconnu"} comme joueur, équipe ou champion : ${words.map((w) => `« ${w} »`).join(", ")}.`,
+    `${words.length > 1 ? "Words" : "Word"} not recognized as a player, a team or a champion: ${words.map((w) => `"${w}"`).join(", ")}.`,
+  );
 }
