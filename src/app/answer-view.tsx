@@ -277,7 +277,10 @@ function ResultChampions({ champions }: { champions: ResultRow["champions"] }) {
 const sortHint = (answer: Answer) => {
   const input = answer.meta.input;
 
-  return input && "sort" in input ? input.sort : undefined;
+  if (!input || !("sort" in input)) return undefined;
+
+  // A total is its own column ("total_deaths"), beside the per-game figures of the same name.
+  return "total" in input && input.total ? `total_${input.sort}` : input.sort;
 };
 
 /**
