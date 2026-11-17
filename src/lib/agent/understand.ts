@@ -69,7 +69,7 @@ const BARE_POOL = /^pools?$/i;
 /** Words that make a question about LoL esports even without a known entity. */
 export const LOL_DOMAIN = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${CHAMPION_POOL}|lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|` +
-    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
+    `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|kda|assists?|d[ée]g[âa]ts|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
   "iu",
 );
 
@@ -79,7 +79,7 @@ export const LOL_DOMAIN = new RegExp(
  * its own ("Solo aux Worlds") is still resolved.
  */
 const TERM_PHRASES =
-  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
+  /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|parts? (?:des? |aux |de l['’]|d['’])(?:d[ée]g[âa]ts|or|golds?)|(?:damage|dmg|gold) share|(?:(?:pires?|worst) )?match[- ]?ups?|formes? r[ée]centes?|last \d* ?(?:games?|matches)|en ce moment|ces derniers temps|derni[èe]re?s? (?:\d+ )?(?:parties?|games?|matchs?)|gold diff|(?:gold|cs|xp) ?diff|early game|late game|dragon soul|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
 
 const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
 
@@ -480,6 +480,39 @@ export function resolveChampion(db: DatabaseSync, mention: string): ResolvedCham
   return name ? { mention, champion: name } : null;
 }
 
+/** At most one edit apart (insertion, deletion, substitution or two swapped neighbours): "oriana" and "Orianna". */
+function oneEditApart(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return a === b;
+
+  if (a.length === b.length) {
+    const diff = [...a].flatMap((c, i) => (c === b[i] ? [] : [i]));
+
+    return diff.length === 1 || (diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]]);
+  }
+
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  let i = 0;
+
+  while (i < short.length && short[i] === long[i]) i++;
+
+  return short.slice(i) === long.slice(i + 1);
+}
+
+/** A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close. */
+function resolveChampionTypo(db: DatabaseSync, mention: string): ResolvedChampion | null {
+  const norm = normalizeAlias(mention);
+
+  if (norm.length < CHAMPION_TYPO_MIN || COMMON_WORDS.has(norm) || STOPWORDS.has(norm)) return null;
+  const names = new Set<string>();
+
+  for (const [alias, name] of getIndexes(db).champions) if (alias.length >= CHAMPION_TYPO_MIN && oneEditApart(norm, alias)) names.add(name);
+
+  return names.size === 1 ? { mention, champion: [...names][0] } : null;
+}
+
+/** Shorter words are too often another word one letter away ("Zoe", "Sion"). */
+const CHAMPION_TYPO_MIN = 5;
+
 // Mentions ----------------------------------------------------------------------
 
 /** A handle that is an everyday word, or three Latin characters or fewer. */
@@ -489,7 +522,7 @@ function isCommonHandle(mention: string): boolean {
   return /^[a-z0-9]{1,3}$/.test(alias) || COMMON_WORDS.has(alias);
 }
 
-type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null };
+type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null; opponentChampion?: ResolvedChampion | null };
 
 /**
  * Rule-based detection: longest n-gram that matches a known champion, team or
@@ -531,6 +564,15 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
       if (champion && !found.champion) {
         found.champion = champion;
+        at.set(mention, i);
+        span.forEach((k) => used.add(k));
+        continue;
+      }
+
+      // A second champion: the one the first is set against ("Azir contre Orianna").
+      if (champion && !found.opponentChampion && champion.champion !== found.champion?.champion) {
+        found.opponentChampion = champion;
+        at.set(mention, i);
         span.forEach((k) => used.add(k));
         continue;
       }
@@ -555,6 +597,19 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         span.forEach((k) => used.add(k));
       }
     }
+  }
+
+  // A word left over that is one letter away from a champion ("oriana"): not a player, a team or an everyday word.
+  for (let i = 0; i < tokens.length && !(found.champion && found.opponentChampion); i++) {
+    if (used.has(i) || /\d/.test(tokens[i])) continue;
+    const champion = resolveChampionTypo(db, tokens[i]);
+
+    if (!champion || champion.champion === found.champion?.champion) continue;
+
+    if (found.champion) found.opponentChampion = champion;
+    else found.champion = champion;
+    at.set(tokens[i], i);
+    used.add(i);
   }
 
   // A handle that is also an everyday word ("Paris", "Life") or very short
@@ -582,6 +637,10 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   const pos = (m: string) => at.get(m) ?? Number.MAX_SAFE_INTEGER;
   found.players.sort((a, b) => pos(a) - pos(b));
   found.teams.sort((a, b) => pos(a.mention) - pos(b.mention));
+
+  // Longer names are read first ("Lee Sin" before "Azir"): the champion the question names first stays the subject.
+  if (found.champion && found.opponentChampion && pos(found.opponentChampion.mention) < pos(found.champion.mention))
+    [found.champion, found.opponentChampion] = [found.opponentChampion, found.champion];
 
   return found;
 }
@@ -662,6 +721,7 @@ function buildEntities(
     players,
     teams: mentions.teams,
     champion: mentions.champion,
+    opponentChampion: mentions.opponentChampion ?? null,
     unresolved,
     league,
     leagueShort: leagueShort(db, league),
@@ -782,7 +842,7 @@ export function maskUnderstood(question: string, e: Entities) {
     });
   };
 
-  const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.leagueMention];
+  const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.opponentChampion?.mention, e.leagueMention];
 
   // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa". Whole words only: "TL" is not the one in "botlaner".
   for (const m of mentions)

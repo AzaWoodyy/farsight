@@ -78,18 +78,25 @@ function SortHeader({ active, dir, label, title, className, onClick }: { active:
   );
 }
 
+/** How many metrics sit beside the ranking one in the champion view. */
+const SIDE_METRICS = 5;
+
 /** Champions ranked: one line per champion, a gauge on the ranking metric, the other metrics beside it. */
 export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; fallback: ReactNode }) {
   const [asTable, setAsTable] = useState(false);
   const primary = ranking.metrics[ranking.primary];
   const max = Math.max(...ranking.lines.map((l) => Math.abs(l.values[ranking.primary] ?? 0)), 0);
-  const others = ranking.metrics.map((m, i) => ({ m, i })).filter(({ i }) => i !== ranking.primary);
+  const rest = ranking.metrics.map((m, i) => ({ m, i })).filter(({ i }) => i !== ranking.primary);
+  // A ranking can hold fifteen figures: the champion view keeps the first ones beside the gauge, the table view has them all.
+  const others = rest.slice(0, SIDE_METRICS);
+  const hidden = rest.length - others.length;
 
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
         <p className="text-muted">
           classé par <span className="text-foreground">{primary.label}</span> · {ranking.lines.length} champion{ranking.lines.length > 1 ? "s" : ""}
+          {hidden > 0 && !asTable ? ` · ${hidden} autre${hidden > 1 ? "s" : ""} colonne${hidden > 1 ? "s" : ""} dans la vue tableau` : ""}
         </p>
         <button
           type="button"

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist_Mono } from "next/font/google";
 import { SiteAnalytics } from "./analytics";
 import { PALETTE, SITE } from "./brand/site";
+import { THEME_SCRIPT } from "./brand/theme";
 import "./globals.css";
 
 // The whole page is set in Geist Mono: Geist Sans would only add a preloaded font nobody reads.
@@ -29,9 +30,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // The page's draw script sets the home examples' attributes on <html> before hydration (see home-examples-data).
+    // The page's draw script and the theme script set attributes on <html> before hydration (see
+    // home-examples-data and brand/theme).
     <html lang="fr" className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
+        {/* First in the body: the stored theme is applied before anything is painted. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {children}
         <SiteAnalytics />
       </body>

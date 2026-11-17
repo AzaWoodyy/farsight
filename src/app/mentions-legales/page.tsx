@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { Mark } from "../brand/logo";
 import { SITE } from "../brand/site";
+import { HomeLink } from "../home-link";
 import { CC_BY_SA_URL, RIOT_BOILERPLATE, SiteFooter, TEXT_LINK } from "../site-footer";
+import { ThemeToggle } from "../theme-toggle";
 
 const TITLE = "Mentions légales et confidentialité";
 
@@ -59,11 +59,11 @@ export default function MentionsLegales() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
       <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
-        <Link href="/" className="inline-flex min-h-11 items-center gap-2.5 hover:text-accent" aria-label={`${SITE.name}, retour à l'accueil`}>
-          <Mark size={32} />
-          <span className="text-base font-semibold lowercase">{SITE.name}</span>
-        </Link>
-        <span className="hidden text-xs text-muted sm:block">~/ mentions légales</span>
+        <HomeLink />
+        <div className="flex items-center gap-4">
+          <span className="hidden text-xs text-muted sm:block">~/ mentions légales</span>
+          <ThemeToggle />
+        </div>
       </header>
       <main className="flex-1 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
         <div className="max-w-[75ch]">

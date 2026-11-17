@@ -110,6 +110,7 @@ async function understand(db: DatabaseSync, question: string, emit: Emit, now: D
       (t) => `équipe « ${t.mention} » → ${t.team}${t.members.length > 1 || t.members[0] !== t.team ? ` (${t.members.join(", ")})` : ""}`,
     ),
     ...(entities.champion ? [`champion « ${entities.champion.mention} » → ${entities.champion.champion}`] : []),
+    ...(entities.opponentChampion ? [`adversaire « ${entities.opponentChampion.mention} » → ${entities.opponentChampion.champion}`] : []),
     ...entities.unresolved.map((m) => `« ${m} » : aucun joueur connu`),
     `compétition → ${entities.league ?? "non précisée"}${entities.leagueMention ? ` (« ${entities.leagueMention} »)` : ""}`,
     `période → ${entities.yearFrom ?? "début"} – ${entities.yearTo ?? "aujourd'hui"}${entities.split ? ` · split ${entities.split}` : ""}`,
@@ -120,6 +121,7 @@ async function understand(db: DatabaseSync, question: string, emit: Emit, now: D
     ...entities.players.map((p) => p.player),
     ...entities.teams.map((t) => t.team),
     ...(entities.champion ? [entities.champion.champion] : []),
+    ...(entities.opponentChampion ? [entities.opponentChampion.champion] : []),
   ];
 
   const ambiguous = entities.players.some((p) => p.ambiguity);

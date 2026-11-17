@@ -266,7 +266,7 @@ describe("rate leaderboards show the count beside the share", () => {
 
       const out = await run(db, {
         tool: "ingame_leaderboard",
-        input: { subject: "team", metric: "first_dragon", minute: null, league: "Mid-Season Invitational", yearFrom: 2023, yearTo: 2023, role: null, minGames: 1 },
+        input: { subject: "team", metric: "first_dragon", minute: null, league: "Mid-Season Invitational", yearFrom: 2023, yearTo: 2023, role: null, minGames: 1, side: null },
       });
 
       expect(out.table!.columns).toEqual(["Rang", "Équipe", "Parties", "Nombre", "%"]);
@@ -292,7 +292,7 @@ describe("rate leaderboards show the count beside the share", () => {
 
       const out = await run(db, {
         tool: "ingame_leaderboard",
-        input: { subject: "team", metric: "first_dragon", minute: null, league: "Mid-Season Invitational", yearFrom: 2023, yearTo: 2023, role: null, minGames: 1 },
+        input: { subject: "team", metric: "first_dragon", minute: null, league: "Mid-Season Invitational", yearFrom: 2023, yearTo: 2023, role: null, minGames: 1, side: null },
       });
 
       expect(out.table!.rows).toEqual([[1, "T1", 4, 3, 75], [2, "Gen.G", 4, 1, 25]]);
