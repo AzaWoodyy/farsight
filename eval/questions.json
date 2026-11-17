@@ -5274,6 +5274,60 @@
       }
     },
     {
+      "id": "matchup-typo-orianna-vs-lock-worlds-2026",
+      "question": "oriana vs lock au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "matchup-typo-orianna-lock-worlds-2026",
+      "question": "Match up oriana lock au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
       "id": "matchup-jax-renekton-top-worlds-en",
       "question": "Jax vs Renekton en top aux Worlds",
       "tags": [
