@@ -3,7 +3,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import type { Answer, VersusGame, VersusSide, VersusView } from "@/lib/agent/types";
 import { type Comparison, detectComparison } from "@/lib/comparison";
-import { ComparisonNote, FaceOff } from "./player-comparison";
+import { ComparisonNote, FaceOff, OneSided } from "./player-comparison";
 
 /** Games listed before "show all". */
 const FIRST_GAMES = 10;
@@ -53,19 +53,11 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
         <p className="mb-2 text-xs text-muted">
           <span translate="no">{v.playerA}</span> et <span translate="no">{v.playerB}</span> ne se sont jamais affrontés
           {v.scope ? ` ${v.scope}` : ""}
-          {scope.absent ? (
-            <>
-              {" "}
-              : <span className="text-foreground" translate="no">{scope.absent}</span> n&apos;y a aucune partie, seules les statistiques de l&apos;autre
-              sont connues.
-            </>
-          ) : (
-            " : statistiques sur toutes leurs parties."
-          )}
+          {scope.absent ? "." : " : statistiques sur toutes leurs parties."}
         </p>
       )}
       {met > 0 && <Lanes v={v} met={met} />}
-      <FaceOff c={shown} focus={v.focus} />
+      {scope.absent ? <OneSided c={shown} absent={scope.absent === v.playerA ? 0 : 1} scope={v.scope} focus={v.focus} /> : <FaceOff c={shown} focus={v.focus} />}
       <ComparisonNote c={shown} />
       {v.games.length > 0 && <Games v={v} />}
     </div>
