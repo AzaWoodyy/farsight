@@ -13,13 +13,29 @@
  *   first champion kill of the timeline.
  * - `plates`: turret plates destroyed, from the match-v5 timelines (null for
  *   match-v4 ones, which have no plate event, and before patch 9.2).
+ * - `dragons`: every dragon kill of the timeline, in order: second, Riot team
+ *   and element (null before the elements, patch 6.9); null without a timeline.
+ * - `elder_dragons`: elder dragons a team killed (null without a timeline).
+ * - `dragon_soul` / `soul`: whether the team got the dragon soul, and its
+ *   element. The soul goes to the first team with four elemental dragons, from
+ *   patch 9.23. match-v5 timelines say so (DRAGON_SOUL_GIVEN with a team; the
+ *   same event with team 0 only announces the element of the map); the count
+ *   is used otherwise. Null without a timeline or before patch 9.23.
  */
 import { z } from "zod";
+import { dragonKind, soulKind } from "../../src/lib/domain/dragons";
 import type { Json } from "../../src/lib/json";
 import type { RawGame } from "../../src/lib/sources/riot";
 
 /** Bump when the computation changes: summaries of an older version are recomputed from the raw JSON. */
-export const DERIVE_VERSION = 2;
+export const DERIVE_VERSION = 3;
+
+/**
+ * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
+ * (dragons and souls, from 3). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
+ * it can read the raw JSON, and a published release refuses it.
+ */
+export const DERIVE_COMPATIBLE = 2;
 
 const MINUTES = [10, 15, 20] as const;
 
@@ -57,9 +73,23 @@ export const TeamSummary = z.object({
   gold_10: N, gold_15: N, gold_20: N,
   kills_10: N, kills_15: N, kills_20: N,
   towers_15: N,
+  // From derive 3: absent from an older summary.
+  elder_dragons: N.optional(),
+  dragon_soul: N.optional(),
+  soul: z.string().nullable().optional(),
 });
 
 export type TeamSummary = z.infer<typeof TeamSummary>;
+
+export const DragonKill = z.object({
+  /** Second of the game. */
+  t: z.number().int(),
+  /** Riot side of the killer, null when the timeline does not tell. */
+  teamId: z.number().int().nullable(),
+  kind: z.string().nullable(),
+});
+
+export type DragonKill = z.infer<typeof DragonKill>;
 
 /** One line of data/raw/ingame.jsonl: a game's summary, or why there is none. */
 export const IngameLine = z.discriminatedUnion("status", [
@@ -74,6 +104,8 @@ export const IngameLine = z.discriminatedUnion("status", [
     durationS: z.number().nullable(),
     players: z.array(PlayerSummary),
     teams: z.array(TeamSummary),
+    /** From derive 3 (absent from an older summary); null without a timeline. */
+    dragons: z.array(DragonKill).nullable().optional(),
   }),
   z.object({
     status: z.enum(["missing", "invalid"]),
@@ -139,6 +171,10 @@ const Event = z.object({
   teamId: num,
   killType: z.string().optional(),
   buildingType: z.string().optional(),
+  monsterType: z.string().optional(),
+  monsterSubType: z.string().optional(),
+  killerTeamId: num,
+  name: z.string().optional(),
 });
 
 const Frame = z.object({
@@ -170,6 +206,16 @@ function hasPlates(version: string | undefined): boolean {
   return major > 9 || (major === 9 && minor >= 2);
 }
 
+/** Patch 9.23 introduced the dragon soul. */
+function hasSouls(version: string | undefined): boolean {
+  const [major, minor] = (version ?? "").split(".").map(Number);
+
+  return major > 9 || (major === 9 && minor >= 23);
+}
+
+/** Elemental dragons a team needs for the soul. */
+const SOUL_DRAGONS = 4;
+
 /** The game summary, or throws when the JSON does not have the expected shape. */
 export function summarizeGame(raw: RawGame): IngameOk {
   const stats = Stats.parse(unwrap(raw.stats));
@@ -197,6 +243,35 @@ export function summarizeGame(raw: RawGame): IngameOk {
       ? { gold: pf.totalGold ?? null, xp: pf.xp ?? null, cs: pf.minionsKilled == null ? null : pf.minionsKilled + (pf.jungleMinionsKilled ?? 0) }
       : { gold: null, xp: null, cs: null };
   };
+
+  const riotSide = (n: number | undefined) => (n === 100 || n === 200 ? n : null);
+
+  const dragons = frames
+    ? events
+        .filter((e) => e.type === "ELITE_MONSTER_KILL" && e.monsterType === "DRAGON")
+        .map((e): DragonKill => ({ t: Math.round(e.timestamp / 1000), teamId: riotSide(e.killerTeamId) ?? riotSide(teamOf.get(e.killerId ?? 0)), kind: dragonKind(e.monsterSubType) }))
+    : null;
+
+  const soulKnown = dragons != null && hasSouls(stats.gameVersion);
+
+  /** The team with the soul and its element, or null when nobody got it. */
+  const soul = (() => {
+    if (!dragons || !soulKnown) return null;
+    const given = events.find((e) => e.type === "DRAGON_SOUL_GIVEN" && riotSide(e.teamId) != null);
+
+    if (given) return { teamId: given.teamId, kind: soulKind(given.name) };
+    const taken = new Map<number, number>();
+
+    for (const d of dragons) {
+      if (d.teamId == null || d.kind === "elder") continue;
+      const n = (taken.get(d.teamId) ?? 0) + 1;
+
+      if (n === SOUL_DRAGONS) return { teamId: d.teamId, kind: d.kind };
+      taken.set(d.teamId, n);
+    }
+
+    return null;
+  })();
 
   const before10 = kills.filter((k) => k.timestamp < 600_000);
   const count = (list: typeof kills, pred: (e: (typeof kills)[number]) => boolean) => (frames ? list.filter(pred).length : null);
@@ -271,6 +346,9 @@ export function summarizeGame(raw: RawGame): IngameOk {
       gold_10: side(10), gold_15: side(15), gold_20: side(20),
       kills_10: killsAt(10), kills_15: killsAt(15), kills_20: killsAt(20),
       towers_15: towers15,
+      elder_dragons: dragons ? dragons.filter((d) => d.teamId === t.teamId && d.kind === "elder").length : null,
+      dragon_soul: soulKnown ? (soul?.teamId === t.teamId ? 1 : 0) : null,
+      soul: soul?.teamId === t.teamId ? soul.kind : null,
     };
   });
 
@@ -288,5 +366,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
     durationS: duration == null ? null : duration > 20_000 ? Math.round(duration / 1000) : duration,
     players,
     teams,
+    dragons,
   };
 }

@@ -22,7 +22,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 
 const kilo = (n: number | null) => (n == null ? "n/d" : `${ONE.format(n / 1000)}k`);
 
-const OBJECTIVES: { key: keyof Omit<ScoreboardTeam, "name">; label: string }[] = [
+const OBJECTIVES: { key: keyof Omit<ScoreboardTeam, "name" | "dragonKinds" | "soul">; label: string }[] = [
   { key: "kills", label: "kills" },
   { key: "gold", label: "or" },
   { key: "towers", label: "tours" },
@@ -93,9 +93,18 @@ function TeamBlock({
           {OBJECTIVES.map((o) => (
             <div key={o.key} className="flex gap-1">
               <dt className="text-muted">{o.label}</dt>
-              <dd className="tabular-nums">{o.key === "gold" ? kilo(team.gold) : (team[o.key] ?? "n/d")}</dd>
+              <dd className="tabular-nums">
+                {o.key === "gold" ? kilo(team.gold) : (team[o.key] ?? "n/d")}
+                {o.key === "dragons" && team.dragonKinds.length ? <span className="text-muted"> ({team.dragonKinds.join(", ")})</span> : null}
+              </dd>
             </div>
           ))}
+          {team.soul ? (
+            <div className="flex gap-1">
+              <dt className="text-muted">âme</dt>
+              <dd className="text-accent">{team.soul}</dd>
+            </div>
+          ) : null}
         </dl>
       </div>
       {/* relative: keeps the sr-only caption inside the scroller (see team-h2h). */}

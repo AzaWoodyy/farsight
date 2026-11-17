@@ -250,6 +250,27 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Première release v8
+
+Le schéma v8 ajoute les dragons par élément et l'âme du dragon : `game_dragons`
+(un dragon par ligne, dans l'ordre, vue `v_game_dragons`) et
+`game_team_stats.dragon_soul`, `soul`, `elder_dragons`. Ils sont lus par l'outil
+`dragon_stats`, les métriques d'équipe `dragon_soul` et `elder_dragons` et le
+scoreboard d'une partie. Ils viennent des chronologies Riot, donc des mêmes
+parties que les autres stats in-game (aucune en LPL) : l'élément à partir de
+2016, l'âme à partir du patch 9.23. `DERIVE_VERSION` passe à 3.
+
+La v8 contient la v7 (sorts d'invocateur et runes) : une seule **Data release**
+suffit pour les deux, à lancer une fois le code v8 sur `main` et avant le
+premier déploiement. La release précédente ayant un autre schéma, le workflow
+ne restaure pas ses résumés in-game : il les recalcule tous depuis R2 (environ
+6 min), avec les dragons. Une release refuse un résumé d'une version
+antérieure ; seul le contrôle hors ligne de la CI (`data:package --check-only`)
+les accepte, parce que l'instantané épinglé ne peut pas être recalculé. Tant
+que `ci/data.json` épingle la release v6, la base de la CI n'a donc ni dragons
+ni âmes : les questions d'eval sur ces données sont à ajouter en ré-épinglant
+sur la première release v8.
+
 ### Première release v7
 
 Le schéma v7 ajoute les sorts d'invocateur (`game_players.spell1_id`,

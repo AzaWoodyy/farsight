@@ -1,7 +1,7 @@
 /** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const TABLE_DDL = `
 CREATE TABLE leagues (
@@ -61,7 +61,16 @@ CREATE TABLE game_team_stats (
   first_blood INT, first_tower INT, first_dragon INT, first_herald INT, first_baron INT, first_inhibitor INT,
   plates INT, gold_10 INT, gold_15 INT, gold_20 INT, gold_diff_10 INT, gold_diff_15 INT, gold_diff_20 INT,
   kills_10 INT, kills_15 INT, kills_20 INT, towers_15 INT,
+  -- dragon_soul: 1 when the team got the soul, NULL when the game has no timeline or predates the soul (patch 9.23);
+  -- soul: its element (src/lib/domain/dragons.ts)
+  elder_dragons INT, dragon_soul INT, soul TEXT,
   PRIMARY KEY (game_id, side)) WITHOUT ROWID;
+-- Every dragon kill of a game with a Riot timeline, in order (seq), and its order among the team's own dragons
+-- (team_seq). side and team_seq are NULL when the timeline does not name the killer's team; kind is the element
+-- (or 'elder'), NULL before the elements (patch 6.9).
+CREATE TABLE game_dragons (
+  game_id INT NOT NULL, seq INT NOT NULL, team_seq INT, side INT, kind TEXT, time_s INT NOT NULL,
+  PRIMARY KEY (game_id, seq)) WITHOUT ROWID;
 CREATE TABLE game_draft (
   game_id INT NOT NULL, side INT NOT NULL, kind INT NOT NULL, slot INT NOT NULL, champion_id INT NOT NULL,
   PRIMARY KEY (game_id, side, kind, slot)) WITHOUT ROWID;
@@ -157,8 +166,18 @@ CREATE VIEW v_game_team_stats AS
          s.first_blood, s.first_tower, s.first_dragon, s.first_herald, s.first_baron, s.first_inhibitor,
          s.plates, s.gold_10, s.gold_15, s.gold_20, s.gold_diff_10, s.gold_diff_15, s.gold_diff_20,
          s.kills_10, s.kills_15, s.kills_20, s.towers_15,
+         s.elder_dragons, s.dragon_soul, s.soul,
          gr.stats_page
   FROM game_team_stats s JOIN games g ON g.id = s.game_id JOIN game_riot gr ON gr.game_id = s.game_id
+  JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
+  LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id;
+-- One row per dragon kill: seq is its order in the game, team_seq its order among the team's own dragons.
+CREATE VIEW v_game_dragons AS
+  SELECT d.game_id, t.event_page, l.name AS league, l.short_name AS league_short, t.year, t.stage, g.played_at, g.patch,
+         CASE d.side WHEN 1 THEN b.name WHEN 2 THEN r.name END AS team,
+         CASE d.side WHEN 1 THEN r.name WHEN 2 THEN b.name END AS opponent,
+         d.side, (g.winner_side = d.side) AS win, d.seq, d.team_seq, d.kind AS dragon, d.time_s
+  FROM game_dragons d JOIN games g ON g.id = d.game_id
   JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
   LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id;
 CREATE VIEW v_ingame_coverage AS

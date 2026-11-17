@@ -40,6 +40,8 @@ export const TEAM_METRICS = [
   "gold_diff",
   "kills_before_10",
   "plates",
+  "dragon_soul",
+  "elder_dragons",
 ] as const;
 
 export type TeamMetric = (typeof TEAM_METRICS)[number];
@@ -90,6 +92,9 @@ export const TEAM_METRIC_DEFS: Record<TeamMetric, MetricDef> = {
   gold_diff: { label: "écart d'or d'équipe", aggregate: "avg", ...at("gold_diff") },
   kills_before_10: { label: "kills avant 10 min", aggregate: "avg", column: "kills_10" },
   plates: { label: "plaques de tourelle prises", aggregate: "avg", column: "plates" },
+  // Over the games where a soul could be taken and the timeline says who took it (dragon_soul is NULL otherwise).
+  dragon_soul: { label: "âme du dragon", aggregate: "rate", column: "dragon_soul" },
+  elder_dragons: { label: "dragons ancestraux", aggregate: "sum", column: "elder_dragons" },
 };
 
 export function metricColumn(def: MetricDef, minute: Minute | null): string {
@@ -99,6 +104,9 @@ export function metricColumn(def: MetricDef, minute: Minute | null): string {
 export function metricLabel(def: MetricDef, minute: Minute | null): string {
   return def.snapshot ? `${def.label} à ${minute ?? 15} min` : def.label;
 }
+
+/** Dragon elements as questions name them ("infernal", "des océans", "mountain"). */
+const ELEMENTS = "infernale?s?|infernaux|(?:des |de l'|d')?oc[ée]ans?|(?:des |de la )?montagnes?|mountains?|(?:des |du )?nuages?|clouds?|hextech|chemtech|techno-?chimiques?";
 
 const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "iu");
 
@@ -138,6 +146,15 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
   { pattern: word("first ?bloods?|premiers? sangs?"), player: "first_bloods", team: "first_blood" },
   { pattern: word("first ?towers?|premi[eè]res? tou?r(?:elle)?s?"), player: null, team: "first_tower" },
   { pattern: word("first ?dragons?|first ?drakes?|premiers? dragons?"), player: null, team: "first_dragon" },
+  { pattern: word("(?:dragons?|drakes?) ancestra(?:l|ux)|elder ?(?:dragons?|drakes?)|elders?|ancestra(?:l|ux)"), player: null, team: "elder_dragons" },
+  {
+    pattern: word(
+      `[âa]mes? (?:du |de |des |d')(?:dragons?|drakes?)|[âa]mes? (?:${ELEMENTS})|âmes?|(?:${ELEMENTS}) souls?|(?:dragon|drake) ?souls?|souls?|` +
+        `types? de (?:dragons?|drakes?)|[ée]l[ée]ments? (?:de|des|du) (?:dragons?|drakes?)|(?:dragons?|drakes?) (?:[ée]l[ée]mentaires?|${ELEMENTS})|(?:${ELEMENTS}) (?:dragons?|drakes?)`,
+    ),
+    player: null,
+    team: "dragon_soul",
+  },
   { pattern: word("first ?heralds?|premiers? h[ée]rauts?"), player: null, team: "first_herald" },
   { pattern: word("first ?barons?|first ?nashors?|premiers? barons?|premiers? nashors?"), player: null, team: "first_baron" },
   {
@@ -160,6 +177,12 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
   { pattern: word(`cs (?:à|a|at|@) ?(?:10|15|20)|cs ${AT_MINUTE}`), player: "cs", team: null },
   { pattern: word(`(?:xp|exp[ée]rience) (?:à|a|at|@) ?(?:10|15|20)|(?:xp|exp[ée]rience) ${AT_MINUTE}`), player: "xp", team: null },
 ];
+
+/** A question about the dragons by element or the souls, whatever the figure: the dragon_stats tool breaks them down. */
+export const isDragonCue = (cue: Pick<MetricCue, "team">): boolean => cue.team === "dragon_soul" || cue.team === "elder_dragons";
+
+/** An element named in the question ("âme infernale", "dragons des océans"): a ranking on it is not the soul rate. */
+export const DRAGON_ELEMENT = word(ELEMENTS);
 
 /**
  * `askedMinute`: the minute the question names, null when it names none. `minute`: the same when the data has

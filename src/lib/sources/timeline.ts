@@ -20,6 +20,7 @@
  *   not overlap.
  */
 import { z } from "zod";
+import { DRAGON_LABELS, dragonKind } from "../domain/dragons";
 import type { Json } from "../json";
 import type { RawGame } from "./riot";
 
@@ -110,14 +111,12 @@ const other = (t: RiotTeam): RiotTeam => (t === 100 ? 200 : 100);
 
 // --- Labels --------------------------------------------------------------------------
 
-const DRAGONS = new Map([
-  ["FIRE_DRAGON", "infernal"],
-  ["WATER_DRAGON", "océan"],
-  ["EARTH_DRAGON", "montagne"],
-  ["AIR_DRAGON", "nuage"],
-  ["HEXTECH_DRAGON", "hextech"],
-  ["CHEMTECH_DRAGON", "chemtech"],
-]);
+/** French element of a dragon, null before the elements. */
+function dragonElement(subType: string | undefined): string | null {
+  const kind = dragonKind(subType);
+
+  return kind ? DRAGON_LABELS[kind] : null;
+}
 
 const LANES = new Map([
   ["TOP_LANE", "top"],
@@ -244,7 +243,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
 
         if (e.monsterType === "DRAGON") {
           if (e.monsterSubType === "ELDER_DRAGON") push(e, "elder", team);
-          else push(e, "dragon", team, label(DRAGONS, e.monsterSubType));
+          else push(e, "dragon", team, dragonElement(e.monsterSubType));
         } else if (e.monsterType === "BARON_NASHOR") push(e, "baron", team);
         else if (e.monsterType === "RIFTHERALD") push(e, "herald", team);
         else if (e.monsterType === "ATAKHAN") push(e, "atakhan", team);

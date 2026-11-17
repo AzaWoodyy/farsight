@@ -84,10 +84,15 @@ export type DbFacts = {
   ddragonVersion: string | null;
   deriveVersion: number | null;
   staleDerive: number;
+  /** Summaries of an older, still compatible version: kept by the build without the newer columns. */
+  olderDerive: number;
 };
 
-/** A release must contain summaries derived by one definition of the stats. */
-export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "staleDerive">, expected: number): string[] {
+/**
+ * A release must contain summaries derived by one definition of the stats. `allowOlder`: the offline check of a
+ * rebuild (CI, from a pinned snapshot that cannot be recomputed) accepts compatible summaries of an older version.
+ */
+export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "staleDerive" | "olderDerive">, expected: number, opts: { allowOlder: boolean } = { allowOlder: false }): string[] {
   const problems: string[] = [];
 
   if (facts.deriveVersion !== expected)
@@ -95,6 +100,9 @@ export function derivationProblems(facts: Pick<DbFacts, "deriveVersion" | "stale
 
   if (facts.staleDerive > 0)
     problems.push(`${facts.staleDerive} summaries use an older DERIVE_VERSION: rerun data:fetch to recompute them from the raw cache`);
+
+  if (facts.olderDerive > 0 && !opts.allowOlder)
+    problems.push(`${facts.olderDerive} summaries lack what DERIVE_VERSION ${expected} added: rerun data:fetch to recompute them from the raw cache`);
 
   return problems;
 }
@@ -132,7 +140,7 @@ export function readFacts(path: string): DbFacts {
     const metadata = details ? z.object({
       ddragon_version: z.string().optional(),
       derive_version: z.number().optional(),
-      ingame: z.object({ stale_derive: z.number().optional() }).optional(),
+      ingame: z.object({ stale_derive: z.number().optional(), older_derive: z.number().optional() }).optional(),
     }).safeParse(JSON.parse(details)) : null;
 
     return {
@@ -149,6 +157,7 @@ export function readFacts(path: string): DbFacts {
       ddragonVersion: metadata?.success ? (metadata.data.ddragon_version ?? null) : null,
       deriveVersion: metadata?.success ? (metadata.data.derive_version ?? null) : null,
       staleDerive: metadata?.success ? (metadata.data.ingame?.stale_derive ?? 0) : 0,
+      olderDerive: metadata?.success ? (metadata.data.ingame?.older_derive ?? 0) : 0,
     };
   } finally {
     db.close();

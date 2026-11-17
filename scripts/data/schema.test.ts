@@ -8,8 +8,8 @@ describe("database schema contract", () => {
   test("DDL changes require reviewing the schema version and its fingerprint together", () => {
     const fingerprint = createHash("sha256").update(TABLE_DDL + QUERY_DDL.replace(/^CREATE INDEX .+;\n/gm, "")).digest("hex");
     expect({ version: SCHEMA_VERSION, fingerprint }).toEqual({
-      version: 7,
-      fingerprint: "259a597329979a9d8348f1c0ef3f6e2aaa3d9eec2f19bedf306593d3d723410e",
+      version: 8,
+      fingerprint: "37d82ca30b7ac84490e0386ad6cc9dc50479479326da11353b743701f37f5cee",
     });
   });
 
@@ -35,9 +35,17 @@ describe("database schema contract", () => {
 
 describe("release derivation consistency", () => {
   test("refuses stale summaries and a build made by an older definition", () => {
-    expect(derivationProblems({ deriveVersion: 2, staleDerive: 0 }, 2)).toEqual([]);
-    expect(derivationProblems({ deriveVersion: 2, staleDerive: 3 }, 2)).toHaveLength(1);
-    expect(derivationProblems({ deriveVersion: 1, staleDerive: 0 }, 2)).toHaveLength(1);
-    expect(derivationProblems({ deriveVersion: null, staleDerive: 0 }, 2)).toHaveLength(1);
+    expect(derivationProblems({ deriveVersion: 2, staleDerive: 0, olderDerive: 0 }, 2)).toEqual([]);
+    expect(derivationProblems({ deriveVersion: 2, staleDerive: 3, olderDerive: 0 }, 2)).toHaveLength(1);
+    expect(derivationProblems({ deriveVersion: 1, staleDerive: 0, olderDerive: 0 }, 2)).toHaveLength(1);
+    expect(derivationProblems({ deriveVersion: null, staleDerive: 0, olderDerive: 0 }, 2)).toHaveLength(1);
+  });
+
+  test("summaries of an older compatible definition pass the offline check only", () => {
+    const facts = { deriveVersion: 3, staleDerive: 0, olderDerive: 12 };
+
+    expect(derivationProblems(facts, 3)).toHaveLength(1);
+    expect(derivationProblems(facts, 3, { allowOlder: true })).toEqual([]);
+    expect(derivationProblems({ ...facts, staleDerive: 1 }, 3, { allowOlder: true })).toHaveLength(1);
   });
 });

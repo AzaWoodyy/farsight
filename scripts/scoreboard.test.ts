@@ -55,7 +55,8 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
 
     expect(sb.label).toBe("Worlds 2024 · finale · game 5");
     expect([sb.winner, sb.durationS, sb.patch]).toEqual(["red", 1934, "14.18"]);
-    expect(sb.red).toEqual({ name: "T1", kills: 0, gold: 12891, towers: 7, inhibitors: 1, dragons: 3, barons: 1, heralds: 1, grubs: 5 });
+    // No Riot timeline: the dragon count of the scoreboard, without elements or soul.
+    expect(sb.red).toEqual({ name: "T1", kills: 0, gold: 12891, towers: 7, inhibitors: 1, dragons: 3, barons: 1, heralds: 1, grubs: 5, dragonKinds: [], soul: null });
     expect([sb.blue.kills, sb.blue.gold]).toEqual([0, 11637]);
 
     const [bin, zeus] = sb.players;
@@ -75,6 +76,27 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
       { name: "Health", kind: "shard", iconUrl: null },
     ]);
     expect(bin.runes).toEqual([]);
+  } finally {
+    db.close();
+  }
+});
+
+test("with a Riot timeline, the recap names each team's dragons in order and the soul", async () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+    db.exec(`
+      INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0);
+      INSERT INTO game_team_stats(game_id,side,elder_dragons,dragon_soul,soul) VALUES (1,1,0,0,NULL),(1,2,1,1,'ocean');
+      -- game_id, seq, team_seq, side, kind, time_s
+      INSERT INTO game_dragons VALUES (1,1,1,2,'cloud',400),(1,2,1,1,'infernal',800),(1,3,2,2,'ocean',1100),(1,4,3,2,'ocean',1400),(1,5,4,2,'ocean',1700),(1,6,5,2,'elder',1900);
+    `);
+    const tool = bindTool(db, { tool: "game_timeline", input: { teamA: "T1", teamB: "Bilibili Gaming", league: "World Championship", year: 2024, phase: "final", game: 5 } });
+    const sb = (await tool.format(db, db.prepare(tool.sql).all(tool.params))).scoreboard!;
+
+    expect([sb.red.dragonKinds, sb.red.soul]).toEqual([["nuage", "océan", "océan", "océan", "ancestral"], "océan"]);
+    expect([sb.blue.dragonKinds, sb.blue.soul]).toEqual([["infernal"], null]);
   } finally {
     db.close();
   }
