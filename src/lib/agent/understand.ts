@@ -480,6 +480,39 @@ export function resolveChampion(db: DatabaseSync, mention: string): ResolvedCham
   return name ? { mention, champion: name } : null;
 }
 
+/** At most one edit apart (insertion, deletion, substitution or two swapped neighbours): "oriana" and "Orianna". */
+function oneEditApart(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return a === b;
+
+  if (a.length === b.length) {
+    const diff = [...a].flatMap((c, i) => (c === b[i] ? [] : [i]));
+
+    return diff.length === 1 || (diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]]);
+  }
+
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  let i = 0;
+
+  while (i < short.length && short[i] === long[i]) i++;
+
+  return short.slice(i) === long.slice(i + 1);
+}
+
+/** A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close. */
+function resolveChampionTypo(db: DatabaseSync, mention: string): ResolvedChampion | null {
+  const norm = normalizeAlias(mention);
+
+  if (norm.length < CHAMPION_TYPO_MIN || COMMON_WORDS.has(norm) || STOPWORDS.has(norm)) return null;
+  const names = new Set<string>();
+
+  for (const [alias, name] of getIndexes(db).champions) if (alias.length >= CHAMPION_TYPO_MIN && oneEditApart(norm, alias)) names.add(name);
+
+  return names.size === 1 ? { mention, champion: [...names][0] } : null;
+}
+
+/** Shorter words are too often another word one letter away ("Zoe", "Sion"). */
+const CHAMPION_TYPO_MIN = 5;
+
 // Mentions ----------------------------------------------------------------------
 
 /** A handle that is an everyday word, or three Latin characters or fewer. */
@@ -564,6 +597,19 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         span.forEach((k) => used.add(k));
       }
     }
+  }
+
+  // A word left over that is one letter away from a champion ("oriana"): not a player, a team or an everyday word.
+  for (let i = 0; i < tokens.length && !(found.champion && found.opponentChampion); i++) {
+    if (used.has(i) || /\d/.test(tokens[i])) continue;
+    const champion = resolveChampionTypo(db, tokens[i]);
+
+    if (!champion || champion.champion === found.champion?.champion) continue;
+
+    if (found.champion) found.opponentChampion = champion;
+    else found.champion = champion;
+    at.set(tokens[i], i);
+    used.add(i);
   }
 
   // A handle that is also an everyday word ("Paris", "Life") or very short

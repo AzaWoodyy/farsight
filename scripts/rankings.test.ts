@@ -429,4 +429,16 @@ describe("rankings on a seeded season", () => {
       expect(await read("Orianna vs Azir en mid")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { champion: "Azir" } });
       expect(await read("stats d'Azir")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
     }));
+
+  test("a champion misspelled by one letter is still read, in the order written", () =>
+    seeded(async (db) => {
+      const read = async (question: string) => (await understandQuestion(db, question, new Date("2026-11-15")))?.result;
+
+      expect(await read("Match up oriana azir aux worlds")).toMatchObject({ champion: { mention: "oriana", champion: "Orianna" }, opponentChampion: { champion: "Azir" } });
+      expect(await read("Azir vs Orianan")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: { champion: "Orianna" } });
+      expect(await read("oriana en mid")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: null });
+      // An everyday word one letter away from a champion is not one, nor a short word.
+      expect(await read("given the stats of Azir")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+    }));
 });
