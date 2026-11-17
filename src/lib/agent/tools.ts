@@ -3499,23 +3499,23 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
     // Games where a soul could be taken and the timeline says who took it: one row per team, so one game counts once for every team.
     const known = selectOne(
       db,
-      z.object({ games: z.number(), souls: z.number().nullable(), years: z.string() }),
-      `SELECT COUNT(DISTINCT s.game_id) AS games, SUM(s.dragon_soul) AS souls, json_group_array(DISTINCT s.year) AS years
+      z.object({ games: z.number(), souls: z.number().nullable() }),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, SUM(s.dragon_soul) AS souls
        FROM v_game_team_stats s WHERE s.dragon_soul IS NOT NULL AND ${scope} ${own}`,
       params,
     );
 
     const games = selectOne(
       db,
-      z.object({ games: z.number(), pages: z.string() }),
-      `SELECT COUNT(DISTINCT s.game_id) AS games, json_group_array(DISTINCT s.event_page) AS pages FROM v_game_dragons s WHERE ${scope} ${own}`,
+      z.object({ games: z.number(), pages: z.string(), years: z.string() }),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, json_group_array(DISTINCT s.event_page) AS pages, json_group_array(DISTINCT s.year) AS years FROM v_game_dragons s WHERE ${scope} ${own}`,
       params,
     );
 
     const covParams: Params = {};
     const covTeam = team ? `AND (s.blue_team IN (${inList("t", team.members, covParams)}) OR s.red_team IN (${inList("t", team.members, covParams)}))` : "";
     const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${competitionScope("s", leagueAndPeriod(input), covParams)} ${covTeam}`, covParams);
-    const years = z.array(z.number().nullable()).parse(JSON.parse(known?.years ?? "[]")).flatMap((y) => (y == null ? [] : [y]));
+    const years = z.array(z.number().nullable()).parse(JSON.parse(games?.years ?? "[]")).flatMap((y) => (y == null ? [] : [y]));
     const pages = z.array(z.string()).parse(JSON.parse(games?.pages ?? "[]"));
     const total = rows.reduce((n, r) => n + r.dragons, 0);
     const elder = rows.find((r) => r.kind === "elder")?.dragons ?? 0;

@@ -6107,6 +6107,143 @@
           "LCK 2024 Regional Finals"
         ]
       }
+    },
+    {
+      "id": "dragons-souls-worlds-2026",
+      "question": "quelles âmes ont été prises aux Worlds 2026",
+      "tags": [
+        "ingame",
+        "dragons"
+      ],
+      "expect": {
+        "route": "dragon_stats",
+        "teams": [],
+        "league": "World Championship",
+        "input": {
+          "team": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 7,
+        "totals": {
+          "dragons": 484,
+          "elder_dragons": 20,
+          "top_dragon": "infernal",
+          "top_dragon_count": 108,
+          "soul_games": 98,
+          "souls": 51,
+          "soul_wins": 44,
+          "top_soul": "montagne",
+          "top_soul_count": 12
+        },
+        "sources": 2,
+        "summaryIncludes": [
+          "51 parties sur 98",
+          "44 sur 51"
+        ]
+      }
+    },
+    {
+      "id": "dragons-types-t1-worlds",
+      "question": "types de dragons pris par T1 aux Worlds",
+      "tags": [
+        "ingame",
+        "dragons",
+        "team"
+      ],
+      "expect": {
+        "route": "dragon_stats",
+        "teams": [
+          "T1"
+        ],
+        "league": "World Championship",
+        "input": {
+          "team": "T1"
+        },
+        "rows": 8,
+        "totals": {
+          "dragons": 454,
+          "elder_dragons": 24,
+          "top_dragon": "nuage",
+          "top_dragon_count": 101,
+          "soul_games": 101,
+          "souls": 35,
+          "soul_wins": 33,
+          "top_soul": "nuage",
+          "top_soul_count": 10
+        },
+        "summaryIncludes": [
+          "35 de ses 101 parties"
+        ]
+      }
+    },
+    {
+      "id": "dragons-soul-rate-lec-2025",
+      "question": "quelle équipe prend le plus souvent l'âme du dragon en LEC 2025",
+      "tags": [
+        "ingame",
+        "dragons",
+        "leaderboard"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "players": [],
+        "league": "LoL EMEA Championship",
+        "input": {
+          "subject": "team",
+          "metric": "dragon_soul"
+        },
+        "rows": 11,
+        "totals": {
+          "leader": "Karmine Corp",
+          "leader_value": 34.8,
+          "leader_count": 31,
+          "ingame_games": 308
+        }
+      }
+    },
+    {
+      "id": "dragons-elder-lck-2025",
+      "question": "équipes avec le plus de dragons ancestraux en LCK 2025",
+      "tags": [
+        "ingame",
+        "dragons",
+        "leaderboard"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "players": [],
+        "league": "LoL Champions Korea",
+        "input": {
+          "subject": "team",
+          "metric": "elder_dragons"
+        },
+        "rows": 9,
+        "totals": {
+          "leader": "KT Rolster",
+          "leader_value": 8
+        }
+      }
+    },
+    {
+      "id": "dragons-lpl-missing",
+      "question": "âmes du dragon en LPL 2025",
+      "tags": [
+        "ingame",
+        "dragons",
+        "missing",
+        "lpl"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "league": "Tencent LoL Pro League",
+        "noFigure": true,
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "pour la LPL",
+          "âmes du dragon"
+        ]
+      }
     }
   ]
 }
