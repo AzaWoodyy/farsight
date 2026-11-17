@@ -108,7 +108,8 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
         </button>
       </div>
       {asTable ? (
-        fallback
+        // The plain table starts where the champion list does: switching views changes the content, not its place.
+        <div className="[&>div]:mt-0">{fallback}</div>
       ) : (
         <div className="border border-line">
           <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted sm:flex">
@@ -649,7 +650,8 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
       </div>
 
       {asTable ? (
-        fallback
+        // Same gap as the champion list: switching views changes the content, not its place.
+        <div className="[&>div]:mt-2">{fallback}</div>
       ) : (
         <div className="mt-2 border border-line">
           <div className="flex items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted">
