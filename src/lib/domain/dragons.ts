@@ -1,3 +1,5 @@
+import { say } from "../agent/messages";
+
 /**
  * Dragon elements: the key stored in SQL (`game_dragons.kind`, `game_team_stats.soul`)
  * and read by the tools, the Riot names it comes from, and its French label.
@@ -47,8 +49,19 @@ export const DRAGON_LABELS: Record<DragonKind, string> = {
 
 export const isDragonKind = (value: string | null | undefined): value is DragonKind => DRAGON_KINDS.some((k) => k === value);
 
-/** French label of a stored kind; "sans élément" for the dragons before the elements. */
-export const dragonLabel = (kind: string | null | undefined): string => (isDragonKind(kind) ? DRAGON_LABELS[kind] : "sans élément");
+const DRAGON_LABELS_EN: Record<DragonKind, string> = {
+  infernal: "infernal",
+  ocean: "ocean",
+  mountain: "mountain",
+  cloud: "cloud",
+  hextech: "hextech",
+  chemtech: "chemtech",
+  elder: "elder",
+};
+
+/** Label of a stored kind in the language of the request; "sans élément" / "no element" for the dragons before the elements. */
+export const dragonLabel = (kind: string | null | undefined): string =>
+  say(isDragonKind(kind) ? DRAGON_LABELS[kind] : "sans élément", isDragonKind(kind) ? DRAGON_LABELS_EN[kind] : "no element");
 
 /** Leaguepedia's icon file of each dragon (Riot's art, fair use: file names only, see wiki-images.ts). */
 export const DRAGON_ICON_FILES: Record<DragonKind, string> = {

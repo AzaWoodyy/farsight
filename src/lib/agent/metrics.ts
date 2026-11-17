@@ -167,10 +167,10 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
     player: "kills_before_10",
     team: "kills_before_10",
   },
-  { pattern: word("cs ?diff|[ée]carts? de cs|diff[ée]rences? de cs|cs d'avance|avance (?:en|de) cs"), player: "cs_diff", team: null },
-  { pattern: word("xp ?diff|[ée]carts? d'(?:xp|exp[ée]rience)|diff[ée]rences? d'(?:xp|exp[ée]rience)"), player: "xp_diff", team: null },
+  { pattern: word("cs ?diff(?:erence)?s?|[ée]carts? de cs|diff[ée]rences? de cs|cs d'avance|avance (?:en|de) cs"), player: "cs_diff", team: null },
+  { pattern: word("xp ?diff(?:erence)?s?|[ée]carts? d'(?:xp|exp[ée]rience)|diff[ée]rences? d'(?:xp|exp[ée]rience)"), player: "xp_diff", team: null },
   {
-    pattern: word("gold ?diff|gold ?leads?|golds? d'avance|[ée]carts? (?:d'or|de golds?)|diff[ée]rences? (?:d'or|de golds?)|avance (?:en|d') ?or|avance en golds?"),
+    pattern: word("gold ?diff(?:erence)?s?|gold ?leads?|golds? d'avance|[ée]carts? (?:d'or|de golds?)|diff[ée]rences? (?:d'or|de golds?)|avance (?:en|d') ?or|avance en golds?"),
     player: "gold_diff",
     team: "gold_diff",
   },
