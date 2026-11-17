@@ -117,7 +117,7 @@ describe("a champion's most built items", () => {
 
     try {
       seed(db);
-      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
       const items = out.champion!.items;
 
       expect(items.games).toBe(3);
@@ -146,7 +146,7 @@ describe("a champion's most built items", () => {
     try {
       seed(db);
       db.exec("DELETE FROM game_player_items");
-      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
 
       expect(out.champion!.items).toMatchObject({ games: 0, items: [] });
       expect(out.champion!.items.notes[0]).toBe("Leaguepedia ne liste aucun inventaire de fin de partie pour ces parties.");
@@ -191,7 +191,7 @@ describe("a champion's summoner spells and runes", () => {
     try {
       seed(db);
       loadouts(db);
-      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
       const s = out.champion!.setups;
 
       expect([s.spellGames, s.keystoneGames, s.pageGames]).toEqual([4, 3, 2]);
@@ -225,7 +225,7 @@ describe("a champion's summoner spells and runes", () => {
 
     try {
       seed(db);
-      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 } });
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
 
       expect(out.champion!.setups).toEqual({
         spellGames: 0, spells: [], keystoneGames: 0, pageGames: 0, runes: [],

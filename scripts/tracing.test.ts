@@ -53,6 +53,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
     pool: null,
     series: null,
     icons: {},
+    iconTones: {},
     profiles: [],
     sources: [],
     followUps: [],

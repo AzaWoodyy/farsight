@@ -5,7 +5,7 @@ import type { Answer, VersusGame, VersusSide, VersusView } from "@/lib/agent/typ
 import { type Comparison, detectComparison } from "@/lib/comparison";
 import { dateFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
-import { ComparisonNote, FaceOff } from "./player-comparison";
+import { ComparisonNote, FaceOff, OneSided } from "./player-comparison";
 
 /** Games listed before "show all". */
 const FIRST_GAMES = 10;
@@ -19,12 +19,13 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
   const locale = useLocale();
   const ui = useUi();
   const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus, locale) : null), [v.h2h, profiles, v.focus, locale]);
-  const global = useMemo(() => detectComparison(v.global, profiles, v.focus, locale), [v.global, profiles, v.focus, locale]);
+  const scope = useMemo(() => bothPlayers(v), [v]);
+  const global = useMemo(() => detectComparison(scope.table, profiles, v.focus, locale), [scope.table, profiles, v.focus, locale]);
   const [tab, setTab] = useState<"h2h" | "global">("h2h");
   const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
 
-  // One of them has no game in the scope: nothing to set face to face, the plain table says so.
+  // A table the face-off cannot read (no player column): the plain table.
   if (!shown) return <>{fallback}</>;
 
   const tabs = [
@@ -52,15 +53,36 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
         </div>
       ) : (
         <p className="mb-2 text-xs text-muted">
-          <span translate="no">{v.playerA}</span> {ui.versus.and} <span translate="no">{v.playerB}</span> {ui.versus.neverMet(v.scope)}
+          <span translate="no">{v.playerA}</span> {ui.versus.and} <span translate="no">{v.playerB}</span> {scope.absent ? ui.versus.neverMetAbsent(v.scope) : ui.versus.neverMet(v.scope)}
         </p>
       )}
       {met > 0 && <Lanes v={v} met={met} />}
-      <FaceOff c={shown} focus={v.focus} />
+      {scope.absent ? <OneSided c={shown} absent={scope.absent === v.playerA ? 0 : 1} scope={v.scope} focus={v.focus} /> : <FaceOff c={shown} focus={v.focus} />}
       <ComparisonNote c={shown} />
       {v.games.length > 0 && <Games v={v} />}
     </div>
   );
+}
+
+/**
+ * The scope's statistics with a line for each of the two players. One of them without any game there has no
+ * line in the answer: it gets an empty one (0 games, every figure n/d), so the two still stand face to face
+ * and the absence reads as such, instead of a one-line table about the other player alone.
+ */
+function bothPlayers(v: VersusView) {
+  const at = v.global.columns.indexOf("player");
+  const only = v.global.rows.length === 1 ? v.global.rows[0] : null;
+
+  if (at < 0 || !only) return { table: v.global, absent: null };
+
+  const present = String(only[at]).toLowerCase();
+  const absent = [v.playerA, v.playerB].find((p) => p.toLowerCase() !== present) ?? null;
+
+  if (!absent) return { table: v.global, absent: null };
+
+  const empty = v.global.columns.map((c, i) => (i === at ? absent : c === "games" ? 0 : null));
+
+  return { table: { ...v.global, rows: absent === v.playerA ? [empty, only] : [only, empty] }, absent };
 }
 
 /** The statistic the question names, moved to the top of the face-off. */

@@ -137,6 +137,9 @@ export type Source = { label: string; url: string };
 /** One cell of a generic table (other typed tools, text-to-SQL). */
 export type TableCell = string | number | null;
 
+/** A generic table; `focus` names the column the question asks about (the ranking criterion, the metric asked), which the views bring out. */
+export type AnswerTable = { columns: string[]; rows: TableCell[][]; focus?: string };
+
 /** Machine-readable outline of how the answer was produced (eval, debugging). */
 export type AnswerMeta = {
   /** missing_data: the question needs data the database does not hold; no figure is given. */
@@ -483,6 +486,8 @@ export type ChampionProfile = {
   players: ChampionPlayer[];
   /** Roles it was played in, most games first. */
   roles: { role: string; games: number }[];
+  /** The part the question is about (items, runes, summoner spells), shown first and large; null for the whole profile. */
+  focus: "items" | "runes" | "spells" | null;
   items: ChampionItems;
   setups: ChampionSetups;
 };
@@ -529,7 +534,7 @@ export type Answer = {
   /** Player history table (typed tool). */
   rows: ResultRow[];
   /** Generic table (other typed tools and text-to-SQL fallback). */
-  table: { columns: string[]; rows: TableCell[][] } | null;
+  table: AnswerTable | null;
   /** One game's gold curve and key events (game timeline tool). */
   timeline: TimelineView | null;
   /** End-of-game scoreboard of the game a question is about (game timeline tool). */
@@ -548,6 +553,8 @@ export type Answer = {
   series: SeriesList | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */
   icons: Record<string, string>;
+  /** Names of `icons` whose image is nearly black ("dark") or nearly white ("light") all over: the view sets it on a contrasting plate when the page has the same tone. */
+  iconTones: Record<string, "dark" | "light">;
   /** Database profile of each player the question names, for comparison layouts. */
   profiles: PlayerProfile[];
   sources: Source[];

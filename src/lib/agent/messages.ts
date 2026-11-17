@@ -77,7 +77,7 @@ const fr = {
     failed: "Échec",
     selfCorrection: (reason: string) => `Auto-correction : ${reason}`,
     nothingToRun: "Rien à exécuter",
-    internalError: "Erreur interne de l'agent.",
+    internalError: "Erreur interne.",
     stepInterrupted: "Étape interrompue",
 
     summaryPrompt:
@@ -92,9 +92,9 @@ const fr = {
     outOfScopeSummary: (reason: string, scope: string) => `Question hors périmètre : ${reason}. La base couvre : ${scope}.`,
     noToolFor: (detail: string) => `Aucun outil typé ne couvre cette question (${detail})`,
     routing: "routage",
-    generatedGaveNothing: (why: string) => `${why} et la requête générée n'a rien donné.`,
-    fallbackExhausted: (why: string) => `${why}. Le text-to-SQL de secours est indisponible pour le moment (quota du modèle épuisé).`,
-    fallbackNoKey: (why: string) => `${why}. Le text-to-SQL de secours demande une clé OpenRouter, absente ici.`,
+    /** No answer, in the visitor's words: the technical reason (no typed tool, no model) stays in the trace. */
+    searchGaveNothing: "Je ne sais pas encore répondre à cette question : ma recherche n'a rien donné. Essaie de la reformuler, ou l'une des questions ci-dessous.",
+    cannotAnswerYet: "Je ne sais pas encore répondre à cette question. Essaie de la reformuler, ou l'une des questions ci-dessous.",
     noResultFor: (who: string, league: string | null) => `Aucun résultat${who ? ` pour ${who}` : ""}${league ? ` (${league})` : ""} dans la base.`,
     missingHead: (missing: string) => `Donnée absente de la base : ${missing}. `,
     missingForScope:
@@ -204,7 +204,7 @@ const fr = {
 
   llm: {
     /** Shown to the user when the answer was produced without the LLM because of the quota. */
-    quotaNote: "Le quota du modèle de langage est épuisé pour le moment : réponse en mode déterministe (règles et outils typés uniquement, sans text-to-SQL).",
+    quotaNote: "Le modèle de langage est indisponible pour le moment : les questions les plus libres peuvent rester sans réponse.",
     quotaError: "quota OpenRouter épuisé, bascule en mode déterministe",
   },
 
@@ -297,7 +297,7 @@ const en: Messages = {
     failed: "Failed",
     selfCorrection: (reason) => `Self-correction: ${reason}`,
     nothingToRun: "Nothing to run",
-    internalError: "Internal agent error.",
+    internalError: "Internal error.",
     stepInterrupted: "Step interrupted",
 
     summaryPrompt:
@@ -311,9 +311,8 @@ const en: Messages = {
     outOfScopeSummary: (reason, scope) => `Question out of scope: ${reason}. The database covers: ${scope}.`,
     noToolFor: (detail) => `No typed tool covers this question (${detail})`,
     routing: "routing",
-    generatedGaveNothing: (why) => `${why} and the generated query returned nothing.`,
-    fallbackExhausted: (why) => `${why}. The text-to-SQL fallback is unavailable for now (model quota used up).`,
-    fallbackNoKey: (why) => `${why}. The text-to-SQL fallback needs an OpenRouter key, missing here.`,
+    searchGaveNothing: "I cannot answer this question yet: my search returned nothing. Try rephrasing it, or one of the questions below.",
+    cannotAnswerYet: "I cannot answer this question yet. Try rephrasing it, or one of the questions below.",
     noResultFor: (who, league) => `No result${who ? ` for ${who}` : ""}${league ? ` (${league})` : ""} in the database.`,
     missingHead: (missing) => `Data missing from the database: ${missing}. `,
     missingForScope:
@@ -418,7 +417,7 @@ const en: Messages = {
   },
 
   llm: {
-    quotaNote: "The language model quota is used up for now: answer in deterministic mode (rules and typed tools only, without text-to-SQL).",
+    quotaNote: "The language model is unavailable for now: the most open-ended questions may stay unanswered.",
     quotaError: "OpenRouter quota used up, switching to deterministic mode",
   },
 

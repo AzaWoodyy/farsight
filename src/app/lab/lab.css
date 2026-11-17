@@ -1,0 +1,348 @@
+/* The lab's floating menu. Harness chrome: dark glass on any page, system font, none of the product's tokens,
+   so it is never mistaken for the design under review. */
+.lab-menu {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.55);
+  -webkit-font-smoothing: antialiased;
+}
+
+.lab-menu[hidden] {
+  display: none;
+}
+
+.lab-pill,
+.lab-panel {
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.lab-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 4px;
+  border-radius: 999px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lab-item {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lab-item:hover {
+    color: rgba(255, 255, 255, 0.85);
+  }
+}
+
+.lab-item:active {
+  transform: scale(0.97);
+}
+
+.lab-menu :focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.lab-item[data-active] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.lab-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lab-arrow {
+  padding: 0 10px;
+  font-size: 16px;
+}
+
+.lab-current {
+  flex-shrink: 1;
+  min-width: 0;
+  color: #fff;
+}
+
+.lab-group {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.lab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lab-position {
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f59e0b;
+}
+
+/* The panel grows out of the pill it belongs to. More opaque than the pill: it holds text to read. */
+.lab-panel {
+  background: rgba(10, 10, 10, 0.92);
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 24px));
+  max-height: min(70vh, 640px);
+  border-radius: 16px;
+  transform-origin: bottom center;
+  animation: lab-pop 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes lab-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-panel {
+    animation: none;
+  }
+
+  .lab-item {
+    transition: none;
+  }
+}
+
+.lab-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lab-search input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  /* 16 px: iOS zooms the page on a smaller field. */
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+}
+
+@media (pointer: fine) {
+  .lab-search input {
+    font-size: 13px;
+  }
+}
+
+.lab-search input:focus-visible {
+  outline: none;
+}
+
+.lab-search input::placeholder,
+.lab-notes textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.lab-count {
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px 20px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lab-list h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0 4px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lab-list code {
+  color: rgba(255, 255, 255, 0.3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.lab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.lab-chips .lab-item {
+  padding: 0 10px;
+}
+
+.lab-empty {
+  margin: 0;
+  padding: 8px 4px;
+}
+
+.lab-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+}
+
+.lab-keys kbd {
+  min-width: 18px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+
+.lab-keys kbd:not(:first-child):not(kbd + kbd) {
+  margin-left: 10px;
+}
+
+@media (pointer: coarse) {
+  .lab-keys {
+    display: none;
+  }
+}
+
+.lab-notes {
+  gap: 10px;
+  width: min(480px, calc(100vw - 24px));
+  padding: 16px;
+}
+
+.lab-notes label {
+  line-height: 1.4;
+}
+
+.lab-notes strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.lab-notes textarea {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+@media (pointer: fine) {
+  .lab-notes textarea {
+    font-size: 13px;
+  }
+}
+
+.lab-notes textarea:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 0;
+}
+
+.lab-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.lab-solid {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+}
+
+/* Phone width: the pill keeps the variation, the tool name goes (it is the heading of the list). */
+@media (max-width: 520px) {
+  .lab-menu {
+    bottom: 12px;
+  }
+
+  .lab-group {
+    display: none;
+  }
+
+  .lab-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -20,11 +20,10 @@ const fr = {
   footer: {
     data: "Données",
     icons: "icônes",
-    photos: "photos des joueurs © Riot Games et les ligues, via Leaguepedia",
+    photos: "photos des joueurs et logos des équipes © Riot Games, les ligues et les équipes, via Leaguepedia",
     madeBy: "Projet réalisé par",
     privacy:
-      "Les questions posées sont enregistrées sans adresse IP ni identifiant personnel, pour améliorer l'agent. Elles sont aussi envoyées à OpenRouter et au fournisseur du modèle de langage. Évite d’y inclure des informations personnelles.",
-    /** Riot's own notice is in English: another language summarizes it first, English has nothing to add. */
+      "Questions enregistrées sans adresse IP ni identifiant, et envoyées au modèle de langage : évite d'y mettre des informations personnelles.",
     riot: "Farsight n'est ni approuvé ni sponsorisé par Riot Games.",
     legal: "Mentions légales et confidentialité",
   },
@@ -48,11 +47,10 @@ const en: Shell = {
   footer: {
     data: "Data from",
     icons: "icons from",
-    photos: "player photos © Riot Games and the leagues, via Leaguepedia",
+    photos: "player photos and team logos © Riot Games, the leagues and the teams, via Leaguepedia",
     madeBy: "Built by",
-    privacy:
-      "Questions are logged without an IP address or a personal identifier, to improve the agent. They are also sent to OpenRouter and to the language model provider. Avoid including personal information.",
-    riot: "",
+    privacy: "Questions are logged without an IP address or an identifier, and sent to the language model: avoid personal information.",
+    riot: "Farsight isn't endorsed or sponsored by Riot Games.",
     legal: "Legal notice and privacy",
   },
   share: {

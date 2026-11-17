@@ -17,7 +17,8 @@ import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
-import { playerProfiles, type ToolCall } from "./tools";
+import { playerProfiles, type ToolCall, type ToolOutput } from "./tools";
+import { teamLogo } from "../domain/team-logos";
 import { understandQuestion } from "./understand";
 
 const MAX_ATTEMPTS = 3;
@@ -375,14 +376,9 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
   if (route.kind === "out_of_scope")
     return m.outOfScopeSummary(route.reason.replace(/\.$/, ""), SCOPE_LABEL);
 
-  if (!plan) {
-    const why = m.noToolFor(route.kind === "sql" ? route.reason : m.routing);
-    const status = llmStatus();
-
-    if (status === "ready") return m.generatedGaveNothing(why);
-
-    return status === "exhausted" ? m.fallbackExhausted(why) : m.fallbackNoKey(why);
-  }
+  // In the visitor's words: which part of the agent gave up (no typed tool, no model for the generated query)
+  // is in the trace, for who opens it.
+  if (!plan) return llmStatus() === "ready" ? m.searchGaveNothing : m.cannotAnswerYet;
 
   const who = [...entities.players.map((p) => p.player), ...entities.teams.map((t) => t.team), entities.champion?.champion]
     .filter(Boolean)
@@ -433,6 +429,7 @@ const EMPTY_VIEWS = {
   pool: null,
   series: null,
   icons: {},
+  iconTones: {},
   profiles: [],
   sources: [],
 } satisfies Partial<Answer>;
@@ -515,6 +512,7 @@ async function format(
       summary,
       table: why?.table ?? null,
       icons: why?.table ? championIcons(db, why.table.columns, why.table.rows.map((r) => Object.fromEntries(why.table!.columns.map((c, i) => [c, r[i]])))) : {},
+      iconTones: {},
       sources: why?.sources.length
         ? why.sources.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [],
@@ -538,6 +536,7 @@ async function format(
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
+      iconTones: {},
       // The named players: the comparison layouts show their team and role next to the generated table, and one
       // player alone heads the answer with their photo.
       profiles: entities.players.length ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
@@ -574,6 +573,7 @@ async function format(
 
   const call = plan.tool.call;
   const profiles = answerProfiles(db, call);
+  const logos = teamLogos(out, meta.teams);
 
   return {
     title: out.title,
@@ -588,12 +588,43 @@ async function format(
     champion: out.champion ?? null,
     pool: out.pool ?? null,
     series: out.series ?? null,
-    icons: out.icons ?? {},
+    icons: { ...logos.icons, ...out.icons },
+    iconTones: logos.tones,
     profiles,
     sources: out.sources,
     followUps,
     notes,
     meta,
+  };
+}
+
+/** Headers of the table columns that hold a team name. */
+const TEAM_COLUMN = /^(équipe|team|vainqueur|finaliste|adversaire|bleu|rouge)\b/i;
+
+/**
+ * The logo of every team the question or the answer names (the two sides of a confrontation and of its series, a roster's
+ * team, the team columns of a table), by the name shown: the views put it beside that name.
+ */
+function teamLogos(out: ToolOutput, asked: string[]) {
+  const columns = out.table?.columns.flatMap((c, i) => (TEAM_COLUMN.test(c) ? [i] : [])) ?? [];
+
+  const names = [
+    // The teams the question names: an answer about one team shows its logo even when no cell holds its name.
+    ...asked,
+    ...(out.teams ? [out.teams.teamA, out.teams.teamB, ...out.teams.series.flatMap((s) => [s.teamA, s.teamB])] : []),
+    ...(out.roster ? [out.roster.team, ...out.roster.names] : []),
+    ...(out.table?.rows.flatMap((r) => columns.flatMap((i) => z.string().safeParse(r[i]).data ?? [])) ?? []),
+  ];
+
+  const logos = [...new Set(names)].flatMap((name) => {
+    const logo = teamLogo(name);
+
+    return logo ? [{ name, ...logo }] : [];
+  });
+
+  return {
+    icons: Object.fromEntries(logos.map((l) => [l.name, l.url])),
+    tones: Object.fromEntries(logos.flatMap((l) => (l.tone ? [[l.name, l.tone]] : []))),
   };
 }
 

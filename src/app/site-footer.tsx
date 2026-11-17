@@ -15,7 +15,7 @@ export const CC_BY_SA_URL = "https://creativecommons.org/licenses/by-sa/3.0/";
 export const RIOT_BOILERPLATE =
   "Farsight isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.";
 
-/** The footer of every page: sources, the privacy summary and the Riot notice, with the full texts one click away. */
+/** The footer of every page: sources, then the privacy and Riot notices in one sentence each; the full texts (Riot's boilerplate included) are on the legal page, one click away. */
 export function SiteFooter({ locale }: { locale: Locale }) {
   const { footer } = SHELL[locale];
 
@@ -50,10 +50,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
         </a>
         .
       </p>
-      <p className="mt-2 max-w-[80ch]">{footer.privacy}</p>
       <p className="mt-2 max-w-[80ch]">
-        {footer.riot && `${footer.riot} `}
-        <span lang="en">{RIOT_BOILERPLATE}</span>
+        {footer.privacy} {footer.riot}
       </p>
       <p className="mt-2">
         <Link className={`tap ${TEXT_LINK}`} href={PATHS.legal[locale]}>

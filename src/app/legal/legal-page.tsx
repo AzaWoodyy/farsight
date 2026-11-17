@@ -8,7 +8,7 @@ export function LegalPage({ locale }: { locale: Locale }) {
   const { title, trail, updated, toc, sections } = LEGAL[locale];
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       <SiteHeader locale={locale} page="legal" trail={trail} />
       <main className="flex-1 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
         <div className="max-w-[75ch]">

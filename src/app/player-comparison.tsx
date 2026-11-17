@@ -117,6 +117,56 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
   );
 }
 
+/**
+ * Two players of whom one has no game in the scope: still one against the other in the heading, then the
+ * absent one's side says so once, and the other's side lists that player's figures. No bars and no verdict:
+ * there is nothing to measure them against.
+ */
+export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; absent: 0 | 1; scope: string; focus?: string | null }) {
+  const ui = useUi();
+  const locale = useLocale();
+  const present = absent === 0 ? 1 : 0;
+  const [a, b] = c.players;
+  const nothing = <div className="truncate text-[11px] text-muted">{ui.versus.noGames(scope)}</div>;
+
+  return (
+    <div className="border border-line">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3 border-b border-line px-3 py-2">
+        <div className="min-w-0 text-right">
+          <Who p={a} align="right" />
+          {absent === 0 && nothing}
+        </div>
+        <span className="pt-0.5 text-xs text-muted">vs</span>
+        <div className="min-w-0">
+          <Who p={b} align="left" />
+          {absent === 1 && nothing}
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2">
+        <p
+          className={`flex items-center justify-center border-dashed border-line px-3 py-3 text-center text-xs text-muted ${
+            absent === 0 ? "border-b sm:border-r sm:border-b-0" : "border-t sm:order-last sm:border-t-0 sm:border-l"
+          }`}
+        >
+          <span>
+            <span translate="no">{c.players[absent].name}</span> {ui.versus.nothingToCompare(scope)}
+          </span>
+        </p>
+        <dl className="px-3 py-2 text-xs">
+          {c.stats.map((s) => (
+            <div key={s.key} className={`flex items-baseline justify-between gap-3 border-b border-dashed border-line/60 py-1 last:border-0 ${s.key === focus ? "font-semibold" : ""}`}>
+              <dt className={s.key === focus ? "text-foreground" : "text-muted"}>
+                <Label s={s} />
+              </dt>
+              <dd className="tabular-nums">{formatStat(s, s.values[present], locale)}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
 function MirrorBar({ s, i }: { s: ComparedStat; i: 0 | 1 }) {
   const locale = useLocale();
   const winner = rowWinner(s) === i;

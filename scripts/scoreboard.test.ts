@@ -63,19 +63,22 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
 
     const [bin, zeus] = sb.players;
 
-    // Items in slot order; a keystone without icon keeps its name.
+    // Items in slot order; a keystone the database has no icon for (removed from the game) gets the icon of its time.
     expect(bin.items.map((i) => i.name)).toEqual(["Trinity Force", "Sundered Sky"]);
     expect([bin.side, bin.champion, bin.keystone, bin.damage]).toEqual(["blue", "Jax", null, 10771]);
-    expect([zeus.side, zeus.keystone, zeus.keystoneIcon, zeus.items]).toEqual(["red", "Phase Rush", null, []]);
+    expect([zeus.side, zeus.keystone, zeus.keystoneIcon, zeus.items]).toEqual(["red", "Phase Rush", "https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png", []]);
 
     // Spells with their stored icon; the page after the keystone, in page order, a shard taken twice listed twice.
     expect(zeus.spells).toEqual([{ name: "Flash", iconUrl: ICON }, { name: "Teleport", iconUrl: ICON }]);
     expect(bin.spells).toEqual([{ name: "Clairvoyance", iconUrl: null }]);
+    // A stat shard is not in Data Dragon's rune list: its icon comes from the fallback paths.
+    const SHARD = "https://ddragon.leagueoflegends.com/cdn/img/perk-images/StatMods/StatModsHealthPlusIcon.png";
+
     expect(zeus.runes).toEqual([
       { name: "Manaflow Band", kind: "primary", iconUrl: ICON },
       { name: "Biscuit Delivery", kind: "secondary", iconUrl: ICON },
-      { name: "Health", kind: "shard", iconUrl: null },
-      { name: "Health", kind: "shard", iconUrl: null },
+      { name: "Health", kind: "shard", iconUrl: SHARD },
+      { name: "Health", kind: "shard", iconUrl: SHARD },
     ]);
     expect(bin.runes).toEqual([]);
   } finally {

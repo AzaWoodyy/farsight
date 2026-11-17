@@ -114,8 +114,8 @@ const fr: Legal = {
             servir le site et limiter les abus, et compte les pages vues (Vercel Web Analytics).
           </p>
           <p>
-            Les icônes viennent des serveurs de Riot Games (Data Dragon) et les photos des joueurs de ceux de Fandom,
-            qui héberge Leaguepedia : ton navigateur les télécharge directement, et ces serveurs voient donc ton
+            Les icônes viennent des serveurs de Riot Games (Data Dragon) ; les photos des joueurs, les logos des
+            équipes et les icônes de dragons de ceux de Fandom, qui héberge Leaguepedia : ton navigateur les télécharge directement, et ces serveurs voient donc ton
             adresse IP et l&apos;adresse du site.
           </p>
           <p>
@@ -161,6 +161,11 @@ const fr: Legal = {
             partie de la base ni de sa licence : Farsight garde seulement le nom de chaque fichier et affiche la photo
             depuis <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, qui la publie au titre de l&apos;usage
             équitable (fair use). Le survol d&apos;une photo indique son année.
+          </p>
+          <p>
+            Il en va de même des logos des équipes, qui appartiennent à chaque équipe, et des icônes de dragons, qui
+            appartiennent à Riot Games : Farsight n&apos;en garde que le nom de fichier et les affiche depuis
+            Leaguepedia.
           </p>
         </>
       ),
@@ -225,8 +230,8 @@ const en: Legal = {
             page views (Vercel Web Analytics).
           </p>
           <p>
-            Icons come from Riot Games&apos; servers (Data Dragon) and player photos from those of Fandom, which hosts
-            Leaguepedia: your browser downloads them directly, so these servers see your IP address and the site&apos;s
+            Icons come from Riot Games&apos; servers (Data Dragon); player photos, team logos and dragon icons from
+            those of Fandom, which hosts Leaguepedia: your browser downloads them directly, so these servers see your IP address and the site&apos;s
             address.
           </p>
           <p>
@@ -268,6 +273,10 @@ const en: Legal = {
             its license: Farsight keeps only each file&apos;s name and shows the photo from{" "}
             <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, which publishes it as fair use. Hovering a photo
             shows its year.
+          </p>
+          <p>
+            The same goes for team logos, which belong to each team, and dragon icons, which belong to Riot Games:
+            Farsight keeps only their file names and shows them from Leaguepedia.
           </p>
         </>
       ),

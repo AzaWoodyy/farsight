@@ -13,6 +13,7 @@ import {
   bindTool,
   type ChampionAverageSort,
   type ChampionExtraSort,
+  type ChampionFocus,
   type ChampionSort,
   type ChampionTotalSort,
   COMPARISON_END_STATS,
@@ -515,7 +516,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
 
     return {
       kind: "tool",
-      call: { tool: "team_ingame_stats", input: { team, league, ...period, minute: cue.minute } },
+      call: { tool: "team_ingame_stats", input: { team, league, ...period, metric: cue.team, minute: cue.minute } },
       confidence: 0.85,
       reason: m.teamIngame(cue.mention),
       notes: [],
@@ -914,11 +915,28 @@ function recentRoute(question: string, e: Entities): Route {
   };
 }
 
+const CHAMPION_FOCUS_CUES: [ChampionFocus, RegExp][] = [
+  ["items", word("items?|objets?|builds?|stuffs?|achats?")],
+  ["runes", word("runes?|keystones?")],
+  ["spells", word("sorts?(?: d'invocateurs?)?|summoner spells?|summoners?|spells?")],
+];
+
+/** The part of the profile the question names (the first one it names), null for the whole profile. */
+function championFocus(question: string): ChampionFocus | null {
+  const named = CHAMPION_FOCUS_CUES.flatMap(([focus, re]) => {
+    const at = question.search(re);
+
+    return at < 0 ? [] : [{ focus, at }];
+  }).sort((a, b) => a.at - b.at);
+
+  return named[0]?.focus ?? null;
+}
+
 /** A champion alone: its stats in the competition (the Worlds when the question names none). */
-function championRoute(e: Entities): Route {
+function championRoute(e: Entities, question: string): Route {
   return {
     kind: "tool",
-    call: { tool: "champion_event_stats", input: { champion: e.champion!.champion, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    call: { tool: "champion_event_stats", input: { champion: e.champion!.champion, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, focus: championFocus(question) } },
     confidence: 0.9,
     reason: msg().route.championAlone,
     notes: e.league ? [] : [msg().route.noLeagueWorldsSearch],
@@ -995,7 +1013,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   // A champion alone: its profile answers its averages too ("KDA d'Azir", "dégâts de Jinx"), and the gold
   // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
-  if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e);
+  if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e, question);
 
   // Teams ranked on a criterion the question names ("équipes avec le meilleur winrate", "quelle équipe a les parties les plus courtes").
   // In-game metrics keep their leaderboard, and "meilleures équipes" alone keeps the standings.

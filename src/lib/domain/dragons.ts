@@ -62,3 +62,17 @@ const DRAGON_LABELS_EN: Record<DragonKind, string> = {
 /** Label of a stored kind in the language of the request; "sans élément" / "no element" for the dragons before the elements. */
 export const dragonLabel = (kind: string | null | undefined): string =>
   say(isDragonKind(kind) ? DRAGON_LABELS[kind] : "sans élément", isDragonKind(kind) ? DRAGON_LABELS_EN[kind] : "no element");
+
+/** Leaguepedia's icon file of each dragon (Riot's art, fair use: file names only, see wiki-images.ts). */
+export const DRAGON_ICON_FILES: Record<DragonKind, string> = {
+  infernal: "Drake Mini Icon - Infernal.png",
+  ocean: "Drake Mini Icon - Ocean.png",
+  mountain: "Drake Mini Icon - Mountain.png",
+  cloud: "Drake Mini Icon - Cloud.png",
+  hextech: "Drake Mini Icon - Hextech.png",
+  chemtech: "Drake Mini Icon - Chemtech.png",
+  elder: "Elder DragonSquare.png",
+};
+
+/** The dragon before the elements. */
+export const PLAIN_DRAGON_ICON_FILE = "DragonSquare.png";

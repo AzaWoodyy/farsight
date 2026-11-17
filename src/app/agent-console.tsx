@@ -223,9 +223,11 @@ function Console() {
         </div>
       )}
 
-      {/* At least a screen tall: the footer stays below the fold instead of sliding under the growing answer. */}
+      {/* At least a screen tall while the agent works: the footer stays below the fold instead of sliding under
+          the growing answer. Once the answer is in, the block is as tall as the answer: a short one is not
+          followed by an empty screen. */}
       {askedText && (
-        <div className="mt-8 min-h-svh">
+        <div data-running={running ? "" : undefined} className={`mt-8 ${running ? "min-h-svh" : ""}`}>
           {/* Mounted as long as the question is shown: a live region only announces changes to an element already
               there, so the end of the run (answer ready, or nothing) is heard too. Hidden, so it never moves the page. */}
           <p role="status" className="sr-only">
@@ -251,7 +253,8 @@ function Console() {
               steps stream in under it. Once the run is over and the answer is shown, the trace goes folded under
               the answer: the visitor reads the result first, the way it was found after. */}
           {running && <Progress steps={steps} />}
-          {steps.size > 0 && !traceBelow && <HowIFoundIt steps={steps} running={running} />}
+          {/* A run that failed shows its error alone: a half-run trace under it explains nothing to the visitor. */}
+          {steps.size > 0 && !traceBelow && !(error && !answer) && <HowIFoundIt steps={steps} running={running} />}
           {error && !answer && (
             <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
@@ -320,7 +323,7 @@ function progressLabel(steps: Map<StepName, StepPart>, ui: Ui): string {
 }
 
 /** The one line shown while the agent works. Screen readers hear it from the status region of the console. */
-function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
+export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   const ui = useUi();
 
   return (
@@ -335,7 +338,7 @@ function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
  * The technical trace (steps, decisions, SQL, retries): open while the agent works, so the visitor sees it
  * progress, folded once the answer is in. The visitor can still open or close it by hand.
  */
-function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
   const ui = useUi();
   const ref = useRef<HTMLDetailsElement>(null);
 
@@ -382,18 +385,33 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
           const active = part.state === "running" && running;
           const s = STATUS[interrupted ? "error" : part.status];
 
+          const head = (
+            <>
+              <span aria-hidden className="text-muted">
+                {branch}
+              </span>
+              <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>{active ? ".." : s.mark}</span>
+              <span className="w-32 shrink-0 text-muted">{ui.console.steps[name]}</span>
+              <span className="min-w-0">
+                {interrupted ? ui.console.interrupted : part.title}
+                {part.entries.length > 0 && <span className="ml-2 text-muted group-open/step:hidden">[+]</span>}
+              </span>
+            </>
+          );
+
+          // A step without detail is a plain row, skipped by Tab.
+          if (part.entries.length === 0)
+            return (
+              <li key={name} className="flex gap-2">
+                {head}
+              </li>
+            );
+
+          // The four steps read as four lines; the detail of a step (decisions, SQL, retries) opens on click.
           return (
             <li key={name}>
-              <div className="flex gap-2">
-                <span aria-hidden className="text-muted">
-                  {branch}
-                </span>
-                <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>
-                  {active ? ".." : s.mark}
-                </span>
-                <span className="w-32 shrink-0 text-muted">{ui.console.steps[name]}</span>
-                <span className="min-w-0">{interrupted ? ui.console.interrupted : part.title}</span>
-              </div>
+              <details className="group/step">
+                <summary className="flex min-h-6 cursor-pointer list-none gap-2 marker:hidden hover:text-accent pointer-coarse:min-h-11 pointer-coarse:items-center">{head}</summary>
               <ul className="mt-1 ml-[4.5rem] space-y-0.5 border-l border-line pl-3">
                 {part.entries.map((e, j) => {
                   const line = (
@@ -429,6 +447,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                   );
                 })}
               </ul>
+              </details>
             </li>
           );
         })}

@@ -8,6 +8,7 @@ import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
 import { compareText, numberFormat } from "@/lib/locale";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
+import { EntityIcon } from "./entity-icon";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { useLocale, useUi } from "./i18n/locale-context";
@@ -49,9 +50,9 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (
-        <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
+        <TeamHeadToHead v={answer.teams} logos={answer.icons} tones={answer.iconTones} byTournament={answer.table && <GenericTable table={answer.table} icons={answer.icons} tones={answer.iconTones} />} />
       ) : answer.roster ? (
-        <TeamRoster r={answer.roster} />
+        <TeamRoster r={answer.roster} logos={answer.icons} tones={answer.iconTones} />
       ) : (
         answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}
@@ -63,20 +64,6 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
           {ui.answer.note} {n}
         </p>
       ))}
-      {answer.sources.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs text-muted">── {ui.answer.sources}</h3>
-          <ul className="mt-2 space-y-1 text-xs leading-6 pointer-coarse:space-y-0">
-            {answer.sources.map((s) => (
-              <li key={`${s.label}|${s.url}`}>
-                <a href={s.url} target="_blank" rel="noreferrer" className="tap underline decoration-line underline-offset-2 hover:text-accent">
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="mt-6">
         <h3 className="text-xs text-muted">── {ui.answer.followUps}</h3>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
@@ -92,6 +79,38 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
           ))}
         </div>
       </div>
+      {answer.sources.length > 0 && <Sources sources={answer.sources} />}
+    </div>
+  );
+}
+
+const SOURCE_PREFIX = "Leaguepedia — ";
+
+/**
+ * Where the figures come from: every page is cited and linked, as one quiet paragraph under the answer. The
+ * site they all come from is said once, in the heading, instead of on every link.
+ */
+function Sources({ sources }: { sources: Answer["sources"] }) {
+  const ui = useUi();
+  const leaguepedia = sources.every((s) => s.label.startsWith(SOURCE_PREFIX));
+
+  return (
+    <div className="mt-6 text-xs text-muted">
+      <h3>
+        ── {ui.answer.sources}
+        {leaguepedia && " · Leaguepedia"}
+      </h3>
+      <ul className="mt-1 max-w-[100ch] leading-6">
+        {sources.map((s, i) => (
+          <li key={`${s.label}|${s.url}`} className="inline">
+            {/* A page name stays whole on a line, except on a phone where a long one would overflow. */}
+            <a href={s.url} target="_blank" rel="noreferrer" className="decoration-line underline-offset-2 hover:text-accent hover:underline sm:whitespace-nowrap">
+              {leaguepedia ? s.label.slice(SOURCE_PREFIX.length) : s.label}
+            </a>
+            {i < sources.length - 1 && <span aria-hidden> · </span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -193,7 +212,8 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
         <button
           type="button"
           onClick={() => setSort({ key, dir: active ? (sort.dir === 1 ? -1 : 1) : 1 })}
-          className={`tap uppercase hover:text-accent sm:tracking-wider ${active ? "text-foreground" : "text-muted"}`}
+          // One line: a label that wraps its sort arrow under it sits higher than its neighbours.
+          className={`tap whitespace-nowrap uppercase hover:text-accent sm:tracking-wider ${active ? "text-foreground" : "text-muted"}`}
         >
           {label}
           <span aria-hidden className="ml-1 inline-block w-2">
@@ -307,28 +327,127 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
 
   if (champions) return <ChampionRankingView ranking={champions} fallback={<GenericTable table={table} />} />;
 
-  return <GenericTable table={table} />;
+  // One line is not a table to scan: its figures read better as a card.
+  // (Under a champion profile the line is its per-tournament detail: it stays a table.)
+  // A line without any figure (a generated aggregate that came back empty) has nothing for a card: the table shows its n/d.
+  const card = table.rows.length === 1 && !answer.champion && table.rows[0].some((v, i) => asNumber(v) != null && !YEAR_COLUMN.test(table.columns[i]));
+  const body = card ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
+  // An answer about one team (its in-game stats, its history, its dragons) is headed by that team and its logo.
+  // (Not under a player's header: the answer is then about the player, in that team.)
+  const [team] = answer.meta.teams.length === 1 && answer.profiles.length !== 1 ? answer.meta.teams : [];
+  const logo = team ? answer.icons[team] : undefined;
+
+  if (!team || !logo) return body;
+
+  return (
+    <>
+      <p className="mt-4 flex items-center gap-2 text-sm font-semibold" translate="no">
+        <EntityIcon src={logo} size={32} tone={answer.iconTones[team]} />
+        {team}
+      </p>
+      <div className="[&>div]:mt-2">{body}</div>
+    </>
+  );
 }
 
 const asNumber = (v: TableCell) => z.number().safeParse(v).data ?? null;
 
 const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
 
+/** A difference with the opponent ("Écart or @15", "gold_diff_15", "Gold gap @15"): shown with its sign. */
+const DIFF_COLUMN = /^[ée]cart\b|diff|\bgap\b/i;
 
-/** Any table, sortable by each column (numbers before text, missing figures last). */
-function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
+/**
+ * How a table's cells and headers read in the language: numbers in its notation (years as written, differences
+ * signed), a missing figure as n/d, and the headers of the machine-named columns the champion and comparison
+ * layouts read (any other header is the agent's).
+ */
+function useCells() {
   const locale = useLocale();
   const ui = useUi();
-  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
-  // Headers of the machine-named columns the champion and comparison layouts read; any other header is the agent's.
   const labels = new Map(Object.entries(ui.answer.columns));
 
-  /** A cell as shown: numbers in the notation of the language (years as written), a missing figure as n/d. */
   const cellText = (v: TableCell, column: string) => {
     const n = asNumber(v);
 
-    return v == null ? ui.noData : n != null && !YEAR_COLUMN.test(column) ? numberFormat(locale, 2).format(n) : String(v);
+    if (v == null) return ui.noData;
+
+    if (n == null || YEAR_COLUMN.test(column)) return String(v);
+
+    return `${n > 0 && DIFF_COLUMN.test(column) ? "+" : ""}${numberFormat(locale, 2).format(n)}`;
   };
+
+  return { cellText, labels };
+}
+
+/** A short cell (a figure, a record "86-17", a date) stays on one line; only long text may wrap. */
+const SHORT_CELL = 24;
+
+type Table = NonNullable<Answer["table"]>;
+
+const TOGGLE =
+  "tap border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]";
+
+/**
+ * A one-line table as a card: what the line is about (its leading year and names) as a heading, the column the
+ * question asks about as the large figure, every other column as a labelled tile. The plain table stays one
+ * click away.
+ */
+function RowCard({ table }: { table: Table }) {
+  const ui = useUi();
+  const { cellText, labels } = useCells();
+  const [asTable, setAsTable] = useState(false);
+  const row = table.rows[0];
+  // The leading columns up to the first figure say what the line is about ("2024", "LCK").
+  const firstFigure = table.columns.findIndex((c, i) => asNumber(row[i]) != null && !YEAR_COLUMN.test(c));
+  const lead = firstFigure < 0 ? table.columns.length : firstFigure;
+  const context = row.slice(0, lead).filter((v) => v != null).map(String);
+  // Without a column asked for, a single figure is the answer itself.
+  const hero = table.focus ? table.columns.indexOf(table.focus) : table.columns.length - lead === 1 ? lead : -1;
+  const tiles = table.columns.map((c, i) => ({ c, i })).filter(({ i }) => i >= lead && i !== hero);
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+        <p className="text-muted">{context.join(" · ")}</p>
+        <button type="button" onClick={() => setAsTable(!asTable)} aria-pressed={asTable} className={TOGGLE}>
+          {asTable ? ui.answer.cardView : ui.champion.tableView}
+        </button>
+      </div>
+      {asTable ? (
+        <div className="[&>div]:mt-0">
+          <GenericTable table={table} />
+        </div>
+      ) : (
+        <div className="overflow-hidden border border-line">
+          {hero >= 0 && (
+            <div className="border-b border-line px-3 py-4">
+              <p className="text-xs tracking-wider text-muted uppercase">{labels.get(table.columns[hero]) ?? table.columns[hero]}</p>
+              <p className={`mt-1 text-3xl font-semibold tabular-nums ${row[hero] == null ? "text-muted" : "text-accent"}`}>
+                {cellText(row[hero], table.columns[hero])}
+              </p>
+            </div>
+          )}
+          {/* The tiles' own right and bottom rules are cut by the frame: no doubled line at its edges. */}
+          <dl className="-mr-px -mb-px grid grid-cols-2 text-xs sm:grid-cols-4">
+            {tiles.map(({ c, i }) => (
+              <div key={c} className="border-r border-b border-dashed border-line px-3 py-2">
+                <dt className="text-[11px] text-muted">{labels.get(c) ?? c}</dt>
+                <dd className={`whitespace-nowrap tabular-nums ${row[i] == null ? "text-muted" : ""}`}>{cellText(row[i], c)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Any table, sortable by each column (numbers before text, missing figures last). */
+function GenericTable({ table, icons, tones }: { table: Table; icons?: Answer["icons"]; tones?: Answer["iconTones"] }) {
+  const locale = useLocale();
+  const { cellText, labels } = useCells();
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
 
   const rows = useMemo(() => {
     if (!sort) return table.rows;
@@ -353,6 +472,7 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
           <tr>
             {table.columns.map((c, i) => {
               const active = sort?.col === i;
+              const focus = c === table.focus;
 
               return (
                 <th key={c} scope="col" className="px-3 py-2 font-normal" aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
@@ -360,7 +480,7 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
                     type="button"
                     // Numbers sort high to low first: a ranking reads from the top.
                     onClick={() => setSort({ col: i, dir: active ? (sort.dir === 1 ? -1 : 1) : asNumber(table.rows[0]?.[i] ?? null) != null ? -1 : 1 })}
-                    className={`tap whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : "text-muted"}`}
+                    className={`tap whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${focus ? "text-accent" : active ? "text-foreground" : "text-muted"}`}
                   >
                     {labels.get(c) ?? c}
                     <span aria-hidden className="ml-1 inline-block w-2">
@@ -375,11 +495,27 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-dashed border-line last:border-0">
-              {r.map((v, j) => (
-                <td key={j} className={`px-3 py-2 tabular-nums ${v == null ? "text-muted" : ""}`}>
-                  {cellText(v, table.columns[j])}
-                </td>
-              ))}
+              {r.map((v, j) => {
+                const text = cellText(v, table.columns[j]);
+                // The column the question asks about stands out, as the ranking figure does in the champion lists.
+                const name = z.string().safeParse(v).data ?? "";
+                const icon = icons?.[name];
+                const tone = v == null ? "text-muted" : table.columns[j] === table.focus ? "font-semibold text-accent" : "";
+
+                return (
+                  <td key={j} className={`px-3 py-2 tabular-nums ${text.length <= SHORT_CELL ? "whitespace-nowrap" : ""} ${tone}`}>
+                    {/* A name the answer has an image for (a team's logo, a dragon, a champion) carries it. */}
+                    {icon ? (
+                      <span className="inline-flex items-center gap-2 align-middle">
+                        <EntityIcon src={icon} tone={tones?.[name]} />
+                        {text}
+                      </span>
+                    ) : (
+                      text
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

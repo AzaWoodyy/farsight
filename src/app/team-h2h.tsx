@@ -4,6 +4,12 @@ import { type ReactNode, useState } from "react";
 import type { TeamHeadToHead as View, TeamSeries } from "@/lib/agent/types";
 import { dateFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
+import { EntityIcon } from "./entity-icon";
+
+/** Team name → logo, for the names the answer has one for. */
+type Logos = Record<string, string>;
+
+type Tones = Record<string, "dark" | "light">;
 
 /** Series listed before "show all". */
 const FIRST_SERIES = 10;
@@ -12,7 +18,7 @@ const FIRST_SERIES = 10;
  * Two teams' meetings: their record in series and in games, then every series with its date, competition,
  * score, winner and Leaguepedia page. The per-tournament table stays below, sortable.
  */
-export function TeamHeadToHead({ v, byTournament }: { v: View; byTournament: ReactNode }) {
+export function TeamHeadToHead({ v, logos, tones, byTournament }: { v: View; logos: Logos; tones: Tones; byTournament: ReactNode }) {
   const ui = useUi();
   const [all, setAll] = useState(false);
   const list = all ? v.series : v.series.slice(0, FIRST_SERIES);
@@ -22,9 +28,9 @@ export function TeamHeadToHead({ v, byTournament }: { v: View; byTournament: Rea
     <div className="mt-4">
       <div className="border border-line">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-3">
-          <Side name={v.teamA} series={v.seriesA} games={v.gamesA} lead={lead === 0} align="right" />
+          <Side name={v.teamA} logo={logos[v.teamA]} tone={tones[v.teamA]} series={v.seriesA} games={v.gamesA} lead={lead === 0} align="right" />
           <span className="text-xs text-muted">vs</span>
-          <Side name={v.teamB} series={v.seriesB} games={v.gamesB} lead={lead === 1} align="left" />
+          <Side name={v.teamB} logo={logos[v.teamB]} tone={tones[v.teamB]} series={v.seriesB} games={v.gamesB} lead={lead === 1} align="left" />
         </div>
         <p className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
           {ui.teams.summary(v.seriesCount, v.scope || ui.allCompetitions)}
@@ -56,7 +62,7 @@ export function TeamHeadToHead({ v, byTournament }: { v: View; byTournament: Rea
           </thead>
           <tbody>
             {list.map((s, i) => (
-              <SeriesRow key={`${s.source.url}-${s.playedAt}-${i}`} s={s} />
+              <SeriesRow key={`${s.source.url}-${s.playedAt}-${i}`} s={s} logos={logos} tones={tones} />
             ))}
           </tbody>
         </table>
@@ -81,13 +87,17 @@ export function TeamHeadToHead({ v, byTournament }: { v: View; byTournament: Rea
   );
 }
 
-function Side({ name, series, games, lead, align }: { name: string; series: number; games: number; lead: boolean; align: "left" | "right" }) {
+function Side({ name, logo, tone, series, games, lead, align }: { name: string; logo?: string; tone?: "dark" | "light"; series: number; games: number; lead: boolean; align: "left" | "right" }) {
   const ui = useUi();
 
   return (
     <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      <div className="truncate text-sm font-semibold" translate="no">
-        {name}
+      {/* The logo sits on the outer side of the name, so the two names stay next to the "vs". */}
+      <div className={`flex items-center gap-2 text-sm font-semibold ${align === "right" ? "justify-end" : "flex-row-reverse justify-end"}`}>
+        {logo && <EntityIcon src={logo} size={32} tone={tone} />}
+        <span className="truncate" translate="no">
+          {name}
+        </span>
       </div>
       <div className={`text-2xl tabular-nums ${lead ? "text-accent" : ""}`}>{series}</div>
       <div className="text-[11px] text-muted tabular-nums">{ui.games(games)}</div>
@@ -95,7 +105,7 @@ function Side({ name, series, games, lead, align }: { name: string; series: numb
   );
 }
 
-function SeriesRow({ s }: { s: TeamSeries }) {
+function SeriesRow({ s, logos, tones }: { s: TeamSeries; logos: Logos; tones: Tones }) {
   const ui = useUi();
   const date = dateFormat(useLocale(), { day: "2-digit", month: "short", year: "numeric" });
   const winner = s.winsA === s.winsB ? null : s.winsA > s.winsB ? s.teamA : s.teamB;
@@ -108,7 +118,14 @@ function SeriesRow({ s }: { s: TeamSeries }) {
         <span translate="no">{s.teamA}</span> <span className={s.winsA > s.winsB ? "text-accent" : ""}>{s.winsA}</span>–
         <span className={s.winsB > s.winsA ? "text-accent" : ""}>{s.winsB}</span> <span translate="no">{s.teamB}</span>
       </td>
-      <td className="whitespace-nowrap px-3 py-1.5">{winner ? <span className="text-accent">{winner}</span> : <span className="text-muted">{ui.noData}</span>}</td>
+      <td className="whitespace-nowrap px-3 py-1.5">{winner ? (
+          <span className="inline-flex items-center gap-2 align-middle text-accent">
+            {logos[winner] && <EntityIcon src={logos[winner]} tone={tones[winner]} />}
+            {winner}
+          </span>
+        ) : (
+          <span className="text-muted">{ui.noData}</span>
+        )}</td>
       <td className="px-3 py-1.5">
         <a href={s.source.url} target="_blank" rel="noreferrer" title={s.source.label} className="tap underline decoration-line underline-offset-2 hover:text-accent">
           source

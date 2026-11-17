@@ -45,3 +45,6 @@ next-env.d.ts
 /data/
 
 /.ci-data/
+
+# display lab fixtures (bun run lab:build)
+/public/lab-fixtures/

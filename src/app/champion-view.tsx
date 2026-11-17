@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { type ChampionItem, type ChampionItems, type ChampionPool as Pool, type ChampionProfile as Profile, type ChampionSetups, RUNE_KINDS, type RuneKind } from "@/lib/agent/types";
 import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
 import { ITEM_KIND_LABEL, ITEM_KINDS, type ItemKind } from "@/lib/domain/items";
@@ -76,17 +76,25 @@ function SortHeader({ active, dir, label, title, className, onClick }: { active:
       type="button"
       title={title}
       onClick={onClick}
-      className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+      // A button does not inherit capitals from its row: set here, as in the plain table's headers.
+      className={`${className} whitespace-nowrap uppercase hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
     >
       <span className="sr-only">{ui.champion.sortBy}</span>
       {label}
-      <span aria-hidden className="ml-0.5 inline-block w-2">
+      <span aria-hidden className="ml-1 inline-block w-2">
         {active ? (dir === 1 ? "↑" : "↓") : ""}
       </span>
       {active && <span className="sr-only">{dir === 1 ? ui.champion.ascending : ui.champion.descending}</span>}
     </button>
   );
 }
+
+/**
+ * Width of a metric's column, shared by its header and its values: 6 rem, or more when the header is longer
+ * ("pentakills (total)"), so a header never breaks onto two lines. In ch of the header (capitals, tracked).
+ */
+// SAFETY: a CSS custom property is a valid inline style that React's CSSProperties type does not list.
+const columnWidth = (label: string) => ({ "--col": `max(6rem, ${Math.ceil(label.length * 1.1) + 1}ch)` }) as CSSProperties;
 
 /** How many metrics sit beside the ranking one in the champion view. */
 const SIDE_METRICS = 5;
@@ -120,15 +128,18 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
         </button>
       </div>
       {asTable ? (
-        fallback
+        // The plain table starts where the champion list does: switching views changes the content, not its place.
+        <div className="[&>div]:mt-0">{fallback}</div>
       ) : (
         <div className="border border-line">
-          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted sm:flex">
+          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. One column
+              per metric only from the width where six of them leave room for the name (lg); below, they wrap under it. */}
+          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase lg:flex">
             <span className="w-8 shrink-0">#</span>
             <span className="min-w-0 flex-1">champion</span>
-            <span className="w-[4.5rem] shrink-0 text-right text-foreground">{primary.label}</span>
+            <span style={columnWidth(primary.label)} className="w-(--col) shrink-0 text-right whitespace-nowrap text-foreground">{primary.label}</span>
             {others.map(({ m }) => (
-              <span key={m.key} className="w-[4.5rem] shrink-0 text-right">
+              <span key={m.key} style={columnWidth(m.label)} className="w-(--col) shrink-0 text-right whitespace-nowrap">
                 {m.label}
               </span>
             ))}
@@ -140,10 +151,10 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
               return (
                 <li
                   key={l.champion}
-                  className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0 sm:flex"
+                  className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0 lg:flex"
                 >
-                  <span className="tabular-nums text-muted sm:w-8 sm:shrink-0">{l.rank}</span>
-                  <div className="flex min-w-0 items-center gap-2 sm:flex-1">
+                  <span className="tabular-nums text-muted lg:w-8 lg:shrink-0">{l.rank}</span>
+                  <div className="flex min-w-0 items-center gap-2 lg:flex-1">
                     <ChampionIcon name={l.champion} src={l.icon} size={28} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate" translate="no">
@@ -154,9 +165,9 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                       </div>
                     </div>
                   </div>
-                  <span aria-hidden className="text-right font-semibold tabular-nums text-accent sm:w-[4.5rem] sm:shrink-0">{formatChampionValue(value, primary.percent, locale)}</span>
+                  <span aria-hidden style={columnWidth(primary.label)} className="text-right font-semibold tabular-nums text-accent lg:w-(--col) lg:shrink-0">{formatChampionValue(value, primary.percent, locale)}</span>
                   {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
-                  <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
+                  <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted lg:hidden">
                     {others.map(({ m, i }) => (
                       <div key={m.key} className="flex gap-1">
                         <dt>{m.label}</dt>
@@ -165,7 +176,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                     ))}
                   </dl>
                   {others.map(({ m, i }) => (
-                    <span key={m.key} className="hidden w-[4.5rem] shrink-0 text-right tabular-nums sm:block">
+                    <span key={m.key} style={columnWidth(m.label)} className="hidden w-(--col) shrink-0 text-right tabular-nums lg:block">
                       <Label>{m.label}</Label>
                       {formatChampionValue(l.values[i], m.percent, locale)}
                     </span>
@@ -291,16 +302,46 @@ export function ChampionProfileView({ p }: { p: Profile }) {
         </section>
       </div>
 
-      <ChampionItemsSection key={`${p.champion}|${p.scope}`} items={p.items} />
-      <ChampionSetupsSection key={`setups|${p.champion}|${p.scope}`} setups={p.setups} />
+      <ChampionBuild key={`${p.champion}|${p.scope}`} p={p} />
     </div>
+  );
+}
+
+/** Lines of a build section shown at full width (the one the question is about), and beside another. */
+const BUILD_LINES = { wide: 10, half: 5 };
+
+/**
+ * Items, runes and summoner spells: the one the question is about first, at full width, the two others side
+ * by side under it. A question about the champion as a whole leads with the items.
+ */
+function ChampionBuild({ p }: { p: Profile }) {
+  const first = p.focus ?? "items";
+
+  const section = (part: NonNullable<Profile["focus"]>, wide: boolean) => {
+    const lines = wide ? BUILD_LINES.wide : BUILD_LINES.half;
+
+    if (part === "items") return <ChampionItemsSection items={p.items} lines={wide ? ITEM_LINES : BUILD_LINES.half} />;
+
+    if (part === "runes") return <ChampionRunesSection setups={p.setups} lines={lines} />;
+
+    return <ChampionSpellsSection setups={p.setups} lines={lines} />;
+  };
+
+  const [second, third] = (["items", "runes", "spells"] as const).filter((part) => part !== first);
+
+  return (
+    <>
+      <div className="border-t border-line">{section(first, true)}</div>
+      <div className="grid border-t border-line md:grid-cols-2">
+        <div className="min-w-0 border-b border-line md:border-r md:border-b-0">{section(second, false)}</div>
+        <div className="min-w-0">{section(third, false)}</div>
+      </div>
+    </>
   );
 }
 
 type ItemSortKey = "item" | "games" | "winrate";
 
-/** Lines shown per list of spells or runes. */
-const SETUP_LINES = 6;
 
 /** One spell pair or rune: icons, name, share of the games that have the data, games and win rate. */
 function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons: { name: string; src: string | null }[]; name: string; games: number; wins: number; of: number }) {
@@ -346,69 +387,75 @@ function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons
   );
 }
 
-/** The champion's summoner spell pairs and runes (by part of the page), from the scoreboards: share of the games that list them. */
-function ChampionSetupsSection({ setups }: { setups: ChampionSetups }) {
+/** The champion's summoner spell pairs, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
+function ChampionSpellsSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
+  const ui = useUi();
+
+  return (
+    <section aria-labelledby="champion-spells" className="min-w-0 px-3 py-2">
+      <h3 id="champion-spells" className="text-[11px] text-muted">
+        ── {ui.champion.spellsHeading} <span className="text-muted/80">· {ui.champion.gameCount(setups.spellGames)}</span>
+      </h3>
+      {setups.spells.length > 0 ? (
+        <ol className="mt-2 border border-line">
+          {setups.spells.slice(0, lines).map((s, i) => (
+            <SetupLine
+              key={s.spells.map((x) => x.name).join("+")}
+              rank={i + 1}
+              icons={s.spells.map((x) => ({ name: x.name, src: x.iconUrl }))}
+              name={s.spells.map((x) => x.name).join(" + ")}
+              games={s.games}
+              wins={s.wins}
+              of={setups.spellGames}
+            />
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-1 text-xs text-muted">{ui.noData}</p>
+      )}
+    </section>
+  );
+}
+
+/** The champion's runes by part of the page, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
+function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
   const ui = useUi();
   const kinds = RUNE_KINDS.filter((k) => setups.runes.some((r) => r.kind === k));
   const [kind, setKind] = useState<RuneKind>(kinds[0] ?? "keystone");
-  const runes = setups.runes.filter((r) => r.kind === kind).slice(0, SETUP_LINES);
+  const runes = setups.runes.filter((r) => r.kind === kind).slice(0, lines);
   const runeGames = kind === "keystone" ? setups.keystoneGames : setups.pageGames;
 
-  if (!setups.spells.length && !setups.runes.length && !setups.notes.length) return null;
-
   return (
-    <section aria-labelledby="champion-setups" className="border-t border-line px-3 py-2">
-      <h3 id="champion-setups" className="text-[11px] text-muted">
-        ── {ui.champion.setups} <span className="text-muted/80">{ui.champion.setupsSource}</span>
+    <section aria-labelledby="champion-runes" className="min-w-0 px-3 py-2">
+      <h3 id="champion-runes" className="text-[11px] text-muted">
+        ── {ui.champion.runesHeading} <span className="text-muted/80">· {ui.champion.gameCount(runeGames)}</span>
       </h3>
-
-      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-        {setups.spells.length > 0 && (
-          <div className="min-w-0">
-            <p className="text-[11px] text-muted">{ui.champion.spellGames(setups.spellGames)}</p>
-            <ol className="mt-1 border border-line">
-              {setups.spells.slice(0, SETUP_LINES).map((s, i) => (
-                <SetupLine
-                  key={s.spells.map((x) => x.name).join("+")}
-                  rank={i + 1}
-                  icons={s.spells.map((x) => ({ name: x.name, src: x.iconUrl }))}
-                  name={s.spells.map((x) => x.name).join(" + ")}
-                  games={s.games}
-                  wins={s.wins}
-                  of={setups.spellGames}
-                />
-              ))}
-            </ol>
+      {setups.runes.length > 0 ? (
+        <>
+          <div role="group" aria-label={ui.champion.runePart} className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+            {kinds.map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+                className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+                  kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                {ui.champion.runeKinds[k]}
+              </button>
+            ))}
           </div>
-        )}
-
-        {setups.runes.length > 0 && (
-          <div className="min-w-0">
-            <div role="group" aria-label={ui.champion.runePart} className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {kinds.map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={kind === k}
-                  onClick={() => setKind(k)}
-                  className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
-                    kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
-                  }`}
-                >
-                  {ui.champion.runeKinds[k]}
-                </button>
-              ))}
-              <span className="text-muted">· {ui.champion.gameCount(runeGames)}</span>
-            </div>
-            <ol className="mt-1 border border-line">
-              {runes.map((r, i) => (
-                <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
-              ))}
-            </ol>
-          </div>
-        )}
-      </div>
-
+          <ol className="mt-2 border border-line">
+            {runes.map((r, i) => (
+              <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
+            ))}
+          </ol>
+        </>
+      ) : (
+        <p className="mt-1 text-xs text-muted">{ui.noData}</p>
+      )}
       {setups.notes.map((n) => (
         <p key={n} className="mt-1 text-[10px] text-warn">
           {n}
@@ -430,7 +477,7 @@ const winrateOf = (i: ChampionItem) => (i.games >= ITEM_WINRATE_MIN_GAMES ? (100
  * The champion's most built items: end-of-game inventories, filtered by kind (completed items first),
  * each line with its share of the champion's games and, on enough games, its win rate.
  */
-function ChampionItemsSection({ items }: { items: ChampionItems }) {
+function ChampionItemsSection({ items, lines: shownLines }: { items: ChampionItems; lines: number }) {
   const locale = useLocale();
   const ui = useUi();
   const { pct } = useFigures();
@@ -461,7 +508,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
     [items.items, kind, sort, locale],
   );
 
-  const shown = all ? lines : lines.slice(0, ITEM_LINES);
+  const shown = all ? lines : lines.slice(0, shownLines);
   const max = Math.max(...lines.map((l) => l.games), 0);
 
   const toggle = (key: ItemSortKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "item" ? 1 : -1 }));
@@ -471,7 +518,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
   );
 
   return (
-    <section aria-labelledby="champion-items" className="border-t border-line px-3 py-2">
+    <section aria-labelledby="champion-items" className="min-w-0 px-3 py-2">
       <h3 id="champion-items" className="text-[11px] text-muted">
         ── {ui.champion.itemsHeading} <span className="text-muted/80">{ui.champion.itemsSource(items.games)}</span>
       </h3>
@@ -502,7 +549,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
               <span className="w-5 shrink-0">#</span>
               {header("item", "item", ui.champion.alphabetical, "min-w-0 flex-1 text-left")}
               {columns.map((c) => (
-                <span key={c.key} className="w-14 shrink-0 text-right">
+                <span key={c.key} className="w-16 shrink-0 text-right">
                   {header(c.key, c.label, c.title, "w-full text-right")}
                 </span>
               ))}
@@ -526,12 +573,12 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
                         </div>
                       </div>
                     </div>
-                    <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                    <span className="w-16 shrink-0 text-right font-semibold tabular-nums text-accent">
                       <Label>{ui.gamesLabel}</Label>
                       {l.games}
                     </span>
                     <span
-                      className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
+                      className={`w-16 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
                       title={wr == null ? ui.champion.winrateHiddenTitle(ITEM_WINRATE_MIN_GAMES, `${l.wins}-${l.games - l.wins}`) : `${l.wins}-${l.games - l.wins}`}
                     >
                       <Label>winrate</Label>
@@ -550,7 +597,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
             </ol>
           </div>
 
-          {lines.length > ITEM_LINES && (
+          {lines.length > shownLines && (
             <button
               type="button"
               onClick={() => setAll(!all)}
@@ -672,14 +719,16 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
       </div>
 
       {asTable ? (
-        fallback
+        // Same gap as the champion list: switching views changes the content, not its place.
+        <div className="[&>div]:mt-2">{fallback}</div>
       ) : (
         <div className="mt-2 border border-line">
-          <div className="flex items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted">
+          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. */}
+          <div className="flex items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase">
             <span className="w-6 shrink-0">#</span>
             {header("champion", "champion", ui.champion.alphabetical, "min-w-0 flex-1 text-left")}
             {columns.map((c) => (
-              <span key={c.key} className={c.key === "games" || c.key === "winrate" ? "w-14 shrink-0 text-right" : "hidden w-14 shrink-0 text-right sm:block"}>
+              <span key={c.key} className={c.key === "games" || c.key === "winrate" ? "w-20 shrink-0 text-right" : "hidden w-20 shrink-0 text-right sm:block"}>
                 {header(c.key, c.label, c.title, "w-full text-right")}
               </span>
             ))}
@@ -702,23 +751,23 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
                     </div>
                   </div>
                 </div>
-                <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                <span className="w-20 shrink-0 text-right font-semibold tabular-nums text-accent">
                   <Label>{ui.gamesLabel}</Label>
                   {l.games}
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums sm:block">
                   <Label>{ui.record}</Label>
                   {l.wins}-{l.losses}
                 </span>
-                <span className="w-14 shrink-0 text-right tabular-nums">
+                <span className="w-20 shrink-0 text-right tabular-nums">
                   <Label>winrate</Label>
                   {ui.percent(number.format(l.winrate))}
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums sm:block">
                   <Label>KDA</Label>
                   {nd(l.kda)}
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums text-muted sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums text-muted sm:block">
                   <Label>{ui.champion.share}</Label>
                   {ui.percent(number.format(l.share))}
                 </span>

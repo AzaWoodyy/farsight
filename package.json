@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "bun run data:pull && next build && bun run size",
+    "build": "bun run data:pull && bun run lab:build && next build && bun run size",
     "start": "next start",
     "lint": "oxlint",
     "data:fetch": "bun scripts/data/fetch.ts",
@@ -20,6 +20,7 @@
     "size": "bun scripts/size.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "ask": "bun scripts/ask.ts",
+    "lab:build": "bun scripts/lab/build.ts",
     "eval": "bun scripts/eval.ts",
     "test": "bun test scripts",
     "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run data:pull && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"

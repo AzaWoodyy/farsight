@@ -373,7 +373,7 @@ describe("rankings on a seeded season", () => {
       const blue = await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "kda", role: "Mid", side: "blue" } });
 
       expect(blue.table!.rows.map((r) => [r[1], r[3], r[blue.table!.columns.indexOf("KDA")]])).toEqual([["Caps", 2, 2.8]]);
-      expect(blue.title).toBe("Meilleurs mids côté bleu — KDA (LEC)");
+      expect(blue.title).toBe("Meilleurs mids côté bleu — KDA (LEC 2025)");
     }));
 
   test("in-game leaderboard on one side of the map", () =>
@@ -382,7 +382,7 @@ describe("rankings on a seeded season", () => {
 
       // Humanoid's solo kill came on red side; Caps' two on blue.
       expect(out.table!.rows.map((r) => [r[1], r[4]])).toEqual([["Humanoid", 1]]);
-      expect(out.title).toBe("Classement — solo kills côté rouge (LEC)");
+      expect(out.title).toBe("Classement — solo kills côté rouge (LEC 2025)");
     }));
 
   test("dragons and souls: kills by element, souls and the wins of the teams that got them, for every team or one", () =>
@@ -412,7 +412,7 @@ describe("rankings on a seeded season", () => {
       ]);
       expect(all.totals).toMatchObject({ dragons: 13, elder_dragons: 1, top_dragon: "océan", top_dragon_count: 3, soul_games: 3, souls: 2, soul_wins: 2, top_soul_count: 1 });
       expect(all.facts).toContain("L'âme du dragon est prise dans 2 parties sur 3 (67 %) ; l'équipe qui la prend gagne 2 sur 2 (100 %). Âmes : chemtech 1, montagne 1.");
-      expect(all.title).toBe("Dragons et âmes (LEC)");
+      expect(all.title).toBe("Dragons et âmes (LEC 2025)");
 
       // One team: its own dragons and souls, over its games.
       const g2 = await run(db, { tool: "dragon_stats", input: { ...LEC, team: "G2 Esports" } });
@@ -461,7 +461,7 @@ describe("rankings on a seeded season", () => {
 
       expect(red.table!.rows.map((r) => [r[1], r[2], r[3]])).toEqual([["G2 Esports", 1, 100], ["Fnatic", 2, 50]]);
       expect(red.table!.columns).not.toContain("% côté bleu");
-      expect(red.title).toBe("Classement des équipes — % victoires côté rouge (LEC)");
+      expect(red.title).toBe("Classement des équipes — % victoires côté rouge (LEC 2025)");
 
       // The default minimum of a league season (10 games) leaves nobody: the first correction lowers it.
       const strict = bindTool(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate", minGames: null } });
@@ -474,7 +474,7 @@ describe("rankings on a seeded season", () => {
     seeded(async (db) => {
       const out = await run(db, { tool: "champion_matchup", input: { ...LEC, champion: "Azir", opponent: "Orianna", role: null } });
 
-      expect(out.title).toBe("Azir contre Orianna — LEC");
+      expect(out.title).toBe("Azir contre Orianna — LEC 2025");
       expect(out.totals).toMatchObject({ games: 3, wins: 2, losses: 1, winrate: 67, kda: 3.43, opponent_kda: 2.67, gold_diff_15: 100, ingame_games: 3 });
       expect(out.facts).toContain("Azir contre Orianna en LEC en 2025 (même rôle, équipes opposées) : 3 parties, Azir en gagne 2 (67 %) et Orianna 1.");
       expect(out.facts).toContain("KDA d'Azir : 3,43, d'Orianna : 2,67. Écart d'or moyen d'Azir à 15 min : +100, sur 3 parties avec données Riot.");
@@ -537,7 +537,7 @@ describe("rankings on a seeded season", () => {
       const caps = await run(db, { tool: "game_records", input: { ...input, metric: "gold_diff_15", player: "Caps" } });
 
       expect(caps.table!.rows.map((r) => r[7])).toEqual([300, 100, -100]);
-      expect(caps.title).toBe("Records sur une partie — écart or @15 de Caps (LEC)");
+      expect(caps.title).toBe("Records sur une partie — écart or @15 de Caps (LEC 2025)");
       expect(caps.facts).toContain("1. Caps : +300 (Azir, G2 Esports contre Fnatic, LEC 2025, 2 janv. 2025)");
       expect(caps.sources.some((s) => s.label.includes("données Riot"))).toBe(true);
     }));

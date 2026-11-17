@@ -17,7 +17,7 @@ export const viewport = VIEWPORT;
 export default function GlobalNotFound() {
   return (
     <RootShell locale="fr">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
         <SiteHeader locale="fr" page="home" trail="404" />
         <main className="flex-1 space-y-10 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
           {LOCALES.map((locale) => (
