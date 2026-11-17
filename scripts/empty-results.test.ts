@@ -34,7 +34,7 @@ function fresh() {
     INSERT INTO teams VALUES(1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES(1,'Faker'),(2,'Chovy');
     INSERT INTO champions(id,name) VALUES(1,'Azir'),(2,'Orianna'),(3,'Ahri');
-    INSERT INTO runes VALUES(1,'Conqueror');
+    INSERT INTO runes(id,name) VALUES(1,'Conqueror');
     INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES
       (1,1,1,2,1,1800,1726293960),(2,2,1,2,1,1800,1728000000),(3,2,2,1,2,1800,1728100000);
     INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,keystone_id) VALUES
