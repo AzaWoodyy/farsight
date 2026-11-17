@@ -37,6 +37,15 @@ const LABELS: [RegExp, string, boolean][] = [
   [/^gold$/, "or", false],
   [/^cs$/, "CS", false],
   [/^(damage|degats)$/, "dégâts", false],
+  [/^dpm$/, "dégâts/min", false],
+  [/^gpm$/, "or/min", false],
+  [/^cspm$/, "CS/min", false],
+  [/^gold_diff_15$/, "écart or @15", false],
+  [/^cs_diff_15$/, "écart CS @15", false],
+  [/^xp_diff_15$/, "écart XP @15", false],
+  [/^first_blood$/, "first blood", true],
+  [/^solo_kills$/, "solo kills", false],
+  [/^(players|joueurs)$/, "joueurs", false],
 ];
 
 function metricOf(column: string): ChampionMetric {

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { AgentConsole } from "./agent-console";
 import { jsonLdScript } from "./brand/json-ld";
-import { Mark } from "./brand/logo";
 import { SITE } from "./brand/site";
+import { HomeLink } from "./home-link";
 import { PICK_CSS, PICK_SCRIPT } from "./home-examples-data";
 import { SiteFooter } from "./site-footer";
+import { ThemeToggle } from "./theme-toggle";
 
 // Canonical of the home page only (resolved against metadataBase): a page added later must not inherit "/".
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -18,11 +19,11 @@ export default function Home() {
       <style dangerouslySetInnerHTML={{ __html: PICK_CSS }} />
       <script dangerouslySetInnerHTML={{ __html: PICK_SCRIPT }} />
       <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
-        <p className="inline-flex min-h-11 items-center gap-2.5">
-          <Mark size={32} />
-          <span className="text-base font-semibold lowercase">{SITE.name}</span>
-        </p>
-        <span className="hidden text-xs text-muted sm:block">~/ {SITE.tagline.toLowerCase()}</span>
+        <HomeLink />
+        <div className="flex items-center gap-4">
+          <span className="hidden text-xs text-muted sm:block">~/ {SITE.tagline.toLowerCase()}</span>
+          <ThemeToggle />
+        </div>
       </header>
       <main className="flex-1 pb-16">
         <AgentConsole />

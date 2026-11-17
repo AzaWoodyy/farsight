@@ -15,19 +15,23 @@ export const EXAMPLES: Example[] = [
   { category: "joueurs", question: "Faker contre Chovy", display: "duel de joueurs" },
   { category: "joueurs", question: "Champion pool de Faker", display: "champion pool" },
   { category: "joueurs", question: "Meilleurs mids aux Worlds 2026", display: "classement de joueurs" },
+  { category: "joueurs", question: "Forme récente de Faker", display: "dernières parties" },
   { category: "équipes", question: "KC contre MKOI", display: "confrontation d'équipes" },
   { category: "équipes", question: "Samsung White roster 2014", display: "roster" },
   { category: "équipes", question: "ADC de T1", display: "joueur d'un poste" },
   { category: "équipes", question: "Champion pool de T1 aux Worlds 2025", display: "champion pool d'équipe" },
   { category: "équipes", question: "Qui prend le plus souvent le premier dragon au MSI 2023 ?", display: "classement in-game d'équipes" },
+  { category: "équipes", question: "Équipes au meilleur winrate côté bleu en LEC 2025", display: "classement d'équipes" },
   { category: "champions", question: "Stats d'Azir aux Worlds 2025", display: "fiche champion" },
   { category: "champions", question: "Champions les plus bannis en LCK 2025", display: "classement de champions" },
   { category: "champions", question: "Champions les plus joués aux Worlds 2024", display: "méta d'un tournoi" },
   { category: "champions", question: "Items de Yunara aux Worlds 2026", display: "fiche champion et items" },
   { category: "champions", question: "Champions avec le plus de morts par game aux Worlds 2026", display: "moyenne par partie" },
+  { category: "champions", question: "Azir contre Orianna en mid", display: "matchup de champions" },
   { category: "parties", question: "Finale des Worlds 2025", display: "série en BO, game par game" },
   { category: "parties", question: "Récap de la game 5 de la finale des Worlds 2024", display: "récap de partie" },
   { category: "parties", question: "Classement des Worlds 2023", display: "classement de tournoi" },
+  { category: "parties", question: "Record de kills en une partie aux Worlds", display: "records sur une partie" },
 ];
 
 export const byCategory = (c: Category) => EXAMPLES.filter((e) => e.category === c);

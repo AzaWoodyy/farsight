@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
 import { HomeExamples } from "./home-examples";
+import { HOME_EVENT } from "./home-link";
 
 // The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
 // itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
@@ -99,6 +100,8 @@ export function AgentConsole() {
     // Also the question shown until the chat has taken it in (the chat reads `first` only when it mounts).
     setFirst({ text, sessionId: sessionId.current });
     chat.current?.ask(text, sessionId.current);
+    // A follow-up or a new question asked from low on the page: back up to where the new answer starts.
+    scrollToTop();
   }
 
   function restart() {
@@ -109,7 +112,17 @@ export function AgentConsole() {
     setLoadFailed(false);
     setQuestion("");
     sessionId.current = null;
+    scrollToTop();
   }
+
+  // The logo in the header goes back to the home screen (see HomeLink).
+  const onHome = useEffectEvent(() => restart());
+
+  useEffect(() => {
+    window.addEventListener(HOME_EVENT, onHome);
+
+    return () => window.removeEventListener(HOME_EVENT, onHome);
+  }, []);
 
   const asked = messages.findLast((m) => m.role === "user");
   const reply = messages.findLast((m) => m.role === "assistant");
@@ -269,6 +282,13 @@ export function AgentConsole() {
       )}
     </section>
   );
+}
+
+/** Smooth scroll to the top of the page; an instant jump when the visitor asks for reduced motion. */
+function scrollToTop() {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
 }
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
