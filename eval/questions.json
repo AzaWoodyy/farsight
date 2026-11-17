@@ -2072,6 +2072,197 @@
       }
     },
     {
+      "id": "followup-player-ingame",
+      "question": "Solo kills de Crisp",
+      "tags": [
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "rowsMin": 1,
+        "players": [
+          "Crisp"
+        ]
+      }
+    },
+    {
+      "id": "followup-team-ingame",
+      "question": "First blood de T1",
+      "tags": [
+        "ingame"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "rowsMin": 1,
+        "teams": [
+          "T1"
+        ]
+      }
+    },
+    {
+      "id": "en-player-ingame",
+      "question": "Chovy solo kills in LCK 2025",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "english"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Chovy in LCK (2025), over 116 games with in-game data: 32 solo kills",
+          "wards placed per game"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
+      "id": "en-ingame-leaderboard-player",
+      "question": "which support has the most wards placed at Worlds 2024",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Average per game of wards placed (Support role) at Worlds (2024): 1. Crisp (83.6, 16 games)",
+          "minimum 5 games per player"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
+      "id": "en-ingame-leaderboard-team",
+      "question": "Who takes the first dragon most often at MSI 2023?",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Share of games with first dragon at MSI (2023): 1. PSG Talon (6 out of 9 games, 66.7%)",
+          "minimum 5 games per team"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
+      "id": "en-ingame-gold-difference",
+      "question": "Gold difference at 15 min of mids at Worlds",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "gold difference with the lane opponent at 15 min"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ],
+        "input": {
+          "metric": "gold_diff",
+          "minute": 15,
+          "role": "Mid"
+        }
+      }
+    },
+    {
+      "id": "en-player-leaderboard",
+      "question": "Best mids at Worlds 2026",
+      "locale": "en",
+      "tags": [
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Best mids at Worlds in 2026 by KDA ((kills + assists) / deaths, over all their games), minimum 5 games",
+          "players ranked"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
+      "id": "en-team-ingame",
+      "question": "T1 first blood rate in LCK 2025",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "english"
+      ],
+      "expect": {
+        "route": "team_ingame_stats",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "T1 in LCK (2025), over 108 games with in-game data (66 wins): first blood in 55.6% of games",
+          "turret plates taken per game"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
+      "id": "en-dragon-souls",
+      "question": "dragon souls at Worlds 2024",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "dragons",
+        "english"
+      ],
+      "expect": {
+        "route": "dragon_stats",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Dragons taken by teams at Worlds (2024), over 106 games with a Riot timeline",
+          "The dragon soul is taken in",
+          "Souls:"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " sur "
+        ]
+      }
+    },
+    {
       "id": "out-of-scope-topic",
       "question": "quelle est la météo à Paris",
       "tags": [
