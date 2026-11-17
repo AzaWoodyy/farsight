@@ -33,7 +33,7 @@ function buildDb(path: string, opts: { schema?: number; journal?: "DELETE" | "WA
 
 const fresh = (opts?: Parameters<typeof buildDb>[1]) => buildDb(join(dir, `db-${++files}.sqlite`), opts);
 
-const COUNTS: Manifest["counts"] = { games: 1000, leagues: 19, tournaments: 50, players: 400, teams: 80, ingame_games: 800 };
+const COUNTS: Manifest["counts"] = { games: 1000, leagues: 19, tournaments: 50, players: 400, teams: 80, ingame_games: 800, players_with_photo: 300 };
 
 function manifest(counts: Partial<Manifest["counts"]> = {}): Manifest {
   const sha256 = "0".repeat(64);
@@ -84,6 +84,13 @@ describe("regressionProblems (data:package --previous)", () => {
   test("a previous manifest without in-game counts sets no in-game floor", () => {
     expect(regressionProblems({ ...COUNTS, ingame_games: 0 }, manifest({ ingame_games: undefined }), ok)).toEqual([]);
   });
+
+  test("losing player photos is refused, a previous manifest without photos sets no floor", () => {
+    const problems = regressionProblems({ ...COUNTS, players_with_photo: Math.floor(300 * MIN_GAMES_RATIO) - 1 }, manifest(), ok);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("photo");
+    expect(regressionProblems({ ...COUNTS, players_with_photo: 0 }, manifest({ players_with_photo: undefined }), ok)).toEqual([]);
+  });
 });
 
 describe("headerProblems", () => {
@@ -133,7 +140,7 @@ describe("readFacts", () => {
     expect(readFacts(path)).toEqual({
       schemaVersion: SCHEMA_VERSION,
       journalMode: "delete",
-      counts: { games: 0, leagues: 0, tournaments: 0, players: 0, teams: 0, ingame_games: 0 },
+      counts: { games: 0, leagues: 0, tournaments: 0, players: 0, teams: 0, ingame_games: 0, players_with_photo: 0 },
       ddragonVersion: "16.1.1",
       deriveVersion: 2,
       staleDerive: 3,

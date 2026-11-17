@@ -185,7 +185,12 @@ export type PlayerProfile = {
   player: string;
   teams: string[];
   role: string | null;
+  /** Photo at the player's latest game of the scope. */
+  photo: PlayerPhoto | null;
 };
+
+/** A Leaguepedia headshot (fair use, shown from Fandom's CDN), taken for a tournament of `year`. */
+export type PlayerPhoto = { url: string; year: number; source: string };
 
 /** One player's line in a game of a two-player comparison. */
 export type VersusSide = {
@@ -245,6 +250,8 @@ export type ScoreboardPlayer = {
   side: Side;
   role: string | null;
   player: string;
+  /** Photo of the game's period. */
+  photo: PlayerPhoto | null;
   champion: string | null;
   championIcon: string | null;
   kills: number | null;
@@ -384,6 +391,8 @@ export type RosterPlayer = {
   tournaments: string[];
   firstPlayed: number | null;
   lastPlayed: number | null;
+  /** Photo at the player's latest game of the scope. */
+  photo: PlayerPhoto | null;
   source: Source;
 };
 

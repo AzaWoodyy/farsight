@@ -221,7 +221,7 @@ export function AgentConsole() {
             >
               Riot Data Dragon
             </a>
-            . Chaque réponse cite ses pages.
+            . Photos des joueurs : Leaguepedia, © Riot Games et les ligues. Chaque réponse cite ses pages.
           </p>
         </div>
       )}

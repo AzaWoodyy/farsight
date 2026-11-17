@@ -208,6 +208,23 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
   return { players, redirects };
 }
 
+/**
+ * Every Leaguepedia headshot, dated by the tournament it was taken for (about 30 000 rows, a handful of
+ * requests). The whole table rather than the players in scope: an image's link may differ in case or be an
+ * older handle, and `data:build` resolves it like a scoreboard link.
+ */
+function fetchPlayerImages(opts: CargoOptions) {
+  return cargoQuery(
+    {
+      tables: "PlayerImages=PI,Tournaments=T",
+      joinOn: "PI.Tournament=T.OverviewPage",
+      fields: ["PI.FileName=File", "PI.Link=Link", "PI.ImageType=Type", "T.DateStart=DateStart", "PI.SortDate=SortDate"],
+      orderBy: "PI.FileName",
+    },
+    opts,
+  );
+}
+
 const linkOf = (l: CargoRow) => String(l.Link ?? l.Name ?? "");
 const asText = (v: CargoValue | undefined) => (v == null || v === "" ? null : String(v));
 
@@ -360,6 +377,9 @@ async function full() {
   const { players, redirects } = await fetchPlayers(links, cached);
   console.log(`players: ${players.length}, redirects: ${redirects.length}`);
 
+  const images = await fetchPlayerImages(cached);
+  console.log(`player images: ${images.length}`);
+
   const dd = await fetchDdragon(refresh);
   console.log(`ddragon: ${dd.version} (+${dd.legacyItems.length} older patches for retired items)`);
 
@@ -369,6 +389,7 @@ async function full() {
   save("lines", lines);
   save("players", players);
   save("redirects", redirects);
+  save("player_images", images);
   save("ddragon", dd);
 
   const riotCounts = await riot(cached);
@@ -465,6 +486,9 @@ async function incrementalFetch() {
   const { players, redirects } = await fetchPlayers(newLinks, fresh);
   console.log(`new players: ${newLinks.length} (${players.length} with a Players row)`);
 
+  const images = await fetchPlayerImages(fresh);
+  console.log(`player images: ${images.length}`);
+
   const dd = await fetchDdragon(false);
 
   const merged = {
@@ -477,6 +501,7 @@ async function incrementalFetch() {
   };
 
   for (const name of ["tournaments", "results", "games", "lines", "players", "redirects"] as const) save(name, merged[name]);
+  save("player_images", images);
   save("ddragon", dd);
 
   const riotCounts = await riot(fresh);
@@ -488,6 +513,7 @@ async function incrementalFetch() {
     games: games.length,
     lines: lines.length,
     new_players: newLinks.length,
+    player_images: images.length,
     total_games: merged.games.length,
   };
 }
