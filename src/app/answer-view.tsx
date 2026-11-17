@@ -6,9 +6,11 @@ import type { Answer, ResultRow, TableCell } from "@/lib/agent/types";
 import { z } from "zod";
 import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
+import { compareText, numberFormat } from "@/lib/locale";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
+import { useLocale, useUi } from "./i18n/locale-context";
 import { SeriesView } from "./series-view";
 import { PlayerComparison } from "./player-comparison";
 import { TeamHeadToHead } from "./team-h2h";
@@ -28,6 +30,8 @@ type SortKey = "year" | "team" | "place" | "record" | "winrate";
 const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 
 export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => void }) {
+  const ui = useUi();
+
   return (
     <div className="mt-8">
       <h2 className="text-base font-semibold">
@@ -53,11 +57,11 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
       {answer.notes.map((n) => (
         <p key={n} className="mt-2 text-xs text-warn">
-          note : {n}
+          {ui.answer.note} {n}
         </p>
       ))}
       <div className="mt-6">
-        <h3 className="text-xs text-muted">── Questions de suivi</h3>
+        <h3 className="text-xs text-muted">── {ui.answer.followUps}</h3>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {answer.followUps.map((f) => (
             <button
@@ -83,11 +87,15 @@ const SOURCE_PREFIX = "Leaguepedia — ";
  * site they all come from is said once, in the heading, instead of on every link.
  */
 function Sources({ sources }: { sources: Answer["sources"] }) {
+  const ui = useUi();
   const leaguepedia = sources.every((s) => s.label.startsWith(SOURCE_PREFIX));
 
   return (
     <div className="mt-6 text-xs text-muted">
-      <h3>── Sources{leaguepedia && " · Leaguepedia"}</h3>
+      <h3>
+        ── {ui.answer.sources}
+        {leaguepedia && " · Leaguepedia"}
+      </h3>
       <ul className="mt-1 max-w-[100ch] leading-6">
         {sources.map((s, i) => (
           <li key={`${s.label}|${s.url}`} className="inline">
@@ -105,9 +113,9 @@ function Sources({ sources }: { sources: Answer["sources"] }) {
 
 type Rating = "up" | "down";
 
-const RATINGS: { rating: Rating; label: string }[] = [
-  { rating: "up", label: "[+] oui" },
-  { rating: "down", label: "[-] non" },
+const RATINGS: { rating: Rating; label: "yes" | "no" }[] = [
+  { rating: "up", label: "yes" },
+  { rating: "down", label: "no" },
 ];
 
 /**
@@ -121,6 +129,7 @@ type FeedbackState =
   | { kind: "failed"; recorded: Rating | null };
 
 export function Feedback({ traceId, token }: { traceId: string; token: string }) {
+  const ui = useUi();
   const [state, setState] = useState<FeedbackState>({ kind: "idle", recorded: null });
 
   async function rate(rating: Rating) {
@@ -141,7 +150,7 @@ export function Feedback({ traceId, token }: { traceId: string; token: string })
 
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-muted">── Réponse correcte ?</span>
+      <span className="text-muted">── {ui.answer.correct}</span>
       {RATINGS.map(({ rating, label }) => (
         <button
           key={rating}
@@ -153,17 +162,18 @@ export function Feedback({ traceId, token }: { traceId: string; token: string })
             state.recorded === rating ? "border-accent text-accent" : "border-dashed border-line text-muted"
           }`}
         >
-          {label}
+          {ui.answer[label]}
         </button>
       ))}
       <span role="status" className={state.kind === "failed" ? "text-error" : "text-muted"}>
-        {state.kind === "failed" ? "avis non enregistré, réessaie" : state.recorded ? "merci, avis enregistré" : ""}
+        {state.kind === "failed" ? ui.answer.feedbackFailed : state.recorded ? ui.answer.feedbackSaved : ""}
       </span>
     </div>
   );
 }
 
 function ResultsTable({ rows }: { rows: ResultRow[] }) {
+  const ui = useUi();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "year", dir: 1 });
 
   const sorted = useMemo(() => {
@@ -217,13 +227,13 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
       <table className="w-full border-collapse text-left text-xs sm:min-w-[720px]">
         <thead className="border-b border-line">
           <tr>
-            {header("year", "Année")}
-            {header("team", "Équipe")}
-            {header("place", "Place")}
-            {header("record", "V-D", "text-right")}
+            {header("year", ui.answer.year)}
+            {header("team", ui.answer.team)}
+            {header("place", ui.answer.place)}
+            {header("record", ui.record, "text-right")}
             {header("winrate", "%", "hidden text-right sm:table-cell")}
             <th scope="col" className="hidden px-3 py-2 font-normal uppercase tracking-wider text-muted sm:table-cell">
-              Champions
+              {ui.answer.champions}
             </th>
           </tr>
         </thead>
@@ -242,7 +252,7 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
                 <td className="px-2 py-2 text-right whitespace-nowrap tabular-nums sm:px-3">
                   {r.wins}-{r.losses}
                   {/* Phone width: the win rate under the record, the % column would not fit at 320 px. */}
-                  <div className="text-muted sm:hidden">{winRate(r)} %</div>
+                  <div className="text-muted sm:hidden">{ui.percent(winRate(r))}</div>
                 </td>
                 <td className="hidden px-3 py-2 text-right tabular-nums text-muted sm:table-cell">{winRate(r)}</td>
                 <td className="hidden px-3 py-2 sm:table-cell">
@@ -269,10 +279,12 @@ const winRate = (r: ResultRow) => Math.round((100 * r.wins) / Math.max(1, r.wins
 
 /** The champions a player played in one result line: icon and games, the name in the alt text and tooltip. */
 function ResultChampions({ champions }: { champions: ResultRow["champions"] }) {
+  const ui = useUi();
+
   return (
     <ul className="flex flex-wrap gap-1.5">
       {champions.map((c) => (
-        <li key={c.name} title={`${c.name} : ${c.games} partie(s), ${c.wins} victoire(s)`} className="flex items-center gap-1">
+        <li key={c.name} title={ui.answer.played(c.name, c.games, c.wins)} className="flex items-center gap-1">
           {c.imageUrl ? (
             // 20 px Data Dragon icons: next/image would spend the Vercel Hobby image-optimization quota
             // (shared with the portfolio) without any LCP gain.
@@ -303,8 +315,9 @@ const sortHint = (answer: Answer) => {
  * tool or generated SQL); any other table stays the sortable generic one.
  */
 function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Answer["table"]> }) {
-  const comparison = useMemo(() => detectComparison(table, answer.profiles), [table, answer.profiles]);
-  const champions = useMemo(() => detectChampionRanking(table, answer.icons, sortHint(answer)), [table, answer]);
+  const locale = useLocale();
+  const comparison = useMemo(() => detectComparison(table, answer.profiles, null, locale), [table, answer.profiles, locale]);
+  const champions = useMemo(() => detectChampionRanking(table, answer.icons, sortHint(answer), locale), [table, answer, locale]);
 
   if (comparison) return <PlayerComparison comparison={comparison} />;
 
@@ -316,38 +329,35 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
   return <GenericTable table={table} />;
 }
 
-const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
-
 const asNumber = (v: TableCell) => z.number().safeParse(v).data ?? null;
-
-/** Headers of the machine-named columns the champion and comparison layouts read, when shown as a plain table. */
-const COLUMN_LABEL = new Map([
-  ["rank", "rang"],
-  ["presence", "présence %"],
-  ["winrate", "% victoires"],
-  ["player", "joueur"],
-  ["games", "parties"],
-  ["wins", "victoires"],
-  ["losses", "défaites"],
-  ["share", "part %"],
-  ["players", "joueurs"],
-]);
 
 const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
 
-/** A difference with the opponent ("Écart or @15", "gold_diff_15"): shown with its sign. */
-const DIFF_COLUMN = /^[ée]cart\b|diff/i;
+/** A difference with the opponent ("Écart or @15", "gold_diff_15", "Gold gap @15"): shown with its sign. */
+const DIFF_COLUMN = /^[ée]cart\b|diff|\bgap\b/i;
 
-/** A cell as shown: numbers in French notation (years as written, differences signed), a missing figure as n/d. */
-const cellText = (v: TableCell, column: string) => {
-  const n = asNumber(v);
+/**
+ * How a table's cells and headers read in the language: numbers in its notation (years as written, differences
+ * signed), a missing figure as n/d, and the headers of the machine-named columns the champion and comparison
+ * layouts read (any other header is the agent's).
+ */
+function useCells() {
+  const locale = useLocale();
+  const ui = useUi();
+  const labels = new Map(Object.entries(ui.answer.columns));
 
-  if (v == null) return "n/d";
+  const cellText = (v: TableCell, column: string) => {
+    const n = asNumber(v);
 
-  if (n == null || YEAR_COLUMN.test(column)) return String(v);
+    if (v == null) return ui.noData;
 
-  return `${n > 0 && DIFF_COLUMN.test(column) ? "+" : ""}${NUMBER.format(n)}`;
-};
+    if (n == null || YEAR_COLUMN.test(column)) return String(v);
+
+    return `${n > 0 && DIFF_COLUMN.test(column) ? "+" : ""}${numberFormat(locale, 2).format(n)}`;
+  };
+
+  return { cellText, labels };
+}
 
 /** A short cell (a figure, a record "86-17", a date) stays on one line; only long text may wrap. */
 const SHORT_CELL = 24;
@@ -363,6 +373,8 @@ const TOGGLE =
  * click away.
  */
 function RowCard({ table }: { table: Table }) {
+  const ui = useUi();
+  const { cellText, labels } = useCells();
   const [asTable, setAsTable] = useState(false);
   const row = table.rows[0];
   // The leading columns up to the first figure say what the line is about ("2024", "LCK").
@@ -378,7 +390,7 @@ function RowCard({ table }: { table: Table }) {
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
         <p className="text-muted">{context.join(" · ")}</p>
         <button type="button" onClick={() => setAsTable(!asTable)} aria-pressed={asTable} className={TOGGLE}>
-          {asTable ? "vue fiche" : "vue tableau"}
+          {asTable ? ui.answer.cardView : ui.champion.tableView}
         </button>
       </div>
       {asTable ? (
@@ -389,7 +401,7 @@ function RowCard({ table }: { table: Table }) {
         <div className="overflow-hidden border border-line">
           {hero >= 0 && (
             <div className="border-b border-line px-3 py-4">
-              <p className="text-xs tracking-wider text-muted uppercase">{COLUMN_LABEL.get(table.columns[hero]) ?? table.columns[hero]}</p>
+              <p className="text-xs tracking-wider text-muted uppercase">{labels.get(table.columns[hero]) ?? table.columns[hero]}</p>
               <p className={`mt-1 text-3xl font-semibold tabular-nums ${row[hero] == null ? "text-muted" : "text-accent"}`}>
                 {cellText(row[hero], table.columns[hero])}
               </p>
@@ -399,7 +411,7 @@ function RowCard({ table }: { table: Table }) {
           <dl className="-mr-px -mb-px grid grid-cols-2 text-xs sm:grid-cols-4">
             {tiles.map(({ c, i }) => (
               <div key={c} className="border-r border-b border-dashed border-line px-3 py-2">
-                <dt className="text-[11px] text-muted">{COLUMN_LABEL.get(c) ?? c}</dt>
+                <dt className="text-[11px] text-muted">{labels.get(c) ?? c}</dt>
                 <dd className={`whitespace-nowrap tabular-nums ${row[i] == null ? "text-muted" : ""}`}>{cellText(row[i], c)}</dd>
               </div>
             ))}
@@ -412,6 +424,8 @@ function RowCard({ table }: { table: Table }) {
 
 /** Any table, sortable by each column (numbers before text, missing figures last). */
 function GenericTable({ table }: { table: Table }) {
+  const locale = useLocale();
+  const { cellText, labels } = useCells();
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
 
   const rows = useMemo(() => {
@@ -426,9 +440,9 @@ function GenericTable({ table }: { table: Table }) {
 
       if (nx != null && ny != null) return (nx - ny) * sort.dir;
 
-      return String(x).localeCompare(String(y), "fr", { numeric: true }) * sort.dir;
+      return compareText(locale, String(x), String(y)) * sort.dir;
     });
-  }, [table.rows, sort]);
+  }, [table.rows, sort, locale]);
 
   return (
     <div className="mt-4 overflow-x-auto border border-line">
@@ -447,7 +461,7 @@ function GenericTable({ table }: { table: Table }) {
                     onClick={() => setSort({ col: i, dir: active ? (sort.dir === 1 ? -1 : 1) : asNumber(table.rows[0]?.[i] ?? null) != null ? -1 : 1 })}
                     className={`tap whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${focus ? "text-accent" : active ? "text-foreground" : "text-muted"}`}
                   >
-                    {COLUMN_LABEL.get(c) ?? c}
+                    {labels.get(c) ?? c}
                     <span aria-hidden className="ml-1 inline-block w-2">
                       {active ? (sort.dir === 1 ? "↑" : "↓") : ""}
                     </span>

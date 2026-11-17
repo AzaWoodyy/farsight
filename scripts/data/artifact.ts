@@ -52,6 +52,8 @@ export const Manifest = z.object({
     teams: z.number().int(),
     /** Games with in-game (Riot) stats; absent before schema v4. */
     ingame_games: z.number().int().optional(),
+    /** Players with at least one Leaguepedia photo; absent before schema v9. */
+    players_with_photo: z.number().int().optional(),
   }),
   /** The in-game summaries asset; absent before schema v4. */
   ingame: z
@@ -124,6 +126,10 @@ export function regressionProblems(counts: Manifest["counts"], previous: Manifes
 
   if (!opts.allowIngameDrop && (counts.ingame_games ?? 0) < Math.floor(previousIngame * MIN_GAMES_RATIO))
     problems.push(`${counts.ingame_games} games with in-game stats, previous release ${previous.tag} had ${previousIngame}`);
+  const previousPhotos = previous.counts.players_with_photo ?? 0;
+
+  if ((counts.players_with_photo ?? 0) < Math.floor(previousPhotos * MIN_GAMES_RATIO))
+    problems.push(`${counts.players_with_photo} players with a photo, previous release ${previous.tag} had ${previousPhotos}`);
 
   return problems;
 }
@@ -153,6 +159,7 @@ export function readFacts(path: string): DbFacts {
         players: count(db, "SELECT COUNT(*) AS n FROM players"),
         teams: count(db, "SELECT COUNT(*) AS n FROM teams"),
         ingame_games: schemaVersion >= 4 ? count(db, "SELECT COUNT(*) AS n FROM game_riot") : undefined,
+        players_with_photo: schemaVersion >= 9 ? count(db, "SELECT COUNT(DISTINCT player_id) AS n FROM player_images") : undefined,
       },
       ddragonVersion: metadata?.success ? (metadata.data.ddragon_version ?? null) : null,
       deriveVersion: metadata?.success ? (metadata.data.derive_version ?? null) : null,

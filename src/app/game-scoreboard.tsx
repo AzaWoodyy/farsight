@@ -1,6 +1,7 @@
 import type { GameScoreboard as Scoreboard, ScoreboardPlayer, ScoreboardTeam, Side } from "@/lib/agent/types";
-
-const SIDE_LABEL: Record<Side, string> = { blue: "côté bleu", red: "côté rouge" };
+import { numberFormat } from "@/lib/locale";
+import { useLocale, useUi } from "./i18n/locale-context";
+import { PlayerAvatar } from "./player-avatar";
 
 const SIDE_TEXT: Record<Side, string> = { blue: "text-blue", red: "text-red" };
 
@@ -14,38 +15,32 @@ const ROLE_SHORT = new Map([
   ["Support", "SUP"],
 ]);
 
-const INT = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-
-const ONE = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
-
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-const kilo = (n: number | null) => (n == null ? "n/d" : `${ONE.format(n / 1000)}k`);
+/** Gold in thousands ("62,4k"), in the notation of the page's language. */
+function useKilo() {
+  const one = numberFormat(useLocale(), 1);
+  const { noData } = useUi();
 
-const OBJECTIVES: { key: keyof Omit<ScoreboardTeam, "name" | "dragonKinds" | "soul">; label: string }[] = [
-  { key: "kills", label: "kills" },
-  { key: "gold", label: "or" },
-  { key: "towers", label: "tours" },
-  { key: "inhibitors", label: "inhibiteurs" },
-  { key: "dragons", label: "dragons" },
-  { key: "barons", label: "barons" },
-  { key: "heralds", label: "hérauts" },
-  { key: "grubs", label: "larves" },
-];
+  return (n: number | null) => (n == null ? noData : `${one.format(n / 1000)}k`);
+}
+
+const OBJECTIVES = ["kills", "gold", "towers", "inhibitors", "dragons", "barons", "heralds", "grubs"] as const;
 
 /**
  * End-of-game recap in the console's style: the winner's block first, as in the client's end screen,
  * then the loser's. Only what Leaguepedia's scoreboard tables hold; a missing field reads "n/d".
  */
 export function GameScoreboard({ scoreboard: sb }: { scoreboard: Scoreboard }) {
+  const ui = useUi();
   const order: Side[] = sb.winner === "red" ? ["red", "blue"] : ["blue", "red"];
   const minutes = sb.durationS ? sb.durationS / 60 : null;
   const maxDamage = Math.max(1, ...sb.players.map((p) => p.damage ?? 0));
 
   return (
-    <section aria-label="Récapitulatif de fin de partie" className="mt-4 border border-line">
+    <section aria-label={ui.scoreboard.label} className="mt-4 border border-line">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-3 py-2 text-xs">
-        <h3 className="uppercase tracking-widest text-muted">── fin de partie</h3>
+        <h3 className="uppercase tracking-widest text-muted">── {ui.scoreboard.heading}</h3>
         <span className="text-muted">
           {sb.label}
           {sb.durationS ? ` · ${clock(sb.durationS)}` : ""}
@@ -82,26 +77,30 @@ function TeamBlock({
   minutes: number | null;
   maxDamage: number;
 }) {
+  const ui = useUi();
+  const kilo = useKilo();
+  const sb = ui.scoreboard;
+
   return (
     <div className="border-b border-line last:border-0">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3 pt-3 pb-2">
         <p className="text-sm">
-          <span className={result ? "font-semibold text-accent" : "text-muted"}>{result == null ? "Résultat inconnu" : result ? "Victoire" : "Défaite"}</span>{" "}
-          <span className="text-muted">({SIDE_LABEL[side]})</span> <span className={SIDE_TEXT[side]}>{team.name}</span>
+          <span className={result ? "font-semibold text-accent" : "text-muted"}>{result == null ? sb.unknown : result ? sb.win : sb.loss}</span>{" "}
+          <span className="text-muted">({sb.side[side]})</span> <span className={SIDE_TEXT[side]}>{team.name}</span>
         </p>
         <dl className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-          {OBJECTIVES.map((o) => (
-            <div key={o.key} className="flex gap-1">
-              <dt className="text-muted">{o.label}</dt>
+          {OBJECTIVES.map((key) => (
+            <div key={key} className="flex gap-1">
+              <dt className="text-muted">{sb.objectives[key]}</dt>
               <dd className="tabular-nums">
-                {o.key === "gold" ? kilo(team.gold) : (team[o.key] ?? "n/d")}
-                {o.key === "dragons" && team.dragonKinds.length ? <span className="text-muted"> ({team.dragonKinds.join(", ")})</span> : null}
+                {key === "gold" ? kilo(team.gold) : (team[key] ?? ui.noData)}
+                {key === "dragons" && team.dragonKinds.length ? <span className="text-muted"> ({team.dragonKinds.join(", ")})</span> : null}
               </dd>
             </div>
           ))}
           {team.soul ? (
             <div className="flex gap-1">
-              <dt className="text-muted">âme</dt>
+              <dt className="text-muted">{sb.soul}</dt>
               <dd className="text-accent">{team.soul}</dd>
             </div>
           ) : null}
@@ -112,7 +111,7 @@ function TeamBlock({
         {/* Fixed column widths: both teams' tables line up column for column. */}
         <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-xs">
           <caption className="sr-only">
-            {team.name}, {SIDE_LABEL[side]}
+            {team.name}, {sb.side[side]}
           </caption>
           <colgroup>
             <col />
@@ -126,19 +125,19 @@ function TeamBlock({
           <thead>
             <tr className="text-[11px] text-muted">
               <th scope="col" className="px-3 py-1 font-normal">
-                champion · joueur
+                {sb.championPlayer}
               </th>
               <th scope="col" className="px-2 py-1 font-normal">
-                objets
+                {sb.items}
               </th>
               <th scope="col" className="px-2 py-1 text-right font-normal">
                 K/D/A
               </th>
               <th scope="col" className="px-2 py-1 font-normal">
-                dégâts infligés
+                {sb.damage}
               </th>
               <th scope="col" className="px-2 py-1 text-right font-normal">
-                or
+                {sb.gold}
               </th>
               <th scope="col" className="px-2 py-1 text-right font-normal">
                 CS
@@ -167,6 +166,11 @@ function Icon({ src, alt, size }: { src: string; alt: string; size: number }) {
 }
 
 function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: number | null; maxDamage: number }) {
+  const locale = useLocale();
+  const ui = useUi();
+  const kilo = useKilo();
+  const int = numberFormat(locale, 0);
+  const one = numberFormat(locale, 1);
   const kda = p.kills != null && p.deaths != null && p.assists != null ? (p.deaths === 0 ? null : (p.kills + p.assists) / p.deaths) : undefined;
   const slots = Array.from({ length: 6 }, (_, i) => p.items[i] ?? null);
 
@@ -174,6 +178,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
     <tr className="border-t border-dashed border-line align-middle">
       <td className="px-3 py-1.5">
         <div className="flex items-center gap-2">
+          <PlayerAvatar name={p.player} photo={p.photo} size={32} />
           <div className="relative">
             {p.championIcon && p.champion ? (
               <Icon src={p.championIcon} alt={p.champion} size={32} />
@@ -195,12 +200,12 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
               </span>
             </div>
             <div className="ml-9 truncate text-[11px] text-muted" translate="no">
-              {p.champion ?? "champion n/d"}
+              {p.champion ?? ui.scoreboard.championUnknown}
               {p.keystone && !p.keystoneIcon ? ` · ${p.keystone}` : ""}
             </div>
             {(p.spells.length > 0 || p.runes.length > 0) && (
               <div className="mt-0.5 ml-9 flex items-center gap-2">
-                <ul className="flex gap-0.5" aria-label="Sorts d'invocateur">
+                <ul className="flex gap-0.5" aria-label={ui.scoreboard.spells}>
                   {p.spells.map((s) => (
                     <li key={s.name} className="text-[10px] text-muted">
                       {s.iconUrl ? <Icon src={s.iconUrl} alt={s.name} size={14} /> : s.name}
@@ -229,13 +234,13 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
             {/* Phone width: the K/D/A column is off screen, behind the horizontal scroll; repeat it here. */}
             <div className="ml-9 text-[11px] tabular-nums sm:hidden" aria-hidden>
               {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
-              <span className="text-muted"> · {kilo(p.gold)} or</span>
+              <span className="text-muted"> · {kilo(p.gold)} {ui.scoreboard.gold}</span>
             </div>
           </div>
         </div>
       </td>
       <td className="px-2 py-1.5">
-        <ul className="flex gap-0.5" aria-label="Objets">
+        <ul className="flex gap-0.5" aria-label={ui.scoreboard.itemsLabel}>
           {slots.map((item, i) =>
             item ? (
               <li key={i}>
@@ -251,16 +256,16 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
         <div>
           {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
         </div>
-        <div className="text-[11px] text-muted">{kda === undefined ? "" : kda === null ? "KDA parfait" : `KDA ${ONE.format(kda)}`}</div>
+        <div className="text-[11px] text-muted">{kda === undefined ? "" : kda === null ? ui.scoreboard.perfectKda : `KDA ${one.format(kda)}`}</div>
       </td>
       <td className="px-2 py-1.5">
         {p.damage == null ? (
-          <span className="text-muted">n/d</span>
+          <span className="text-muted">{ui.noData}</span>
         ) : (
           <div className="w-44">
             <div className="flex items-baseline justify-between gap-2 tabular-nums">
-              <span>{INT.format(p.damage)}</span>
-              {minutes && <span className="text-[11px] text-muted">{INT.format(p.damage / minutes)}/min</span>}
+              <span>{int.format(p.damage)}</span>
+              {minutes && <span className="text-[11px] text-muted">{int.format(p.damage / minutes)}/min</span>}
             </div>
             <div className="mt-0.5 h-1.5 bg-line/60">
               <div className={`h-full ${SIDE_BAR[p.side]}`} style={{ width: `${((100 * p.damage) / maxDamage).toFixed(1)}%` }} />
@@ -270,10 +275,10 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
       </td>
       <td className="px-2 py-1.5 text-right tabular-nums">{kilo(p.gold)}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">
-        <div>{p.cs ?? "n/d"}</div>
-        {p.cs != null && minutes && <div className="text-[11px] text-muted">{ONE.format(p.cs / minutes)}/min</div>}
+        <div>{p.cs ?? ui.noData}</div>
+        {p.cs != null && minutes && <div className="text-[11px] text-muted">{one.format(p.cs / minutes)}/min</div>}
       </td>
-      <td className="px-3 py-1.5 text-right tabular-nums">{p.vision ?? "n/d"}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{p.vision ?? ui.noData}</td>
     </tr>
   );
 }

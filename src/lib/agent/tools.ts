@@ -43,6 +43,7 @@ import {
   type VersusView,
 } from "./types";
 import { renamedTeams, resolveChampion, resolvePlayer, resolveTeam } from "./understand";
+import { playerPhoto } from "../domain/player-photos";
 import {
   PLAYER_METRIC_DEFS,
   PLAYER_METRICS,
@@ -1066,6 +1067,7 @@ ORDER BY role, SUM(games) DESC, player`),
         tournaments: r.events.map(label),
         firstPlayed: r.first_played,
         lastPlayed: r.last_played,
+        photo: playerPhoto(db, r.player, r.last_played),
         source: { label: `Leaguepedia — ${r.player}`, url: wikiUrl(r.player) },
       }))
       .sort((a, b) => roleRank(a.role) - roleRank(b.role) || b.games - a.games || a.player.localeCompare(b.player));
@@ -3831,6 +3833,7 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
               side: p.side === 1 ? "blue" : "red",
               role: p.role,
               player: p.player,
+              photo: playerPhoto(db, p.player, r.played_at),
               champion: p.champion,
               championIcon: p.champion_icon,
               kills: p.kills,
@@ -3884,7 +3887,7 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
   };
 }
 
-const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.number() });
+const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.number(), last: z.number().nullable() });
 
 /**
  * Teams (by games) and main role of each player, in one competition and period: the scope the answer was computed on.
@@ -3901,7 +3904,7 @@ export function playerProfiles(db: DatabaseSync, players: string[], scope: { lea
     const rows = selectAll(
       db,
       ProfileRow,
-      `SELECT team, role, COUNT(*) AS games FROM v_game_players
+      `SELECT team, role, COUNT(*) AS games, MAX(played_at) AS last FROM v_game_players
        WHERE player = :player AND stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("year", { yearFrom: scope.yearFrom, yearTo: scope.yearTo }, params)}
        GROUP BY team, role ORDER BY games DESC`,
       params,
@@ -3915,7 +3918,9 @@ export function playerProfiles(db: DatabaseSync, players: string[], scope: { lea
       return [...games].sort((a, b) => b[1] - a[1]).map(([name]) => name);
     };
 
-    return { player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null };
+    const last = rows.reduce<number | null>((m, r) => (r.last != null && (m == null || r.last > m) ? r.last : m), null);
+
+    return { player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null, photo: rows.length ? playerPhoto(db, player, last) : null };
   });
 }
 

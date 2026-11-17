@@ -61,6 +61,7 @@ const ORPHANS: [string, string][] = [
   ["draft rows without champion", "SELECT COUNT(*) AS n FROM game_draft d LEFT JOIN champions c ON c.id = d.champion_id WHERE c.id IS NULL"],
   ["item rows without item", "SELECT COUNT(*) AS n FROM game_player_items gi LEFT JOIN items i ON i.id = gi.item_id WHERE i.id IS NULL"],
   ["aliases without player", "SELECT COUNT(*) AS n FROM player_aliases a LEFT JOIN players p ON p.id = a.player_id WHERE p.id IS NULL"],
+  ["photos without player", "SELECT COUNT(*) AS n FROM player_images i LEFT JOIN players p ON p.id = i.player_id WHERE p.id IS NULL"],
   ["in-game games without game", "SELECT COUNT(*) AS n FROM game_riot r LEFT JOIN games g ON g.id = r.game_id WHERE g.id IS NULL"],
   ["in-game player rows without player line", "SELECT COUNT(*) AS n FROM game_player_stats s LEFT JOIN game_players gp ON gp.game_id = s.game_id AND gp.player_id = s.player_id WHERE gp.game_id IS NULL"],
   ["in-game team rows without game", "SELECT COUNT(*) AS n FROM game_team_stats s LEFT JOIN game_riot r ON r.game_id = s.game_id WHERE r.game_id IS NULL"],
@@ -141,6 +142,12 @@ if (problems.length === 0) {
   if (emptyLeagues.length > 0) problems.push(`leagues without any game: ${emptyLeagues.join(", ")}`);
 
   if (facts.counts.leagues !== LEAGUES.length) problems.push(`${facts.counts.leagues} leagues with games, scope has ${LEAGUES.length}`);
+
+  // The pinned CI snapshot predates the photos: its offline rebuild has none, a release must have them.
+  if (!facts.counts.players_with_photo) {
+    if (checkOnly) console.warn("package: no player photo (raw cache without player_images.json); a release refuses this");
+    else problems.push("no player photo: data:fetch did not save player_images.json");
+  }
 }
 
 db.close();
@@ -203,6 +210,7 @@ writeFileSync(
     "",
     `- ${manifest.counts.games} games, ${manifest.counts.leagues} leagues, ${manifest.counts.tournaments} tournaments, ${manifest.counts.players} players`,
     `- ${manifest.counts.ingame_games ?? 0} games with in-game stats (Riot data on Leaguepedia; none for the LPL)`,
+    `- ${manifest.counts.players_with_photo ?? 0} players with a photo: Leaguepedia file names and dates only, the images (fair use, Riot Games and the leagues) are not included`,
     `- \`${INGAME_ASSET}\`: in-game summaries (${ingameLines} lines), read back by the next weekly run`,
     `- \`${DB_ASSET}\`: ${mb(manifest.asset.size)} (zstd), ${mb(size)} uncompressed`,
     `- sha256 (uncompressed): \`${manifest.database.sha256}\``,

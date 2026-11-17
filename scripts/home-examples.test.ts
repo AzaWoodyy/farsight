@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
-import { byCategory, CATEGORIES, nextPicks, PICK_CSS, readPicks } from "../src/app/home-examples-data";
+import { byCategory, CATEGORIES, EXAMPLES, nextPicks, PICK_CSS, readPicks } from "../src/app/home-examples-data";
 
-const counts = CATEGORIES.map((c) => byCategory(c).length);
+const counts = CATEGORIES.map((c) => byCategory("fr", c).length);
+
+test("every language has the same examples, category by category: the draw is made on positions", () => {
+  expect(EXAMPLES.en.map((e) => e.category)).toEqual(EXAMPLES.fr.map((e) => e.category));
+});
 
 test("a new draw never repeats the example shown in a category, whatever the random value", () => {
   for (const random of [0, 0.25, 0.5, 0.999999]) {

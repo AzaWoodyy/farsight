@@ -2,6 +2,7 @@
 
 import { type FocusEvent, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { byCategory, CATEGORIES, EXAMPLES, type Example, nextPicks, readPicks, ROTATE_MS } from "./home-examples-data";
+import { useLocale, useUi } from "./i18n/locale-context";
 
 type AskProps = { onAsk: (question: string) => void };
 
@@ -29,16 +30,19 @@ function ExampleRow({ example, onAsk, option, stacked, hidden }: AskProps & { ex
 
 /** Every example, one block per category: two columns from tablet up. */
 function AllExamples({ onAsk }: AskProps) {
+  const locale = useLocale();
+  const ui = useUi();
+
   return (
     <div className="mt-2 grid gap-x-10 gap-y-6 md:grid-cols-2">
       {CATEGORIES.map((c) => (
         <section key={c} aria-labelledby={`ex-${c}`}>
           <h3 id={`ex-${c}`} className={HEADING}>
             <span aria-hidden>── </span>
-            {c}
+            {ui.examples.categories[c]}
           </h3>
           <ul className="mt-1 text-sm">
-            {byCategory(c).map((e) => (
+            {byCategory(locale, c).map((e) => (
               <li key={e.question}>
                 <ExampleRow example={e} onAsk={onAsk} />
               </li>
@@ -100,6 +104,8 @@ function keyboardFocus(event: FocusEvent) {
  * not run with reduced motion.
  */
 export function HomeExamples({ onAsk }: AskProps) {
+  const locale = useLocale();
+  const ui = useUi();
   const loaded = useSyncExternalStore(noSubscribe, drawnPicks, staticPicks);
   const reduced = useSyncExternalStore(subscribeReducedMotion, reducedMotion, serverTrue);
   const hidden = useSyncExternalStore(subscribeVisibility, pageHidden, serverTrue);
@@ -161,7 +167,7 @@ export function HomeExamples({ onAsk }: AskProps) {
       onFocus={(e) => (keyboardFocus(e) ? pause(setFocused) : setFocused(false))}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
     >
-      <h2 className={HEADING}>── Essaie par exemple</h2>
+      <h2 className={HEADING}>── {ui.examples.heading}</h2>
       <ul className="mt-2 grid gap-x-10 text-sm md:grid-cols-2">
         {CATEGORIES.map((c, i) => (
           // The entrance plays from the static HTML (CSS only, so on a slow connection too) and again on each
@@ -169,11 +175,11 @@ export function HomeExamples({ onAsk }: AskProps) {
           <li key={`${c}-${draw}`} className={`${leaving ? "ex-out" : "ex-in"} pt-3`} style={{ animationDelay: `${i * STAGGER_MS}ms` }}>
             <p className={HEADING}>
               <span aria-hidden>── </span>
-              {c}
+              {ui.examples.categories[c]}
             </p>
             {/* Every example of the category in one grid cell, as tall as the longest: a draw moves nothing. */}
             <div data-c={i} className="grid">
-              {byCategory(c).map((e, n) => (
+              {byCategory(locale, c).map((e, n) => (
                 <ExampleRow key={e.question} example={e} option={picks ? undefined : n} stacked hidden={picks ? n !== picks[i] : undefined} onAsk={onAsk} />
               ))}
             </div>
@@ -189,7 +195,7 @@ export function HomeExamples({ onAsk }: AskProps) {
           <span aria-hidden className="text-accent">
             ↻
           </span>
-          Autres exemples
+          {ui.examples.more}
         </button>
         <button
           type="button"
@@ -197,7 +203,7 @@ export function HomeExamples({ onAsk }: AskProps) {
           onClick={() => setAll((v) => !v)}
           className="press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-muted hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
         >
-          {all ? "Masquer la liste" : `Tous les exemples (${EXAMPLES.length})`}
+          {all ? ui.examples.hide : ui.examples.all(EXAMPLES[locale].length)}
         </button>
       </div>
       {all && <AllExamples onAsk={onAsk} />}

@@ -14,9 +14,9 @@ function currentTheme(): Theme {
 /**
  * Switches between light and dark and remembers the choice: an icon only, named for screen readers. Both icons
  * are rendered and globals.css shows the one matching the theme on screen, so the server HTML is right from the
- * first frame, before hydration.
+ * first frame, before hydration. The two names come from the page, in its language.
  */
-export function ThemeToggle() {
+export function ThemeToggle({ toLight, toDark }: { toLight: string; toDark: string }) {
   function toggle() {
     const next: Theme = currentTheme() === "dark" ? "light" : "dark";
 
@@ -37,11 +37,11 @@ export function ThemeToggle() {
     >
       <span data-when="dark">
         <span aria-hidden>☀</span>
-        <span className="sr-only">Passer au thème clair</span>
+        <span className="sr-only">{toLight}</span>
       </span>
       <span data-when="light">
         <span aria-hidden>☾</span>
-        <span className="sr-only">Passer au thème sombre</span>
+        <span className="sr-only">{toDark}</span>
       </span>
     </button>
   );
