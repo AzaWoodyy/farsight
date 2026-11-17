@@ -1689,6 +1689,45 @@
       }
     },
     {
+      "id": "en-out-of-scope-game",
+      "question": "who won VCT Champions 2024",
+      "locale": "en",
+      "tags": [
+        "out_of_scope",
+        "english"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "summaryIncludes": [
+          "Question out of scope",
+          "The database covers"
+        ],
+        "summaryExcludes": [
+          "hors périmètre"
+        ]
+      }
+    },
+    {
+      "id": "en-future-year",
+      "question": "Faker's results at Worlds 2031",
+      "locale": "en",
+      "tags": [
+        "out_of_scope",
+        "english"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "players": [
+          "Faker"
+        ],
+        "summaryIncludes": [
+          "That year is in the future"
+        ]
+      }
+    },
+    {
       "id": "out-of-scope-topic",
       "question": "quelle est la météo à Paris",
       "tags": [

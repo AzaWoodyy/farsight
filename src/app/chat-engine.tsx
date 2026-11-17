@@ -80,7 +80,8 @@ export function ChatEngine({
   onChange: (state: ChatState) => void;
   first: { text: string; sessionId: string } | null;
 }) {
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport: transports.get(useLocale()) });
+  const locale = useLocale();
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport: transports.get(locale) });
   const running = status === "submitted" || status === "streaming";
 
   useImperativeHandle(
@@ -90,21 +91,21 @@ export function ChatEngine({
         if (running) void stop();
         // One question at a time: the agent does not use the chat history.
         setMessages([]);
-        void sendMessage({ text }, { body: { sessionId } });
+        void sendMessage({ text }, { body: { sessionId, locale } });
       },
       reset() {
         if (running) void stop();
         setMessages([]);
       },
     }),
-    [running, stop, setMessages, sendMessage],
+    [running, stop, setMessages, sendMessage, locale],
   );
 
   useEffect(() => onChange({ messages, status, error }), [messages, status, error, onChange]);
 
   // The question that made the console load the chat: asked once, when it mounts.
   useEffect(() => {
-    if (first) void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId } });
+    if (first) void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId, locale } });
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

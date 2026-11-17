@@ -15,6 +15,7 @@
  * the threshold, the most confident result wins.
  */
 import { describeLlmError, requestAborted } from "./llm";
+import { msg } from "./messages";
 
 export type DecisionLevel = "rules" | "model" | "llm";
 
@@ -77,13 +78,13 @@ export async function decide<I, O>(
 
 /** One-line description of the cascade, for the trace. */
 export function describeAttempts(attempts: DecisionAttempt[]): string {
+  const m = msg().decide;
+
   return attempts
-    .map((a) =>
-      a.error
-        ? `${a.level}/${a.name}: erreur (${a.error})`
-        : a.confidence == null
-          ? `${a.level}/${a.name}: indisponible`
-          : `${a.level}/${a.name}: confiance ${a.confidence.toFixed(2)}`,
-    )
+    .map((a) => {
+      const who = `${a.level}/${m.names[a.name] ?? a.name}`;
+
+      return a.error ? m.failed(who, a.error) : a.confidence == null ? m.unavailable(who) : m.confidence(who, a.confidence.toFixed(2));
+    })
     .join(" → ");
 }

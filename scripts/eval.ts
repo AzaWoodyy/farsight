@@ -70,6 +70,8 @@ const Case = z.strictObject({
   id: z.string(),
   question: z.string(),
   tags: z.array(z.string()),
+  /** Language the answer is asked in, like a page of that language does (default: French). */
+  locale: z.enum(["fr", "en"]).optional(),
   /** The expected answer needs the LLM (tool choice or entities): not scored as passed without a key. */
   llm: z.boolean().optional(),
   expect: Expect,
@@ -216,6 +218,8 @@ for (const c of cases) {
         if (ev.type === "step") steps.set(ev.part.step, ev.part);
       },
       now,
+      undefined,
+      c.locale,
     );
 
     checks = score(c, answer, steps);
