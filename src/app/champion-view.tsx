@@ -66,11 +66,12 @@ function SortHeader({ active, dir, label, title, className, onClick }: { active:
       type="button"
       title={title}
       onClick={onClick}
-      className={`${className} whitespace-nowrap hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
+      // A button does not inherit capitals from its row: set here, as in the plain table's headers.
+      className={`${className} whitespace-nowrap uppercase hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
     >
       <span className="sr-only">trier par </span>
       {label}
-      <span aria-hidden className="ml-0.5 inline-block w-2">
+      <span aria-hidden className="ml-1 inline-block w-2">
         {active ? (dir === 1 ? "↑" : "↓") : ""}
       </span>
       {active && <span className="sr-only">{dir === 1 ? ", tri croissant" : ", tri décroissant"}</span>}
@@ -112,12 +113,13 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
         <div className="[&>div]:mt-0">{fallback}</div>
       ) : (
         <div className="border border-line">
-          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted sm:flex">
+          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. */}
+          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase sm:flex">
             <span className="w-8 shrink-0">#</span>
             <span className="min-w-0 flex-1">champion</span>
-            <span className="w-[4.5rem] shrink-0 text-right text-foreground">{primary.label}</span>
+            <span className="w-24 shrink-0 text-right text-foreground">{primary.label}</span>
             {others.map(({ m }) => (
-              <span key={m.key} className="w-[4.5rem] shrink-0 text-right">
+              <span key={m.key} className="w-24 shrink-0 text-right">
                 {m.label}
               </span>
             ))}
@@ -143,7 +145,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                       </div>
                     </div>
                   </div>
-                  <span aria-hidden className="text-right font-semibold tabular-nums text-accent sm:w-[4.5rem] sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
+                  <span aria-hidden className="text-right font-semibold tabular-nums text-accent sm:w-24 sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
                   {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
                   <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
                     {others.map(({ m, i }) => (
@@ -154,7 +156,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                     ))}
                   </dl>
                   {others.map(({ m, i }) => (
-                    <span key={m.key} className="hidden w-[4.5rem] shrink-0 text-right tabular-nums sm:block">
+                    <span key={m.key} className="hidden w-24 shrink-0 text-right tabular-nums sm:block">
                       <Label>{m.label}</Label>
                       {formatChampionValue(l.values[i], m.percent)}
                     </span>
@@ -484,7 +486,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
               <span className="w-5 shrink-0">#</span>
               {header("item", "item", "ordre alphabétique", "min-w-0 flex-1 text-left")}
               {ITEM_COLUMNS.map((c) => (
-                <span key={c.key} className="w-14 shrink-0 text-right">
+                <span key={c.key} className="w-16 shrink-0 text-right">
                   {header(c.key, c.label, c.title, "w-full text-right")}
                 </span>
               ))}
@@ -508,12 +510,12 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
                         </div>
                       </div>
                     </div>
-                    <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                    <span className="w-16 shrink-0 text-right font-semibold tabular-nums text-accent">
                       <Label>parties</Label>
                       {l.games}
                     </span>
                     <span
-                      className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
+                      className={`w-16 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`}
                       title={wr == null ? `moins de ${ITEM_WINRATE_MIN_GAMES} parties : winrate non affiché (${l.wins}-${l.games - l.wins})` : `${l.wins}-${l.games - l.wins}`}
                     >
                       <Label>winrate</Label>
@@ -654,11 +656,12 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
         <div className="[&>div]:mt-2">{fallback}</div>
       ) : (
         <div className="mt-2 border border-line">
-          <div className="flex items-center gap-3 border-b border-line px-3 py-1.5 text-[11px] text-muted">
+          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. */}
+          <div className="flex items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase">
             <span className="w-6 shrink-0">#</span>
             {header("champion", "champion", "ordre alphabétique", "min-w-0 flex-1 text-left")}
             {POOL_COLUMNS.map((c) => (
-              <span key={c.key} className={c.key === "games" || c.key === "winrate" ? "w-14 shrink-0 text-right" : "hidden w-14 shrink-0 text-right sm:block"}>
+              <span key={c.key} className={c.key === "games" || c.key === "winrate" ? "w-20 shrink-0 text-right" : "hidden w-20 shrink-0 text-right sm:block"}>
                 {header(c.key, c.label, c.title, "w-full text-right")}
               </span>
             ))}
@@ -681,23 +684,23 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
                     </div>
                   </div>
                 </div>
-                <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+                <span className="w-20 shrink-0 text-right font-semibold tabular-nums text-accent">
                   <Label>parties</Label>
                   {l.games}
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums sm:block">
                   <Label>V-D</Label>
                   {l.wins}-{l.losses}
                 </span>
-                <span className="w-14 shrink-0 text-right tabular-nums">
+                <span className="w-20 shrink-0 text-right tabular-nums">
                   <Label>winrate</Label>
                   {NUMBER.format(l.winrate)} %
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums sm:block">
                   <Label>KDA</Label>
                   {nd(l.kda)}
                 </span>
-                <span className="hidden w-14 shrink-0 text-right tabular-nums text-muted sm:block">
+                <span className="hidden w-20 shrink-0 text-right tabular-nums text-muted sm:block">
                   <Label>part</Label>
                   {NUMBER.format(l.share)} %
                 </span>
