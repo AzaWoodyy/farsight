@@ -65,7 +65,8 @@ function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
   );
 }
 
-export function FaceOff({ c }: { c: Comparison }) {
+/** `focus`: key of the statistic the question names, set apart from the rest. */
+export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | null }) {
   const [a, b] = c.players;
 
   return (
@@ -77,9 +78,14 @@ export function FaceOff({ c }: { c: Comparison }) {
       </div>
       <ul className="px-3 py-2 text-xs">
         {c.stats.map((s) => (
-          <li key={s.key} className="grid grid-cols-[1fr_7.5rem_1fr] items-center gap-3 py-1 sm:grid-cols-[1fr_9rem_1fr]">
+          <li
+            key={s.key}
+            className={`grid grid-cols-[1fr_7.5rem_1fr] items-center gap-3 py-1 sm:grid-cols-[1fr_9rem_1fr] ${
+              s.key === focus ? "mb-1 border-b border-dashed border-line pb-2" : ""
+            }`}
+          >
             <MirrorBar s={s} i={0} />
-            <span className="truncate text-center text-muted">
+            <span className={`truncate text-center ${s.key === focus ? "font-semibold text-foreground" : "text-muted"}`}>
               <Label s={s} />
             </span>
             <MirrorBar s={s} i={1} />

@@ -2,7 +2,7 @@
 
 import { type ReactNode, useMemo, useState } from "react";
 import type { Answer, VersusGame, VersusSide, VersusView } from "@/lib/agent/types";
-import { detectComparison } from "@/lib/comparison";
+import { type Comparison, detectComparison } from "@/lib/comparison";
 import { ComparisonNote, FaceOff } from "./player-comparison";
 
 /** Games listed before "show all". */
@@ -16,10 +16,10 @@ const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", 
  * scope and a sentence saying they never met.
  */
 export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Answer["profiles"]; fallback: ReactNode }) {
-  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles) : null), [v.h2h, profiles]);
-  const global = useMemo(() => detectComparison(v.global, profiles), [v.global, profiles]);
+  const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus) : null), [v.h2h, profiles, v.focus]);
+  const global = useMemo(() => detectComparison(v.global, profiles, v.focus), [v.global, profiles, v.focus]);
   const [tab, setTab] = useState<"h2h" | "global">("h2h");
-  const shown = h2h && tab === "h2h" ? h2h : global;
+  const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
 
   // One of them has no game in the scope: nothing to set face to face, the plain table says so.
@@ -55,11 +55,19 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
         </p>
       )}
       {met > 0 && <Lanes v={v} met={met} />}
-      <FaceOff c={shown} />
+      <FaceOff c={shown} focus={v.focus} />
       <ComparisonNote c={shown} />
       {v.games.length > 0 && <Games v={v} />}
     </div>
   );
+}
+
+/** The statistic the question names, moved to the top of the face-off. */
+function first(c: Comparison | null, focus: string | null): Comparison | null {
+  if (!c || !focus) return c;
+  const asked = c.stats.filter((s) => s.key === focus);
+
+  return asked.length ? { ...c, stats: [...asked, ...c.stats.filter((s) => s.key !== focus)] } : c;
 }
 
 /** Whether their games against each other were lane face-offs: same role on both sides. */
