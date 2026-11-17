@@ -215,11 +215,12 @@ function Draft({ side, team, picks, bans }: { side: Side; team: string; picks: S
 }
 
 function ChampionIcon({ name, icon, size, side }: { name: string | null; icon: string | null; size: number; side?: Side }): ReactNode {
+  const ui = useUi();
   const border = side === "blue" ? "border-blue" : side === "red" ? "border-red" : "border-line";
 
   if (!icon || !name)
     return (
-      <span className={`flex shrink-0 items-center justify-center border ${border} text-[9px] text-muted`} style={{ width: size, height: size }} title={name ?? "?"}>
+      <span className={`flex shrink-0 items-center justify-center border ${border} text-[9px] text-muted`} style={{ width: size, height: size }} title={name ?? ui.noData}>
         {name?.slice(0, 3) ?? "?"}
       </span>
     );
