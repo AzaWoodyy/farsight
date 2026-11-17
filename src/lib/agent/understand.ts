@@ -567,7 +567,8 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   const { teams } = getIndexes(db);
   const { league } = detectLeague(question);
 
-  for (let size = 3; size >= 1; size--) {
+  // Four words: the longest names of the scope ("Royal Never Give Up").
+  for (let size = 4; size >= 1; size--) {
     for (let i = 0; i + size <= tokens.length; i++) {
       const span = Array.from({ length: size }, (_, k) => i + k);
 

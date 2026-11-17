@@ -1921,6 +1921,157 @@
       }
     },
     {
+      "id": "team-four-word-name",
+      "question": "Historique de Royal Never Give Up",
+      "tags": [
+        "team_history"
+      ],
+      "expect": {
+        "route": "team_history",
+        "rowsMin": 1,
+        "teams": [
+          "Royal Never Give Up"
+        ]
+      }
+    },
+    {
+      "id": "en-champion-ranking-bans",
+      "question": "Most banned champions in LCK 2025",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Most banned champions in LCK in 2025",
+          "Criterion: number of bans"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
+      "id": "en-champion-ranking-average",
+      "question": "Champions with the most deaths per game at Worlds 2026",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Champions with the most deaths per game at Worlds in 2026",
+          "deaths per game,",
+          "Criterion: deaths per game, on average, minimum 5 picks"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
+      "id": "en-champion-pool-player",
+      "question": "Faker's champion pool",
+      "locale": "en",
+      "tags": [
+        "pool",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Champion pool of Faker all competitions:",
+          "different champions over",
+          "Most played: Azir",
+          "of the pool"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
+      "id": "en-champion-pool-team",
+      "question": "T1's champion pool at Worlds 2025",
+      "locale": "en",
+      "tags": [
+        "pool",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_pool",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Champion pool of T1 at Worlds in 2025: 57 different champions over 24 games (17 wins, 7 losses), 120 picks",
+          "mostly Faker"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
+      "id": "en-standings",
+      "question": "Worlds 2023 standings",
+      "locale": "en",
+      "tags": [
+        "standings",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Worlds 2023: T1 champion, Weibo Gaming runner-up. 22 teams ranked."
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
+      "id": "en-winners",
+      "question": "Who won MSI",
+      "locale": "en",
+      "tags": [
+        "standings",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Winners of MSI:",
+          "Most titles: Royal Never Give Up (3)",
+          "Latest winner"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          "Critère"
+        ]
+      }
+    },
+    {
       "id": "out-of-scope-topic",
       "question": "quelle est la météo à Paris",
       "tags": [

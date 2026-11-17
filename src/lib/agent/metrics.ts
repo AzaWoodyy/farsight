@@ -5,6 +5,8 @@
  * covers (none in the LPL): v_ingame_coverage says which.
  */
 
+import { say } from "./messages";
+
 export const MINUTES = [10, 15, 20] as const;
 
 export type Minute = (typeof MINUTES)[number];
@@ -55,6 +57,8 @@ export type Aggregate = "sum" | "avg" | "rate";
 type MetricDef = {
   /** French label for tables and sentences. */
   label: string;
+  /** The same in English. */
+  en: string;
   aggregate: Aggregate;
   /** Column; for a snapshot metric, the column prefix (`gold_diff` → `gold_diff_15`). */
   column: string;
@@ -64,45 +68,46 @@ type MetricDef = {
 const at = (column: string) => ({ column, snapshot: true as const });
 
 export const PLAYER_METRIC_DEFS: Record<PlayerMetric, MetricDef> = {
-  solo_kills: { label: "solo kills", aggregate: "sum", column: "solo_kills" },
-  penta_kills: { label: "pentakills", aggregate: "sum", column: "penta_kills" },
-  quadra_kills: { label: "quadrakills", aggregate: "sum", column: "quadra_kills" },
-  triple_kills: { label: "triple kills", aggregate: "sum", column: "triple_kills" },
-  double_kills: { label: "double kills", aggregate: "sum", column: "double_kills" },
-  first_bloods: { label: "first bloods", aggregate: "sum", column: "first_blood_kill" },
-  kills_before_10: { label: "kills avant 10 min", aggregate: "sum", column: "kills_10" },
-  gold_diff: { label: "écart d'or face à l'adversaire direct", aggregate: "avg", ...at("gold_diff") },
-  cs_diff: { label: "écart de CS face à l'adversaire direct", aggregate: "avg", ...at("cs_diff") },
-  xp_diff: { label: "écart d'XP face à l'adversaire direct", aggregate: "avg", ...at("xp_diff") },
-  gold: { label: "or", aggregate: "avg", ...at("gold") },
-  cs: { label: "CS", aggregate: "avg", ...at("cs") },
-  xp: { label: "XP", aggregate: "avg", ...at("xp") },
-  wards_placed: { label: "wards posées", aggregate: "avg", column: "wards_placed" },
-  wards_killed: { label: "wards détruites", aggregate: "avg", column: "wards_killed" },
-  control_wards: { label: "control wards achetées", aggregate: "avg", column: "control_wards" },
-  plates: { label: "plaques de tourelle", aggregate: "sum", column: "plates" },
+  solo_kills: { label: "solo kills", en: "solo kills", aggregate: "sum", column: "solo_kills" },
+  penta_kills: { label: "pentakills", en: "pentakills", aggregate: "sum", column: "penta_kills" },
+  quadra_kills: { label: "quadrakills", en: "quadrakills", aggregate: "sum", column: "quadra_kills" },
+  triple_kills: { label: "triple kills", en: "triple kills", aggregate: "sum", column: "triple_kills" },
+  double_kills: { label: "double kills", en: "double kills", aggregate: "sum", column: "double_kills" },
+  first_bloods: { label: "first bloods", en: "first bloods", aggregate: "sum", column: "first_blood_kill" },
+  kills_before_10: { label: "kills avant 10 min", en: "kills before 10 min", aggregate: "sum", column: "kills_10" },
+  gold_diff: { label: "écart d'or face à l'adversaire direct", en: "gold difference with the lane opponent", aggregate: "avg", ...at("gold_diff") },
+  cs_diff: { label: "écart de CS face à l'adversaire direct", en: "CS difference with the lane opponent", aggregate: "avg", ...at("cs_diff") },
+  xp_diff: { label: "écart d'XP face à l'adversaire direct", en: "XP difference with the lane opponent", aggregate: "avg", ...at("xp_diff") },
+  gold: { label: "or", en: "gold", aggregate: "avg", ...at("gold") },
+  cs: { label: "CS", en: "CS", aggregate: "avg", ...at("cs") },
+  xp: { label: "XP", en: "XP", aggregate: "avg", ...at("xp") },
+  wards_placed: { label: "wards posées", en: "wards placed", aggregate: "avg", column: "wards_placed" },
+  wards_killed: { label: "wards détruites", en: "wards killed", aggregate: "avg", column: "wards_killed" },
+  control_wards: { label: "control wards achetées", en: "control wards bought", aggregate: "avg", column: "control_wards" },
+  plates: { label: "plaques de tourelle", en: "turret plates", aggregate: "sum", column: "plates" },
 };
 
 export const TEAM_METRIC_DEFS: Record<TeamMetric, MetricDef> = {
-  first_blood: { label: "first blood", aggregate: "rate", column: "first_blood" },
-  first_tower: { label: "première tourelle", aggregate: "rate", column: "first_tower" },
-  first_dragon: { label: "premier dragon", aggregate: "rate", column: "first_dragon" },
-  first_herald: { label: "premier héraut", aggregate: "rate", column: "first_herald" },
-  first_baron: { label: "premier baron", aggregate: "rate", column: "first_baron" },
-  gold_diff: { label: "écart d'or d'équipe", aggregate: "avg", ...at("gold_diff") },
-  kills_before_10: { label: "kills avant 10 min", aggregate: "avg", column: "kills_10" },
-  plates: { label: "plaques de tourelle prises", aggregate: "avg", column: "plates" },
+  first_blood: { label: "first blood", en: "first blood", aggregate: "rate", column: "first_blood" },
+  first_tower: { label: "première tourelle", en: "first tower", aggregate: "rate", column: "first_tower" },
+  first_dragon: { label: "premier dragon", en: "first dragon", aggregate: "rate", column: "first_dragon" },
+  first_herald: { label: "premier héraut", en: "first herald", aggregate: "rate", column: "first_herald" },
+  first_baron: { label: "premier baron", en: "first baron", aggregate: "rate", column: "first_baron" },
+  gold_diff: { label: "écart d'or d'équipe", en: "team gold difference", aggregate: "avg", ...at("gold_diff") },
+  kills_before_10: { label: "kills avant 10 min", en: "kills before 10 min", aggregate: "avg", column: "kills_10" },
+  plates: { label: "plaques de tourelle prises", en: "turret plates taken", aggregate: "avg", column: "plates" },
   // Over the games where a soul could be taken and the timeline says who took it (dragon_soul is NULL otherwise).
-  dragon_soul: { label: "âme du dragon", aggregate: "rate", column: "dragon_soul" },
-  elder_dragons: { label: "dragons ancestraux", aggregate: "sum", column: "elder_dragons" },
+  dragon_soul: { label: "âme du dragon", en: "dragon soul", aggregate: "rate", column: "dragon_soul" },
+  elder_dragons: { label: "dragons ancestraux", en: "elder dragons", aggregate: "sum", column: "elder_dragons" },
 };
 
 export function metricColumn(def: MetricDef, minute: Minute | null): string {
   return def.snapshot ? `${def.column}_${minute ?? 15}` : def.column;
 }
 
+/** A metric as the answers name it, in the language of the request. */
 export function metricLabel(def: MetricDef, minute: Minute | null): string {
-  return def.snapshot ? `${def.label} à ${minute ?? 15} min` : def.label;
+  return say(def.snapshot ? `${def.label} à ${minute ?? 15} min` : def.label, def.snapshot ? `${def.en} at ${minute ?? 15} min` : def.en);
 }
 
 /** Dragon elements as questions name them ("infernal", "des océans", "mountain"). */
