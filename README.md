@@ -6,13 +6,13 @@ Pose une question comme « Résultats de Chovy à tous les Worlds », « T1 cont
 
 ## Stack
 
-Next.js App Router et React, TypeScript, AI SDK 7 avec OpenRouter, SQLite en lecture seule et Node **24.15 ou supérieur dans la branche 24** sur Vercel. Bun gère les dépendances et les scripts locaux. Langfuse est facultatif ; Cloudflare R2 conserve les JSON Riot utilisés pour les timelines.
+Next.js App Router et React, TypeScript, AI SDK 7 avec OpenRouter, SQLite en lecture seule et Node **26** sur Vercel. Bun gère les dépendances et les scripts locaux. Langfuse est facultatif ; Cloudflare R2 conserve les JSON Riot utilisés pour les timelines.
 
 Les questions courantes passent par des outils SQL typés et paramétrés. Le modèle intervient lorsque les règles ne suffisent pas. Le SQL généré passe par une liste blanche de vues, un contrôle de lecture seule et une limite de lignes, puis tourne dans un processus isolé arrêté après quatre secondes. Les chaînes SQLite sont limitées à 1 Mo. Les réponses en erreur et les données absentes ont des messages distincts.
 
 ## Lancer en local
 
-Installer la version de Bun indiquée dans `package.json`, Node 24.15+ et `zstd`, puis :
+Installer la version de Bun indiquée dans `package.json`, Node 26 et `zstd`, puis :
 
 ```sh
 bun install --frozen-lockfile
