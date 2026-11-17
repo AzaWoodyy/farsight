@@ -1,3 +1,4 @@
+import { msg } from "./messages";
 import { leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
@@ -66,13 +67,13 @@ const UNSUPPORTED = word(
  * views switches the detection off by itself.
  */
 const DATA_CONCEPTS = [
-  { label: "les sorts d'invocateur", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
-  { label: "les distinctions MVP et joueur du match", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
+  { concept: "spells", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
+  { concept: "mvp", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
 ] as const;
 
 /** The concepts of the question that no column of the schema holds. */
 export function missingConcepts(question: string, schema: Record<string, string[]>): string[] {
-  return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [c.label] : []));
+  return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [msg().route.concepts[c.concept]] : []));
 }
 
 /** Games of a scope and how many have in-game (Riot) data. */
@@ -385,8 +386,8 @@ function championRankingRoute(question: string, e: Entities, sort: ChampionSort 
     kind: "tool",
     call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, total, role, side, minPicks } },
     confidence: 0.9,
-    reason: `classement de champions (tri : ${sort}${total ? " au total" : ""}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
-    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+    reason: msg().route.championRanking(sort, Boolean(total), role ?? null, side ?? null),
+    notes: e.league ? [] : [msg().route.noLeagueWorldsRanking],
   };
 }
 
@@ -400,9 +401,9 @@ function playerLeaderboardRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games"), side } },
     confidence: 0.85,
-    reason: `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion}${side ? `, côté ${side}` : ""})`,
+    reason: msg().route.playerRanking(role ?? null, criterion, side ?? null),
     // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
-    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+    notes: e.league ? [] : [msg().route.noLeagueWorldsRanking],
   };
 }
 
@@ -410,13 +411,7 @@ const ROLE_CUES = ROLES.map((r) => ({ role: r.role, pattern: word(r.words) }));
 
 /** Leagues of the scope (short names), period words aside: "la LPL", "le MSI 2024". */
 function scopeOf(e: Entities): string {
-  const short = e.leagueShort;
-
-  if (!short) return "cette compétition";
-
-  if (short === "Worlds" || short.endsWith("Masters")) return `les ${short}`;
-
-  return short === "MSI" ? "le MSI" : `la ${short}`;
+  return msg().route.leagueScope(e.leagueShort);
 }
 
 /** The competition asked has no game with Riot data (the LPL, older seasons): the figure is absent, said without widening the scope. */
@@ -425,8 +420,8 @@ function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): R
 
   return {
     kind: "missing",
-    concepts: [`les statistiques in-game (${mention}) pour ${scopeOf(e)}`],
-    reason: `aucune partie de ${e.leagueShort ?? e.league} ${e.yearFrom ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
+    concepts: [msg().route.ingameFor(msg().route.ingameStats(mention), scopeOf(e))],
+    reason: msg().route.noRiotGames(e.leagueShort ?? e.league, e.yearFrom),
     coverage: true,
   };
 }
@@ -438,14 +433,15 @@ function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): R
 function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: CoverageLookup): Route | null {
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
   const league = e.league;
-  const what = `les statistiques in-game (${cue.mention})`;
+  const m = msg().route;
+  const what = m.ingameStats(cue.mention);
 
   // "gold diff à 25 min": the snapshots exist at 10, 15 and 20 min only; say so rather than answer at 15.
   if (cue.askedMinute != null && cue.minute == null && isSnapshot(cue))
     return {
       kind: "missing",
-      concepts: [`${cue.mention} à ${cue.askedMinute} min (relevé seulement à ${MINUTES.join(", ").replace(/, (\d+)$/, " et $1")} min)`],
-      reason: `minute ${cue.askedMinute} absente des données in-game`,
+      concepts: [m.minuteOnly(cue.mention, cue.askedMinute, MINUTES)],
+      reason: m.minuteAbsent(cue.askedMinute),
     };
 
   const absent = ingameAbsent(e, cue.mention, coverage);
@@ -464,8 +460,8 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       if (asked.ingame === 0 && (asked.games > 0 || coverage.team(own.members, null, null, null).ingame === 0))
         return {
           kind: "missing",
-          concepts: [`${what} de ${own.team}${league ? ` en ${e.leagueShort}` : ""}`],
-          reason: `aucune partie de ${own.team} avec données Riot dans ce périmètre`,
+          concepts: [m.ingameOf(what, own.team, league ? `${e.leagueShort}` : null)],
+          reason: m.noRiotGamesOf(own.team),
           coverage: true,
         };
     }
@@ -474,21 +470,21 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       kind: "tool",
       call: { tool: "dragon_stats", input: { team: own?.team ?? null, league, ...period } },
       confidence: 0.85,
-      reason: `dragons par élément et âmes (« ${cue.mention} »)`,
-      notes: league || own ? [] : ["Aucune compétition précisée : dragons de toutes les compétitions avec données in-game."],
+      reason: m.dragons(cue.mention),
+      notes: league || own ? [] : [m.noLeagueDragons],
     };
   }
 
   if (e.players.length === 1 && e.teams.length === 0 && !e.champion) {
     const p = e.players[0].player;
 
-    if (!cue.player) return { kind: "sql", reason: `métrique d'équipe (« ${cue.mention} ») demandée pour un joueur` };
+    if (!cue.player) return { kind: "sql", reason: m.teamMetricForPlayer(cue.mention) };
 
     if (coverage.player(p, league, e.yearFrom, e.yearTo).ingame === 0)
       return {
         kind: "missing",
-        concepts: [`${what} de ${p}${league ? ` en ${e.leagueShort}` : ""}`],
-        reason: `aucune partie de ${p} avec données Riot dans ce périmètre`,
+        concepts: [m.ingameOf(what, p, league ? `${e.leagueShort}` : null)],
+        reason: m.noRiotGamesOf(p),
         coverage: true,
       };
 
@@ -496,13 +492,13 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       kind: "tool",
       call: { tool: "player_ingame_stats", input: { player: p, league, ...period, metric: cue.player, minute: cue.minute } },
       confidence: 0.9,
-      reason: `statistique in-game d'un joueur (« ${cue.mention} »)`,
+      reason: m.playerIngame(cue.mention),
       notes: [],
     };
   }
 
   if (e.teams.length === 1 && e.players.length === 0 && !e.champion) {
-    if (!cue.team) return { kind: "sql", reason: `métrique individuelle (« ${cue.mention} ») demandée pour une équipe` };
+    if (!cue.team) return { kind: "sql", reason: m.playerMetricForTeam(cue.mention) };
 
     const { team, members } = e.teams[0];
     const asked = coverage.team(members, league, e.yearFrom, e.yearTo);
@@ -512,8 +508,8 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
     if (asked.ingame === 0 && (asked.games > 0 || coverage.team(members, null, null, null).ingame === 0))
       return {
         kind: "missing",
-        concepts: [`${what} de ${team}${league ? ` en ${e.leagueShort}` : ""}`],
-        reason: `aucune partie de ${team} avec données Riot dans ce périmètre`,
+        concepts: [m.ingameOf(what, team, league ? `${e.leagueShort}` : null)],
+        reason: m.noRiotGamesOf(team),
         coverage: true,
       };
 
@@ -521,7 +517,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       kind: "tool",
       call: { tool: "team_ingame_stats", input: { team, league, ...period, minute: cue.minute } },
       confidence: 0.85,
-      reason: `profil in-game d'une équipe (« ${cue.mention} »)`,
+      reason: m.teamIngame(cue.mention),
       notes: [],
     };
   }
@@ -531,10 +527,10 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
     const asksTeams = TEAM_WORDS.test(question);
 
     // "équipes avec le plus d'âmes infernales": one element is not the soul rate the leaderboard ranks.
-    if (isDragonCue(cue) && DRAGON_ELEMENT.test(question)) return { kind: "sql", reason: `classement sur un élément de dragon (« ${cue.mention} ») sans outil typé` };
+    if (isDragonCue(cue) && DRAGON_ELEMENT.test(question)) return { kind: "sql", reason: m.dragonElementRanking(cue.mention) };
 
     // A team ranking on a metric only players have (or the reverse): text-to-SQL.
-    if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: `classement sur « ${cue.mention} » sans outil typé` };
+    if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: m.rankingUntyped(cue.mention) };
     const team = asksTeams || cue.player == null;
     const metric = team ? cue.team : cue.player;
 
@@ -545,12 +541,12 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       kind: "tool",
       call: { tool: "ingame_leaderboard", input: { subject: team ? "team" : "player", metric, minute: cue.minute, league, ...period, role, minGames: null, side: sideOf(question) } },
       confidence: 0.85,
-      reason: `classement sur une statistique in-game (« ${cue.mention} »)`,
-      notes: league ? [] : ["Aucune compétition précisée : classement sur toutes les compétitions avec données in-game."],
+      reason: m.ingameRanking(cue.mention),
+      notes: league ? [] : [m.noLeagueIngameRanking],
     };
   }
 
-  return { kind: "sql", reason: `statistique in-game (« ${cue.mention} ») sans outil typé pour ces entités` };
+  return { kind: "sql", reason: m.ingameUntyped(cue.mention) };
 }
 
 // One game's timeline ------------------------------------------------------------------
@@ -618,8 +614,8 @@ function routeTimeline(question: string, e: Entities): Route | null {
       input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, year, phase: phaseOf(question), game },
     },
     confidence: 0.9,
-    reason: cue ? "déroulé d'une partie (timeline, courbe d'or)" : "partie désignée par son numéro dans une série",
-    notes: e.teams.length > 2 ? [`Plus de deux équipes reconnues : seules ${e.teams[0].team} et ${e.teams[1].team} sont retenues.`] : [],
+    reason: cue ? msg().route.gameTimeline : msg().route.gameByNumber,
+    notes: e.teams.length > 2 ? [msg().route.onlyTwoTeamsKept(e.teams[0].team, e.teams[1].team)] : [],
   };
 }
 
@@ -654,15 +650,15 @@ function routeSeries(question: string, e: Entities): Route | null {
 
   if (STANDINGS_ONLY.test(question) || POOL.test(question) || ROSTER.test(question) || detectMetric(question) || UNSUPPORTED.test(maskUnderstood(question, e).rest)) return null;
 
-  const notes = e.teams.length > 2 ? [`Plus de deux équipes reconnues : seules ${e.teams[0].team} et ${e.teams[1].team} sont retenues.`] : [];
+  const notes = e.teams.length > 2 ? [msg().route.onlyTwoTeamsKept(e.teams[0].team, e.teams[1].team)] : [];
 
   return {
     kind: "tool",
     call: { tool: "series", input: { teamA: e.teams[0]?.team ?? null, teamB: e.teams[1]?.team ?? null, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, phase, split: e.split } },
     confidence: 0.9,
     reason: phase
-      ? `phase de compétition (« ${PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0]} ») → séries en BO`
-      : `deux équipes et « ${bestOf} » sur une saison → leurs séries en BO`,
+      ? msg().route.phaseSeries(PHASES.find((p) => p.phase === phase)!.pattern.exec(question)![0])
+      : msg().route.twoTeamsSeries(`${bestOf}`),
     notes,
   };
 }
@@ -697,7 +693,7 @@ function comparedMetric(question: string, notes: string[]): ComparedMetric {
   const cue = detectMetric(question);
 
   if (cue && cue.askedMinute != null && cue.minute == null && isSnapshot(cue)) {
-    notes.push(`Les données in-game ne relèvent l'or, le CS et l'XP qu'à 10, 15 et 20 min : pas de « ${cue.mention} » à ${cue.askedMinute} min.`);
+    notes.push(msg().route.snapshotMinutes(cue.mention, cue.askedMinute));
 
     return { metric: null, minute: null, mention: cue.mention };
   }
@@ -705,7 +701,7 @@ function comparedMetric(question: string, notes: string[]): ComparedMetric {
   if (cue?.player) return { metric: cue.player, minute: isSnapshot(cue) ? cue.minute : null, mention: cue.mention };
 
   if (cue) {
-    notes.push(`« ${cue.mention} » est une statistique d'équipe : la comparaison de deux joueurs ne la contient pas.`);
+    notes.push(msg().route.teamStatNotCompared(cue.mention));
 
     return { metric: null, minute: null, mention: cue.mention };
   }
@@ -721,7 +717,7 @@ function comparedMetric(question: string, notes: string[]): ComparedMetric {
  */
 function comparisonRoute(question: string, e: Entities): Route {
   const [a, b] = e.players;
-  const notes = e.players.length > 2 ? [`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`] : [];
+  const notes = e.players.length > 2 ? [msg().route.onlyTwoPlayers(a.player, b.player)] : [];
   const cue = OPPOSE.exec(question)?.[0];
   const { metric, minute, mention } = comparedMetric(question, notes);
 
@@ -729,7 +725,7 @@ function comparisonRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, metric, minute } },
     confidence: cue ? 0.95 : 0.9,
-    reason: (cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison") + (metric ? `, « ${mention} » en premier` : ""),
+    reason: msg().route.twoPlayers(cue ?? null, metric ? `${mention}` : null),
     notes,
     forced: cue != null,
   };
@@ -744,8 +740,8 @@ function teamsRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "head_to_head", input: { kind: "team", sideA: a.team, sideB: b.team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
     confidence: 0.9,
-    reason: cue ? `deux équipes opposées (« ${cue} ») → confrontations` : "deux équipes → confrontations",
-    notes: e.teams.length > 2 ? [`Plusieurs équipes reconnues : seules ${a.team} et ${b.team} sont opposées.`] : [],
+    reason: msg().route.twoTeams(cue ?? null),
+    notes: e.teams.length > 2 ? [msg().route.onlyTwoTeamsOpposed(a.team, b.team)] : [],
     forced: cue != null,
   };
 }
@@ -759,7 +755,7 @@ function rosterRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "team_roster", input: { team: e.teams[0].team, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split, role } },
     confidence: 0.9,
-    reason: cue ? `une équipe et « ${cue} » → roster par poste` : `une équipe et un poste (${role}) → roster, poste demandé en premier`,
+    reason: msg().route.roster(cue ?? null, role ?? null),
     notes: [],
     forced: true,
   };
@@ -771,19 +767,19 @@ function poolRoute(question: string, e: Entities): Route {
   const name = team ? e.teams[0].team : e.players[0].player;
   const notes: string[] = [];
 
-  if (!team && e.teams.length) notes.push(`Équipe « ${e.teams[0].mention} » ignorée : champion pool de ${name} toutes équipes confondues.`);
+  if (!team && e.teams.length) notes.push(msg().route.teamIgnoredPool(e.teams[0].mention, name));
 
-  if (!e.league) notes.push("Aucune compétition précisée : toutes compétitions confondues.");
+  if (!e.league) notes.push(msg().route.noLeagueAll);
 
   const role = team ? roleOf(question) : null;
 
-  if (role) notes.push("Poste non filtré : pool de toute l'équipe, avec le joueur de chaque champion.");
+  if (role) notes.push(msg().route.roleNotFiltered);
 
   return {
     kind: "tool",
     call: { tool: "champion_pool", input: { subject: team ? "team" : "player", name, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split } },
     confidence: 0.9,
-    reason: `${team ? "une équipe" : "un joueur"} et « ${POOL.exec(question)![0]} » → champion pool`,
+    reason: msg().route.pool(Boolean(team), POOL.exec(question)![0]),
     notes,
     forced: true,
   };
@@ -821,8 +817,8 @@ function teamLeaderboardRoute(question: string, e: Entities, criterion: TeamCrit
     kind: "tool",
     call: { tool: "team_leaderboard", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, order, side, minGames: minimumOf(question, "games") } },
     confidence: 0.85,
-    reason: `classement d'équipes (critère : ${criterion}${order === "asc" ? ", ordre croissant" : ""}${side ? `, côté ${side}` : ""})`,
-    notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
+    reason: msg().route.teamRanking(criterion, order === "asc", side ?? null),
+    notes: e.league ? [] : [msg().route.noLeagueWorldsRanking],
   };
 }
 
@@ -847,8 +843,8 @@ function matchupRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "champion_matchup", input: { champion: e.champion!.champion, opponent, role, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
     confidence: 0.9,
-    reason: opponent ? `deux champions opposés (« ${cue} ») → leur matchup` : `un champion et « ${cue} » → ses adversaires directs`,
-    notes: e.league ? [] : ["Aucune compétition précisée : toutes compétitions confondues."],
+    reason: msg().route.matchup(Boolean(opponent), `${cue}`),
+    notes: e.league ? [] : [msg().route.noLeagueAll],
     forced: true,
   };
 }
@@ -882,8 +878,8 @@ function recordsRoute(e: Entities, metric: RecordMetric, role: ReturnType<typeof
     kind: "tool",
     call: { tool: "game_records", input: { metric, player, role: player ? null : role, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
     confidence: 0.9,
-    reason: `record sur une partie (${metric})${player ? ` de ${player}` : ""}`,
-    notes: e.league ? [] : ["Aucune compétition précisée : toutes compétitions confondues."],
+    reason: msg().route.singleGameRecord(metric, player ?? null),
+    notes: e.league ? [] : [msg().route.noLeagueAll],
     forced: true,
   };
 }
@@ -912,8 +908,8 @@ function recentRoute(question: string, e: Entities): Route {
     kind: "tool",
     call: { tool: "player_recent_games", input: { player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, count: recentCountOf(question) } },
     confidence: 0.9,
-    reason: `un joueur et « ${RECENT.exec(question)![0]} » → ses dernières parties`,
-    notes: e.teams.length ? [`Équipe « ${e.teams[0].mention} » ignorée : dernières parties de ${player} toutes équipes confondues.`] : [],
+    reason: msg().route.recentGames(RECENT.exec(question)![0]),
+    notes: e.teams.length ? [msg().route.teamIgnoredRecent(e.teams[0].mention, player)] : [],
     forced: true,
   };
 }
@@ -924,8 +920,8 @@ function championRoute(e: Entities): Route {
     kind: "tool",
     call: { tool: "champion_event_stats", input: { champion: e.champion!.champion, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo } },
     confidence: 0.9,
-    reason: "champion seul → stats du champion dans la compétition",
-    notes: e.league ? [] : ["Aucune compétition précisée : recherche sur les Worlds."],
+    reason: msg().route.championAlone,
+    notes: e.league ? [] : [msg().route.noLeagueWorldsSearch],
   };
 }
 
@@ -936,11 +932,11 @@ function championRoute(e: Entities): Route {
  */
 function routeByRules(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
   if (e.outOfScope)
-    return { kind: "out_of_scope", reason: `« ${e.outOfScope} » n'est pas dans le périmètre (Worlds, MSI, LCK, LPL, LEC, LCS, LFL…)` };
+    return { kind: "out_of_scope", reason: msg().route.notInScope(e.outOfScope) };
   const nEntities = e.players.length + e.teams.length + (e.champion ? 1 : 0);
 
   if (nEntities === 0 && !e.league && !LOL_DOMAIN.test(question) && !STANDINGS.test(question))
-    return { kind: "out_of_scope", reason: "aucune entité ni notion esport League of Legends dans la question" };
+    return { kind: "out_of_scope", reason: msg().route.noEsport };
 
   // Before the in-game metrics: "courbe d'or" or "dragons" in a timeline question are not a statistic.
   const timeline = routeTimeline(question, e);
@@ -949,7 +945,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
   const missing = missingConcepts(question, schema);
 
-  if (missing.length) return { kind: "missing", concepts: missing, reason: `donnée absente de la base : ${missing.join(", ")}` };
+  if (missing.length) return { kind: "missing", concepts: missing, reason: msg().route.missing(missing.join(", ")) };
 
   // A stage of a competition, or a match named by its stage, before the head-to-head and the standings:
   // "Final worlds 2025" is the Worlds final, not a tournament whose name holds "Finals".
@@ -966,7 +962,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   const record = asksRecord ? recordMetricOf(question, recordCue) : null;
 
   // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
-  if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: "record sur une partie d'un chiffre par minute : pas d'outil typé" };
+  if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: msg().route.perMinuteRecord };
 
   if (record) return (recordCue && ingameAbsent(e, recordCue.mention, coverage)) ?? recordsRoute(e, record, roleOf(question));
 
@@ -1024,7 +1020,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);
 
     // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
-    if (figure) return { kind: "sql", reason: `classement de champions sur une statistique que l'outil ne trie pas (« ${figure} »)` };
+    if (figure) return { kind: "sql", reason: msg().route.championFigureUnsorted(figure) };
 
     return championRankingRoute(question, e);
   }
@@ -1048,14 +1044,14 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   if (ingame) return ingame;
 
   if (UNSUPPORTED.test(question))
-    return { kind: "sql", reason: `métrique ou classement non couvert par les outils typés (« ${UNSUPPORTED.exec(question)![0]} »)` };
+    return { kind: "sql", reason: msg().route.unsupported(UNSUPPORTED.exec(question)![0]) };
 
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
   const notes: string[] = [];
 
   const defaultLeague = () => {
     if (e.league) return e.league;
-    notes.push("Aucune compétition précisée : recherche sur les Worlds.");
+    notes.push(msg().route.noLeagueWorldsSearch);
 
     return WORLDS;
   };
@@ -1067,19 +1063,19 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   if (e.teams.length >= 2) return teamsRoute(question, e);
 
   if (e.players.length === 1 && e.teams.length === 1 && versus)
-    return { kind: "sql", reason: "confrontation joueur contre équipe : pas d'outil typé" };
+    return { kind: "sql", reason: msg().route.playerVersusTeam };
 
   if (e.champion && (e.players.length || e.teams.length))
-    return { kind: "sql", reason: "champion joué par un joueur ou une équipe précis : pas d'outil typé" };
+    return { kind: "sql", reason: msg().route.championOfOne };
 
   if (e.players.length === 1) {
-    if (e.teams.length) notes.push(`Équipe « ${e.teams[0].mention} » ignorée : historique de ${e.players[0].player} toutes équipes confondues.`);
+    if (e.teams.length) notes.push(msg().route.teamIgnoredHistory(e.teams[0].mention, e.players[0].player));
 
     return {
       kind: "tool",
       call: { tool: "player_event_history", input: { player: e.players[0].player, league: defaultLeague(), ...period } },
       confidence: versus ? 0.7 : 0.95,
-      reason: versus ? "un seul joueur reconnu pour une confrontation" : "intention « historique joueur × compétition » → outil paramétré",
+      reason: versus ? msg().route.onePlayerVersus : msg().route.playerHistory,
       notes,
     };
   }
@@ -1089,7 +1085,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
       kind: "tool",
       call: { tool: "team_history", input: { team: e.teams[0].team, league: e.league, ...period } },
       confidence: versus ? 0.7 : 0.9,
-      reason: versus ? "une seule équipe reconnue pour une confrontation" : "équipe seule → historique d'équipe",
+      reason: versus ? msg().route.oneTeamVersus : msg().route.teamAlone,
       notes,
     };
 
@@ -1102,12 +1098,12 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
       kind: "tool",
       call: { tool: "tournament_standings", input: { league, ...period, split: e.split, full: oneYear && (international || e.split != null) } },
       confidence: STANDINGS.test(question) || oneYear ? 0.9 : 0.75,
-      reason: "compétition sans joueur ni équipe → palmarès / classement",
+      reason: msg().route.leagueAlone,
       notes,
     };
   }
 
-  return { kind: "sql", reason: "aucun outil typé ne correspond aux entités reconnues", open: true };
+  return { kind: "sql", reason: msg().route.noMatchingTool, open: true };
 }
 
 // What the rules did not understand ---------------------------------------------------
@@ -1333,13 +1329,13 @@ export function routeQuestion(question: string, e: Entities, schema: Record<stri
   if (share < UNREAD_THRESHOLD) return route;
 
   // Kept for the trace, without lowering the confidence: the rules' pick stands.
-  if (route.forced) return { ...route, unread: words, reason: `${route.reason} ; mots non lus ignorés : ${words.join(", ")}` };
+  if (route.forced) return { ...route, unread: words, reason: msg().route.unreadIgnored(route.reason, words.join(", ")) };
 
   return {
     ...route,
     confidence: Math.min(route.confidence, UNSURE),
     unread: words,
-    reason: `${route.reason} ; mots non compris (${Math.round(100 * share)} %) : ${words.join(", ")}`,
+    reason: msg().route.unreadShare(route.reason, Math.round(100 * share), words.join(", ")),
   };
 }
 
@@ -1357,7 +1353,8 @@ export function schemaPrompt(db: DatabaseSync): string {
     .join("\n");
 }
 
-const SQL_RULES =
+/** `language`: the one the model names the missing data in, as the answer shows it. */
+const sqlRules = (language: string) =>
   "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
   "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
   "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
@@ -1381,7 +1378,7 @@ const SQL_RULES =
   "a tournament named 'Regional Finals' is a regional qualifier, not the final of the international event. " +
   "If the answer needs data that no listed column holds (for example MVP awards), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
-  "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
+  `in ${language}, in \`missing\`. Otherwise \`missing\` is empty. \`explanation\` is one short sentence.`;
 
 const SqlOutput = z.object({ sql: z.string(), explanation: z.string(), missing: z.array(z.string()) });
 
@@ -1392,7 +1389,7 @@ const ALWAYS_FALSE = /\b(?:0\s*=\s*1|1\s*=\s*0)\b|\bwhere\s+(?:false|0)\b/i;
 function generatedGaps(reply: { sql: string; missing: string[] }): string[] {
   if (reply.missing.length) return reply.missing;
 
-  return !reply.sql || ALWAYS_FALSE.test(reply.sql) ? ["la donnée demandée (la requête générée ne lisait aucune donnée réelle)"] : [];
+  return !reply.sql || ALWAYS_FALSE.test(reply.sql) ? [msg().route.readNothing] : [];
 }
 
 /** `functionId` names the call in the trace: generating a query, or repairing one. */
@@ -1404,7 +1401,7 @@ async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sq
   const { output } = await generateText({
     model: llm.model,
     output: Output.object({ schema: SqlOutput }),
-    instructions: `${SQL_RULES}\nSchema:\n${schemaPrompt(db)}`,
+    instructions: `${sqlRules(msg().route.promptLanguage)}\nSchema:\n${schemaPrompt(db)}`,
     prompt,
     telemetry: { functionId },
     maxOutputTokens: LLM_CALL.maxOutputTokens,
@@ -1498,7 +1495,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       result: { plan: toolPlan(bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
       confidence: 0.85,
       level: "llm",
-      reason: `${llm.id} : ${call.tool}(${JSON.stringify(call.input)})`,
+      reason: msg().route.modelSays(llm.id, `${call.tool}(${JSON.stringify(call.input)})`),
     };
   },
 };
@@ -1512,13 +1509,13 @@ const textToSqlDecider: Decider<BuildInput, BuildResult> = {
     if (!reply) return null;
     const gaps = generatedGaps(reply);
 
-    if (gaps.length) return { result: { plan: null, missing: gaps, notes: [] }, confidence: 0.8, level: "llm", reason: `${reply.model} : donnée absente` };
+    if (gaps.length) return { result: { plan: null, missing: gaps, notes: [] }, confidence: 0.8, level: "llm", reason: msg().route.modelSays(reply.model, msg().route.dataAbsent) };
 
     return {
       result: { plan: { intent: "sql", tool: null, sql: reply.sql, params: {}, attempt: 1, relaxed: [] }, notes: [] },
       confidence: 0.6,
       level: "llm",
-      reason: `${reply.model} : ${reply.explanation}`,
+      reason: msg().route.modelSays(reply.model, reply.explanation),
     };
   },
 };
@@ -1580,7 +1577,7 @@ const llmCorrector: Decider<CorrectInput, Fix> = {
       result: { plan: { ...plan, intent: "sql", tool: null, sql: reply.sql, params: {}, attempt: plan.attempt + 1 } },
       confidence: 0.6,
       level: "llm",
-      reason: `${reply.model} : ${reply.explanation}`,
+      reason: msg().route.modelSays(reply.model, reply.explanation),
     };
   },
 };
