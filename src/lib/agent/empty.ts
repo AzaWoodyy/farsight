@@ -235,19 +235,23 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
 
   if (counted) {
     const stats = scopeFilter(entities, "s", counted.view === "v_game_player_stats" ? "player" : "team");
-    // A NULL is a statistic the Riot data does not give (plates before 2020…): only the games that measure every column count.
-    const measured = counted.columns.map((c) => `s.${c.column} IS NOT NULL`).join(" AND ");
-    const sums = counted.columns.map((c, i) => `COALESCE(SUM(CASE WHEN ${measured} THEN s.${c.column} END), 0) AS c${i}`).join(", ");
+
+    // A NULL is a statistic the Riot data does not give (plates before 2020…): each column is a zero only over the games that measure it.
+    const sums = counted.columns
+      .map((c, i) => `COALESCE(SUM(s.${c.column}), 0) AS c${i}, COUNT(DISTINCT CASE WHEN s.${c.column} IS NOT NULL THEN s.game_id END) AS m${i}`)
+      .join(", ");
 
     const row = z
       .record(z.string(), z.number())
       .parse(
         db
-          .prepare(`SELECT COUNT(DISTINCT s.game_id) AS games, COUNT(DISTINCT CASE WHEN ${measured} THEN s.game_id END) AS measured, ${sums} FROM ${counted.view} s WHERE ${[...stats.where, "s.stage <> 'qualifier'"].join(" AND ")}`)
+          .prepare(`SELECT COUNT(DISTINCT s.game_id) AS games, ${sums} FROM ${counted.view} s WHERE ${[...stats.where, "s.stage <> 'qualifier'"].join(" AND ")}`)
           .get(stats.params),
       );
 
-    const { games, measured: measuredGames } = row;
+    const { games } = row;
+    // The fewest games that measure one of the columns: the sample every zero holds on.
+    const measuredGames = Math.min(...counted.columns.map((_, i) => row[`m${i}`]));
     const scopeOf = subject ? of(scope) : where;
 
     if (!games)
@@ -259,7 +263,7 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
         summary: `${main === 1 ? `La seule partie ${scopeOf} n'a pas` : `Aucune des ${main} parties ${scopeOf} n'a`} de données in-game (les statistiques Riot que Leaguepedia publie) : le total demandé ne peut pas être calculé.`,
       };
 
-    if (measuredGames && counted.columns.every((_, i) => row[`c${i}`] === 0)) {
+    if (measuredGames > 0 && counted.columns.every((_, i) => row[`c${i}`] === 0)) {
       const what = capitalized(counted.columns.map((c) => none(c.label)).join(", "));
       const unmeasured = main - measuredGames;
 

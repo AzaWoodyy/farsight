@@ -128,6 +128,20 @@ test("a statistic the Riot data does not give is no zero", () => {
   }
 });
 
+test("a column without data does not hide another column's positive total", () => {
+  const db = fresh();
+
+  try {
+    // Game 2: Chovy has a pentakill and no plate data; Faker has neither.
+    db.exec("UPDATE game_player_stats SET penta_kills = 1 WHERE game_id = 2 AND player_id = 2; UPDATE game_player_stats SET plates = 0 WHERE player_id = 1");
+    const why = explainEmpty(db, scope(), "SELECT SUM(penta_kills), SUM(plates) FROM v_game_player_stats HAVING SUM(penta_kills) > 5");
+
+    expect(why?.conclusive).toBe(false);
+  } finally {
+    db.close();
+  }
+});
+
 test("a split the games are not in leaves no game", () => {
   const db = fresh();
 
