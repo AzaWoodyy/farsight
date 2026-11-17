@@ -162,6 +162,11 @@ const fr = {
     substitute: " (remplaçant)",
   },
 
+  player: {
+    photo: (year: number) => `photo ${year}, Leaguepedia`,
+    more: (n: number) => ` +${n}`,
+  },
+
   comparison: {
     computed: "calculé par la page à partir des colonnes renvoyées",
     profiles: " · équipes et rôle lus dans la base, sur la compétition et la période de la question",
@@ -404,6 +409,11 @@ const en: Ui = {
     starterNote: "starter: the player with the most games in the role over the period; the other lines are the substitutes and rotations fielded in a match.",
     starter: " (starter)",
     substitute: " (substitute)",
+  },
+
+  player: {
+    photo: (year) => `${year} photo, Leaguepedia`,
+    more: (n) => ` +${n}`,
   },
 
   comparison: {

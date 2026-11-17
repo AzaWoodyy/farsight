@@ -11,8 +11,8 @@ import { selectOne } from "../db";
  */
 const CDN = "https://static.wikia.nocookie.net/lolesports_gamepedia_en/images";
 
-/** Width served: twice the largest avatar (44 px), for high-density screens. */
-const WIDTH = 96;
+/** Width served: twice the largest avatar (56 px, the player header), for high-density screens. */
+const WIDTH = 112;
 
 /** MediaWiki stores a file under the first one and two hex digits of the md5 of its name. */
 export function photoUrl(file: string, width = WIDTH): string {
