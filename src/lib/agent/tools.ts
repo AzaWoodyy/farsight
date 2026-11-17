@@ -358,6 +358,7 @@ export const TeamIngameInput = z.object({
   team: z.string().min(1).describe("Team name or shorthand (T1, Gen.G, G2...)"),
   league: League.nullable(),
   ...Period,
+  metric: z.enum(TEAM_METRICS).nullable().default(null).describe("The metric the question is about, brought out in the answer; null for the overview"),
   minute: MinuteInput,
 });
 
@@ -3509,6 +3510,8 @@ ORDER BY is_total, first_game`),
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...TEAM_OVERVIEW.map((m) => (m === "gold_diff" ? `Écart or @${minute}` : TEAM_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...TEAM_OVERVIEW.map((m) => (r[m] == null ? null : Number(r[m])))]),
+        // The metric the question names, when the overview has its column.
+        focus: input.metric && TEAM_OVERVIEW.includes(input.metric) ? (input.metric === "gold_diff" ? `Écart or @${minute}` : TEAM_COLUMN_LABELS[input.metric]) : undefined,
       },
       facts,
       sources: [

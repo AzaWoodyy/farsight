@@ -329,7 +329,9 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
 
   // One line is not a table to scan: its figures read better as a card.
   // (Under a champion profile the line is its per-tournament detail: it stays a table.)
-  const body = table.rows.length === 1 && !answer.champion ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
+  // A line without any figure (a generated aggregate that came back empty) has nothing for a card: the table shows its n/d.
+  const card = table.rows.length === 1 && !answer.champion && table.rows[0].some((v, i) => asNumber(v) != null && !YEAR_COLUMN.test(table.columns[i]));
+  const body = card ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
   // An answer about one team (its in-game stats, its history, its dragons) is headed by that team and its logo.
   // (Not under a player's header: the answer is then about the player, in that team.)
   const [team] = answer.meta.teams.length === 1 && answer.profiles.length !== 1 ? answer.meta.teams : [];

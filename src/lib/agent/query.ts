@@ -516,7 +516,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
 
     return {
       kind: "tool",
-      call: { tool: "team_ingame_stats", input: { team, league, ...period, minute: cue.minute } },
+      call: { tool: "team_ingame_stats", input: { team, league, ...period, metric: cue.team, minute: cue.minute } },
       confidence: 0.85,
       reason: m.teamIngame(cue.mention),
       notes: [],

@@ -39,7 +39,7 @@ function seed(db: DatabaseSync) {
 }
 
 const plan = (db: DatabaseSync, input: { league: typeof WORLDS | null; yearFrom: number | null; yearTo: number | null }) =>
-  toolPlan(bindTool(db, { tool: "team_ingame_stats", input: { team: "T1", minute: null, ...input } }), 1);
+  toolPlan(bindTool(db, { tool: "team_ingame_stats", input: { team: "T1", metric: null, minute: null, ...input } }), 1);
 
 async function run(db: DatabaseSync, first: ReturnType<typeof plan>) {
   const events: AgentEvent[] = [];

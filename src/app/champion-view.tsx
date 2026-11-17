@@ -132,8 +132,9 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
         <div className="[&>div]:mt-0">{fallback}</div>
       ) : (
         <div className="border border-line">
-          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. */}
-          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase sm:flex">
+          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. One column
+              per metric only from the width where six of them leave room for the name (lg); below, they wrap under it. */}
+          <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase lg:flex">
             <span className="w-8 shrink-0">#</span>
             <span className="min-w-0 flex-1">champion</span>
             <span style={columnWidth(primary.label)} className="w-(--col) shrink-0 text-right whitespace-nowrap text-foreground">{primary.label}</span>
@@ -150,10 +151,10 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
               return (
                 <li
                   key={l.champion}
-                  className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0 sm:flex"
+                  className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-dashed border-line px-3 py-2 text-xs last:border-0 lg:flex"
                 >
-                  <span className="tabular-nums text-muted sm:w-8 sm:shrink-0">{l.rank}</span>
-                  <div className="flex min-w-0 items-center gap-2 sm:flex-1">
+                  <span className="tabular-nums text-muted lg:w-8 lg:shrink-0">{l.rank}</span>
+                  <div className="flex min-w-0 items-center gap-2 lg:flex-1">
                     <ChampionIcon name={l.champion} src={l.icon} size={28} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate" translate="no">
@@ -164,9 +165,9 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                       </div>
                     </div>
                   </div>
-                  <span aria-hidden style={columnWidth(primary.label)} className="text-right font-semibold tabular-nums text-accent sm:w-(--col) sm:shrink-0">{formatChampionValue(value, primary.percent, locale)}</span>
+                  <span aria-hidden style={columnWidth(primary.label)} className="text-right font-semibold tabular-nums text-accent lg:w-(--col) lg:shrink-0">{formatChampionValue(value, primary.percent, locale)}</span>
                   {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
-                  <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
+                  <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted lg:hidden">
                     {others.map(({ m, i }) => (
                       <div key={m.key} className="flex gap-1">
                         <dt>{m.label}</dt>
@@ -175,7 +176,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                     ))}
                   </dl>
                   {others.map(({ m, i }) => (
-                    <span key={m.key} style={columnWidth(m.label)} className="hidden w-(--col) shrink-0 text-right tabular-nums sm:block">
+                    <span key={m.key} style={columnWidth(m.label)} className="hidden w-(--col) shrink-0 text-right tabular-nums lg:block">
                       <Label>{m.label}</Label>
                       {formatChampionValue(l.values[i], m.percent, locale)}
                     </span>
