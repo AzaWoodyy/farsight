@@ -323,7 +323,7 @@ function progressLabel(steps: Map<StepName, StepPart>): string {
 }
 
 /** The one line shown while the agent works. Screen readers hear it from the status region of the console. */
-function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
+export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   return (
     <p className="mt-6 flex items-center gap-2 text-sm">
       <Spinner />
@@ -336,7 +336,7 @@ function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
  * The technical trace (steps, decisions, SQL, retries): open while the agent works, so the visitor sees it
  * progress, folded once the answer is in. The visitor can still open or close it by hand.
  */
-function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
+export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
 
   // A run starting opens the trace, a run ending folds it. Set on the element after commit and left
