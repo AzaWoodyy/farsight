@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import type { EventKind } from "../sources/timeline";
 import type { DecisionLevel } from "./decide";
+import type { EmptyReason } from "./empty";
 import type { BoundTool, ToolInput } from "./tools";
 
 /** The four visible steps of the agent, in order. */
@@ -155,6 +156,8 @@ export type AnswerMeta = {
   attempts: number;
   /** Words the rules did not understand, when they put the route in doubt and the LLM router is asked; empty otherwise. */
   unread: string[];
+  /** Why an empty answer is empty, read from the question's scope (src/lib/agent/empty.ts); null otherwise. */
+  empty: EmptyReason | null;
 };
 
 export type Side = "blue" | "red";

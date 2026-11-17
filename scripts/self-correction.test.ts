@@ -81,8 +81,9 @@ test("gives up after three attempts once every relaxation came back empty", asyn
     expect(out.plan.relaxed).toEqual(["period", "league"]);
     expect(out.notes).toHaveLength(2);
     expect(out.last.state).toBe("done");
-    expect(out.last.status).toBe("error");
-    expect(out.last.title).toContain("Abandon après 3 tentatives");
+    // An empty result is no failure of the query: a warning, not an error.
+    expect(out.last.status).toBe("warn");
+    expect(out.last.title).toBe("Aucune ligne après 3 tentatives");
     expect(out.last.entries.filter((e) => e.title.startsWith("Auto-correction"))).toHaveLength(2);
   } finally {
     db.close();
