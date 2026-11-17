@@ -186,7 +186,7 @@ function seed(db: DatabaseSync) {
   db.exec(`
     INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade'),(4,'Oscarinin');
-    INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL);
+    INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL),(5,'Locke',NULL);
     INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at,blue_dragons,red_dragons,blue_barons,red_barons,blue_towers,red_towers)
       VALUES (1,1,'Week 1',1,2,1,1800,1735776000,3,1,1,0,9,2),(2,1,'Week 1',2,1,2,1500,1735862400,1,2,0,1,3,8),(3,1,'Week 2',1,2,2,2400,1736380800,1,4,0,2,4,11);
     INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0),(2,'K2','V5 data:K2',5,1,0),(3,'K3','V5 data:K3',5,1,0);
@@ -439,6 +439,22 @@ describe("rankings on a seeded season", () => {
       expect(await read("oriana en mid")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: null });
       // An everyday word one letter away from a champion is not one, nor a short word.
       expect(await read("given the stats of Azir")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+    }));
+
+  test("a short or everyday word one letter away is the opponent only next to a champion in a matchup", () =>
+    seeded(async (db) => {
+      const read = async (question: string) => (await understandQuestion(db, question, new Date("2026-11-15")))?.result;
+
+      expect(await read("oriana vs lock au worlds 2026")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { mention: "lock", champion: "Locke" } });
+      expect(await read("Match up oriana lock au worlds 2026")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { champion: "Locke" } });
+      expect(await read("lock contre Azir")).toMatchObject({ champion: { champion: "Locke" }, opponentChampion: { champion: "Azir" } });
+      // Without a matchup word, away from the champion, or a grammar word: "lock" and "when" stay words.
+      expect(await read("Azir lock in")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir lock in vs G2 at Worlds 2026")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir lock in vs Orianna")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: { champion: "Orianna" } });
+      expect(await read("pick Azir puis lock le mid vs G2")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("matchups d'Azir when playing mid")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
       expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
     }));
 });
