@@ -70,6 +70,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
       ambiguities: [],
       attempts: 1,
       unread: [],
+      empty: null,
       ...meta,
     },
   };
@@ -204,6 +205,8 @@ test("tags name what went wrong", () => {
   expect(outcomeTags(answer({ route: "missing_data", attempts: 0, rowCount: 0 }), none, steps(), noLlm)).toEqual(["missing-data"]);
   expect(outcomeTags(answer({ route: "none", attempts: 0, rowCount: 0 }), none, steps(), noLlm)).toEqual(["no-query"]);
   expect(outcomeTags(answer({ attempts: 3, rowCount: 0 }), none, steps("error"), noLlm)).toEqual(["empty-result", "error", "self-corrected"]);
+  expect(outcomeTags(answer({ route: "sql", attempts: 1, rowCount: 0, empty: "zero_count" }), none, steps("warn"), noLlm)).toEqual(["empty-result", "empty-explained", "sql-fallback"]);
+  expect(outcomeTags(answer({ route: "sql", attempts: 3, rowCount: 0, empty: "unexplained" }), none, steps("warn"), noLlm)).toEqual(["empty-result", "self-corrected", "sql-fallback"]);
   expect(outcomeTags(answer({ route: "sql" }), entities, steps("ok", 0.6), { calls: 2, errors: 1 })).toEqual([
     "sql-fallback",
     "llm",

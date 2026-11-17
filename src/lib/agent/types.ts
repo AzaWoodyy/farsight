@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import type { EventKind } from "../sources/timeline";
 import type { DecisionLevel } from "./decide";
+import type { EmptyReason } from "./empty";
 import type { BoundTool, ToolInput } from "./tools";
 
 /** The four visible steps of the agent, in order. */
@@ -155,6 +156,8 @@ export type AnswerMeta = {
   attempts: number;
   /** Words the rules did not understand, when they put the route in doubt and the LLM router is asked; empty otherwise. */
   unread: string[];
+  /** Why an empty answer is empty, read from the question's scope (src/lib/agent/empty.ts); null otherwise. */
+  empty: EmptyReason | null;
 };
 
 export type Side = "blue" | "red";
@@ -214,6 +217,8 @@ export type VersusView = {
   playerB: string;
   /** "en LEC", "aux Worlds", "" for every competition, with the period when the question has one. */
   scope: string;
+  /** Column of the statistic the question names ("penta_kills", "avg_deaths"), shown first; null without one. */
+  focus: string | null;
   /** Statistics over every game of the scope. */
   global: { columns: string[]; rows: TableCell[][] };
   /** Statistics over their games against each other only; null when they never met in the scope. */

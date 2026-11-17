@@ -13,6 +13,9 @@ import {
   type ChampionAverageSort,
   type ChampionExtraSort,
   type ChampionSort,
+  type ChampionTotalSort,
+  COMPARISON_END_STATS,
+  type ComparisonMetric,
   type GamePhase,
   type MapSide,
   normalizeToolCall,
@@ -21,7 +24,7 @@ import {
   type TeamCriterion,
   type ToolCall,
 } from "./tools";
-import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
+import { detectMetric, isSnapshot, type MetricCue, type Minute, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
@@ -239,6 +242,38 @@ export function championAverageSortOf(question: string): ChampionAverageSort | n
   return asked.length === 1 && PER_GAME.test(question) && !LOWEST.test(question) ? asked[0][0] : null;
 }
 
+/** "au total", "nombre de", "combien": a total over the scope, in so many words. */
+const TOTAL = word("au total|en tout|in total|totale?s?|cumul[ée]e?s?|nombre (?:de|d')|number of|combien|how many");
+
+/** The multikills and lane counts of the Riot data a champion ranking totals. */
+const CHAMPION_INGAME_TOTAL: Partial<Record<NonNullable<MetricCue["player"]>, ChampionTotalSort>> = {
+  penta_kills: "penta_kills",
+  quadra_kills: "quadra_kills",
+  triple_kills: "triple_kills",
+  double_kills: "double_kills",
+  solo_kills: "solo_kills",
+  first_bloods: "first_blood",
+};
+
+/**
+ * The total over the scope a champion ranking is asked for: "le plus de morts" without "par partie", "le plus de
+ * pentakills", "le plus de solo kills". A first blood is a share of games unless the question says a total ("nombre
+ * de first bloods"). Null for a per-game or per-minute figure, the lowest figure, or several figures at once.
+ */
+export function championTotalSortOf(question: string, cue: MetricCue | null): ChampionTotalSort | null {
+  if (LOWEST.test(question) || PER_GAME.test(question) || PER_MINUTE.test(question)) return null;
+
+  if (cue) {
+    const sort = cue.player ? CHAMPION_INGAME_TOTAL[cue.player] : undefined;
+
+    return sort && (sort !== "first_blood" || TOTAL.test(question)) ? sort : null;
+  }
+
+  const asked = CHAMPION_AVERAGE_CUES.filter(([, re]) => re.test(question));
+
+  return asked.length === 1 ? asked[0][0] : null;
+}
+
 /** "par minute", "/min", and the per-minute figures by name. */
 const PER_MINUTE = word("par min(?:ute)?|per min(?:ute)?|/ ?min(?:ute)?|dpm|gpm|cspm");
 
@@ -300,9 +335,6 @@ const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]
 /** The in-game figures of a champion's profile: metric and minute. */
 const PROFILE_INGAME = new Set(["gold_diff@15", "cs_diff@15"]);
 
-/** The in-game figures of a two-player comparison: metric and minute. Keep in line with COMPARISON_COLUMNS in tools.ts. */
-const COMPARED_INGAME = new Set(["solo_kills@15", "gold_diff@15", "cs_diff@15"]);
-
 /** "au moins 50 parties", "minimum 20 games", "more than 30 picks": a minimum the question sets itself. */
 const MINIMUM = /(au moins|minimum(?: de)?|min\.?|at least|plus de|more than|over)\s*(\d{1,3})\s*(parties|games|matchs|matches|picks)/iu;
 
@@ -340,16 +372,20 @@ const withoutTeamShare = (question: string) =>
 
 export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
 
-/** Champions ranked on picks, bans, presence, win rate, KDA or a per-game average, optionally in one role. */
-function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question)): Route {
+/**
+ * Champions ranked on picks, bans, presence, win rate, KDA, a per-game average or a total, optionally in one role.
+ * A champion's games are its picks: "plus de 4 parties" is a minimum of 5 picks.
+ */
+function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question), total = false): Route {
   const role = roleOf(question);
   const side = sideOf(question);
+  const minPicks = minimumOf(question, "picks") ?? minimumOf(question, "games");
 
   return {
     kind: "tool",
-    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, role, side, minPicks: minimumOf(question, "picks") } },
+    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, total, role, side, minPicks } },
     confidence: 0.9,
-    reason: `classement de champions (tri : ${sort}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
+    reason: `classement de champions (tri : ${sort}${total ? " au total" : ""}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
     notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
   };
 }
@@ -613,6 +649,42 @@ export type Route =
 
 const WORLDS = "World Championship";
 
+/** The end-of-game averages a comparison puts first, as a question names them. */
+const COMPARISON_END_CUES = CHAMPION_AVERAGE_CUES.flatMap(([stat, re]) => {
+  const end = COMPARISON_END_STATS.find((s) => s === stat);
+
+  return end ? [[end, re] as const] : [];
+});
+
+/** What a comparison puts first, with the words of the question that name it ("" without one). */
+type ComparedMetric = { metric: ComparisonMetric | null; minute: Minute | null; mention: string };
+
+/**
+ * The statistic a two-player comparison puts first: an in-game metric of a player ("pentakills", "écart d'or à 10"),
+ * else a single end-of-game average ("morts"). A minute the data does not hold, or a team-only metric, is said in a note.
+ */
+function comparedMetric(question: string, notes: string[]): ComparedMetric {
+  const cue = detectMetric(question);
+
+  if (cue && cue.askedMinute != null && cue.minute == null && isSnapshot(cue)) {
+    notes.push(`Les données in-game ne relèvent l'or, le CS et l'XP qu'à 10, 15 et 20 min : pas de « ${cue.mention} » à ${cue.askedMinute} min.`);
+
+    return { metric: null, minute: null, mention: cue.mention };
+  }
+
+  if (cue?.player) return { metric: cue.player, minute: isSnapshot(cue) ? cue.minute : null, mention: cue.mention };
+
+  if (cue) {
+    notes.push(`« ${cue.mention} » est une statistique d'équipe : la comparaison de deux joueurs ne la contient pas.`);
+
+    return { metric: null, minute: null, mention: cue.mention };
+  }
+
+  const ends = COMPARISON_END_CUES.filter(([, re]) => re.test(question));
+
+  return ends.length === 1 ? { metric: ends[0][0], minute: null, mention: ends[0][1].exec(question)![0] } : { metric: null, minute: null, mention: "" };
+}
+
 /**
  * Two players: the comparison. Every way of setting them against each other ("compare", "vs", "h2h",
  * "confrontations"…) gets the same answer; such a word settles it, so the LLM router is not asked again.
@@ -621,19 +693,13 @@ function comparisonRoute(question: string, e: Entities): Route {
   const [a, b] = e.players;
   const notes = e.players.length > 2 ? [`Plusieurs joueurs reconnus : seuls ${a.player} et ${b.player} sont comparés.`] : [];
   const cue = OPPOSE.exec(question)?.[0];
-  const metric = detectMetric(question);
-
-  // The comparison holds end-of-game averages, gold and CS difference at 15 min and solo kills: another in-game metric is said missing.
-  if (metric && metric.askedMinute != null && metric.minute == null && isSnapshot(metric))
-    notes.push(`Les données in-game ne relèvent l'or, le CS et l'XP qu'à 10, 15 et 20 min : pas de « ${metric.mention} » à ${metric.askedMinute} min.`);
-  else if (metric && !COMPARED_INGAME.has(`${metric.player}@${metric.askedMinute ?? 15}`))
-    notes.push(`La comparaison ne contient pas « ${metric.mention} » : elle porte sur les statistiques de fin de partie, les écarts d'or et de CS à 15 min et les solo kills.`);
+  const { metric, minute, mention } = comparedMetric(question, notes);
 
   return {
     kind: "tool",
-    call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo } },
+    call: { tool: "player_comparison", input: { playerA: a.player, playerB: b.player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, metric, minute } },
     confidence: cue ? 0.95 : 0.9,
-    reason: cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison",
+    reason: (cue ? `deux joueurs opposés (« ${cue} ») → comparaison` : "deux joueurs → comparaison") + (metric ? `, « ${mention} » en premier` : ""),
     notes,
     forced: cue != null,
   };
@@ -915,6 +981,11 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
     const average = cue ? null : championAverageSortOf(question);
     const extra = championExtraSortOf(question, cue);
+    const total = championTotalSortOf(question, cue);
+
+    // "champion avec le plus de morts aux Worlds", "quel champion a le plus de pentakills": a total over the scope.
+    // A figure of the Riot data where the scope has none (the LPL) is absent, not zero.
+    if (total && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, total, true);
 
     // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
     if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, extra);
@@ -1051,7 +1122,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
   ],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
-  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
+  player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...COMPARISON_END_CUES.map(([, re]) => re), ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
   champion_event_stats: [
     word(
       "stats?|statistiques?|(?:pick|ban|win) ?rates?|picks?|bans?|bannie?s?|taux de (?:victoire|pick|ban|pr[ée]sence|s[ée]lection)|pr[ée]sence|presence|" +
@@ -1070,10 +1141,14 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     PER_GAME,
     PER_MINUTE,
     MOST_PLAYERS,
+    TOTAL,
     MINUTE,
     ...SIDE_CUES.map(([, re]) => re),
     ...ROLE_CUES.map((r) => r.pattern),
-    word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often"),
+    word(
+      "champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often|" +
+        "parties|games|matchs|matches|au moins|at least|minimum|plus de|more than|over",
+    ),
   ],
   champion_pool: [
     POOL,
@@ -1168,8 +1243,11 @@ export function unreadWords(question: string, e: Entities, call: ToolCall | null
   };
 
   if (call) {
-    // The in-game cue is read by the in-game tools, and by a champion ranking or a record on a lane figure.
-    const ingame = ["player_ingame_stats", "team_ingame_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool);
+    // The in-game cue is read by the in-game tools, by a champion ranking or a record on a lane figure, and by a comparison that puts it first.
+    const ingame =
+      ["player_ingame_stats", "team_ingame_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool) ||
+      (call.tool === "player_comparison" && call.input.metric != null);
+
     const cue = ingame ? detectMetric(question) : null;
 
     if (cue) take(word(cue.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

@@ -41,6 +41,7 @@ type Meaning = { label: string; better: Better; percent?: boolean; signed?: bool
 /** Column name (without avg_/total_ prefixes) → what it means. Order matters: first match wins. */
 const MEANINGS: [RegExp, Meaning][] = [
   [/^(games|games_played|parties|nb_games|game_count)$/, { label: "parties", better: null }],
+  [/^ingame_games$/, { label: "parties Riot", better: null }],
   [/^(wins|victoires|won)$/, { label: "victoires", better: "higher", count: true }],
   [/^(losses|defaites|lost)$/, { label: "défaites", better: "lower", count: true }],
   [/^(win_?rate|winrate_pct|win_pct|pct_wins)$/, { label: "winrate", better: "higher", percent: true }],
@@ -106,7 +107,8 @@ type Pair<T> = [T, T];
 
 const both = <T>(f: (i: 0 | 1) => T): Pair<T> => [f(0), f(1)];
 
-export function detectComparison(table: Answer["table"], profiles: PlayerProfile[]): Comparison | null {
+/** `keep`: a column shown even when both values are n/d (the statistic the question names, without data in the scope). */
+export function detectComparison(table: Answer["table"], profiles: PlayerProfile[], keep: string | null = null): Comparison | null {
   if (!table || table.rows.length !== 2) return null;
 
   const named = new Set(profiles.map((p) => p.player.toLowerCase()));
@@ -140,7 +142,7 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
     const pair = both((r) => numberOf(cells[r]));
 
     // Text columns (team, role…) are not stats; one null cell is allowed (n/d for one player).
-    if (cells.some((v, r) => v != null && pair[r] == null) || pair.every((v) => v == null)) return;
+    if (cells.some((v, r) => v != null && pair[r] == null) || (pair.every((v) => v == null) && column !== keep)) return;
 
     const meaning = meaningOf(column);
 

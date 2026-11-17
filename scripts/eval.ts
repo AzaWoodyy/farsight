@@ -170,12 +170,14 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
     for (const n of e.notes) routed(`note « ${n} »`, answer.notes.some((x) => x.includes(n)), answer.notes.join(" | ") || "aucune note");
 
   const summary = answer.summary.toLowerCase();
+  // A text-to-SQL summary says what the query returned: without a key there is none to check.
+  const said = e.route === "sql" ? result : routed;
 
   if (e.summaryIncludes)
-    for (const t of e.summaryIncludes) routed(`synthèse contient « ${t} »`, summary.includes(t.toLowerCase()), answer.summary);
+    for (const t of e.summaryIncludes) said(`synthèse contient « ${t} »`, summary.includes(t.toLowerCase()), answer.summary);
 
   if (e.summaryExcludes)
-    for (const t of e.summaryExcludes) routed(`synthèse sans « ${t} »`, !summary.includes(t.toLowerCase()), answer.summary);
+    for (const t of e.summaryExcludes) said(`synthèse sans « ${t} »`, !summary.includes(t.toLowerCase()), answer.summary);
 
   if (e.noFigure) {
     const figures = answer.rows.length + (answer.table?.rows.length ?? 0);

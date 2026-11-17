@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts. The `empty` case (2026-11-17) is an empty result the scope explains (src/lib/agent/empty.ts): a player's only games on a champion in regional qualifiers (Faker on Azir, LCK 2024 Regional Finals, shown as the answer's one row); cross-checked with independent SQL on v_game_players.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -750,6 +750,169 @@
         "rows": 2,
         "summaryIncludes": [
           "146 parties"
+        ]
+      }
+    },
+    {
+      "id": "compare-faker-chovy-pentakills",
+      "question": "Faker vs Chovy pentakills",
+      "tags": [
+        "comparison",
+        "player",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null,
+          "metric": "penta_kills",
+          "minute": null
+        },
+        "totals": {
+          "h2h_games": 146,
+          "metric_a": 2,
+          "metric_b": 3,
+          "h2h_metric_a": 0,
+          "h2h_metric_b": 0
+        },
+        "rows": 2,
+        "unread": [],
+        "summaryIncludes": [
+          "pentakills"
+        ]
+      }
+    },
+    {
+      "id": "compare-faker-chovy-first-bloods",
+      "question": "compare les first bloods de Faker et Chovy",
+      "tags": [
+        "comparison",
+        "player",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null,
+          "metric": "first_bloods"
+        },
+        "totals": {
+          "metric_a": 124,
+          "metric_b": 79,
+          "h2h_metric_a": 16,
+          "h2h_metric_b": 11
+        },
+        "rows": 2,
+        "summaryIncludes": [
+          "first bloods"
+        ]
+      }
+    },
+    {
+      "id": "compare-faker-chovy-gold-diff-10",
+      "question": "Faker vs Chovy gold diff à 10 min",
+      "tags": [
+        "comparison",
+        "player",
+        "ingame"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null,
+          "metric": "gold_diff",
+          "minute": 10
+        },
+        "totals": {
+          "metric_a": 32,
+          "metric_b": 142,
+          "h2h_metric_a": -89,
+          "h2h_metric_b": 89
+        },
+        "rows": 2,
+        "summaryIncludes": [
+          "à 10 min"
+        ]
+      }
+    },
+    {
+      "id": "compare-faker-chovy-deaths",
+      "question": "Faker vs Chovy morts",
+      "tags": [
+        "comparison",
+        "player"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Faker",
+          "Chovy"
+        ],
+        "input": {
+          "playerA": "Faker",
+          "playerB": "Chovy",
+          "league": null,
+          "metric": "deaths"
+        },
+        "totals": {
+          "metric_a": 2.2,
+          "metric_b": 1.68,
+          "h2h_metric_a": 2.45,
+          "h2h_metric_b": 1.95
+        },
+        "rows": 2,
+        "summaryIncludes": [
+          "morts"
+        ]
+      }
+    },
+    {
+      "id": "compare-lpl-pentakills-no-coverage",
+      "question": "Knight vs Scout pentakills en LPL",
+      "tags": [
+        "comparison",
+        "player",
+        "ingame",
+        "lpl"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Knight (Zhuo Ding)",
+          "Scout"
+        ],
+        "league": "Tencent LoL Pro League",
+        "input": {
+          "metric": "penta_kills"
+        },
+        "totals": {
+          "h2h_games": 71,
+          "metric_a": "n/d",
+          "metric_b": "n/d",
+          "h2h_metric_a": "n/d",
+          "h2h_metric_b": "n/d"
+        },
+        "rows": 2,
+        "summaryIncludes": [
+          "aucune partie avec données Riot"
         ]
       }
     },
@@ -5096,7 +5259,7 @@
     },
     {
       "id": "champion-unranked-metric",
-      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "question": "champions avec le plus de dragons aux Worlds 2024",
       "tags": [
         "champion",
         "sql"
@@ -5108,7 +5271,7 @@
     },
     {
       "id": "comparison-metric-not-held",
-      "question": "Faker vs Chovy pentakills",
+      "question": "Faker vs Chovy first tower",
       "tags": [
         "head_to_head",
         "player"
@@ -5119,8 +5282,11 @@
           "Faker",
           "Chovy"
         ],
+        "input": {
+          "metric": null
+        },
         "notes": [
-          "ne contient pas « pentakills »"
+          "« first tower » est une statistique d'équipe"
         ]
       }
     },
@@ -5296,6 +5462,60 @@
     {
       "id": "matchup-typo-orianna-locke-worlds-2026",
       "question": "Match up oriana locke au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "matchup-typo-orianna-vs-lock-worlds-2026",
+      "question": "oriana vs lock au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "matchup-typo-orianna-lock-worlds-2026",
+      "question": "Match up oriana lock au worlds 2026",
       "tags": [
         "champion",
         "matchup",
@@ -5650,6 +5870,241 @@
         },
         "summaryIncludes": [
           "Critère : dégâts aux champions par minute, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-total-deaths-worlds-2026",
+      "question": "champion avec le plus de mort au worlds 2026",
+      "tags": [
+        "worlds",
+        "champion",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true,
+          "yearFrom": 2026,
+          "yearTo": 2026,
+          "minPicks": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "leader_picks": 25,
+          "games": 98,
+          "min_picks": 0
+        },
+        "summaryIncludes": [
+          "1. Alistar (100 morts, 25 picks",
+          "Critère : morts au total sur le périmètre"
+        ]
+      }
+    },
+    {
+      "id": "champ-total-deaths-short",
+      "question": "Champions les plus morts — Worlds 2026",
+      "tags": [
+        "worlds",
+        "champion",
+        "total",
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true
+        },
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "games": 98
+        }
+      }
+    },
+    {
+      "id": "champ-total-deaths-min-games",
+      "question": "champion avec le plus de morts au worlds 2026 avec plus de 4 parties",
+      "tags": [
+        "worlds",
+        "champion",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true,
+          "minPicks": 5
+        },
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : morts au total sur le périmètre, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-deaths-per-game-min-games",
+      "question": "champion avec le plus de morts par game au worlds 2026 avec plus de 4 parties",
+      "tags": [
+        "worlds",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": false,
+          "minPicks": 5
+        },
+        "totals": {
+          "leader": "Rell",
+          "leader_value": 4.4,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : morts par partie, en moyenne, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-worlds-2024-zero",
+      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "tags": [
+        "worlds",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "penta_kills",
+          "total": true,
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rows": 0,
+        "totals": {
+          "rows": 0,
+          "games": 106,
+          "ingame_games": 106,
+          "leader": ""
+        },
+        "summaryIncludes": [
+          "Aucun pentakill aux Worlds en 2024",
+          "106 parties avec données Riot"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-lck-2024",
+      "question": "champions avec le plus de pentakills en LCK 2024",
+      "tags": [
+        "lck",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL Champions Korea",
+        "input": {
+          "sort": "penta_kills",
+          "total": true
+        },
+        "totals": {
+          "leader": "Zeri",
+          "leader_value": 4,
+          "ingame_games": 481,
+          "games": 482
+        },
+        "summaryIncludes": [
+          "1. Zeri (4 pentakills",
+          "481 sur 482 parties avec données Riot"
+        ]
+      }
+    },
+    {
+      "id": "champ-solo-kills-total-worlds-2025",
+      "question": "champions avec le plus de solo kills aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "solo_kills",
+          "total": true
+        },
+        "totals": {
+          "leader": "Ambessa",
+          "leader_value": 10,
+          "min_picks": 0
+        },
+        "summaryIncludes": [
+          "1. Ambessa (10 solo kills"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-lpl-absent",
+      "question": "champion avec le plus de pentakills en LPL 2025",
+      "tags": [
+        "lpl",
+        "champion",
+        "ingame",
+        "missing"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "league": "Tencent LoL Pro League",
+        "noFigure": true,
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "pentakills",
+          "pour la LPL"
+        ]
+      }
+    },
+    {
+      "id": "empty-qualifier-only",
+      "question": "Faker sur Azir aux Worlds 2024",
+      "tags": [
+        "empty",
+        "sql",
+        "player"
+      ],
+      "expect": {
+        "route": "sql",
+        "players": [
+          "Faker"
+        ],
+        "champion": "Azir",
+        "league": "World Championship",
+        "attempts": 1,
+        "rows": 1,
+        "summaryIncludes": [
+          "seule partie",
+          "qualifications régionales",
+          "LCK 2024 Regional Finals"
         ]
       }
     }
