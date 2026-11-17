@@ -126,7 +126,7 @@ function seed(db: DatabaseSync) {
     -- Riot data for games 1 and 4 only: solo kills average over those.
     INSERT INTO game_player_stats(game_id,player_id,solo_kills,penta_kills) VALUES (1,1,1,0),(1,2,0,1),(4,1,2,1),(4,3,0,0);
     -- game 1: Caps wins against Humanoid; game 2: Humanoid wins; game 3 is outside the LEC; game 4: Caps against Elyoya.
-    INSERT INTO game_players VALUES
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
       (1,1,1,1,'Mid',1,1,4,1,6,15000,300,25000,40,NULL),
       (1,2,2,2,'Mid',2,0,1,4,2,12000,280,18000,30,NULL),
       (2,1,1,2,'Mid',2,0,2,3,1,11000,270,NULL,NULL,NULL),

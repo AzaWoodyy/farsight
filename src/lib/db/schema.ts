@@ -1,7 +1,7 @@
 /** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const TABLE_DDL = `
 CREATE TABLE leagues (
@@ -23,7 +23,10 @@ CREATE TABLE player_aliases (
 CREATE TABLE champions (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT);
 -- kind: complete | boots | component | starter | consumable (src/lib/domain/items.ts), NULL when Data Dragon does not know the item
 CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT NOT NULL, kind TEXT);
-CREATE TABLE runes (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);  -- keystones
+-- Every rune of a page: keystones, minor runes and stat shards. tree: Precision | Domination | Sorcery | Resolve | Inspiration,
+-- NULL for a stat shard; icon_url is NULL for a shard and for a rune the Data Dragon patch of the build no longer has.
+CREATE TABLE runes (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, tree TEXT, icon_url TEXT);
+CREATE TABLE summoner_spells (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, icon_url TEXT);
 CREATE TABLE tournament_results (
   tournament_id INT NOT NULL, team_id INT NOT NULL, place TEXT, place_number INT, prize_usd REAL,
   PRIMARY KEY (tournament_id, team_id)) WITHOUT ROWID;
@@ -65,6 +68,15 @@ CREATE TABLE game_draft (
 CREATE TABLE game_players (
   game_id INT NOT NULL, player_id INT NOT NULL, team_id INT, side INT, role TEXT, champion_id INT, win INT,
   kills INT, deaths INT, assists INT, gold INT, cs INT, damage INT, vision INT, keystone_id INT,
+  -- the two summoner spells in alphabetical order (the source order is the key binding), so a pair groups as one
+  spell1_id INT, spell2_id INT,
+  PRIMARY KEY (game_id, player_id)) WITHOUT ROWID;
+-- Rune page from Leaguepedia (ScoreboardPlayers.Runes), for the lines that list one (from 2020; 2018 and 2019 only have
+-- the keystone, which stays in game_players). The shards are NULL on a page without them.
+CREATE TABLE game_player_runes (
+  game_id INT NOT NULL, player_id INT NOT NULL,
+  primary1_id INT, primary2_id INT, primary3_id INT, secondary1_id INT, secondary2_id INT,
+  shard1_id INT, shard2_id INT, shard3_id INT,
   PRIMARY KEY (game_id, player_id)) WITHOUT ROWID;
 -- End-of-game inventory from Leaguepedia (ScoreboardPlayers.Items, slots 1-6, trinket excluded).
 CREATE TABLE game_player_items (
@@ -111,11 +123,13 @@ CREATE VIEW v_game_players AS
   SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
          l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch,
          p.page AS player, gp.role, tm.name AS team, gp.side, c.name AS champion, gp.win,
-         gp.kills, gp.deaths, gp.assists, gp.gold, gp.cs, gp.damage, gp.vision, k.name AS keystone
+         gp.kills, gp.deaths, gp.assists, gp.gold, gp.cs, gp.damage, gp.vision, k.name AS keystone,
+         s1.name AS spell1, s2.name AS spell2
   FROM game_players gp JOIN games g ON g.id = gp.game_id JOIN tournaments t ON t.id = g.tournament_id
   JOIN leagues l ON l.id = t.league_id JOIN players p ON p.id = gp.player_id
   LEFT JOIN teams tm ON tm.id = gp.team_id LEFT JOIN champions c ON c.id = gp.champion_id
-  LEFT JOIN runes k ON k.id = gp.keystone_id;
+  LEFT JOIN runes k ON k.id = gp.keystone_id
+  LEFT JOIN summoner_spells s1 ON s1.id = gp.spell1_id LEFT JOIN summoner_spells s2 ON s2.id = gp.spell2_id;
 CREATE VIEW v_game_player_stats AS
   SELECT g.id AS game_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
          l.name AS league, l.short_name AS league_short, t.year, g.played_at, g.patch, g.length_s,
@@ -160,6 +174,19 @@ CREATE VIEW v_draft AS
 CREATE VIEW v_player_items AS
   SELECT gi.game_id, p.page AS player, gi.slot, i.name AS item, i.icon_url, i.kind
   FROM game_player_items gi JOIN players p ON p.id = gi.player_id JOIN items i ON i.id = gi.item_id;
+-- One row per rune of a page, in page order: slot 1 the keystone, 2-4 the primary tree, 5-6 the secondary tree, 7-9 the stat shards.
+CREATE VIEW v_player_runes AS
+  SELECT gp.game_id, p.page AS player, s.slot,
+         CASE WHEN s.slot = 1 THEN 'keystone' WHEN s.slot <= 4 THEN 'primary' WHEN s.slot <= 6 THEN 'secondary' ELSE 'shard' END AS kind,
+         r.name AS rune, r.tree, r.icon_url
+  FROM game_players gp
+  JOIN (SELECT 1 AS slot UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+        UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) s
+  LEFT JOIN game_player_runes pr ON pr.game_id = gp.game_id AND pr.player_id = gp.player_id
+  JOIN runes r ON r.id = CASE s.slot WHEN 1 THEN gp.keystone_id WHEN 2 THEN pr.primary1_id WHEN 3 THEN pr.primary2_id
+                                     WHEN 4 THEN pr.primary3_id WHEN 5 THEN pr.secondary1_id WHEN 6 THEN pr.secondary2_id
+                                     WHEN 7 THEN pr.shard1_id WHEN 8 THEN pr.shard2_id ELSE pr.shard3_id END
+  JOIN players p ON p.id = gp.player_id;
 `;
 
 export function createSchema(db: DatabaseSync): void {

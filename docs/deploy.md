@@ -250,6 +250,25 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Première release v7
+
+Le schéma v7 ajoute les sorts d'invocateur (`game_players.spell1_id`,
+`spell2_id`, la paire rangée par ordre alphabétique) et la page de runes
+(`game_player_runes`, vue `v_player_runes`), lus par le scoreboard d'une partie
+et par le bloc « sorts d'invocateur et runes » de la fiche champion. Les deux
+viennent des champs `SummonerSpells` et `Runes` de `ScoreboardPlayers`, que
+`data:fetch` récupérait déjà : aucune nouvelle requête au wiki, et la LPL est
+couverte. Les sorts existent pour toutes les parties ; la keystone à partir de
+2018, la page entière à partir de 2020. L'arbre et l'icône d'une rune viennent
+de Data Dragon (`runesReforged.json`) ; l'arbre d'une rune retirée est lu sur
+les lignes qui la portent. La base passe de 109 à 121 Mo.
+Comme pour la v6, `data:pull` ne prend que les releases v7 : une fois le code
+sur `main`, lancer **Data release** une fois avant le premier déploiement v7
+(les résumés in-game sont relus sur R2, environ 6 min). Tant que
+`ci/data.json` épingle une release v6, la CI reconstruit la base hors ligne à
+chaque exécution (voir `ci/README.md`) ; ré-épingler sur la première release v7
+supprime cette reconstruction.
+
 ### Première release v6
 
 Le schéma v6 ajoute `items.kind` (item complet, bottes, composant, départ,

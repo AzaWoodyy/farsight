@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useMemo, useState } from "react";
-import type { ChampionItem, ChampionItems, ChampionPool as Pool, ChampionProfile as Profile } from "@/lib/agent/types";
+import { type ChampionItem, type ChampionItems, type ChampionPool as Pool, type ChampionProfile as Profile, type ChampionSetups, RUNE_KINDS, type RuneKind } from "@/lib/agent/types";
 import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
 import { ITEM_KIND_LABEL, ITEM_KINDS, type ItemKind } from "@/lib/domain/items";
 
@@ -278,11 +278,130 @@ export function ChampionProfileView({ p }: { p: Profile }) {
       </div>
 
       <ChampionItemsSection key={`${p.champion}|${p.scope}`} items={p.items} />
+      <ChampionSetupsSection key={`setups|${p.champion}|${p.scope}`} setups={p.setups} />
     </div>
   );
 }
 
 type ItemSortKey = "item" | "games" | "winrate";
+
+const RUNE_KIND_LABEL: Record<RuneKind, string> = { keystone: "keystones", primary: "primaires", secondary: "secondaires", shard: "fragments" };
+
+/** Lines shown per list of spells or runes. */
+const SETUP_LINES = 6;
+
+/** One spell pair or rune: icons, name, share of the games that have the data, games and win rate. */
+function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons: { name: string; src: string | null }[]; name: string; games: number; wins: number; of: number }) {
+  const wr = games >= ITEM_WINRATE_MIN_GAMES ? (100 * wins) / games : null;
+
+  return (
+    <li className="flex items-center gap-3 border-b border-dashed border-line px-2 py-1.5 text-xs last:border-0">
+      <span className="w-5 shrink-0 tabular-nums text-muted">{rank}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex shrink-0 gap-0.5">
+          {icons.map((i) => (
+            <ChampionIcon key={i.name} name={i.name} src={i.src} size={24} />
+          ))}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate" translate="no" title={name}>
+            {name}
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <Gauge share={of ? games / of : 0} label={`${name} : ${pct(games, of)} des parties`} />
+            <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-muted">{pct(games, of)}</span>
+          </div>
+        </div>
+      </div>
+      <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-accent">
+        <Label>parties</Label>
+        {games}
+      </span>
+      <span className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`} title={`${wins}-${games - wins}`}>
+        <Label>winrate</Label>
+        {wr == null ? (
+          <>
+            <span aria-hidden>·</span>
+            <span className="sr-only">non affiché, moins de {ITEM_WINRATE_MIN_GAMES} parties</span>
+          </>
+        ) : (
+          `${Math.round(wr)} %`
+        )}
+      </span>
+    </li>
+  );
+}
+
+/** The champion's summoner spell pairs and runes (by part of the page), from the scoreboards: share of the games that list them. */
+function ChampionSetupsSection({ setups }: { setups: ChampionSetups }) {
+  const kinds = RUNE_KINDS.filter((k) => setups.runes.some((r) => r.kind === k));
+  const [kind, setKind] = useState<RuneKind>(kinds[0] ?? "keystone");
+  const runes = setups.runes.filter((r) => r.kind === kind).slice(0, SETUP_LINES);
+  const runeGames = kind === "keystone" ? setups.keystoneGames : setups.pageGames;
+
+  if (!setups.spells.length && !setups.runes.length && !setups.notes.length) return null;
+
+  return (
+    <section aria-labelledby="champion-setups" className="border-t border-line px-3 py-2">
+      <h3 id="champion-setups" className="text-[11px] text-muted">
+        ── sorts d&apos;invocateur et runes <span className="text-muted/80">· feuilles de match Leaguepedia</span>
+      </h3>
+
+      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+        {setups.spells.length > 0 && (
+          <div className="min-w-0">
+            <p className="text-[11px] text-muted">sorts · {setups.spellGames} parties</p>
+            <ol className="mt-1 border border-line">
+              {setups.spells.slice(0, SETUP_LINES).map((s, i) => (
+                <SetupLine
+                  key={s.spells.map((x) => x.name).join("+")}
+                  rank={i + 1}
+                  icons={s.spells.map((x) => ({ name: x.name, src: x.iconUrl }))}
+                  name={s.spells.map((x) => x.name).join(" + ")}
+                  games={s.games}
+                  wins={s.wins}
+                  of={setups.spellGames}
+                />
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {setups.runes.length > 0 && (
+          <div className="min-w-0">
+            <div role="group" aria-label="partie de la page de runes" className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              {kinds.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={kind === k}
+                  onClick={() => setKind(k)}
+                  className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+                    kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
+                  }`}
+                >
+                  {RUNE_KIND_LABEL[k]}
+                </button>
+              ))}
+              <span className="text-muted">· {runeGames} parties</span>
+            </div>
+            <ol className="mt-1 border border-line">
+              {runes.map((r, i) => (
+                <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+
+      {setups.notes.map((n) => (
+        <p key={n} className="mt-1 text-[10px] text-warn">
+          {n}
+        </p>
+      ))}
+    </section>
+  );
+}
 
 /** Below this many games, an item's win rate is not shown: one game more or less swings it too much. */
 const ITEM_WINRATE_MIN_GAMES = 5;

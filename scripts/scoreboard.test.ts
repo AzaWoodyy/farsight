@@ -4,7 +4,6 @@ import { bindTool, playerProfiles } from "../src/lib/agent/tools";
 import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 
-// Icons without a Data Dragon version: the scoreboard then skips the keystone lookup (no network in tests).
 const ICON = "https://ddragon.leagueoflegends.com/cdn/img/x.png";
 
 /** One Worlds final game (T1 red, winner) and one LEC season game for the profiles. */
@@ -21,7 +20,9 @@ function seed(db: DatabaseSync) {
     INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Zeus'),(3,'SAKEN');
     INSERT INTO champions VALUES (1,'Jax','${ICON}'),(2,'Gragas','${ICON}');
     INSERT INTO items VALUES (1,'Trinity Force','${ICON}','complete'),(2,'Sundered Sky','${ICON}','complete');
-    INSERT INTO runes VALUES (1,'Phase Rush');
+    -- Phase Rush left Data Dragon: no icon. Manaflow Band is taken as a primary rune, Biscuit Delivery as a secondary one.
+    INSERT INTO runes VALUES (1,'Phase Rush','Sorcery',NULL),(2,'Manaflow Band','Sorcery','${ICON}'),(3,'Biscuit Delivery','Inspiration','${ICON}'),(4,'Health',NULL,NULL);
+    INSERT INTO summoner_spells VALUES (1,'Flash','${ICON}'),(2,'Teleport','${ICON}'),(3,'Clairvoyance',NULL);
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,length_s,patch,played_at,
                       blue_dragons,red_dragons,blue_barons,red_barons,blue_towers,red_towers,blue_heralds,red_heralds,
                       blue_void_grubs,red_void_grubs,blue_inhibitors,red_inhibitors)
@@ -29,13 +30,17 @@ function seed(db: DatabaseSync) {
              (2,2,'Week 1',1,1,3,4,1,1800,'14.1',2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
              (3,2,'Week 2',1,1,4,3,1,1800,'14.2',3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
              (4,2,'Week 3',1,1,4,3,1,1800,'14.3',4,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-    INSERT INTO game_players VALUES
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
       (1,1,1,1,'Top',1,0,0,2,5,11637,281,10771,39,NULL),
       (1,2,2,2,'Top',2,1,0,1,8,12891,282,14559,40,1),
       (2,3,3,1,'Mid',NULL,1,1,1,1,NULL,NULL,NULL,NULL,NULL),
       (3,3,4,1,'Mid',NULL,1,1,1,1,NULL,NULL,NULL,NULL,NULL),
       (4,3,4,1,'Mid',NULL,1,1,1,1,NULL,NULL,NULL,NULL,NULL);
     INSERT INTO game_player_items VALUES (1,1,2,2),(1,1,1,1);
+    UPDATE game_players SET spell1_id = 1, spell2_id = 2 WHERE game_id = 1 AND player_id = 2;
+    UPDATE game_players SET spell1_id = 3 WHERE game_id = 1 AND player_id = 1;
+    -- game_id, player_id, primary 1-3, secondary 1-2, shards 1-3
+    INSERT INTO game_player_runes VALUES (1,2,2,NULL,NULL,3,NULL,4,4,NULL);
   `);
 }
 
@@ -59,6 +64,17 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
     expect(bin.items.map((i) => i.name)).toEqual(["Trinity Force", "Sundered Sky"]);
     expect([bin.side, bin.champion, bin.keystone, bin.damage]).toEqual(["blue", "Jax", null, 10771]);
     expect([zeus.side, zeus.keystone, zeus.keystoneIcon, zeus.items]).toEqual(["red", "Phase Rush", null, []]);
+
+    // Spells with their stored icon; the page after the keystone, in page order, a shard taken twice listed twice.
+    expect(zeus.spells).toEqual([{ name: "Flash", iconUrl: ICON }, { name: "Teleport", iconUrl: ICON }]);
+    expect(bin.spells).toEqual([{ name: "Clairvoyance", iconUrl: null }]);
+    expect(zeus.runes).toEqual([
+      { name: "Manaflow Band", kind: "primary", iconUrl: ICON },
+      { name: "Biscuit Delivery", kind: "secondary", iconUrl: ICON },
+      { name: "Health", kind: "shard", iconUrl: null },
+      { name: "Health", kind: "shard", iconUrl: null },
+    ]);
+    expect(bin.runes).toEqual([]);
   } finally {
     db.close();
   }

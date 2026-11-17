@@ -33,7 +33,7 @@ function seed(db: DatabaseSync) {
       VALUES (1,1,'Week 1',1,2,1,1800,100),(2,1,'Week 2',2,1,1,1800,110),(3,2,'Finals',1,2,1,1800,200),
              (4,3,'Finals',1,2,1,1800,NULL),(5,4,'Finals',1,2,1,1800,300);
     -- game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone
-    INSERT INTO game_players VALUES
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
       (1,1,1,1,'Mid',1,1,5,1,5,15000,300,30000,30,NULL),
       (1,2,2,2,'Mid',2,0,1,3,2,12000,270,18000,25,NULL),
       (2,1,1,2,'Mid',2,0,2,4,2,14000,290,25000,30,NULL),

@@ -231,6 +231,15 @@ export type VersusView = {
 
 export type ScoreboardItem = { name: string; iconUrl: string };
 
+/** A summoner spell, or a rune of the page; the icon is null when Data Dragon no longer has it (and for stat shards). */
+export type ScoreboardSpell = { name: string; iconUrl: string | null };
+
+export const RUNE_KINDS = ["keystone", "primary", "secondary", "shard"] as const;
+
+export type RuneKind = (typeof RUNE_KINDS)[number];
+
+export type ScoreboardRune = { name: string; kind: RuneKind; iconUrl: string | null };
+
 /** One player's line of the end-of-game scoreboard; null when Leaguepedia's scoreboard lacks the field. */
 export type ScoreboardPlayer = {
   side: Side;
@@ -247,6 +256,10 @@ export type ScoreboardPlayer = {
   vision: number | null;
   keystone: string | null;
   keystoneIcon: string | null;
+  /** The two summoner spells, in alphabetical order. */
+  spells: ScoreboardSpell[];
+  /** The rune page after the keystone, in page order: primary tree, secondary tree, stat shards. Empty when the source lists none. */
+  runes: ScoreboardRune[];
   /** Final inventory in Leaguepedia's slot order (trinket excluded when the source omits it). */
   items: ScoreboardItem[];
 };
@@ -417,6 +430,28 @@ export type ChampionItems = {
   notes: string[];
 };
 
+/** A pair of summoner spells taken on the champion. */
+export type ChampionSpells = { spells: ScoreboardSpell[]; games: number; wins: number };
+
+/** A rune taken on the champion, in one part of the page (a rune taken as primary and as secondary is two lines). */
+export type ChampionRune = { rune: string; kind: RuneKind; tree: string | null; icon: string | null; games: number; wins: number };
+
+/** A champion's summoner spells and runes in the scope, from Leaguepedia's scoreboards. */
+export type ChampionSetups = {
+  /** Games with the summoner spells, the share denominator of `spells`. */
+  spellGames: number;
+  /** Most games first. */
+  spells: ChampionSpells[];
+  /** Games with a keystone, the share denominator of the keystones. */
+  keystoneGames: number;
+  /** Games with the whole page, the share denominator of the other runes. */
+  pageGames: number;
+  /** Most games first, every kind; the view filters by kind. */
+  runes: ChampionRune[];
+  /** Why part of the scope has no runes (none before 2018, keystone only until part of 2020). */
+  notes: string[];
+};
+
 /** One champion in a competition and period (champion_event_stats tool); null figures are not in the data ("n/d"). */
 export type ChampionProfile = {
   champion: string;
@@ -436,6 +471,7 @@ export type ChampionProfile = {
   /** Roles it was played in, most games first. */
   roles: { role: string; games: number }[];
   items: ChampionItems;
+  setups: ChampionSetups;
 };
 
 /** One champion of a pool: how often and how well the player (or the team) played it. */

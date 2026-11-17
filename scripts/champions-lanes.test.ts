@@ -206,7 +206,7 @@ function seed(db: DatabaseSync) {
     INSERT INTO game_player_stats(game_id,player_id,gold_diff_15) VALUES (1,1,300),(2,1,100),(3,1,-100),(1,2,-300),(2,2,-100),(3,2,100);
     INSERT INTO game_draft VALUES (1,2,1,1,3),(2,1,1,1,3),(1,1,0,1,1),(1,2,0,1,2);
     -- game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone
-    INSERT INTO game_players VALUES
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
       (1,1,1,1,'Mid',1,1,5,1,5,15000,300,30000,30,NULL),
       (1,2,2,2,'Mid',2,0,1,3,2,12000,270,18000,25,NULL),
       (1,3,1,1,'Top',4,1,3,0,2,13000,280,20000,20,NULL),
@@ -322,7 +322,7 @@ describe("tools on a seeded season", () => {
       db.exec(`
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at)
           VALUES (5,2,1,2,1,1800,500),(6,2,2,1,1,1800,600),(7,3,1,2,1,1800,50),(8,3,2,1,2,1800,60);
-        INSERT INTO game_players VALUES
+        INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
           (5,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(6,1,1,2,'Mid',2,0,1,1,1,10000,200,10000,10,NULL),
           (7,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(8,1,1,2,'Mid',2,1,1,1,1,10000,200,10000,10,NULL);
       `);

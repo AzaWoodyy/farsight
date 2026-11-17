@@ -1129,7 +1129,8 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
         "priorit[ée]|jou[ée]e?s?|played|champion|r[ée]sultats?|results?|bilan|victoires?|d[ée]faites?|wins?|losses|forte?s?|strong|bons?|good|m[ée]ta|" +
         "kda|moyen(?:ne)?s?|averages?|or|gold|golds|cs|farm|d[ée]g[âa]ts|damages?|vision|kills?|morts?|deaths?|assists?|[ée]carts?|diff|" +
         "joueurs?|players?|meilleurs?|best|qui (?:le )?joue(?:nt)?|who plays?|mains?|onetricks?|r[ôo]les?|postes?|lanes?|sur|on|avec|with|" +
-        "items?|objets?|builds?|stuffs?|achats?|ach[eè]te(?:nt)?|pris|prend|construits?|built",
+        "items?|objets?|builds?|stuffs?|achats?|ach[eè]te(?:nt)?|pris|prend|construits?|built|" +
+        "runes?|keystones?|pages? de runes|sorts?(?: d'invocateurs?)?|summoner spells?|summoners?|spells?",
     ),
     ...ROLE_CUES.map((r) => r.pattern),
   ],
@@ -1325,6 +1326,9 @@ const SQL_RULES =
   "team gold and gold difference at 10/15/20, kills_10/15/20, plates). v_ingame_coverage gives games and ingame_games per league and year: " +
   "the LPL (Tencent LoL Pro League) has none. If the question needs in-game stats for a scope whose ingame_games is 0, set `missing`. " +
   "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
+  "Summoner spells are v_game_players.spell1 and spell2 (every game; the pair is stored in alphabetical order, so 'Flash' + 'Teleport' is " +
+  "spell1 = 'Flash' AND spell2 = 'Teleport'). Runes: v_game_players.keystone (from 2018) and v_player_runes, one row per rune of a page " +
+  "(kind 'keystone', 'primary', 'secondary' or 'shard'; tree; whole pages from 2020, the keystone alone before), joined on game_id and player. " +
   "Use only these views and columns (no other table). " +
   "A ranking by an average, a rate or a ratio (per game, per minute, win rate, KDA) needs a minimum sample: add HAVING COUNT(*) >= 5 " +
   "(or the minimum the question sets), select that count as a column, and return the top 10 rather than one row, even when the question asks for a single name. " +
@@ -1333,7 +1337,7 @@ const SQL_RULES =
   `Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under ${MAX_ROWS} rows. ` +
   "A stage of the bracket (final, semifinal, quarterfinal) is v_games.tab ('Finals', 'Semifinals', 'Quarterfinals'), never a tournament name: " +
   "a tournament named 'Regional Finals' is a regional qualifier, not the final of the international event. " +
-  "If the answer needs data that no listed column holds (for example MVP awards or summoner spells), " +
+  "If the answer needs data that no listed column holds (for example MVP awards), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
   "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
 

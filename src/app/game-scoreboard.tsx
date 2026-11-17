@@ -189,6 +189,34 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
               {p.champion ?? "champion n/d"}
               {p.keystone && !p.keystoneIcon ? ` · ${p.keystone}` : ""}
             </div>
+            {(p.spells.length > 0 || p.runes.length > 0) && (
+              <div className="mt-0.5 ml-9 flex items-center gap-2">
+                <ul className="flex gap-0.5" aria-label="Sorts d'invocateur">
+                  {p.spells.map((s) => (
+                    <li key={s.name} className="text-[10px] text-muted">
+                      {s.iconUrl ? <Icon src={s.iconUrl} alt={s.name} size={14} /> : s.name}
+                    </li>
+                  ))}
+                </ul>
+                {/* The page after the keystone, without the stat shards (no icon): primary tree, then secondary tree. */}
+                {p.runes.some((r) => r.kind !== "shard") && (
+                  <ul className="flex items-center gap-px" aria-label="Runes">
+                    {p.runes
+                      .filter((r) => r.kind !== "shard")
+                      .map((r, i) => (
+                        <li key={i} className={`text-[10px] text-muted ${r.kind === "secondary" && p.runes[i - 1]?.kind === "primary" ? "ml-1" : ""}`}>
+                          {r.iconUrl ? (
+                            // oxlint-disable-next-line nextjs/no-img-element
+                            <img src={r.iconUrl} alt={r.name} title={r.name} width={14} height={14} loading="lazy" className="h-3.5 w-3.5" />
+                          ) : (
+                            r.name
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
             {/* Phone width: the K/D/A column is off screen, behind the horizontal scroll; repeat it here. */}
             <div className="ml-9 text-[11px] tabular-nums sm:hidden" aria-hidden>
               {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
