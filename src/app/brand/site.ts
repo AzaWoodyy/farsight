@@ -1,13 +1,15 @@
 /**
  * Name, tagline and base URL of the site, shared by the header, the metadata and the generated images.
  * The description is the search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that
- * stands alone, about 150 characters so Google shows it whole.
+ * stands alone, about 150 characters so Google shows it whole. Tagline and description both carry "LoL":
+ * people search "farsight lol" more than "farsight league of legends", and Google ranks a brand query on the
+ * words a page actually contains.
  */
 export const SITE = {
   name: "Farsight",
-  tagline: "L'esport League of Legends en une question",
+  tagline: "L'esport League of Legends (LoL) en une question",
   description:
-    "Farsight répond à tes questions sur les matchs pros de League of Legends (Worlds, MSI, LCK, LPL, LEC, LCS) avec un tableau et ses sources Leaguepedia.",
+    "Farsight répond à tes questions sur les matchs pros de LoL (League of Legends) : Worlds, MSI, LCK, LPL, LEC, LCS, avec un tableau et ses sources Leaguepedia.",
   url: "https://askfarsight.com",
 } as const;
 
