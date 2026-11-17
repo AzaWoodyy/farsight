@@ -1,3 +1,5 @@
+import { answerLocale, type Phrase, phrase, say, tr } from "./messages";
+import { dateFormat, NO_DATA, numberFormat } from "../locale";
 import { dragonLabel } from "../domain/dragons";
 import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
@@ -518,7 +520,7 @@ function competitionScope(alias: string, input: { league: string | null; role?: 
 const SIDE_ID: Record<MapSide, number> = { blue: 1, red: 2 };
 
 /** " côté bleu", or nothing when both sides count. */
-const sideLabel = (side: MapSide | null) => (side ? ` côté ${side === "blue" ? "bleu" : "rouge"}` : "");
+const sideLabel = (side: MapSide | null) => (side ? say(` côté ${side === "blue" ? "bleu" : "rouge"}`, ` ${side} side`) : "");
 
 /** The league and period of an input, without the role its own tool filters on. */
 const leagueAndPeriod = (input: { league: string | null } & Period) => ({ league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
@@ -537,38 +539,49 @@ const hasPeriod = (i: Period) => i.yearFrom != null || i.yearTo != null;
 const noPeriod = <I extends Period>(input: I, what: string): Relaxation<I> => ({
   key: "period",
   input: { ...input, yearFrom: null, yearTo: null },
-  note: `Rien entre ${input.yearFrom ?? "…"} et ${input.yearTo ?? "…"} : affichage de ${what}.`,
-  reason: "filtre de période retiré",
+  note: say(`Rien entre ${input.yearFrom ?? "…"} et ${input.yearTo ?? "…"} : affichage de ${what}.`, `Nothing between ${input.yearFrom ?? "…"} and ${input.yearTo ?? "…"}: showing ${what}.`),
+  reason: say("filtre de période retiré", "period filter removed"),
 });
 
 export const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 const pct = (w: number, n: number) => Math.round((100 * w) / Math.max(1, n));
 const span = (years: number[]) => (years.length ? `${Math.min(...years)}–${Math.max(...years)}` : "");
 
+/** "3" → "3rd", "5-8" → "5th-8th". */
+const ordinal = (place: string) => place.replace(/\d+/g, (n) => `${n}${/(?<!1)1$/.test(n) ? "st" : /(?<!1)2$/.test(n) ? "nd" : /(?<!1)3$/.test(n) ? "rd" : "th"}`);
+
 export function placeLabel(place: string | null, isRegularSeason = false): string {
-  if (!place) return "Classement non publié";
+  if (!place) return say("Classement non publié", "Standings not published");
 
   // Regular-season standings are not a title.
-  if (isRegularSeason) return place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`;
+  if (isRegularSeason) return say(place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`, `${ordinal(place)} in the regular season`);
 
   if (place === "1") return "Champion";
 
-  if (place === "2") return "Finaliste";
+  if (place === "2") return say("Finaliste", "Runner-up");
 
-  if (place === "3-4") return "Demi-finale";
+  if (place === "3-4") return say("Demi-finale", "Semifinal");
 
-  if (place === "5-8") return "Quart de finale";
+  if (place === "5-8") return say("Quart de finale", "Quarterfinal");
 
-  return `Éliminé (${place}e)`;
+  return say(`Éliminé (${place}e)`, `Eliminated (${ordinal(place)})`);
 }
 
+/** The scope of an answer that names no competition; also compared to, so always read through this. */
+const allCompetitions = () => say("toutes compétitions", "all competitions");
+
+/** A day as the answers write it: "2 novembre 2024", "November 2, 2024". */
+const dayFormat = () => dateFormat(answerLocale(), { day: "numeric", month: "long", year: "numeric" });
+
 function leagueShortName(db: DatabaseSync, league: string | null): string {
-  if (!league) return "toutes compétitions";
+  if (!league) return allCompetitions();
 
   return selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league])?.short_name ?? league;
 }
 
-const inLeague = (short: string) => (short === "Worlds" ? "aux Worlds" : short === "MSI" ? "au MSI" : short === "toutes compétitions" ? "" : `en ${short}`);
+/** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
+const inLeague = (short: string) =>
+  short === allCompetitions() ? "" : say(short === "Worlds" ? "aux Worlds" : short === "MSI" ? "au MSI" : `en ${short}`, short === "Worlds" || short === "MSI" ? `at ${short}` : `in ${short}`);
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
@@ -715,7 +728,7 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
   relaxations: (input, entities) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les éditions"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les éditions", "every edition")));
     const resolved = entities.players.find((p) => p.player === input.player || p.otherCandidates.includes(input.player));
 
     for (const other of resolved ? [resolved.player, ...resolved.otherCandidates] : [])
@@ -723,8 +736,8 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
         out.push({
           key: `player:${other}`,
           input: { ...input, player: other },
-          note: `« ${resolved!.mention} » désigne aussi ${other} : résultats de ${other}.`,
-          reason: `alias homonyme essayé : ${other}`,
+          note: say(`« ${resolved!.mention} » désigne aussi ${other} : résultats de ${other}.`, `"${resolved!.mention}" also names ${other}: results of ${other}.`),
+          reason: say(`alias homonyme essayé : ${other}`, `homonym alias tried: ${other}`),
         });
 
     return out;
@@ -757,19 +770,20 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
 
     // One page per year is an edition (Worlds, MSI); a league's year holds several tournaments (seasons, playoffs, cups).
     const perYear = new Set(rows.map((r) => r.year)).size === events;
-    const what = perYear ? "éditions" : "tournois";
+    const what = perYear ? say("éditions", "editions") : say("tournois", "tournaments");
 
     let facts =
-      `${input.player} a disputé ${events} ${what} ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) ` +
-      `avec ${teams.length} équipe${teams.length > 1 ? "s" : ""} (${teams.join(", ")}), ` +
-      `pour un bilan de ${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %).`;
+      say(`${input.player} a disputé ${events} ${what} ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) `, `${input.player} played ${events} ${what} of ${league} (${span(rows.map((r) => r.year))}) `) +
+      say(`avec ${teams.length} équipe${teams.length > 1 ? "s" : ""} (${teams.join(", ")}), `, `with ${teams.length} team${teams.length === 1 ? "" : "s"} (${teams.join(", ")}), `) +
+      say(`pour un bilan de ${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %).`, `for a record of ${wins} wins and ${losses} losses in games (${pct(wins, wins + losses)}%).`);
 
     if (bestRows.length)
-      facts += ` Meilleur résultat : ${placeLabel(bestRows[0].place).toLowerCase()} en ${bestRows
-        .map((r) => `${r.year} (${displayTeam(r.team)})`)
-        .join(", ")}.`;
+      facts += say(
+        ` Meilleur résultat : ${placeLabel(bestRows[0].place).toLowerCase()} en ${bestRows.map((r) => `${r.year} (${displayTeam(r.team)})`).join(", ")}.`,
+        ` Best result: ${placeLabel(bestRows[0].place).toLowerCase()} in ${bestRows.map((r) => `${r.year} (${displayTeam(r.team)})`).join(", ")}.`,
+      );
 
-    if (unranked.length) facts += ` Classement final ${unranked.map((r) => r.year).join(", ")} pas encore publié sur Leaguepedia.`;
+    if (unranked.length) facts += say(` Classement final ${unranked.map((r) => r.year).join(", ")} pas encore publié sur Leaguepedia.`, ` Final standings of ${unranked.map((r) => r.year).join(", ")} not yet published on Leaguepedia.`);
 
     // Follow-ups stay within what the agent supports: teammates of the latest run.
     const latest = rows[rows.length - 1];
@@ -794,7 +808,7 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
       ],
       followUps: [
         `${input.player} ${inLeague(league)} ${bestRows[0]?.year ?? latest.year}`,
-        ...teammates.map((m) => `Résultats de ${m} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`),
+        ...teammates.map((m) => say(`Résultats de ${m} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`, `${m}'s results ${league === "Worlds" ? "at every Worlds" : inLeague(league)}`)),
       ],
       totals: { events, wins, losses, titles, best_place: bestRows[0]?.place ?? "" },
     };
@@ -857,8 +871,8 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
       out.push({
         key: "league",
         input: { ...input, league: null, yearFrom: null, yearTo: null },
-        note: `Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`,
-        reason: "filtre de compétition retiré",
+        note: say(`Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`, `No game of ${input.team} in this competition: showing all competitions.`),
+        reason: say("filtre de compétition retiré", "competition filter removed"),
       });
 
     return out;
@@ -875,19 +889,19 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     const intl = titles.filter((r) => r.league_short === "Worlds" || r.league_short === "MSI");
 
     let facts =
-      `${team} : ${raw.length} tournois ${inLeague(league) || `(${leagues.join(", ")})`} entre ${span(raw.map((r) => Number(r.year))).replace("–", " et ")}, ` +
-      `${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %). ` +
-      `${titles.length} titre${titles.length > 1 ? "s" : ""}`;
+      say(`${team} : ${raw.length} tournois ${inLeague(league) || `(${leagues.join(", ")})`} entre ${span(raw.map((r) => Number(r.year))).replace("–", " et ")}, `, `${team}: ${raw.length} tournaments ${inLeague(league) || `(${leagues.join(", ")})`} between ${span(raw.map((r) => Number(r.year))).replace("–", " and ")}, `) +
+      say(`${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %). `, `${wins} wins and ${losses} losses in games (${pct(wins, wins + losses)}%). `) +
+      say(`${titles.length} titre${titles.length > 1 ? "s" : ""}`, `${titles.length} title${titles.length === 1 ? "" : "s"}`);
 
-    if (intl.length) facts += `, dont ${intl.map((r) => r.tournament ?? r.event_page).join(", ")}`;
+    if (intl.length) facts += say(`, dont ${intl.map((r) => r.tournament ?? r.event_page).join(", ")}`, `, including ${intl.map((r) => r.tournament ?? r.event_page).join(", ")}`);
     facts += ".";
 
-    if (names.length > 1) facts += ` Noms pris en compte : ${names.map(displayTeam).join(", ")}.`;
+    if (names.length > 1) facts += say(` Noms pris en compte : ${names.map(displayTeam).join(", ")}.`, ` Names counted: ${names.map(displayTeam).join(", ")}.`);
 
     return {
-      title: `${team} — ${league === "toutes compétitions" ? "historique" : league}`,
+      title: say(`${team} — ${league === allCompetitions() ? "historique" : league}`, `${team} — ${league === allCompetitions() ? "history" : league}`),
       table: {
-        columns: ["Année", "Compétition", "Tournoi", ...(names.length > 1 ? ["Équipe"] : []), "Place", "V-D", "%"],
+        columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Tournoi", "Tournament"), ...(names.length > 1 ? [say("Équipe", "Team")] : []), "Place", say("V-D", "W-L"), "%"],
         rows: raw.map((r) => [
           r.year,
           r.league_short,
@@ -904,8 +918,8 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
         ...eventSources([...titles.map((r) => String(r.event_page)), ...raw.slice(-8).map((r) => String(r.event_page))], 20),
       ],
       followUps: [
-        input.league ? `Historique de ${team}` : `${team} aux Worlds`,
-        `Palmarès ${league === "toutes compétitions" ? "des Worlds" : league}`,
+        input.league ? say(`Historique de ${team}`, `${team} history`) : say(`${team} aux Worlds`, `${team} at Worlds`),
+        say(`Palmarès ${league === allCompetitions() ? "des Worlds" : league}`, `${league === allCompetitions() ? "Worlds" : league} winners`),
       ],
       totals: { events: raw.length, wins, losses, titles: titles.length },
     };
@@ -1027,7 +1041,7 @@ ORDER BY role, SUM(games) DESC, player`),
     const out: Relaxation<typeof input>[] = [];
 
     if (input.split)
-      out.push({ key: "split", input: { ...input, split: null }, note: `Aucune partie de ${input.team} au split ${input.split} : affichage de toute la saison.`, reason: "filtre de split retiré" });
+      out.push({ key: "split", input: { ...input, split: null }, note: say(`Aucune partie de ${input.team} au split ${input.split} : affichage de toute la saison.`, `No game of ${input.team} in the ${input.split} split: showing the whole season.`), reason: say("filtre de split retiré", "split filter removed") });
 
     if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, "tous les joueurs de son histoire"));
 
@@ -1035,8 +1049,8 @@ ORDER BY role, SUM(games) DESC, player`),
       out.push({
         key: "league",
         input: { ...input, league: null },
-        note: `Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`,
-        reason: "filtre de compétition retiré",
+        note: say(`Aucune partie de ${input.team} dans cette compétition : affichage de toutes les compétitions.`, `No game of ${input.team} in this competition: showing all competitions.`),
+        reason: say("filtre de compétition retiré", "competition filter removed"),
       });
 
     return out;
@@ -1046,7 +1060,7 @@ ORDER BY role, SUM(games) DESC, player`),
     const raw = z.array(RosterRow).parse(sqlRows);
     const { team, members } = teamMembers(db, input.team);
     const league = leagueShortName(db, input.league);
-    const scope = [input.split ? `au split ${input.split}` : "", scopeLabel(league, input)].filter(Boolean).join(" ");
+    const scope = [input.split ? say(`au split ${input.split}`, `in the ${input.split} split`) : "", scopeLabel(league, input)].filter(Boolean).join(" ");
     const events = rosterTournaments(db, input);
     const games = events.reduce((n, e) => n + e.games, 0);
     const wins = events.reduce((n, e) => n + e.wins, 0);
@@ -1084,24 +1098,24 @@ ORDER BY role, SUM(games) DESC, player`),
 
     const answer = input.role
       ? inRole.length
-        ? `${roleName(input.role).replace(/^./, (c) => c.toUpperCase())} de ${team}${where} : ${inRole.map((p) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}${p.starter ? "" : ", remplaçant"})`).join(", ")}. `
-        : `Aucun ${roleName(input.role)} de ${team} aligné${where}. `
+        ? say(`${roleName(input.role).replace(/^./, (c) => c.toUpperCase())} de ${team}${where} : ${inRole.map((p) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}${p.starter ? "" : ", remplaçant"})`).join(", ")}. `, `${roleName(input.role).replace(/^./, (c) => c.toUpperCase())} of ${team}${where}: ${inRole.map((p) => `${p.player} (${p.games} game${p.games === 1 ? "" : "s"}${p.starter ? "" : ", substitute"})`).join(", ")}. `)
+        : say(`Aucun ${roleName(input.role)} de ${team} aligné${where}. `, `No ${roleName(input.role)} fielded by ${team}${where}. `)
       : "";
 
     let facts =
       answer +
-      `${team}${where} : ${games} parties (${wins} victoires) sur ${events.length} tournoi${events.length > 1 ? "s" : ""}. ` +
-      `Joueurs avec le plus de parties à chaque poste : ${starters.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`;
+      say(`${team}${where} : ${games} parties (${wins} victoires) sur ${events.length} tournoi${events.length > 1 ? "s" : ""}. `, `${team}${where}: ${games} games (${wins} wins) over ${events.length} tournament${events.length === 1 ? "" : "s"}. `) +
+      say(`Joueurs avec le plus de parties à chaque poste : ${starters.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`, `Players with the most games in each role: ${starters.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`);
 
-    if (others.length) facts += ` Aussi alignés : ${others.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`;
+    if (others.length) facts += say(` Aussi alignés : ${others.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`, ` Also fielded: ${others.map((p) => `${p.player} (${roleName(p.role)}, ${p.games})`).join(", ")}.`);
 
-    if (names.length > 1) facts += ` Noms pris en compte : ${names.join(", ")}.`;
+    if (names.length > 1) facts += say(` Noms pris en compte : ${names.join(", ")}.`, ` Names counted: ${names.join(", ")}.`);
 
     return {
       title: `${team} — roster${where}`,
       table: {
-        columns: ["Poste", "Joueur", "Statut", "Parties", "V-D", "Tournois"],
-        rows: players.map((p) => [roleName(p.role), p.player, p.starter ? "titulaire" : "remplaçant", p.games, `${p.wins}-${p.games - p.wins}`, p.tournaments.join(", ")]),
+        columns: [say("Poste", "Role"), say("Joueur", "Player"), say("Statut", "Status"), say("Parties", "Games"), say("V-D", "W-L"), say("Tournois", "Tournaments")],
+        rows: players.map((p) => [roleName(p.role), p.player, p.starter ? say("titulaire", "starter") : say("remplaçant", "substitute"), p.games, `${p.wins}-${p.games - p.wins}`, p.tournaments.join(", ")]),
       },
       roster: {
         team,
@@ -1113,8 +1127,8 @@ ORDER BY role, SUM(games) DESC, player`),
         players,
       },
       notes: [
-        ...(input.latest ? [`Aucune période précisée : roster de la saison la plus récente de ${team} (${input.yearFrom}).`] : []),
-        "Seuls les joueurs alignés en match figurent ici : la base ne contient ni les coachs ni les remplaçants qui n'ont pas joué.",
+        ...(input.latest ? [say(`Aucune période précisée : roster de la saison la plus récente de ${team} (${input.yearFrom}).`, `No period given: roster of ${team}'s most recent season (${input.yearFrom}).`)] : []),
+        say("Seuls les joueurs alignés en match figurent ici : la base ne contient ni les coachs ni les remplaçants qui n'ont pas joué.", "Only players fielded in a game are listed here: the database holds neither coaches nor substitutes who did not play."),
       ],
       facts,
       sources: [
@@ -1122,8 +1136,8 @@ ORDER BY role, SUM(games) DESC, player`),
         ...eventSources(events.map((e) => e.event_page), 12),
         ...starters.map((p) => p.source),
       ],
-      followUps: [`Historique de ${team}${where}`, ...starters.slice(0, 2).map((p) => `${p.player}${where}`)].slice(0, 3),
-      totals: { season: input.latest ? (input.yearFrom ?? "n/d") : "asked", players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
+      followUps: [say(`Historique de ${team}${where}`, `${team} history${where}`), ...starters.slice(0, 2).map((p) => `${p.player}${where}`)].slice(0, 3),
+      totals: { season: input.latest ? (input.yearFrom ?? nd()) : "asked", players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
     };
   },
   normalize: (db, input) => {
@@ -1223,14 +1237,14 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les années"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les années", "every year")));
 
     if (input.league)
       out.push({
         key: "league",
         input: { ...input, league: null, yearFrom: null, yearTo: null },
-        note: "Aucune confrontation dans cette compétition : affichage de toutes les compétitions.",
-        reason: "filtre de compétition retiré",
+        note: say("Aucune confrontation dans cette compétition : affichage de toutes les compétitions.", "No meeting in this competition: showing all competitions."),
+        reason: say("filtre de compétition retiré", "competition filter removed"),
       });
 
     return out;
@@ -1243,24 +1257,24 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     const winsB = raw.reduce((n, r) => n + Number(r.wins_b), 0);
     const league = leagueShortName(db, input.league);
     const last = raw[raw.length - 1];
-    const leader = winsA === winsB ? "à égalité" : `avantage ${winsA > winsB ? a.team : b.team}`;
+    const leader = winsA === winsB ? say("à égalité", "tied") : say(`avantage ${winsA > winsB ? a.team : b.team}`, `${winsA > winsB ? a.team : b.team} ahead`);
 
     const series = teamSeries(db, input);
     const latest = series.series[0];
-    const seriesLeader = series.seriesA === series.seriesB ? "à égalité" : `avantage ${series.seriesA > series.seriesB ? a.team : b.team}`;
+    const seriesLeader = series.seriesA === series.seriesB ? say("à égalité", "tied") : say(`avantage ${series.seriesA > series.seriesB ? a.team : b.team}`, `${series.seriesA > series.seriesB ? a.team : b.team} ahead`);
 
     const facts =
-      `${[`${a.team} – ${b.team}`, inLeague(league)].filter(Boolean).join(" ")} : ` +
-      `${series.count} séries (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} gagnées par ${a.team} et ${series.seriesB} par ${b.team} (${seriesLeader}) ; ` +
-      `${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois, ${leader}. ` +
+      say(`${[`${a.team} – ${b.team}`, inLeague(league)].filter(Boolean).join(" ")} : `, `${[`${a.team} – ${b.team}`, inLeague(league)].filter(Boolean).join(" ")}: `) +
+      say(`${series.count} séries (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} gagnées par ${a.team} et ${series.seriesB} par ${b.team} (${seriesLeader}) ; `, `${series.count} series (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} won by ${a.team} and ${series.seriesB} by ${b.team} (${seriesLeader}); `) +
+      say(`${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois, ${leader}. `, `${winsA} wins to ${winsB} in games over ${raw.length} tournaments, ${leader}. `) +
       (latest
-        ? `Dernière rencontre : ${latest.label}${latest.playedAt ? ` (${DAY_FR.format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`
-        : `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`);
+        ? say(`Dernière rencontre : ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`, `Latest meeting: ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`)
+        : say(`Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`, `Latest head-to-head: ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`));
 
     return {
-      title: `${a.team} vs ${b.team}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `${a.team} vs ${b.team}${league === allCompetitions() ? "" : ` — ${league}`}`,
       table: {
-        columns: ["Année", "Compétition", "Tournoi", a.team, b.team],
+        columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Tournoi", "Tournament"), a.team, b.team],
         rows: raw.map((r) => [r.year, r.league_short, r.tournament ?? r.event_page, r.wins_a, r.wins_b]),
       },
       facts,
@@ -1279,7 +1293,7 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
         seriesCount: series.count,
         series: series.series,
       },
-      followUps: [`Historique de ${a.team}`, `Historique de ${b.team}`],
+      followUps: [say(`Historique de ${a.team}`, `${a.team} history`), say(`Historique de ${b.team}`, `${b.team} history`)],
       totals: { wins_a: winsA, wins_b: winsB, events: raw.length, series: series.count, series_a: series.seriesA, series_b: series.seriesB },
     };
   },
@@ -1357,18 +1371,18 @@ const VersusGameRow = z.object({
  */
 type ComparisonFocus = { label: string; ingame: boolean; aggregate: "sum" | "avg"; stat: string; column: string; digits: number; signed: boolean };
 
-const END_STAT_FOCUS: Record<ComparisonEndStat, { label: string; digits: number }> = {
-  kills: { label: "kills", digits: 2 },
-  deaths: { label: "morts", digits: 2 },
-  assists: { label: "assists", digits: 2 },
-  damage: { label: "dégâts aux champions", digits: 0 },
-  vision: { label: "score de vision", digits: 1 },
+const END_STAT_FOCUS: Record<ComparisonEndStat, { label: Phrase; digits: number }> = {
+  kills: { label: phrase("kills", "kills"), digits: 2 },
+  deaths: { label: phrase("morts", "deaths"), digits: 2 },
+  assists: { label: phrase("assists", "assists"), digits: 2 },
+  damage: { label: phrase("dégâts aux champions", "damage to champions"), digits: 0 },
+  vision: { label: phrase("score de vision", "vision score"), digits: 1 },
 };
 
 function comparisonFocus(input: PlayerComparisonInput): ComparisonFocus | null {
   const end = COMPARISON_END_STATS.find((s) => s === input.metric);
 
-  if (end) return { label: END_STAT_FOCUS[end].label, ingame: false, aggregate: "avg", stat: end, column: `avg_${end}`, digits: END_STAT_FOCUS[end].digits, signed: false };
+  if (end) return { label: tr(END_STAT_FOCUS[end].label), ingame: false, aggregate: "avg", stat: end, column: `avg_${end}`, digits: END_STAT_FOCUS[end].digits, signed: false };
   const metric = PLAYER_METRICS.find((m) => m === input.metric);
 
   if (!metric) return null;
@@ -1388,27 +1402,27 @@ const focusValue = (r: ComparisonRow, f: ComparisonFocus) => (r.focus_games === 
  * the scope. An in-game figure is n/d for a player without Riot data, and says on how many games it is counted.
  */
 function focusFacts(f: ComparisonFocus, pair: string, names: [string, string], faced: ComparisonRow[], rows: ComparisonRow[]): string {
-  if (f.ingame && [...rows, ...faced].every((r) => r.focus_games === 0)) return `${pair}, ${f.label} : n/d, aucune partie avec données Riot dans ce périmètre. `;
+  if (f.ingame && [...rows, ...faced].every((r) => r.focus_games === 0)) return say(`${pair}, ${f.label} : n/d, aucune partie avec données Riot dans ce périmètre. `, `${pair}, ${f.label}: n/a, no game with Riot data in this scope. `);
 
   const one = (name: string, r: ComparisonRow | undefined) => {
-    if (!r) return `${name} n/d`;
+    if (!r) return say(`${name} n/d`, `${name} n/a`);
 
-    if (r.focus_games === 0) return `${name} n/d (aucune partie avec données Riot)`;
+    if (r.focus_games === 0) return say(`${name} n/d (aucune partie avec données Riot)`, `${name} n/a (no game with Riot data)`);
     const v = frNumber(focusValue(r, f), f.signed);
-    const shown = f.aggregate === "sum" ? v : `${v} ${f.ingame ? "en moyenne" : "par partie"}${f.ingame ? "" : ` (${frNumber(r.focus_total)} au total)`}`;
+    const shown = f.aggregate === "sum" ? v : say(`${v} ${f.ingame ? "en moyenne" : "par partie"}${f.ingame ? "" : ` (${frNumber(r.focus_total)} au total)`}`, `${v} ${f.ingame ? "on average" : "per game"}${f.ingame ? "" : ` (${frNumber(r.focus_total)} in total)`}`);
 
-    return `${name} ${shown}${f.ingame && r.focus_games < r.games ? ` (sur ${r.focus_games} partie${r.focus_games > 1 ? "s" : ""} avec données Riot)` : ""}`;
+    return say(`${name} ${shown}${f.ingame && r.focus_games < r.games ? ` (sur ${r.focus_games} partie${r.focus_games > 1 ? "s" : ""} avec données Riot)` : ""}`, `${name} ${shown}${f.ingame && r.focus_games < r.games ? ` (over ${r.focus_games} game${r.focus_games === 1 ? "" : "s"} with Riot data)` : ""}`);
   };
 
   const both = (list: ComparisonRow[]) => names.map((n) => one(n, list.find((r) => r.player === n))).join(", ");
 
-  return `${pair}, ${f.label} : ${faced.length ? `face à face, ${both(faced)} ; ` : ""}sur toutes leurs parties, ${both(rows)}. `;
+  return say(`${pair}, ${f.label} : ${faced.length ? `face à face, ${both(faced)} ; ` : ""}sur toutes leurs parties, ${both(rows)}. `, `${pair}, ${f.label}: ${faced.length ? `head to head, ${both(faced)}; ` : ""}over all their games, ${both(rows)}. `);
 }
 
 /** Most games listed under the comparison (Faker and Chovy met 146 times). */
 const MAX_VERSUS_GAMES = 200;
 
-const fr1 = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
+const fr1 = (n: number) => numberFormat(answerLocale(), 1).format(Math.round(n * 10) / 10);
 
 /** The other player of the pair, for a row of either: they faced each other when they were on opposing teams. */
 const FACED = `EXISTS (SELECT 1 FROM v_game_players o
@@ -1467,7 +1481,15 @@ export function scopeLabel(league: string, input: Period): string {
   const { yearFrom: from, yearTo: to } = input;
 
   const period =
-    from != null && from === to ? `en ${from}` : from != null && to != null ? `entre ${from} et ${to}` : from != null ? `depuis ${from}` : to != null ? `jusqu'en ${to}` : "";
+    from != null && from === to
+      ? say(`en ${from}`, `in ${from}`)
+      : from != null && to != null
+        ? say(`entre ${from} et ${to}`, `between ${from} and ${to}`)
+        : from != null
+          ? say(`depuis ${from}`, `since ${from}`)
+          : to != null
+            ? say(`jusqu'en ${to}`, `until ${to}`)
+            : "";
 
   return [inLeague(league), period].filter(Boolean).join(" ");
 }
@@ -1535,13 +1557,13 @@ function sameLane(db: DatabaseSync, input: PlayerComparisonInput): VersusView["l
 function laneFacts(lanes: VersusView["lanes"], met: number, profiles: [string | null, string | null], names: [string, string]): string {
   if (!met) return "";
 
-  if (lanes.same === met) return ` Toutes ces parties se sont jouées dans la même lane (${lanes.roles.map((r) => r.role).join(", ")}).`;
+  if (lanes.same === met) return say(` Toutes ces parties se sont jouées dans la même lane (${lanes.roles.map((r) => r.role).join(", ")}).`, ` All those games were played in the same lane (${lanes.roles.map((r) => r.role).join(", ")}).`);
 
-  if (lanes.same) return ` Dont ${lanes.same} dans la même lane (${lanes.roles.map((r) => `${r.role} ${r.games}`).join(", ")}).`;
+  if (lanes.same) return say(` Dont ${lanes.same} dans la même lane (${lanes.roles.map((r) => `${r.role} ${r.games}`).join(", ")}).`, ` Of which ${lanes.same} in the same lane (${lanes.roles.map((r) => `${r.role} ${r.games}`).join(", ")}).`);
 
   const [ra, rb] = profiles;
 
-  return ` Jamais dans la même lane${ra && rb && ra !== rb ? ` (${names[0]} joue ${ra}, ${names[1]} ${rb})` : ""}.`;
+  return say(` Jamais dans la même lane${ra && rb && ra !== rb ? ` (${names[0]} joue ${ra}, ${names[1]} ${rb})` : ""}.`, ` Never in the same lane${ra && rb && ra !== rb ? ` (${names[0]} plays ${ra}, ${names[1]} ${rb})` : ""}.`);
 }
 
 const playerComparison: ToolDef<PlayerComparisonInput> = {
@@ -1570,8 +1592,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
       out.push({
         key: "league",
         input: { ...input, league: null, yearFrom: null, yearTo: null },
-        note: "Aucune partie des deux joueurs dans cette compétition : comparaison sur toutes les compétitions.",
-        reason: "filtre de compétition retiré",
+        note: say("Aucune partie des deux joueurs dans cette compétition : comparaison sur toutes les compétitions.", "No game of the two players in this competition: comparison over all competitions."),
+        reason: say("filtre de compétition retiré", "competition filter removed"),
       });
 
     return out;
@@ -1594,36 +1616,36 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     const line = (r: ComparisonRow) => {
       const kda = r.avg_kills != null && r.avg_deaths && r.avg_assists != null ? `, KDA ${fr1((r.avg_kills + r.avg_assists) / r.avg_deaths)}` : "";
 
-      const solo = r.solo_kills == null ? "" : `, ${r.solo_kills} solo kill${r.solo_kills > 1 ? "s" : ""}`;
+      const solo = r.solo_kills == null ? "" : say(`, ${r.solo_kills} solo kill${r.solo_kills > 1 ? "s" : ""}`, `, ${r.solo_kills} solo kill${r.solo_kills === 1 ? "" : "s"}`);
 
-      return `${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}${solo}`;
+      return say(`${r.player} ${r.games} parties, ${r.wins} victoires (${pct(r.wins, r.games)} %)${kda}${solo}`, `${r.player} ${r.games} games, ${r.wins} wins (${pct(r.wins, r.games)}%)${kda}${solo}`);
     };
 
     const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
-    const pair = `${input.playerA} et ${input.playerB}${scope ? ` ${scope}` : ""}`;
+    const pair = say(`${input.playerA} et ${input.playerB}${scope ? ` ${scope}` : ""}`, `${input.playerA} and ${input.playerB}${scope ? ` ${scope}` : ""}`);
     const focus = comparisonFocus(input);
 
     const valueOf = (list: ComparisonRow[], player: string) => {
       const r = list.find((x) => x.player === player);
 
-      return (focus && r && focusValue(r, focus)) ?? "n/d";
+      return (focus && r && focusValue(r, focus)) ?? nd();
     };
 
     const facts =
       // The statistic the question names opens the facts, so the summary leads with it.
       (focus ? focusFacts(focus, pair, [input.playerA, input.playerB], met ? faced : [], rows) : "") +
       (met
-        ? `${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. ` +
-          `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.` +
+        ? say(`${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. `, `${pair} faced each other in ${met} games: ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB}; head to head, ${faced.map(line).join("; ")}. `) +
+          say(`Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`, `Over all their games: ${rows.map(line).join("; ")}.`) +
           laneFacts(lanes, met, [mainRole(input.playerA), mainRole(input.playerB)], [input.playerA, input.playerB])
-        : `${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`) +
-      (missing.length ? ` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.` : "") +
+        : say(`${pair} ne se sont jamais affrontés. Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.`, `${pair} have never faced each other. Over all their games: ${rows.map(line).join("; ")}.`)) +
+      (missing.length ? say(` Aucune partie de ${missing.join(" ni de ")} dans ce périmètre.`, ` No game of ${missing.join(" or ")} in this scope.`) : "") +
       ([...rows, ...faced].every((r) => r.ingame_games === 0)
-        ? " Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre."
-        : [...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
+        ? say(" Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre.", " Differences at 15 min and solo kills: n/a, no game with Riot data in this scope.")
+        : [...rows, ...faced].some((r) => r.ingame_games < r.games) ? say(" Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement.", " Differences at 15 min and solo kills computed over the games with Riot data only.") : "");
 
     return {
-      title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `${input.playerA} vs ${input.playerB}${league === allCompetitions() ? "" : ` — ${league}`}`,
       // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
       table: comparisonTable(rows, focus),
       versus: {
@@ -1642,7 +1664,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         { label: `Leaguepedia — ${input.playerB}`, url: wikiUrl(input.playerB) },
         ...eventSources(rows.flatMap((r) => r.pages), 10),
       ],
-      followUps: [`Résultats de ${input.playerA}${scope ? ` ${scope}` : " à tous les Worlds"}`, `Résultats de ${input.playerB}${scope ? ` ${scope}` : " à tous les Worlds"}`],
+      followUps: [say(`Résultats de ${input.playerA}${scope ? ` ${scope}` : " à tous les Worlds"}`, `${input.playerA}'s results${scope ? ` ${scope}` : " at every Worlds"}`), say(`Résultats de ${input.playerB}${scope ? ` ${scope}` : " à tous les Worlds"}`, `${input.playerB}'s results${scope ? ` ${scope}` : " at every Worlds"}`)],
       totals: {
         games_a: rows.find((r) => r.player === input.playerA)?.games ?? 0,
         games_b: rows.find((r) => r.player === input.playerB)?.games ?? 0,
@@ -1653,8 +1675,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         h2h_listed: games.length,
         h2h_same_lane: lanes.same,
         // The face-to-face when they met, else the scope: what the comparison shows first.
-        solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? "n/d",
-        solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? "n/d",
+        solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? nd(),
+        solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? nd(),
         // The statistic the question names, over the scope and face to face.
         ...(focus && {
           metric_a: valueOf(rows, input.playerA),
@@ -1700,19 +1722,19 @@ function championScope(input: ChampionStatsInput, params: Params): string {
 
 /** End-of-game figures averaged per game on the champion, with the number of games that have them. */
 const CHAMPION_AVERAGES = [
-  { key: "kills", label: "kills", digits: 1 },
-  { key: "deaths", label: "morts", digits: 1 },
-  { key: "assists", label: "assists", digits: 1 },
-  { key: "gold", label: "or", digits: 0 },
-  { key: "cs", label: "CS", digits: 1 },
-  { key: "damage", label: "dégâts", digits: 0 },
-  { key: "vision", label: "score de vision", digits: 1 },
+  { key: "kills", label: phrase("kills", "kills"), digits: 1 },
+  { key: "deaths", label: phrase("morts", "deaths"), digits: 1 },
+  { key: "assists", label: phrase("assists", "assists"), digits: 1 },
+  { key: "gold", label: phrase("or", "gold"), digits: 0 },
+  { key: "cs", label: phrase("CS", "CS"), digits: 1 },
+  { key: "damage", label: phrase("dégâts", "damage"), digits: 0 },
+  { key: "vision", label: phrase("score de vision", "vision score"), digits: 1 },
 ] as const;
 
 /** In-game figures (Riot data), averaged over the games that have them. */
 const CHAMPION_INGAME = [
-  { key: "gold_diff_15", label: "écart d'or @15", digits: 0 },
-  { key: "cs_diff_15", label: "écart CS @15", digits: 1 },
+  { key: "gold_diff_15", label: phrase("écart d'or @15", "gold diff @15"), digits: 0 },
+  { key: "cs_diff_15", label: phrase("écart CS @15", "CS diff @15"), digits: 1 },
 ] as const;
 
 const Averages = z.record(z.string(), z.number().nullable());
@@ -1721,15 +1743,21 @@ const ChampionPlayerRow = z.object({ player: Text, team: NullableText, games: z.
 
 const roundTo = (n: number | null, digits: number) => (n == null ? null : Math.round(n * 10 ** digits) / 10 ** digits);
 
-/** "12 345", "3,1", "+72", "n/d" */
+/** "12 345", "3,1", "+72", nd() */
 export const frNumber = (n: number | null, signedValue = false) =>
-  n == null ? "n/d" : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { maximumFractionDigits: 2 }).replace(/[\u202f\u00a0]/g, " ")}`;
+  n == null ? nd() : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${numberFormat(answerLocale(), 2).format(Math.abs(n)).replace(/[\u202f\u00a0]/g, " ")}`;
+
+/** A figure the data does not hold: nd() / "n/a". */
+const nd = () => NO_DATA[answerLocale()];
 
 /** Since 2026, a bot laner's boots sit in the role quest slot (Riot `roleBoundItem`), which Leaguepedia's Items field leaves out. */
 const BOT_BOOTS_SLOT_YEAR = 2026;
 
 /** Where the inventories come from: the Items field of the scoreboards. */
-const ITEMS_SOURCE: Source = { label: "Leaguepedia — inventaires de fin de partie (ScoreboardPlayers)", url: wikiUrl("Special:CargoTables/ScoreboardPlayers") };
+const itemsSource = (): Source => ({
+  label: say("Leaguepedia — inventaires de fin de partie (ScoreboardPlayers)", "Leaguepedia — end-of-game inventories (ScoreboardPlayers)"),
+  url: wikiUrl("Special:CargoTables/ScoreboardPlayers"),
+});
 
 const ChampionItemRow = z.object({ item: Text, icon: Text, kind: z.enum(ITEM_KINDS).nullable(), games: z.number(), wins: z.number() });
 
@@ -1760,10 +1788,10 @@ function championItems(db: DatabaseSync, input: ChampionStatsInput, picks: numbe
 
   const notes: string[] = [];
 
-  if (picks && !counts.games) notes.push("Leaguepedia ne liste aucun inventaire de fin de partie pour ces parties.");
-  else if (counts.games < picks) notes.push(`Inventaire connu pour ${counts.games} parties sur ${picks}.`);
+  if (picks && !counts.games) notes.push(say("Leaguepedia ne liste aucun inventaire de fin de partie pour ces parties.", "Leaguepedia lists no end-of-game inventory for these games."));
+  else if (counts.games < picks) notes.push(say(`Inventaire connu pour ${counts.games} parties sur ${picks}.`, `Inventory known for ${counts.games} games out of ${picks}.`));
 
-  if (counts.bot_slot) notes.push(`Depuis ${BOT_BOOTS_SLOT_YEAR}, les bottes des ADC (emplacement de quête de rôle) ne figurent pas dans l'inventaire listé par Leaguepedia.`);
+  if (counts.bot_slot) notes.push(say(`Depuis ${BOT_BOOTS_SLOT_YEAR}, les bottes des ADC (emplacement de quête de rôle) ne figurent pas dans l'inventaire listé par Leaguepedia.`, `Since ${BOT_BOOTS_SLOT_YEAR}, ADC boots (role quest slot) are not in the inventory Leaguepedia lists.`));
 
   return { games: counts.games, items, notes };
 }
@@ -1772,16 +1800,19 @@ function championItems(db: DatabaseSync, input: ChampionStatsInput, picks: numbe
 function itemsFacts(p: ChampionProfile): string {
   const complete = p.items.items.filter((i) => i.kind === "complete").slice(0, 3);
 
-  if (!complete.length) return p.items.notes.length ? ` Items : ${p.items.notes.join(" ")}` : "";
+  if (!complete.length) return p.items.notes.length ? say(` Items : ${p.items.notes.join(" ")}`, ` Items: ${p.items.notes.join(" ")}`) : "";
 
   return (
-    ` Items complets les plus fréquents en fin de partie : ${complete.map((i) => `${i.item} (${i.games}/${p.items.games} parties, ${pct(i.games, p.items.games)} %)`).join(", ")}.` +
+    say(` Items complets les plus fréquents en fin de partie : ${complete.map((i) => `${i.item} (${i.games}/${p.items.games} parties, ${pct(i.games, p.items.games)} %)`).join(", ")}.`, ` Most frequent completed items at the end of the game: ${complete.map((i) => `${i.item} (${i.games}/${p.items.games} games, ${pct(i.games, p.items.games)}%)`).join(", ")}.`) +
     (p.items.notes.length ? ` ${p.items.notes.join(" ")}` : "")
   );
 }
 
 /** Where the summoner spells and the runes come from: the scoreboards. */
-const SETUPS_SOURCE: Source = { label: "Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)", url: wikiUrl("Special:CargoTables/ScoreboardPlayers") };
+const setupsSource = (): Source => ({
+  label: say("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)", "Leaguepedia — summoner spells and runes (ScoreboardPlayers)"),
+  url: wikiUrl("Special:CargoTables/ScoreboardPlayers"),
+});
 
 const ChampionSpellsRow = z.object({ spell1: Text, spell2: NullableText, icon1: NullableText, icon2: NullableText, games: z.number(), wins: z.number() });
 
@@ -1824,14 +1855,14 @@ function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: numb
 
   const notes: string[] = [];
 
-  if (picks && !counts.keystones) notes.push("Leaguepedia ne liste aucune rune pour ces parties (aucune avant la saison 2018).");
-  else if (counts.keystones < picks) notes.push(`Keystone connue pour ${counts.keystones} parties sur ${picks} (aucune avant la saison 2018).`);
+  if (picks && !counts.keystones) notes.push(say("Leaguepedia ne liste aucune rune pour ces parties (aucune avant la saison 2018).", "Leaguepedia lists no rune for these games (none before the 2018 season)."));
+  else if (counts.keystones < picks) notes.push(say(`Keystone connue pour ${counts.keystones} parties sur ${picks} (aucune avant la saison 2018).`, `Keystone known for ${counts.keystones} games out of ${picks} (none before the 2018 season).`));
 
   if (counts.keystones && counts.pages < counts.keystones)
     notes.push(
       counts.pages
-        ? `Page de runes complète pour ${counts.pages} parties sur ${picks} (keystone seule en 2018, 2019 et sur une partie de 2020).`
-        : "Seule la keystone est listée pour ces parties (page de runes complète listée à partir de 2020).",
+        ? say(`Page de runes complète pour ${counts.pages} parties sur ${picks} (keystone seule en 2018, 2019 et sur une partie de 2020).`, `Full rune page for ${counts.pages} games out of ${picks} (keystone only in 2018, 2019 and part of 2020).`)
+        : say("Seule la keystone est listée pour ces parties (page de runes complète listée à partir de 2020).", "Only the keystone is listed for these games (full rune page listed from 2020)."),
     );
 
   return {
@@ -1851,13 +1882,13 @@ function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: numb
 /** "Flash + Teleport (185/215 parties, 86 %)" for the most taken spell pairs, then the keystones the same way. */
 function setupsFacts(p: ChampionProfile): string {
   const s = p.setups;
-  const line = (name: string, games: number, of: number) => `${name} (${games}/${of} parties, ${pct(games, of)} %)`;
+  const line = (name: string, games: number, of: number) => say(`${name} (${games}/${of} parties, ${pct(games, of)} %)`, `${name} (${games}/${of} games, ${pct(games, of)}%)`);
   const keystones = s.runes.filter((r) => r.kind === "keystone").slice(0, 3);
 
   return (
-    (s.spells.length ? ` Sorts d'invocateur les plus fréquents : ${s.spells.slice(0, 3).map((x) => line(x.spells.map((sp) => sp.name).join(" + "), x.games, s.spellGames)).join(", ")}.` : "") +
-    (keystones.length ? ` Keystones les plus fréquentes : ${keystones.map((r) => line(r.rune, r.games, s.keystoneGames)).join(", ")}.` : "") +
-    (s.notes.length ? ` Runes : ${s.notes.join(" ")}` : "")
+    (s.spells.length ? say(` Sorts d'invocateur les plus fréquents : ${s.spells.slice(0, 3).map((x) => line(x.spells.map((sp) => sp.name).join(" + "), x.games, s.spellGames)).join(", ")}.`, ` Most frequent summoner spells: ${s.spells.slice(0, 3).map((x) => line(x.spells.map((sp) => sp.name).join(" + "), x.games, s.spellGames)).join(", ")}.`) : "") +
+    (keystones.length ? say(` Keystones les plus fréquentes : ${keystones.map((r) => line(r.rune, r.games, s.keystoneGames)).join(", ")}.`, ` Most frequent keystones: ${keystones.map((r) => line(r.rune, r.games, s.keystoneGames)).join(", ")}.`) : "") +
+    (s.notes.length ? say(` Runes : ${s.notes.join(" ")}`, ` Runes: ${s.notes.join(" ")}`) : "")
   );
 }
 
@@ -1917,8 +1948,8 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     wins: totals.wins ?? 0,
     kda: kdaOf(totals.ka ?? null, totals.kda_deaths ?? null),
     averages: [
-      ...CHAMPION_AVERAGES.map((a) => ({ key: a.key, label: a.label, value: roundTo(totals[a.key] ?? null, a.digits), counted: totals[`n_${a.key}`] ?? 0 })),
-      ...CHAMPION_INGAME.map((a) => ({ key: a.key, label: a.label, value: roundTo(ingame[a.key] ?? null, a.digits), signed: true, counted: ingame[`n_${a.key}`] ?? 0 })),
+      ...CHAMPION_AVERAGES.map((a) => ({ key: a.key, label: tr(a.label), value: roundTo(totals[a.key] ?? null, a.digits), counted: totals[`n_${a.key}`] ?? 0 })),
+      ...CHAMPION_INGAME.map((a) => ({ key: a.key, label: tr(a.label), value: roundTo(ingame[a.key] ?? null, a.digits), signed: true, counted: ingame[`n_${a.key}`] ?? 0 })),
     ],
     players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
     roles,
@@ -1934,9 +1965,9 @@ function averagesFacts(p: ChampionProfile): string {
   const ingame = p.averages.find((a) => a.key === "gold_diff_15");
 
   return (
-    `Moyennes par partie : ${shown}.` +
-    (partial.length ? ` Calculés sur une partie des parties seulement (les autres n'ont pas la donnée) : ${partial.map((a) => `${a.label} sur ${a.counted}`).join(", ")}.` : "") +
-    (ingame && ingame.counted === 0 ? " Écarts à 15 min n/d : aucune partie avec données Riot dans ce périmètre." : "")
+    say(`Moyennes par partie : ${shown}.`, `Averages per game: ${shown}.`) +
+    (partial.length ? say(` Calculés sur une partie des parties seulement (les autres n'ont pas la donnée) : ${partial.map((a) => `${a.label} sur ${a.counted}`).join(", ")}.`, ` Computed over part of the games only (the others lack the data): ${partial.map((a) => `${a.label} over ${a.counted}`).join(", ")}.`) : "") +
+    (ingame && ingame.counted === 0 ? say(" Écarts à 15 min n/d : aucune partie avec données Riot dans ce périmètre.", " Differences at 15 min n/a: no game with Riot data in this scope.") : "")
   );
 }
 
@@ -1989,9 +2020,9 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
   relaxations: (input) => {
     if (!hasPeriod(input)) return [];
     const { yearFrom: from, yearTo: to } = input;
-    const when = from != null && from === to ? `en ${from}` : from != null && to != null ? `entre ${from} et ${to}` : from != null ? `depuis ${from}` : `jusqu'en ${to}`;
+    const when = from != null && from === to ? say(`en ${from}`, `in ${from}`) : from != null && to != null ? say(`entre ${from} et ${to}`, `between ${from} and ${to}`) : from != null ? say(`depuis ${from}`, `since ${from}`) : say(`jusqu'en ${to}`, `until ${to}`);
 
-    return [{ ...noPeriod(input, "toutes les éditions"), note: `${input.champion} n'a été ni pické ni banni ${when} dans cette compétition (qualifications exclues) : affichage de toutes les éditions.` }];
+    return [{ ...noPeriod(input, say("toutes les éditions", "every edition")), note: say(`${input.champion} n'a été ni pické ni banni ${when} dans cette compétition (qualifications exclues) : affichage de toutes les éditions.`, `${input.champion} was neither picked nor banned ${when} in this competition (qualifiers excluded): showing every edition.`) }];
   },
   format: (db, input, sqlRows): ToolOutput => {
     const raw = z.array(ChampionStatsRow).parse(sqlRows);
@@ -2017,22 +2048,22 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
 
     const scope = scopeLabel(league, input);
     const profile = championProfile(db, input, scope, games, bans, icon);
-    const playerLine = (p: ChampionPlayer) => `${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}, ${pct(p.wins, p.games)} % de victoires, KDA ${frNumber(p.kda)})`;
+    const playerLine = (p: ChampionPlayer) => say(`${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}, ${pct(p.wins, p.games)} % de victoires, KDA ${frNumber(p.kda)})`, `${p.player} (${p.games} game${p.games === 1 ? "" : "s"}, ${pct(p.wins, p.games)}% wins, KDA ${frNumber(p.kda)})`);
 
     const facts =
-      `${input.champion} ${inLeague(league)} (${yearSpan(years)}) : ${picks} picks et ${bans} bans ` +
-      `sur les ${games} parties du périmètre${scopeYears} (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites ` +
-      `(${pct(wins, picks)} % de victoires)` +
+      say(`${input.champion} ${inLeague(league)} (${yearSpan(years)}) : ${picks} picks et ${bans} bans `, `${input.champion} ${inLeague(league)} (${yearSpan(years)}): ${picks} picks and ${bans} bans `) +
+      say(`sur les ${games} parties du périmètre${scopeYears} (présence ${pct(picks + bans, games)} %), ${wins} victoires pour ${picks - wins} défaites `, `over the ${games} games of the scope${scopeYears} (presence ${pct(picks + bans, games)}%), ${wins} wins for ${picks - wins} losses `) +
+      say(`(${pct(wins, picks)} % de victoires)`, `(${pct(wins, picks)}% wins)`) +
       (picks ? `, KDA ${frNumber(profile.kda)}. ${averagesFacts(profile)}` : ".") +
-      (profile.roles.length ? ` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.` : "") +
-      (profile.players.length ? ` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.` : "") +
+      (profile.roles.length ? say(` Rôles : ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.`, ` Roles: ${profile.roles.map((r) => `${r.role} (${r.games})`).join(", ")}.`) : "") +
+      (profile.players.length ? say(` Joueurs les plus fréquents (classés par parties jouées) : ${profile.players.slice(0, 3).map(playerLine).join(", ")}.`, ` Most frequent players (ranked by games played): ${profile.players.slice(0, 3).map(playerLine).join(", ")}.`) : "") +
       (picks ? itemsFacts(profile) + setupsFacts(profile) : "");
 
     return {
       title: `${input.champion} — ${league}`,
       champion: profile,
       table: {
-        columns: ["Année", "Tournoi", "Parties", "Picks", "Bans", "Présence %", "V-D", "% victoire", "Joueurs"],
+        columns: [say("Année", "Year"), say("Tournoi", "Tournament"), say("Parties", "Games"), "Picks", "Bans", say("Présence %", "Presence %"), say("V-D", "W-L"), say("% victoire", "Win %"), say("Joueurs", "Players")],
         rows: raw.map((r) => [
           r.year,
           r.tournament ?? r.event_page,
@@ -2051,12 +2082,12 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
         ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [RIOT_DATA_SOURCE] : []),
         { label: "Riot Data Dragon — champions", url: icon ?? `${DDRAGON_BASE}/api/versions.json` },
-        ...(profile.items.items.length ? [ITEMS_SOURCE, { label: "Riot Data Dragon — items", url: `${DDRAGON_BASE}/api/versions.json` }] : []),
-        ...(profile.setups.spells.length || profile.setups.runes.length ? [SETUPS_SOURCE] : []),
+        ...(profile.items.items.length ? [itemsSource(), { label: "Riot Data Dragon — items", url: `${DDRAGON_BASE}/api/versions.json` }] : []),
+        ...(profile.setups.spells.length || profile.setups.runes.length ? [setupsSource()] : []),
       ],
       followUps: [
-        `Champions les plus joués ${inLeague(league) || "aux Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`,
-        ...profile.players.slice(0, 2).map((p) => `Résultats de ${p.player} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`),
+        say(`Champions les plus joués ${inLeague(league) || "aux Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`, `Most played champions ${inLeague(league) || "at Worlds"}${hasPeriod(input) ? ` ${input.yearFrom ?? ""}`.trimEnd() : ""}`),
+        ...profile.players.slice(0, 2).map((p) => say(`Résultats de ${p.player} ${league === "Worlds" ? "à tous les Worlds" : inLeague(league)}`, `${p.player}'s results ${league === "Worlds" ? "at every Worlds" : inLeague(league)}`)),
       ],
       totals: {
         picks,
@@ -2064,13 +2095,13 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         wins,
         games,
         events: raw.length,
-        kda: profile.kda ?? "n/d",
+        kda: profile.kda ?? nd(),
         top_player: profile.players[0]?.player ?? "",
         top_player_games: profile.players[0]?.games ?? 0,
         main_role: profile.roles[0]?.role ?? "",
-        avg_gold: profile.averages.find((a) => a.key === "gold")?.value ?? "n/d",
-        avg_damage: profile.averages.find((a) => a.key === "damage")?.value ?? "n/d",
-        gold_diff_15: profile.averages.find((a) => a.key === "gold_diff_15")?.value ?? "n/d",
+        avg_gold: profile.averages.find((a) => a.key === "gold")?.value ?? nd(),
+        avg_damage: profile.averages.find((a) => a.key === "damage")?.value ?? nd(),
+        gold_diff_15: profile.averages.find((a) => a.key === "gold_diff_15")?.value ?? nd(),
         item_games: profile.items.games,
         top_item: profile.items.items.find((i) => i.kind === "complete")?.item ?? "",
         top_item_games: profile.items.items.find((i) => i.kind === "complete")?.games ?? 0,
@@ -2373,12 +2404,12 @@ LIMIT 20`),
       `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
 
     const threshold = minPicks ? `, minimum ${minPicks} picks` : "";
-    const head = `Champions ${label.title}${role} ${scope || "toutes compétitions"}`;
+    const head = `Champions ${label.title}${role} ${scope || allCompetitions()}`;
 
     const ranking = absent
       ? `Aucune partie ${scope || "de ce périmètre"} n'a de données Riot sur Leaguepedia (${games} parties) : pas de ${CHAMPION_SORT_LABEL[input.sort].criterion.split(",")[0]} par champion.`
       : totalSort && !rows.length
-        ? `Aucun ${CHAMPION_TOTAL[totalSort].one ?? CHAMPION_TOTAL[totalSort].unit}${role} ${scope || "toutes compétitions"} : 0 au total sur les ${counted}${threshold}.`
+        ? `Aucun ${CHAMPION_TOTAL[totalSort].one ?? CHAMPION_TOTAL[totalSort].unit}${role} ${scope || allCompetitions()} : 0 au total sur les ${counted}${threshold}.`
         : `${head} (${counted}) : ${rows.slice(0, 3).map(line).join(", ")}. Critère : ${label.criterion}${threshold}.`;
 
     const facts =
@@ -2398,7 +2429,7 @@ LIMIT 20`),
     const figure = totalSort ? `total_${totalSort}` : average;
 
     const out: ToolOutput = {
-      title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
+      title: `Champions ${label.title}${role}${league === allCompetitions() ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel(allCompetitions(), input).replace(/^en /, "")}` : ""}`,
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
       sources: [
@@ -2595,7 +2626,7 @@ LIMIT 200`),
     const where = inLeague(league);
 
     return {
-      title: `Champion pool — ${name}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}${input.split ? ` ${input.split}` : ""}`,
+      title: `Champion pool — ${name}${league === allCompetitions() ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel(allCompetitions(), input).replace(/^en /, "")}` : ""}${input.split ? ` ${input.split}` : ""}`,
       pool,
       table: {
         columns: [...CHAMPION_POOL_COLUMNS, ...(team ? ["players"] : [])],
@@ -2627,7 +2658,7 @@ LIMIT 200`),
         top: lines[0]?.champion ?? "",
         top_games: lines[0]?.games ?? 0,
         top_wins: lines[0]?.wins ?? 0,
-        top_kda: lines[0]?.kda ?? "n/d",
+        top_kda: lines[0]?.kda ?? nd(),
         rows: lines.length,
       },
     };
@@ -2781,7 +2812,7 @@ const RIOT_DATA_SOURCE: Source = {
 /** "2024", or "2019–2024". */
 const yearSpan = (years: number[]) => (years.length && Math.min(...years) === Math.max(...years) ? String(years[0]) : span(years));
 
-const signed = (n: number | null) => (n == null ? "n/d" : `${n > 0 ? "+" : ""}${n}`);
+const signed = (n: number | null) => (n == null ? nd() : `${n > 0 ? "+" : ""}${n}`);
 const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
 
 /** SQL aggregate of a metric column: totals for counts, averages, percentages for 0/1 flags. */
@@ -2915,27 +2946,27 @@ ORDER BY is_total, first_game`),
     const fb = val("first_bloods");
 
     const parts: Record<PlayerMetric, string> = {
-      solo_kills: `${val("solo_kills") ?? "n/d"} solo kills`,
-      penta_kills: `${val("penta_kills") ?? "n/d"} pentakill${(val("penta_kills") ?? 0) > 1 ? "s" : ""}`,
-      quadra_kills: `${val("quadra_kills") ?? "n/d"} quadrakills`,
-      triple_kills: `${val("triple_kills") ?? "n/d"} triple kills`,
-      double_kills: `${val("double_kills") ?? "n/d"} double kills`,
+      solo_kills: `${val("solo_kills") ?? nd()} solo kills`,
+      penta_kills: `${val("penta_kills") ?? nd()} pentakill${(val("penta_kills") ?? 0) > 1 ? "s" : ""}`,
+      quadra_kills: `${val("quadra_kills") ?? nd()} quadrakills`,
+      triple_kills: `${val("triple_kills") ?? nd()} triple kills`,
+      double_kills: `${val("double_kills") ?? nd()} double kills`,
       first_bloods: fb == null ? "first bloods n/d" : `${fb} first blood${fb > 1 ? "s" : ""} (${pct(fb, total.games)} % des parties)`,
-      kills_before_10: `${val("kills_before_10") ?? "n/d"} kills avant 10 min`,
+      kills_before_10: `${val("kills_before_10") ?? nd()} kills avant 10 min`,
       gold_diff: `un écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min face à son adversaire direct`,
       cs_diff: `un écart de CS moyen de ${signed(val("cs_diff"))} à ${minute} min`,
       xp_diff: `un écart d'XP moyen de ${signed(val("xp_diff"))} à ${minute} min`,
-      gold: `${val("gold") ?? "n/d"} d'or en moyenne à ${minute} min`,
-      cs: `${val("cs") ?? "n/d"} CS en moyenne à ${minute} min`,
-      xp: `${val("xp") ?? "n/d"} XP en moyenne à ${minute} min`,
-      wards_placed: `${val("wards_placed") ?? "n/d"} wards posées par partie`,
-      wards_killed: `${val("wards_killed") ?? "n/d"} wards détruites par partie`,
-      control_wards: `${val("control_wards") ?? "n/d"} control wards achetées par partie`,
-      plates: `${val("plates") ?? "n/d"} plaques de tourelle`,
+      gold: `${val("gold") ?? nd()} d'or en moyenne à ${minute} min`,
+      cs: `${val("cs") ?? nd()} CS en moyenne à ${minute} min`,
+      xp: `${val("xp") ?? nd()} XP en moyenne à ${minute} min`,
+      wards_placed: `${val("wards_placed") ?? nd()} wards posées par partie`,
+      wards_killed: `${val("wards_killed") ?? nd()} wards détruites par partie`,
+      control_wards: `${val("control_wards") ?? nd()} control wards achetées par partie`,
+      plates: `${val("plates") ?? nd()} plaques de tourelle`,
     };
 
     const facts =
-      `${input.player}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), ` +
+      `${input.player}${league === allCompetitions() ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), ` +
       `sur ${total.games} parties avec données in-game : ${metrics.map((m) => parts[m]).join(", ")}.` +
       coverageNote(cov);
 
@@ -2943,7 +2974,7 @@ ORDER BY is_total, first_game`),
     const statsPages = rows.flatMap((r) => r.stats_page ?? []).slice(-3);
 
     return {
-      title: `${input.player} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${input.player} — stats in-game${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...metrics.map((m) => (PLAYER_METRIC_DEFS[m].snapshot ? `${PLAYER_COLUMN_LABELS[m]} @${minute}` : PLAYER_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...metrics.map((m) => num(r, m))]),
@@ -2963,7 +2994,7 @@ ORDER BY is_total, first_game`),
         games: total.games,
         coverage_games: cov.games,
         // n/d: no game of the scope has this metric (no timeline, or no plate events before match-v5).
-        ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? "n/d"])),
+        ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? nd()])),
       },
     };
   },
@@ -3090,7 +3121,7 @@ LIMIT 20`),
       coverageNote(cov);
 
     return {
-      title: `Classement — ${label}${roleLabel}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Classement — ${label}${roleLabel}${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         // A rate shows its count too: "11 first dragons in 17 games, 64.7 %".
         columns: ["Rang", who, ...(input.subject === "player" ? ["Équipe (dernière)"] : []), "Parties", ...(def.aggregate === "rate" ? ["Nombre"] : []), def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne", ...(def.aggregate === "sum" ? ["Par partie"] : [])],
@@ -3125,7 +3156,6 @@ LIMIT 20`),
 /** How recent an edition's last game must be, against the newest game of the database, to count as in progress. */
 const IN_PROGRESS_DAYS = 30;
 
-const DAY_FR = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
 /**
  * Editions of the scope still being played: no champion in their standings yet, and a game within
@@ -3147,7 +3177,7 @@ function inProgressNote(db: DatabaseSync, scope: string, params: Params): string
   if (!rows.length) return null;
 
   return rows
-    .map((r) => `${(r.tournament ?? r.event_page).replace(/ (Main Event|Season)$/, "")} en cours : chiffres sur les ${r.games} parties jouées jusqu'au ${DAY_FR.format(new Date(r.last * 1000))}, sans le reste de la compétition.`)
+    .map((r) => `${(r.tournament ?? r.event_page).replace(/ (Main Event|Season)$/, "")} en cours : chiffres sur les ${r.games} parties jouées jusqu'au ${dayFormat().format(new Date(r.last * 1000))}, sans le reste de la compétition.`)
     .join(" ");
 }
 
@@ -3298,7 +3328,7 @@ LIMIT 20`),
       `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`;
 
     const facts =
-      `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : `Meilleurs ${who}`} ${scope || "toutes compétitions"} selon le critère ${def.label} (${def.definition})` +
+      `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : `Meilleurs ${who}`} ${scope || allCompetitions()} selon le critère ${def.label} (${def.definition})` +
       `${minGames > 1 ? `, minimum ${minGames} parties` : ""} : ${rows.slice(0, 3).map(line).join(" ; ")}. ${rows.length} joueurs classés.` +
       (ingame === 0
         ? " Écart d'or à 15 min n/d : aucune partie avec données Riot dans ce périmètre."
@@ -3308,7 +3338,7 @@ LIMIT 20`),
       (ongoing ? ` ${ongoing}` : "");
 
     return {
-      title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Rang", "Joueur", "Équipe", "Parties", ...columns.map((c) => PLAYER_CRITERION_DEFS[c].label), "Écart or @15"],
         rows: rows.map((r, i) => [i + 1, r.player, r.team ? displayTeam(r.team) : null, r.games, ...columns.map((c) => value(r, c)), r.gold_diff_15]),
@@ -3326,12 +3356,12 @@ LIMIT 20`),
       ],
       totals: {
         leader: rows[0]?.player ?? "",
-        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? "n/d") : "n/d",
+        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? nd()) : nd(),
         leader_games: rows[0]?.games ?? 0,
         rows: rows.length,
         min_games: minGames,
         criterion: input.criterion,
-        leader_gold_diff_15: rows[0]?.gold_diff_15 ?? "n/d",
+        leader_gold_diff_15: rows[0]?.gold_diff_15 ?? nd(),
         in_progress: ongoing ? "yes" : "no",
       },
     };
@@ -3410,15 +3440,15 @@ ORDER BY is_total, first_game`),
     const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE (s.blue_team IN (${t}) OR s.red_team IN (${t})) AND ${ingameScope(input, params)}`, params);
 
     const facts =
-      `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
-      `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? "n/d"} % des parties, première tourelle ${val("first_tower") ?? "n/d"} %, ` +
-      `premier dragon ${val("first_dragon") ?? "n/d"} %, premier héraut ${val("first_herald") ?? "n/d"} %, premier baron ${val("first_baron") ?? "n/d"} %, ` +
+      `${team}${league === allCompetitions() ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
+      `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? nd()} % des parties, première tourelle ${val("first_tower") ?? nd()} %, ` +
+      `premier dragon ${val("first_dragon") ?? nd()} %, premier héraut ${val("first_herald") ?? nd()} %, premier baron ${val("first_baron") ?? nd()} %, ` +
       `${val("dragon_soul") == null ? "" : `âme du dragon ${val("dragon_soul")} %, `}` +
-      `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? "n/d"} kills avant 10 min et ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +
+      `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? nd()} kills avant 10 min et ${val("plates") ?? nd()} plaques de tourelle prises par partie.` +
       coverageNote(cov);
 
     return {
-      title: `${team} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${team} — stats in-game${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...TEAM_OVERVIEW.map((m) => (m === "gold_diff" ? `Écart or @${minute}` : TEAM_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...TEAM_OVERVIEW.map((m) => (r[m] == null ? null : Number(r[m])))]),
@@ -3430,7 +3460,7 @@ ORDER BY is_total, first_game`),
         RIOT_DATA_SOURCE,
       ],
       followUps: [`Historique de ${team}`, `Équipes qui prennent le plus souvent le first blood ${input.league ? inLeague(league) : "aux Worlds"}`],
-      totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? "n/d"])) },
+      totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? nd()])) },
     };
   },
   normalize: (db, input) => {
@@ -3545,7 +3575,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
       coverageNote(cov);
 
     return {
-      title: `${team ? `${team.team} — dragons et âmes` : "Dragons et âmes"}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${team ? `${team.team} — dragons et âmes` : "Dragons et âmes"}${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Dragon", "Pris", "Part %", "Âmes", "Victoires avec l'âme", "% victoire avec l'âme"],
         rows: rows.map((r) => {
@@ -4065,7 +4095,7 @@ ORDER BY g.played_at DESC, g.game_n`,
     }
 
     const view = timelineView(pick, load.timeline);
-    const at = (min: number) => view.gold.find((g) => Math.abs(g.s - min * 60) <= 30)?.diff ?? "n/d";
+    const at = (min: number) => view.gold.find((g) => Math.abs(g.s - min * 60) <= 30)?.diff ?? nd();
     const fb = view.events.find((e) => e.kind === "first_blood");
 
     return {
@@ -4080,12 +4110,12 @@ ORDER BY g.played_at DESC, g.game_n`,
         timeline: "ok",
         blue: view.blue,
         red: view.red,
-        winner: view.winner ? (view.winner === "blue" ? view.blue : view.red) : "n/d",
+        winner: view.winner ? (view.winner === "blue" ? view.blue : view.red) : nd(),
         version: view.version,
-        duration_s: view.durationS ?? "n/d",
+        duration_s: view.durationS ?? nd(),
         gold_diff_10: at(10),
         gold_diff_15: at(15),
-        first_blood: fb ? (fb.side === "blue" ? view.blue : view.red) : "n/d",
+        first_blood: fb ? (fb.side === "blue" ? view.blue : view.red) : nd(),
         events: view.events.length,
       },
       trace: [
@@ -4406,13 +4436,13 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
       ? ofEvent(firstRow)
       : input.league
         ? [ofEvent({ league_short: short, year: null }), span].filter(Boolean).join(" ")
-        : [teams.length ? `de ${teams.join(" et ")}` : "", span ? `en ${span}` : "toutes compétitions"].filter(Boolean).join(" ");
+        : [teams.length ? `de ${teams.join(" et ")}` : "", span ? `en ${span}` : allCompetitions()].filter(Boolean).join(" ");
 
     const phrase = capitalize(one || !phaseName ? seriesPhrase(firstRow) : `${phaseName} ${ofScope}`.trim());
 
     const facts = one
       ? `${phrase} : ${one.winsA === one.winsB ? `${one.teamA} et ${one.teamB} à égalité ${one.winsA}-${one.winsB}` : `${one.teamA} bat ${one.teamB} ${one.winsA}-${one.winsB}`}` +
-        `${one.bestOf ? ` (BO${one.bestOf})` : ""}${one.playedAt ? `, le ${DAY_FR.format(new Date(one.playedAt * 1000))}` : ""}. ` +
+        `${one.bestOf ? ` (BO${one.bestOf})` : ""}${one.playedAt ? `, le ${dayFormat().format(new Date(one.playedAt * 1000))}` : ""}. ` +
         (one.games ?? []).map((g) => `Game ${g.n ?? "?"} : ${sideName(g)}${g.durationS ? ` en ${clock(g.durationS)}` : ""}`).join(" ; ") +
         "."
       : `${phrase} : ${list.length} séries. ${list.slice(0, 8).map(score).join(" ; ")}${list.length > 8 ? " ; …" : ""}.`;
@@ -4438,9 +4468,9 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
         wins_a: top.winsA,
         wins_b: top.winsB,
         score: `${top.winsA}-${top.winsB}`,
-        best_of: top.bestOf ?? "n/d",
+        best_of: top.bestOf ?? nd(),
         label: top.label,
-        date: top.playedAt ? DAY_SHORT.format(new Date(top.playedAt * 1000)) : "n/d",
+        date: top.playedAt ? DAY_SHORT.format(new Date(top.playedAt * 1000)) : nd(),
       });
 
     const pages = [...new Set(list.map((s) => s.tournamentPage))];
@@ -4613,7 +4643,7 @@ LIMIT 20`),
   format: (db, input, sqlRows): ToolOutput => {
     const rows = z.array(TeamLeaderRow).parse(sqlRows);
     const league = leagueShortName(db, input.league);
-    const scope = `${scopeLabel(league, input) || "toutes compétitions"}${sideLabel(input.side)}`;
+    const scope = `${scopeLabel(league, input) || allCompetitions()}${sideLabel(input.side)}`;
     const def = TEAM_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfTeams(input);
     const columns = teamColumnsOf(input);
@@ -4635,7 +4665,7 @@ LIMIT 20`),
       (ongoing ? ` ${ongoing}` : "");
 
     return {
-      title: `Classement des équipes — ${def.label}${sideLabel(input.side)}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Classement des équipes — ${def.label}${sideLabel(input.side)}${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Rang", "Équipe", "Parties", ...columns.map((c) => TEAM_CRITERION_DEFS[c].label)],
         rows: rows.map((r, i) => [i + 1, displayTeam(r.name), r.games, ...columns.map((c) => value(r, c))]),
@@ -4653,7 +4683,7 @@ LIMIT 20`),
       ],
       totals: {
         leader: rows[0] ? displayTeam(rows[0].name) : "",
-        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? "n/d") : "n/d",
+        leader_value: rows[0] ? (value(rows[0], input.criterion) ?? nd()) : nd(),
         leader_games: rows[0]?.games ?? 0,
         rows: rows.length,
         min_games: minGames,
@@ -4799,7 +4829,7 @@ LIMIT 20`),
   },
   format: (db, input, sqlRows): ToolOutput => {
     const league = leagueShortName(db, input.league);
-    const scope = scopeLabel(league, input) || "toutes compétitions";
+    const scope = scopeLabel(league, input) || allCompetitions();
     const role = input.role ? ` en ${ROLE_LABEL[input.role]}` : "";
     const names = [input.champion, ...(input.opponent ? [input.opponent] : [])];
     const iconParams: Params = {};
@@ -4829,7 +4859,7 @@ LIMIT 20`),
         (games > rows.length ? ` Les ${rows.length} parties les plus récentes sont listées.` : "");
 
       return {
-        title: `${input.champion} contre ${input.opponent}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+        title: `${input.champion} contre ${input.opponent}${role}${league === allCompetitions() ? "" : ` — ${league}`}`,
         table: {
           columns: ["Date", "Compétition", "Rôle", input.champion, "K/D/A", input.opponent, "K/D/A ", "Vainqueur", "Écart or @15"],
           rows: rows.map((r) => [
@@ -4852,10 +4882,10 @@ LIMIT 20`),
           games,
           wins,
           losses: games - wins,
-          winrate: games ? pct(wins, games) : "n/d",
-          kda: t?.kda_a ?? "n/d",
-          opponent_kda: t?.kda_b ?? "n/d",
-          gold_diff_15: t?.avg_gold_diff_15 ?? "n/d",
+          winrate: games ? pct(wins, games) : nd(),
+          kda: t?.kda_a ?? nd(),
+          opponent_kda: t?.kda_b ?? nd(),
+          gold_diff_15: t?.avg_gold_diff_15 ?? nd(),
           ingame_games: t?.ingame_games ?? 0,
         },
       };
@@ -4877,7 +4907,7 @@ LIMIT 20`),
         : "");
 
     return {
-      title: `Matchups ${of(input.champion)}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `Matchups ${of(input.champion)}${role}${league === allCompetitions() ? "" : ` — ${league}`}`,
       table: {
         columns: ["rank", "champion", "games", "wins", "winrate", "kda", "gold_diff_15"],
         rows: rows.map((r, i) => [i + 1, r.champion, r.games, r.wins, r.winrate, r.kda, r.gold_diff_15]),
@@ -4889,7 +4919,7 @@ LIMIT 20`),
       totals: {
         games,
         wins,
-        winrate: games ? pct(wins, games) : "n/d",
+        winrate: games ? pct(wins, games) : nd(),
         opponents: rows[0]?.opponents ?? 0,
         top_opponent: rows[0]?.champion ?? "",
         top_opponent_games: rows[0]?.games ?? 0,
@@ -5001,7 +5031,7 @@ LIMIT 20`),
     const rows = z.array(GameRecordRow).parse(sqlRows);
     const def = RECORD_DEFS[input.metric];
     const league = leagueShortName(db, input.league);
-    const scope = scopeLabel(league, input) || "toutes compétitions";
+    const scope = scopeLabel(league, input) || allCompetitions();
     const who = `${input.player ? ` ${of(input.player)}` : ""}${input.role ? ` (${ROLE_PLAYERS[input.role]})` : ""}`;
     const day = (s: number | null) => (s == null ? null : DAY_SHORT.format(new Date(s * 1000)));
     const event = (r: z.infer<typeof GameRecordRow>) => `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
@@ -5018,7 +5048,7 @@ LIMIT 20`),
       (cov ? coverageNote(cov) : "");
 
     return {
-      title: `Records sur une partie — ${def.label.toLowerCase()}${who}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Records sur une partie — ${def.label.toLowerCase()}${who}${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Rang", "Joueur", "Champion joué", "Équipe", "Adversaire", "Compétition", "Date", def.label, "K/D/A", "Durée", "Résultat"],
         rows: rows.map((r, i) => [
@@ -5048,7 +5078,7 @@ LIMIT 20`),
       ],
       totals: {
         leader: rows[0]?.player ?? "",
-        leader_value: rows[0]?.value ?? "n/d",
+        leader_value: rows[0]?.value ?? nd(),
         leader_champion: rows[0]?.champion ?? "",
         leader_event: rows[0] ? event(rows[0]) : "",
         rows: rows.length,
@@ -5157,7 +5187,7 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
       (last ? ` Dernière partie : ${last.win == null ? "résultat n/d" : last.win ? "victoire" : "défaite"}${last.opponent ? ` contre ${displayTeam(last.opponent)}` : ""}${last.champion ? ` sur ${last.champion}` : ""} (${last.league_short}${last.year ? ` ${last.year}` : ""}).` : "");
 
     return {
-      title: `${input.player} — ${rows.length} dernières parties${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${input.player} — ${rows.length} dernières parties${league === allCompetitions() ? "" : ` (${league})`}`,
       table: {
         columns: ["Date", "Compétition", "Équipe", "Adversaire", "Champion joué", "Résultat", "K/D/A", "CS", "Dégâts", "Durée"],
         rows: rows.map((r) => [
@@ -5181,7 +5211,7 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
         games: rows.length,
         wins,
         losses: decided.length - wins,
-        kda: kda ?? "n/d",
+        kda: kda ?? nd(),
         streak: run,
         streak_kind: decided.length ? (decided[0].win ? "wins" : "losses") : "",
         last_champion: last?.champion ?? "",
