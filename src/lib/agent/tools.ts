@@ -27,12 +27,12 @@ import {
   type ScoreboardPlayer,
   type ScoreboardTeam,
   type Side,
+  type AnswerTable,
   type Source,
   type SeriesDetail,
   type SeriesList,
   type SeriesGame,
   type SeriesPick,
-  type TableCell,
   type TeamHeadToHead,
   type TeamRoster,
   type RosterPlayer,
@@ -423,7 +423,7 @@ export type ToolTrace = { status: TraceStatus; title: string; detail?: string };
 export type ToolOutput = {
   title: string;
   rows?: ResultRow[];
-  table?: { columns: string[]; rows: TableCell[][] };
+  table?: AnswerTable;
   timeline?: TimelineView;
   scoreboard?: GameScoreboard;
   versus?: VersusView;
@@ -2945,6 +2945,8 @@ ORDER BY is_total, first_game`),
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...metrics.map((m) => (PLAYER_METRIC_DEFS[m].snapshot ? `${PLAYER_COLUMN_LABELS[m]} @${minute}` : PLAYER_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...metrics.map((m) => num(r, m))]),
+        // The metric the question names is the first one listed.
+        focus: input.metric ? (PLAYER_METRIC_DEFS[metrics[0]].snapshot ? `${PLAYER_COLUMN_LABELS[metrics[0]]} @${minute}` : PLAYER_COLUMN_LABELS[metrics[0]]) : undefined,
       },
       facts,
       sources: [
@@ -3102,6 +3104,7 @@ LIMIT 20`),
           value(r),
           ...(def.aggregate === "sum" ? [Math.round((100 * (r.total ?? 0)) / Math.max(1, r.counted)) / 100] : []),
         ]),
+        focus: def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne",
       },
       facts,
       sources: [
@@ -3310,6 +3313,7 @@ LIMIT 20`),
       table: {
         columns: ["Rang", "Joueur", "Équipe", "Parties", ...columns.map((c) => PLAYER_CRITERION_DEFS[c].label), "Écart or @15"],
         rows: rows.map((r, i) => [i + 1, r.player, r.team ? displayTeam(r.team) : null, r.games, ...columns.map((c) => value(r, c)), r.gold_diff_15]),
+        focus: input.criterion === "games" ? "Parties" : def.label,
       },
       facts,
       sources: [
@@ -4634,6 +4638,7 @@ LIMIT 20`),
       table: {
         columns: ["Rang", "Équipe", "Parties", ...columns.map((c) => TEAM_CRITERION_DEFS[c].label)],
         rows: rows.map((r, i) => [i + 1, displayTeam(r.name), r.games, ...columns.map((c) => value(r, c))]),
+        focus: input.criterion === "games" ? "Parties" : def.label,
       },
       facts,
       sources: [
@@ -5029,6 +5034,7 @@ LIMIT 20`),
           r.length_s ? clock(r.length_s) : null,
           r.win == null ? null : r.win ? "Victoire" : "Défaite",
         ]),
+        focus: def.label,
       },
       icons: Object.fromEntries(rows.flatMap((r) => (r.champion && r.icon ? [[r.champion, r.icon]] : []))),
       facts,

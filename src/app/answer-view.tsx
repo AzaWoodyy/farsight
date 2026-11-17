@@ -310,6 +310,9 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
 
   if (champions) return <ChampionRankingView ranking={champions} fallback={<GenericTable table={table} />} />;
 
+  // One line is not a table to scan: its figures read better as a card.
+  if (table.rows.length === 1) return <RowCard table={table} />;
+
   return <GenericTable table={table} />;
 }
 
@@ -332,15 +335,83 @@ const COLUMN_LABEL = new Map([
 
 const YEAR_COLUMN = /^(ann[ée]e|year|saison|season)$/i;
 
-/** A cell as shown: numbers in French notation (years as written), a missing figure as n/d. */
+/** A difference with the opponent ("Écart or @15", "gold_diff_15"): shown with its sign. */
+const DIFF_COLUMN = /^[ée]cart\b|diff/i;
+
+/** A cell as shown: numbers in French notation (years as written, differences signed), a missing figure as n/d. */
 const cellText = (v: TableCell, column: string) => {
   const n = asNumber(v);
 
-  return v == null ? "n/d" : n != null && !YEAR_COLUMN.test(column) ? NUMBER.format(n) : String(v);
+  if (v == null) return "n/d";
+
+  if (n == null || YEAR_COLUMN.test(column)) return String(v);
+
+  return `${n > 0 && DIFF_COLUMN.test(column) ? "+" : ""}${NUMBER.format(n)}`;
 };
 
+/** A short cell (a figure, a record "86-17", a date) stays on one line; only long text may wrap. */
+const SHORT_CELL = 24;
+
+type Table = NonNullable<Answer["table"]>;
+
+const TOGGLE =
+  "tap border border-dashed border-line px-2 py-0.5 text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:scale-[0.97]";
+
+/**
+ * A one-line table as a card: what the line is about (its leading year and names) as a heading, the column the
+ * question asks about as the large figure, every other column as a labelled tile. The plain table stays one
+ * click away.
+ */
+function RowCard({ table }: { table: Table }) {
+  const [asTable, setAsTable] = useState(false);
+  const row = table.rows[0];
+  // The leading columns up to the first figure say what the line is about ("2024", "LCK").
+  const firstFigure = table.columns.findIndex((c, i) => asNumber(row[i]) != null && !YEAR_COLUMN.test(c));
+  const lead = firstFigure < 0 ? table.columns.length : firstFigure;
+  const context = row.slice(0, lead).filter((v) => v != null).map(String);
+  // Without a column asked for, a single figure is the answer itself.
+  const hero = table.focus ? table.columns.indexOf(table.focus) : table.columns.length - lead === 1 ? lead : -1;
+  const tiles = table.columns.map((c, i) => ({ c, i })).filter(({ i }) => i >= lead && i !== hero);
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+        <p className="text-muted">{context.join(" · ")}</p>
+        <button type="button" onClick={() => setAsTable(!asTable)} aria-pressed={asTable} className={TOGGLE}>
+          {asTable ? "vue fiche" : "vue tableau"}
+        </button>
+      </div>
+      {asTable ? (
+        <div className="[&>div]:mt-0">
+          <GenericTable table={table} />
+        </div>
+      ) : (
+        <div className="overflow-hidden border border-line">
+          {hero >= 0 && (
+            <div className="border-b border-line px-3 py-4">
+              <p className="text-xs tracking-wider text-muted uppercase">{COLUMN_LABEL.get(table.columns[hero]) ?? table.columns[hero]}</p>
+              <p className={`mt-1 text-3xl font-semibold tabular-nums ${row[hero] == null ? "text-muted" : "text-accent"}`}>
+                {cellText(row[hero], table.columns[hero])}
+              </p>
+            </div>
+          )}
+          {/* The tiles' own right and bottom rules are cut by the frame: no doubled line at its edges. */}
+          <dl className="-mr-px -mb-px grid grid-cols-2 text-xs sm:grid-cols-4">
+            {tiles.map(({ c, i }) => (
+              <div key={c} className="border-r border-b border-dashed border-line px-3 py-2">
+                <dt className="text-[11px] text-muted">{COLUMN_LABEL.get(c) ?? c}</dt>
+                <dd className={`whitespace-nowrap tabular-nums ${row[i] == null ? "text-muted" : ""}`}>{cellText(row[i], c)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Any table, sortable by each column (numbers before text, missing figures last). */
-function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
+function GenericTable({ table }: { table: Table }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
 
   const rows = useMemo(() => {
@@ -366,6 +437,7 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
           <tr>
             {table.columns.map((c, i) => {
               const active = sort?.col === i;
+              const focus = c === table.focus;
 
               return (
                 <th key={c} scope="col" className="px-3 py-2 font-normal" aria-sort={active ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
@@ -373,7 +445,7 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
                     type="button"
                     // Numbers sort high to low first: a ranking reads from the top.
                     onClick={() => setSort({ col: i, dir: active ? (sort.dir === 1 ? -1 : 1) : asNumber(table.rows[0]?.[i] ?? null) != null ? -1 : 1 })}
-                    className={`tap whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : "text-muted"}`}
+                    className={`tap whitespace-nowrap uppercase tracking-wider hover:text-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${focus ? "text-accent" : active ? "text-foreground" : "text-muted"}`}
                   >
                     {COLUMN_LABEL.get(c) ?? c}
                     <span aria-hidden className="ml-1 inline-block w-2">
@@ -388,11 +460,17 @@ function GenericTable({ table }: { table: NonNullable<Answer["table"]> }) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-dashed border-line last:border-0">
-              {r.map((v, j) => (
-                <td key={j} className={`px-3 py-2 tabular-nums ${v == null ? "text-muted" : ""}`}>
-                  {cellText(v, table.columns[j])}
-                </td>
-              ))}
+              {r.map((v, j) => {
+                const text = cellText(v, table.columns[j]);
+                // The column the question asks about stands out, as the ranking figure does in the champion lists.
+                const tone = v == null ? "text-muted" : table.columns[j] === table.focus ? "font-semibold text-accent" : "";
+
+                return (
+                  <td key={j} className={`px-3 py-2 tabular-nums ${text.length <= SHORT_CELL ? "whitespace-nowrap" : ""} ${tone}`}>
+                    {text}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
