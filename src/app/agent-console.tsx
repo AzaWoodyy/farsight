@@ -226,9 +226,11 @@ export function AgentConsole() {
         </div>
       )}
 
-      {/* At least a screen tall: the footer stays below the fold instead of sliding under the growing answer. */}
+      {/* At least a screen tall while the agent works: the footer stays below the fold instead of sliding under
+          the growing answer. Once the answer is in, the block is as tall as the answer: a short one is not
+          followed by an empty screen. */}
       {askedText && (
-        <div className="mt-8 min-h-svh">
+        <div data-running={running ? "" : undefined} className={`mt-8 ${running ? "min-h-svh" : ""}`}>
           {/* Mounted as long as the question is shown: a live region only announces changes to an element already
               there, so the end of the run (answer ready, or nothing) is heard too. Hidden, so it never moves the page. */}
           <p role="status" className="sr-only">

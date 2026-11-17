@@ -12,7 +12,7 @@ export const CC_BY_SA_URL = "https://creativecommons.org/licenses/by-sa/3.0/";
 export const RIOT_BOILERPLATE =
   "Farsight isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.";
 
-/** The footer of every page: sources, the privacy summary and the Riot notice, with the full texts one click away. */
+/** The footer of every page: sources, then the privacy and Riot notices in one sentence each; the full texts (Riot's boilerplate included) are on the legal page, one click away. */
 export function SiteFooter() {
   return (
     <footer className="border-t border-dashed border-line py-6 text-xs leading-relaxed text-muted">
@@ -46,12 +46,8 @@ export function SiteFooter() {
         .
       </p>
       <p className="mt-2 max-w-[80ch]">
-        Les questions posées sont enregistrées sans adresse IP ni identifiant personnel, pour améliorer l&apos;agent.
-        Elles sont aussi envoyées à OpenRouter et au fournisseur du modèle de langage. Évite d’y inclure des
-        informations personnelles.
-      </p>
-      <p className="mt-2 max-w-[80ch]">
-        Farsight n&apos;est ni approuvé ni sponsorisé par Riot Games. <span lang="en">{RIOT_BOILERPLATE}</span>
+        Questions enregistrées sans adresse IP ni identifiant, et envoyées au modèle de langage : évite d&apos;y mettre
+        des informations personnelles. Farsight n&apos;est ni approuvé ni sponsorisé par Riot Games.
       </p>
       <p className="mt-2">
         <Link className={`tap ${TEXT_LINK}`} href="/mentions-legales">

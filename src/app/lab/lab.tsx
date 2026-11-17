@@ -113,7 +113,7 @@ export function Lab() {
           Demander
         </span>
       </div>
-      <div className="mt-8 min-h-svh">
+      <div className={`mt-8 ${variant.state?.startsWith("loading") ? "min-h-svh" : ""}`}>
         <div className="flex flex-wrap items-start justify-between gap-x-4">
           <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
             <span aria-hidden className="text-muted">

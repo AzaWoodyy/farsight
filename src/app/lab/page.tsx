@@ -17,7 +17,8 @@ export default function LabPage() {
 
   return (
     // Same frame as the home page, so every layout is judged at the width and beside the neighbours it ships with.
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 sm:px-6">
+    // Room under the footer for the floating menu, so it never covers the last lines.
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-20 sm:px-6">
       <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
         <HomeLink />
         <div className="flex items-center gap-4">
@@ -25,8 +26,7 @@ export default function LabPage() {
           <ThemeToggle />
         </div>
       </header>
-      {/* Room under the content for the floating menu. */}
-      <main className="flex-1 pb-28">
+      <main className="flex-1 pb-16">
         <Lab />
       </main>
       <SiteFooter />

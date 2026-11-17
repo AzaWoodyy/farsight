@@ -56,20 +56,6 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
           note : {n}
         </p>
       ))}
-      {answer.sources.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs text-muted">── Sources</h3>
-          <ul className="mt-2 space-y-1 text-xs leading-6 pointer-coarse:space-y-0">
-            {answer.sources.map((s) => (
-              <li key={`${s.label}|${s.url}`}>
-                <a href={s.url} target="_blank" rel="noreferrer" className="tap underline decoration-line underline-offset-2 hover:text-accent">
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="mt-6">
         <h3 className="text-xs text-muted">── Questions de suivi</h3>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
@@ -85,6 +71,34 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
           ))}
         </div>
       </div>
+      {answer.sources.length > 0 && <Sources sources={answer.sources} />}
+    </div>
+  );
+}
+
+const SOURCE_PREFIX = "Leaguepedia — ";
+
+/**
+ * Where the figures come from: every page is cited and linked, as one quiet paragraph under the answer. The
+ * site they all come from is said once, in the heading, instead of on every link.
+ */
+function Sources({ sources }: { sources: Answer["sources"] }) {
+  const leaguepedia = sources.every((s) => s.label.startsWith(SOURCE_PREFIX));
+
+  return (
+    <div className="mt-6 text-xs text-muted">
+      <h3>── Sources{leaguepedia && " · Leaguepedia"}</h3>
+      <ul className="mt-1 max-w-[100ch] leading-6">
+        {sources.map((s, i) => (
+          <li key={`${s.label}|${s.url}`} className="inline">
+            {/* A page name stays whole on a line, except on a phone where a long one would overflow. */}
+            <a href={s.url} target="_blank" rel="noreferrer" className="decoration-line underline-offset-2 hover:text-accent hover:underline sm:whitespace-nowrap">
+              {leaguepedia ? s.label.slice(SOURCE_PREFIX.length) : s.label}
+            </a>
+            {i < sources.length - 1 && <span aria-hidden> · </span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

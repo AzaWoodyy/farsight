@@ -121,6 +121,13 @@ body {
   }
 }
 
+/* While the agent works the answer block is a screen tall and the footer sits below the fold; when a short
+   answer lands the block shrinks and the footer comes up. Hidden until then, it appears in place instead of
+   being seen (and measured, CLS) sliding up the page. */
+main:has([data-running]) ~ footer {
+  visibility: hidden;
+}
+
 /* Pressable controls answer the press. */
 .press {
   transition:
