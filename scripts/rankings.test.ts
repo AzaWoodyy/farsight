@@ -123,6 +123,25 @@ describe("routes of the rankings", () => {
     expect(route("quelle équipe prend le plus souvent le premier dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "first_dragon" } } });
   });
 
+  test("dragons by element and souls: their breakdown; a ranking of teams keeps the in-game leaderboard", () => {
+    const t1 = { ...WORLDS, teams: [{ mention: "T1", team: "T1", members: ["T1"] }] };
+
+    expect(route("quelles âmes ont été prises aux Worlds", WORLDS)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "dragon_stats", input: { team: null, league: "World Championship" } } });
+    expect(route("taux de victoire avec l'âme infernale en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: null, yearFrom: 2025, yearTo: 2025 } } });
+    expect(route("types de dragons pris par T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
+    expect(route("combien de dragons ancestraux pour T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
+    expect(route("dragon soul win rate at Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats" } });
+    // Teams ranked on the soul or the elder dragons: the leaderboard; on one element, no typed tool.
+    expect(route("quelle équipe prend le plus souvent l'âme du dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "dragon_soul" } } });
+    expect(route("équipes avec le plus de dragons ancestraux en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "elder_dragons" } } });
+    expect(route("quelle équipe a pris le plus d'âmes infernales en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    // The dragon count of the scoreboards stays a criterion of the team ranking, and the first dragon its own metric.
+    expect(route("équipes avec le plus de dragons par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "dragons" } } });
+    // A competition without Riot data has no soul to read.
+    expect(routeQuestion("quelles âmes ont été prises aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(route("âmes du dragon de Faker", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "sql" });
+  });
+
   test("champion matchups: two champions set against each other, or one and a matchup word", () => {
     const azir = { ...NONE, champion: champion("Azir") };
     const duel = { ...azir, opponentChampion: champion("Orianna") };
@@ -295,6 +314,51 @@ describe("rankings on a seeded season", () => {
       // Humanoid's solo kill came on red side; Caps' two on blue.
       expect(out.table!.rows.map((r) => [r[1], r[4]])).toEqual([["Humanoid", 1]]);
       expect(out.title).toBe("Classement — solo kills côté rouge (LEC)");
+    }));
+
+  test("dragons and souls: kills by element, souls and the wins of the teams that got them, for every team or one", () =>
+    seeded(async (db) => {
+      // Game 1: G2 (blue, winner) takes four dragons and the mountain soul. Game 2: no soul. Game 3: Fnatic (red, winner) the chemtech soul, G2 the elder.
+      db.exec(`
+        UPDATE game_team_stats SET elder_dragons = 0, dragon_soul = (side = 1), soul = CASE side WHEN 1 THEN 'mountain' END WHERE game_id = 1;
+        INSERT INTO game_team_stats(game_id,side,elder_dragons,dragon_soul,soul) VALUES (2,1,0,0,NULL),(2,2,0,0,NULL),(3,1,1,0,NULL),(3,2,0,1,'chemtech');
+        -- game_id, seq, team_seq, side, kind, time_s
+        INSERT INTO game_dragons VALUES
+          (1,1,1,1,'infernal',400),(1,2,1,2,'cloud',700),(1,3,2,1,'ocean',1000),(1,4,3,1,'mountain',1300),(1,5,4,1,'mountain',1600),
+          (2,1,1,2,'hextech',400),(2,2,1,1,'infernal',700),(2,3,2,2,'hextech',1000),
+          (3,1,1,2,'ocean',400),(3,2,2,2,'ocean',700),(3,3,3,2,'chemtech',1000),(3,4,4,2,'chemtech',1300),(3,5,1,1,'elder',2000);
+      `);
+      const all = await run(db, { tool: "dragon_stats", input: { ...LEC, team: null } });
+
+      expect(all.table!.columns).toEqual(["Dragon", "Pris", "Part %", "Âmes", "Victoires avec l'âme", "% victoire avec l'âme"]);
+      // Most killed first, the elder last; a soul only for the elements.
+      expect(all.table!.rows).toEqual([
+        ["Océan", 3, 23.1, 0, 0, null],
+        ["Chemtech", 2, 15.4, 1, 1, 100],
+        ["Hextech", 2, 15.4, 0, 0, null],
+        ["Infernal", 2, 15.4, 0, 0, null],
+        ["Montagne", 2, 15.4, 1, 1, 100],
+        ["Nuage", 1, 7.7, 0, 0, null],
+        ["Ancestral", 1, 7.7, null, null, null],
+      ]);
+      expect(all.totals).toMatchObject({ dragons: 13, elder_dragons: 1, top_dragon: "océan", top_dragon_count: 3, soul_games: 3, souls: 2, soul_wins: 2, top_soul_count: 1 });
+      expect(all.facts).toContain("L'âme du dragon est prise dans 2 parties sur 3 (67 %) ; l'équipe qui la prend gagne 2 sur 2 (100 %). Âmes : chemtech 1, montagne 1.");
+      expect(all.title).toBe("Dragons et âmes (LEC)");
+
+      // One team: its own dragons and souls, over its games.
+      const g2 = await run(db, { tool: "dragon_stats", input: { ...LEC, team: "G2 Esports" } });
+
+      expect(g2.table!.rows.map((r) => [r[0], r[1], r[3]])).toEqual([["Hextech", 2, 0], ["Montagne", 2, 1], ["Infernal", 1, 0], ["Océan", 1, 0], ["Ancestral", 1, null]]);
+      expect(g2.totals).toMatchObject({ dragons: 7, elder_dragons: 1, soul_games: 3, souls: 1, soul_wins: 1, top_soul: "montagne" });
+      expect(g2.facts).toContain("G2 Esports prend l'âme du dragon dans 1 de ses 3 parties (33 %) et en gagne 1 sur 1 (100 %).");
+
+      // The leaderboard ranks the soul rate over the games where it is known, and counts the elder dragons.
+      const rate = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "dragon_soul", minute: null, role: null, minGames: 1, side: null } });
+
+      expect(rate.table!.rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([["Fnatic", 3, 1, 33.3], ["G2 Esports", 3, 1, 33.3]]);
+      const elders = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "elder_dragons", minute: null, role: null, minGames: null, side: null } });
+
+      expect(elders.table!.rows.map((r) => [r[1], r[3]])).toEqual([["G2 Esports", 1]]);
     }));
 
   test("team leaderboard: every criterion as a column, lowest first on request, one side of the map", () =>

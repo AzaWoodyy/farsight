@@ -269,6 +269,10 @@ export type ScoreboardTeam = {
   barons: number | null;
   heralds: number | null;
   grubs: number | null;
+  /** French element of each dragon the team killed, in order ("nuage", "océan"); empty without a Riot timeline. */
+  dragonKinds: string[];
+  /** French element of the dragon soul the team got, null when it got none (or the game has no timeline). */
+  soul: string | null;
 };
 
 /** End-of-game recap of one game, from Leaguepedia's scoreboard tables (every league, LPL included). */

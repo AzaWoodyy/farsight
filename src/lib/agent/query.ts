@@ -21,7 +21,7 @@ import {
   type TeamCriterion,
   type ToolCall,
 } from "./tools";
-import { detectMetric, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
+import { detectMetric, DRAGON_ELEMENT, isDragonCue, isSnapshot, type MetricCue, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
@@ -416,6 +416,33 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
 
   if (absent) return absent;
 
+  // Souls, elder dragons and dragons by element: their breakdown, for every team or one team. A ranking of teams keeps the leaderboard.
+  const ranksTeams = e.teams.length === 0 && RANKING.test(question) && TEAM_WORDS.test(question);
+
+  if (isDragonCue(cue) && !e.players.length && !e.champion && e.teams.length <= 1 && !ranksTeams) {
+    const own = e.teams[0];
+
+    if (own) {
+      const asked = coverage.team(own.members, league, e.yearFrom, e.yearTo);
+
+      if (asked.ingame === 0 && (asked.games > 0 || coverage.team(own.members, null, null, null).ingame === 0))
+        return {
+          kind: "missing",
+          concepts: [`${what} de ${own.team}${league ? ` en ${e.leagueShort}` : ""}`],
+          reason: `aucune partie de ${own.team} avec données Riot dans ce périmètre`,
+          coverage: true,
+        };
+    }
+
+    return {
+      kind: "tool",
+      call: { tool: "dragon_stats", input: { team: own?.team ?? null, league, ...period } },
+      confidence: 0.85,
+      reason: `dragons par élément et âmes (« ${cue.mention} »)`,
+      notes: league || own ? [] : ["Aucune compétition précisée : dragons de toutes les compétitions avec données in-game."],
+    };
+  }
+
   if (e.players.length === 1 && e.teams.length === 0 && !e.champion) {
     const p = e.players[0].player;
 
@@ -466,6 +493,9 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
   // "écart d'or à 15 min des junglers": a role names who is ranked, even without a ranking word.
   if (e.players.length + e.teams.length === 0 && !e.champion && (RANKING.test(question) || (roleOf(question) && !TEAM_WORDS.test(question)))) {
     const asksTeams = TEAM_WORDS.test(question);
+
+    // "équipes avec le plus d'âmes infernales": one element is not the soul rate the leaderboard ranks.
+    if (isDragonCue(cue) && DRAGON_ELEMENT.test(question)) return { kind: "sql", reason: `classement sur un élément de dragon (« ${cue.mention} ») sans outil typé` };
 
     // A team ranking on a metric only players have (or the reverse): text-to-SQL.
     if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: `classement sur « ${cue.mention} » sans outil typé` };
@@ -1107,6 +1137,15 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   ],
   player_ingame_stats: [MINUTE, INGAME_WORDS],
   team_ingame_stats: [MINUTE, INGAME_WORDS, TEAM_WORDS],
+  dragon_stats: [
+    INGAME_WORDS,
+    TEAM_WORDS,
+    DRAGON_ELEMENT,
+    word(
+      "dragons?|drakes?|[âa]mes?|souls?|types?|[ée]l[ée]ments?|[ée]l[ée]mentaires?|pris|prises?|prend|prennent|taken|takes?|combien|how many|quels?|quelles?|which|" +
+        "taux de victoire|win ?rates?|victoires?|wins?|gagn[ée]e?s?|won|avec|with|r[ée]partition|distribution|plus|most|souvent|often",
+    ),
+  ],
   ingame_leaderboard: [MINUTE, RANKING, INGAME_WORDS, TEAM_WORDS, ...SIDE_CUES.map(([, re]) => re), word("souvent|often")],
   team_leaderboard: [
     RANKING,
@@ -1169,7 +1208,7 @@ export function unreadWords(question: string, e: Entities, call: ToolCall | null
 
   if (call) {
     // The in-game cue is read by the in-game tools, and by a champion ranking or a record on a lane figure.
-    const ingame = ["player_ingame_stats", "team_ingame_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool);
+    const ingame = ["player_ingame_stats", "team_ingame_stats", "dragon_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool);
     const cue = ingame ? detectMetric(question) : null;
 
     if (cue) take(word(cue.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -1245,7 +1284,10 @@ const SQL_RULES =
   "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
   "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
   "first_blood_kill/assist/victim, double to penta kills, wards, control_wards, plates) and v_game_team_stats (one row per team and game: first_* objectives as 0/1, " +
-  "team gold and gold difference at 10/15/20, kills_10/15/20, plates). v_ingame_coverage gives games and ingame_games per league and year: " +
+  "team gold and gold difference at 10/15/20, kills_10/15/20, plates, elder_dragons, dragon_soul = 1 when the team got the dragon soul and NULL when " +
+  "the game has no timeline or predates the soul (2020), soul = its element). v_game_dragons has one row per dragon kill of a game with a Riot timeline: " +
+  "team, opponent, win, seq (order in the game), team_seq (order among the team's dragons), dragon ('infernal', 'ocean', 'mountain', 'cloud', 'hextech', " +
+  "'chemtech', 'elder'; NULL before 2016), time_s. v_ingame_coverage gives games and ingame_games per league and year: " +
   "the LPL (Tencent LoL Pro League) has none. If the question needs in-game stats for a scope whose ingame_games is 0, set `missing`. " +
   "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
   "Summoner spells are v_game_players.spell1 and spell2 (every game; the pair is stored in alphabetical order, so 'Flash' + 'Teleport' is " +

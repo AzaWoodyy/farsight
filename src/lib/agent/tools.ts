@@ -1,3 +1,4 @@
+import { dragonLabel } from "../domain/dragons";
 import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
@@ -229,7 +230,7 @@ export const LeaderboardInput = z.object({
   subject: z.enum(["player", "team"]),
   metric: z.enum([...new Set([...PLAYER_METRICS, ...TEAM_METRICS])]).describe(
     "Player metrics: solo_kills, penta_kills, quadra_kills, triple_kills, double_kills, first_bloods, kills_before_10, gold_diff, cs_diff, xp_diff, gold, cs, xp, wards_placed, wards_killed, control_wards, plates. " +
-      "Team metrics: first_blood, first_tower, first_dragon, first_herald, first_baron, gold_diff, kills_before_10, plates.",
+      "Team metrics: first_blood, first_tower, first_dragon, first_herald, first_baron, gold_diff, kills_before_10, plates, dragon_soul (share of games with the dragon soul), elder_dragons.",
   ),
   minute: MinuteInput,
   league: League.nullable(),
@@ -309,6 +310,12 @@ export const TeamIngameInput = z.object({
   minute: MinuteInput,
 });
 
+export const DragonStatsInput = z.object({
+  team: z.string().min(1).nullable().describe("Team name or shorthand (T1, Gen.G, G2...), null for every team of the scope"),
+  league: League.nullable(),
+  ...Period,
+});
+
 export const GAME_PHASES = ["final", "semifinal", "quarterfinal", "third_place", "groups", "play_in"] as const;
 
 export type GamePhase = (typeof GAME_PHASES)[number];
@@ -340,6 +347,8 @@ export type PlayerIngameInput = z.infer<typeof PlayerIngameInput>;
 export type LeaderboardInput = z.infer<typeof LeaderboardInput>;
 
 export type TeamIngameInput = z.infer<typeof TeamIngameInput>;
+
+export type DragonStatsInput = z.infer<typeof DragonStatsInput>;
 
 export type PlayerHistoryInput = z.infer<typeof PlayerHistoryInput>;
 
@@ -2753,7 +2762,8 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
   label: "classement sur une stat in-game",
   description:
     "Ranks players (or teams) of a competition and period on one in-game metric from the Riot game data: solo kills, pentakills, first bloods, " +
-    "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference. " +
+    "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference, " +
+    "dragon soul rate, elder dragons. " +
     "Optionally on one side of the map only. Not available for the LPL.",
   plan: (db, input) => {
     const params: Params = {};
@@ -3083,7 +3093,7 @@ LIMIT 20`),
 
 // 8. A team's in-game stats --------------------------------------------------------------
 
-const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "gold_diff", "kills_before_10", "plates"];
+const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "dragon_soul", "gold_diff", "kills_before_10", "plates"];
 
 const TEAM_COLUMN_LABELS: Record<TeamMetric, string> = {
   first_blood: "First blood %",
@@ -3094,13 +3104,15 @@ const TEAM_COLUMN_LABELS: Record<TeamMetric, string> = {
   gold_diff: "Écart or",
   kills_before_10: "Kills < 10 min",
   plates: "Plaques / partie",
+  dragon_soul: "Âme %",
+  elder_dragons: "Dragons ancestraux",
 };
 
 const teamIngameStats: ToolDef<TeamIngameInput> = {
   name: "team_ingame_stats",
   label: "stats in-game d'une équipe",
   description:
-    "A team's in-game profile from the Riot game data, season by season: first blood, first tower, dragon, herald and baron rates, " +
+    "A team's in-game profile from the Riot game data, season by season: first blood, first tower, dragon, herald and baron rates, dragon soul rate, " +
     "team gold difference at 10/15/20 min, turret plates. Renamed teams are merged. Not available for the LPL.",
   plan: (db, input) => {
     const params: Params = {};
@@ -3152,6 +3164,7 @@ ORDER BY is_total, first_game`),
       `${team}${league === "toutes compétitions" ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game ` +
       `(${total.wins} victoires) : first blood dans ${val("first_blood") ?? "n/d"} % des parties, première tourelle ${val("first_tower") ?? "n/d"} %, ` +
       `premier dragon ${val("first_dragon") ?? "n/d"} %, premier héraut ${val("first_herald") ?? "n/d"} %, premier baron ${val("first_baron") ?? "n/d"} %, ` +
+      `${val("dragon_soul") == null ? "" : `âme du dragon ${val("dragon_soul")} %, `}` +
       `écart d'or moyen de ${signed(val("gold_diff"))} à ${minute} min, ${val("kills_before_10") ?? "n/d"} kills avant 10 min et ${val("plates") ?? "n/d"} plaques de tourelle prises par partie.` +
       coverageNote(cov);
 
@@ -3178,6 +3191,146 @@ ORDER BY is_total, first_game`),
   },
 };
 
+// 8 bis. Dragons by element and dragon souls ---------------------------------------------
+
+const DragonRow = z.object({ kind: z.string().nullable(), dragons: z.number(), souls: z.number(), soul_wins: z.number() });
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** `AND <alias>.team IN (...)` for the names of a franchise, or nothing when every team counts. */
+const dragonTeams = (db: DatabaseSync, alias: string, team: string | null, params: Params) =>
+  team ? `AND ${alias}.team IN (${inList("t", teamMembers(db, team).members, params)})` : "";
+
+const dragonStats: ToolDef<DragonStatsInput> = {
+  name: "dragon_stats",
+  label: "dragons par élément et âmes",
+  description:
+    "Dragons killed by element (infernal, ocean, mountain, cloud, hextech, chemtech, elder) and dragon souls taken, with the win rate of the teams " +
+    "that got each soul, in a competition and period, for every team or for one team. From the Riot game data: elements from 2016, souls from 2020. " +
+    "Not available for the LPL. For the teams that take the soul most often use ingame_leaderboard (metric dragon_soul).",
+  plan: (db, input) => {
+    const params: Params = {};
+    const scope = leagueAndPeriod(input);
+
+    return {
+      params,
+      sql: tidy(`WITH kills AS (
+  SELECT d.dragon AS kind, COUNT(*) AS dragons
+  FROM v_game_dragons d
+  WHERE ${competitionScope("d", scope, params)} ${dragonTeams(db, "d", input.team, params)}
+  GROUP BY d.dragon
+),
+souls AS (
+  SELECT s.soul AS kind, COUNT(*) AS souls, SUM(s.win) AS soul_wins
+  FROM v_game_team_stats s
+  WHERE s.soul IS NOT NULL AND ${competitionScope("s", scope, params)} ${dragonTeams(db, "s", input.team, params)}
+  GROUP BY s.soul
+)
+SELECT k.kind, k.dragons, COALESCE(s.souls, 0) AS souls, COALESCE(s.soul_wins, 0) AS soul_wins
+FROM kills k LEFT JOIN souls s ON s.kind = k.kind
+ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
+    };
+  },
+  relaxations: (input) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+
+    if (input.team && input.league)
+      out.push({ key: "league", input: { ...input, league: null }, note: "Aucun dragon relevé dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
+
+    return out;
+  },
+  format: (db, input, sqlRows): ToolOutput => {
+    const rows = z.array(DragonRow).parse(sqlRows);
+    const team = input.team ? teamMembers(db, input.team) : null;
+    const league = leagueShortName(db, input.league);
+    const params: Params = {};
+    const scope = competitionScope("s", leagueAndPeriod(input), params);
+    const own = dragonTeams(db, "s", input.team, params);
+
+    // Games where a soul could be taken and the timeline says who took it: one row per team, so one game counts once for every team.
+    const known = selectOne(
+      db,
+      z.object({ games: z.number(), souls: z.number().nullable(), years: z.string() }),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, SUM(s.dragon_soul) AS souls, json_group_array(DISTINCT s.year) AS years
+       FROM v_game_team_stats s WHERE s.dragon_soul IS NOT NULL AND ${scope} ${own}`,
+      params,
+    );
+
+    const games = selectOne(
+      db,
+      z.object({ games: z.number(), pages: z.string() }),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, json_group_array(DISTINCT s.event_page) AS pages FROM v_game_dragons s WHERE ${scope} ${own}`,
+      params,
+    );
+
+    const covParams: Params = {};
+    const covTeam = team ? `AND (s.blue_team IN (${inList("t", team.members, covParams)}) OR s.red_team IN (${inList("t", team.members, covParams)}))` : "";
+    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${competitionScope("s", leagueAndPeriod(input), covParams)} ${covTeam}`, covParams);
+    const years = z.array(z.number().nullable()).parse(JSON.parse(known?.years ?? "[]")).flatMap((y) => (y == null ? [] : [y]));
+    const pages = z.array(z.string()).parse(JSON.parse(games?.pages ?? "[]"));
+    const total = rows.reduce((n, r) => n + r.dragons, 0);
+    const elder = rows.find((r) => r.kind === "elder")?.dragons ?? 0;
+    const elemental = rows.filter((r) => r.kind != null && r.kind !== "elder");
+    const bySouls = [...elemental].filter((r) => r.souls > 0).sort((a, b) => b.souls - a.souls || a.dragons - b.dragons);
+    const souls = known?.souls ?? 0;
+    const soulWins = elemental.reduce((n, r) => n + r.soul_wins, 0);
+    const soulGames = known?.games ?? 0;
+    const who = team ? team.team : "les équipes";
+    const where = [inLeague(league), years.length ? `(${yearSpan(years)})` : ""].filter(Boolean).join(" ");
+    const name = (kind: string | null) => capital(dragonLabel(kind));
+
+    const facts =
+      `Dragons pris par ${who}${where ? ` ${where}` : ""}, sur ${games?.games ?? 0} parties avec chronologie Riot : ${total} dragons (` +
+      `${elemental.map((r) => `${dragonLabel(r.kind)} ${r.dragons}`).join(", ")}${elder ? `, ancestral ${elder}` : ""}). ` +
+      (soulGames
+        ? (team
+            ? `${team.team} prend l'âme du dragon dans ${souls} de ses ${soulGames} parties (${pct(souls, soulGames)} %)`
+            : `L'âme du dragon est prise dans ${souls} parties sur ${soulGames} (${pct(souls, soulGames)} %)`) +
+          (souls
+            ? `${team ? " et en gagne" : " ; l'équipe qui la prend gagne"} ${soulWins} sur ${souls} (${pct(soulWins, souls)} %). ` +
+              `Âmes : ${bySouls.map((r) => `${dragonLabel(r.kind)} ${r.souls}`).join(", ")}.`
+            : ".")
+        : "Aucune partie de ce périmètre où l'âme existe (elle date du patch 9.23, fin 2019) avec une chronologie.") +
+      coverageNote(cov);
+
+    return {
+      title: `${team ? `${team.team} — dragons et âmes` : "Dragons et âmes"}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      table: {
+        columns: ["Dragon", "Pris", "Part %", "Âmes", "Victoires avec l'âme", "% victoire avec l'âme"],
+        rows: rows.map((r) => {
+          const soul = r.kind != null && r.kind !== "elder";
+
+          return [name(r.kind), r.dragons, Math.round((1000 * r.dragons) / Math.max(1, total)) / 10, soul ? r.souls : null, soul ? r.soul_wins : null, soul && r.souls ? pct(r.soul_wins, r.souls) : null];
+        }),
+      },
+      facts,
+      sources: [...(team ? team.members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })) : []), ...eventSources(pages, 12), RIOT_DATA_SOURCE],
+      followUps: [
+        `Équipes qui prennent le plus souvent l'âme du dragon ${input.league ? inLeague(league) : "aux Worlds"}`,
+        ...(team ? [`Stats in-game de ${team.team}`] : []),
+      ],
+      totals: {
+        dragons: total,
+        elder_dragons: elder,
+        top_dragon: elemental[0] ? dragonLabel(elemental[0].kind) : "",
+        top_dragon_count: elemental[0]?.dragons ?? 0,
+        soul_games: soulGames,
+        souls,
+        soul_wins: soulWins,
+        top_soul: bySouls[0] ? dragonLabel(bySouls[0].kind) : "",
+        top_soul_count: bySouls[0]?.souls ?? 0,
+      },
+    };
+  },
+  normalize: (db, input) => {
+    if (!input.team) return { ...input, team: null };
+    const t = resolveTeam(db, input.team);
+
+    return t ? { ...input, team: t.team } : null;
+  },
+};
 
 // 9. One game's timeline (Riot JSON in R2, read server-side) ---------------------------------
 
@@ -3415,6 +3568,9 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
   const items = selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const runes = selectAll(db, ScoreboardRuneRow, "SELECT player, slot, kind, rune, icon_url FROM v_player_runes WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
+  // Riot timeline only: empty for the LPL and the games without one, whose dragon count still comes from the scoreboard.
+  const dragons = selectAll(db, z.object({ side: z.number().nullable(), dragon: NullableText }), "SELECT side, dragon FROM v_game_dragons WHERE game_id = :game ORDER BY seq", { game: r.game_id });
+  const souls = selectAll(db, z.object({ side: z.number(), soul: z.string() }), "SELECT side, soul FROM v_game_team_stats WHERE game_id = :game AND soul IS NOT NULL", { game: r.game_id });
 
   const players: ScoreboardPlayer[] = rows
     .flatMap((p): ScoreboardPlayer[] =>
@@ -3461,6 +3617,8 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
       barons: pick(game.blue_barons, game.red_barons),
       heralds: pick(game.blue_heralds, game.red_heralds),
       grubs: pick(game.blue_void_grubs, game.red_void_grubs),
+      dragonKinds: dragons.flatMap((d) => (d.side === SIDE_ID[side] ? [dragonLabel(d.dragon)] : [])),
+      soul: souls.flatMap((s) => (s.side === SIDE_ID[side] ? [dragonLabel(s.soul)] : []))[0] ?? null,
     };
   };
 
@@ -4832,6 +4990,7 @@ export const TOOLS = {
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),
   ingame_leaderboard: defineTool(LeaderboardInput, ingameLeaderboard),
   team_ingame_stats: defineTool(TeamIngameInput, teamIngameStats),
+  dragon_stats: defineTool(DragonStatsInput, dragonStats),
   game_timeline: defineTool(GameTimelineInput, gameTimeline),
   series: defineTool(SeriesInput, series),
   team_leaderboard: defineTool(TeamLeaderboardInput, teamLeaderboard),

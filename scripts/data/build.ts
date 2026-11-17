@@ -15,7 +15,7 @@ import { enchantedKind, type ItemKind, ItemMeta, itemKinds } from "../../src/lib
 import { DB_MAX_BYTES, DB_WARN_BYTES } from "./artifact";
 import { playerIdentity } from "./identity";
 import { loadIngame } from "./riot";
-import { DERIVE_VERSION } from "./ingame";
+import { DERIVE_COMPATIBLE, DERIVE_VERSION } from "./ingame";
 import { createSchema, createQuerySchema, SCHEMA_TABLES } from "../../src/lib/db/schema";
 import { selectAll, selectOne } from "../../src/lib/db";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
@@ -517,8 +517,9 @@ for (const c of Object.values(dd.champion.data)) {
 const insRiot = db.prepare("INSERT INTO game_riot (game_id, riot_key, stats_page, json_version, has_timeline, side_swapped) VALUES (?,?,?,?,?,?)");
 const PLAYER_STATS = 36;
 const insPlayerStats = db.prepare(`INSERT OR IGNORE INTO game_player_stats (game_id, player_id, gold_10, gold_15, gold_20, xp_10, xp_15, xp_20, cs_10, cs_15, cs_20, gold_diff_10, gold_diff_15, gold_diff_20, xp_diff_10, xp_diff_15, xp_diff_20, cs_diff_10, cs_diff_15, cs_diff_20, kills_10, deaths_10, assists_10, solo_kills, first_blood_kill, first_blood_assist, first_blood_victim, double_kills, triple_kills, quadra_kills, penta_kills, wards_placed, wards_killed, control_wards, plates, damage_taken) VALUES (${Array(PLAYER_STATS).fill("?").join(",")})`);
-const insTeamStats = db.prepare(`INSERT OR IGNORE INTO game_team_stats (game_id, side, first_blood, first_tower, first_dragon, first_herald, first_baron, first_inhibitor, plates, gold_10, gold_15, gold_20, gold_diff_10, gold_diff_15, gold_diff_20, kills_10, kills_15, kills_20, towers_15) VALUES (${Array(19).fill("?").join(",")})`);
-const ingameCounts = { games: 0, skipped_unknown_game: 0, skipped_mapping: 0, participants_by_position: 0, kills_mismatch: 0, missing: 0, invalid: 0, duplicates: 0, stale_derive: 0 };
+const insTeamStats = db.prepare(`INSERT OR IGNORE INTO game_team_stats (game_id, side, first_blood, first_tower, first_dragon, first_herald, first_baron, first_inhibitor, plates, gold_10, gold_15, gold_20, gold_diff_10, gold_diff_15, gold_diff_20, kills_10, kills_15, kills_20, towers_15, elder_dragons, dragon_soul, soul) VALUES (${Array(22).fill("?").join(",")})`);
+const insDragon = db.prepare("INSERT INTO game_dragons (game_id, seq, team_seq, side, kind, time_s) VALUES (?,?,?,?,?,?)");
+const ingameCounts = { games: 0, skipped_unknown_game: 0, skipped_mapping: 0, participants_by_position: 0, kills_mismatch: 0, missing: 0, invalid: 0, duplicates: 0, stale_derive: 0, older_derive: 0 };
 const diff = (a: number | null, b: number | null | undefined) => (a == null || b == null ? null : a - b);
 const ingame = loadIngame();
 const doneGames = new Set<number>();
@@ -529,7 +530,7 @@ for (const line of ingame.values()) {
     continue;
   }
 
-  if (line.derive !== DERIVE_VERSION) {
+  if (line.derive < DERIVE_COMPATIBLE || line.derive > DERIVE_VERSION) {
     ingameCounts.stale_derive++;
     continue;
   }
@@ -591,6 +592,10 @@ for (const line of ingame.values()) {
 
   doneGames.add(gid);
   ingameCounts.games++;
+
+  // Kept, without what the versions after it added (NULL columns, no dragon row).
+  if (line.derive !== DERIVE_VERSION) ingameCounts.older_derive++;
+
   insRiot.run(gid, line.key, line.statsPage, line.version, line.hasTimeline ? 1 : 0, swapped ? 1 : 0);
 
   const stats = line.players.map((p) => ({ p, l: matched.get(p.pid)! }));
@@ -620,8 +625,18 @@ for (const line of ingame.values()) {
       t.plates, t.gold_10, t.gold_15, t.gold_20,
       diff(t.gold_10, o?.gold_10), diff(t.gold_15, o?.gold_15), diff(t.gold_20, o?.gold_20),
       t.kills_10, t.kills_15, t.kills_20, t.towers_15,
+      t.elder_dragons ?? null, t.dragon_soul ?? null, t.soul ?? null,
     );
   }
+
+  const teamSeq = new Map<number, number>();
+
+  (line.dragons ?? []).forEach((d, i) => {
+    const s = d.teamId == null ? null : sideOf(d.teamId);
+
+    if (s != null) teamSeq.set(s, (teamSeq.get(s) ?? 0) + 1);
+    insDragon.run(gid, i + 1, s == null ? null : teamSeq.get(s)!, s, d.kind, d.t);
+  });
 }
 
 // Indexes and views -------------------------------------------------------------

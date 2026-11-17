@@ -128,7 +128,7 @@ describe("usabilityProblems", () => {
 
 describe("readFacts", () => {
   test("reads the versions of the latest build run and the headline counts", () => {
-    const path = fresh({ buildDetails: JSON.stringify({ derive_version: 2, ddragon_version: "16.1.1", ingame: { stale_derive: 3 } }) });
+    const path = fresh({ buildDetails: JSON.stringify({ derive_version: 2, ddragon_version: "16.1.1", ingame: { stale_derive: 3, older_derive: 4 } }) });
 
     expect(readFacts(path)).toEqual({
       schemaVersion: SCHEMA_VERSION,
@@ -137,6 +137,7 @@ describe("readFacts", () => {
       ddragonVersion: "16.1.1",
       deriveVersion: 2,
       staleDerive: 3,
+      olderDerive: 4,
     });
   });
 
@@ -145,6 +146,7 @@ describe("readFacts", () => {
     expect(facts.deriveVersion).toBeNull();
     expect(facts.ddragonVersion).toBeNull();
     expect(facts.staleDerive).toBe(0);
+    expect(facts.olderDerive).toBe(0);
   });
 });
 
