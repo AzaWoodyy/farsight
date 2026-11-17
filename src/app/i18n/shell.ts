@@ -20,7 +20,7 @@ const fr = {
   footer: {
     data: "Données",
     icons: "icônes",
-    photos: "photos des joueurs © Riot Games et les ligues, via Leaguepedia",
+    photos: "photos des joueurs et logos des équipes © Riot Games, les ligues et les équipes, via Leaguepedia",
     madeBy: "Projet réalisé par",
     privacy:
       "Questions enregistrées sans adresse IP ni identifiant, et envoyées au modèle de langage : évite d'y mettre des informations personnelles.",
@@ -47,7 +47,7 @@ const en: Shell = {
   footer: {
     data: "Data from",
     icons: "icons from",
-    photos: "player photos © Riot Games and the leagues, via Leaguepedia",
+    photos: "player photos and team logos © Riot Games, the leagues and the teams, via Leaguepedia",
     madeBy: "Built by",
     privacy: "Questions are logged without an IP address or an identifier, and sent to the language model: avoid personal information.",
     riot: "Farsight isn't endorsed or sponsored by Riot Games.",
