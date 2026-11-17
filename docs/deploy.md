@@ -6,7 +6,7 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
 
 ## Ce que contient le déploiement
 
-- **Fonction `/api/ask`** (Node 24, `engines.node` dans `package.json`) : la
+- **Fonction `/api/ask`** (Node 26, `engines.node` dans `package.json`) : la
   base `data/lol.sqlite` est ajoutée au bundle par `outputFileTracingIncludes`
   (`next.config.ts`), puis ouverte en lecture seule (`src/lib/db/index.ts`).
   - Budget : base sous 190 Mo, fonction sous 250 Mo décompressés (limite de
@@ -322,7 +322,7 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 
 - Framework `nextjs`, installation `bun install --frozen-lockfile`, build
   `bun run build` (lance `data:pull`, ne pas la remplacer par `next build`).
-  Node 24.x vient de `engines.node` dans `package.json`.
+  Node 26.x vient de `engines.node` dans `package.json`.
 - Région des fonctions `cdg1` (Paris). Le plan Hobby n'en autorise qu'une.
 - `git.deploymentEnabled: false` : même si le dépôt est connecté au projet,
   l'intégration Git ne déploie rien. La production est déployée par le
