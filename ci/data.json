@@ -1,19 +1,19 @@
 {
   "repository": "AzaWoodyy/farsight",
-  "tag": "data-20261117",
-  "schemaVersion": 8,
+  "tag": "data-20261117-2",
+  "schemaVersion": 9,
   "database": {
     "asset": "lol.sqlite.zst",
-    "sha256": "41b12b5d04a8dbb2eae1a4a91e19dac6dacf7fdd931f7615854c082fa553d699",
-    "uncompressedSha256": "c67168c6e0c7f34393ccf0b3c4f119bd2d2595c141102cd232c4db7b02031935"
+    "sha256": "af059b2d1907734780191024c96c333e48eead4a7228ce1b1e5bd5cedba0bf91",
+    "uncompressedSha256": "5f3010393bf21e72628589f2cce8c77a977977632e5b38b1875604502c1e6129"
   },
   "ingame": {
     "asset": "ingame.jsonl.zst",
-    "sha256": "a6d5c77d617feddc7bd9600fc87019a762ca4c6874c2ec13bfa9726921431eb8"
+    "sha256": "31b84d4aa27b189059332dc1e98dd195e2636d3c300339aa21d9006152f870e2"
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "eab1c2c58cad5592272adb00576b65f5d55bc8fda6ee3e53875a1690be3a8b61",
+    "sha256": "5ed43f3fa2166800d49c839853947ac2170ab9f6a71995fced607cc20b09e9e7",
     "files": {
       "tournaments.json": "516d25ac1d8dbfd9abc61f09cdc7b3a521bcfd87d2d9ad2636bef4dfad39fd61",
       "results.json": "acac92320907583a3a8e38fd5c062e6e29759b6761ec3cc497a2e4680899e923",
@@ -21,9 +21,10 @@
       "lines.json": "fe9f4951d3125a3f61285023a90ba3d85d4858a6f53b3effa76a2a125d178d46",
       "players.json": "017d6acbfe96a60e1807f3492736845507461d000f853a133c003e9ab98b54ec",
       "redirects.json": "804dfac7ccd3add4fa7930ec77de106dd1fd5f10e2979d2b51c948ee130d6f5f",
+      "player_images.json": "cf389585f2d3da6227ec0b64128c95b2d300e21472fbd7d2fc355c96f3ee2574",
       "ddragon.json": "8a8552acdcee70cf556e432e38d5e535c704134635865c37eedebdc5c2a21fcb",
       "riot_games.json": "9fd317eb2626396ac7df7477a526b2768a49592e01325bd59c4a7256dce9fb4b",
-      "runs.json": "d18965cfa0ae18d4f6afabf7262ec62efadfbf32e3ba7e14423f32d13e4a7153"
+      "runs.json": "e5476aef633fe50eab6b5e732dc202db70556e07a8b8f0adcca42f5c765cb585"
     }
   }
 }

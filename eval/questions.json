@@ -1689,6 +1689,238 @@
       }
     },
     {
+      "id": "en-out-of-scope-game",
+      "question": "who won VCT Champions 2024",
+      "locale": "en",
+      "tags": [
+        "out_of_scope",
+        "english"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "summaryIncludes": [
+          "Question out of scope",
+          "\"VCT\" is not in the scope",
+          "The database covers"
+        ],
+        "summaryExcludes": [
+          "hors périmètre"
+        ]
+      }
+    },
+    {
+      "id": "en-future-year",
+      "question": "Faker's results at Worlds 2031",
+      "locale": "en",
+      "tags": [
+        "out_of_scope",
+        "english"
+      ],
+      "expect": {
+        "route": "out_of_scope",
+        "rows": 0,
+        "players": [
+          "Faker"
+        ],
+        "summaryIncludes": [
+          "That year is in the future"
+        ]
+      }
+    },
+    {
+      "id": "en-winners-of-a-league",
+      "question": "MSI winners",
+      "locale": "en",
+      "tags": [
+        "standings",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Mid-Season Invitational",
+        "teams": [],
+        "rowsMin": 10
+      }
+    },
+    {
+      "id": "en-team-called-winners",
+      "question": "Winners roster 2019",
+      "locale": "en",
+      "tags": [
+        "roster",
+        "english"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Winners"
+        ],
+        "input": {
+          "team": "Winners",
+          "yearFrom": 2019
+        }
+      }
+    },
+    {
+      "id": "en-missing-minute",
+      "question": "gold diff at 25 min for Chovy in LCK 2024",
+      "locale": "en",
+      "tags": [
+        "missing_data",
+        "english"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "players": [
+          "Chovy"
+        ],
+        "rows": 0,
+        "summaryIncludes": [
+          "Data missing from the database",
+          "recorded only at 10, 15 and 20 min"
+        ]
+      }
+    },
+    {
+      "id": "en-player-history",
+      "question": "Chovy's results at every Worlds",
+      "locale": "en",
+      "tags": [
+        "player_history",
+        "english"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "editions of Worlds (2019–2026) with 4 teams (Griffin, DRX, Hanwha Life Esports, Gen.G)",
+          "for a record of",
+          "Best result: runner-up"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
+      "id": "en-team-history",
+      "question": "T1 history",
+      "locale": "en",
+      "tags": [
+        "team_history",
+        "english"
+      ],
+      "expect": {
+        "route": "team_history",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "tournaments (Worlds, OGN Champions, MSI, LCK) between 2013 and 2026",
+          "titles, including Worlds Season 3",
+          "Names counted: SK Telecom T1, T1"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
+      "id": "en-team-roster",
+      "question": "Samsung White roster 2014",
+      "locale": "en",
+      "tags": [
+        "roster",
+        "english"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Samsung White in 2014: 70 games (52 wins) over 4 tournaments",
+          "Players with the most games in each role",
+          "Also fielded"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
+      "id": "en-head-to-head",
+      "question": "T1 vs Gen.G in LCK",
+      "locale": "en",
+      "tags": [
+        "head_to_head",
+        "english"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "T1 – Gen.G in LCK:",
+          "won by T1 and",
+          "Latest meeting"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
+      "id": "en-player-comparison",
+      "question": "Faker vs Chovy",
+      "locale": "en",
+      "tags": [
+        "comparison",
+        "english"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Faker and Chovy faced each other in",
+          "Over all their games",
+          "played in the same lane"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
+      "id": "en-champion-stats",
+      "question": "Azir stats at Worlds 2025",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "rowsMin": 1,
+        "summaryIncludes": [
+          "Azir at Worlds (2025): 14 picks and 55 bans over the 84 games of the scope (presence 82%)",
+          "Averages per game",
+          "Most frequent players"
+        ],
+        "summaryExcludes": [
+          " parties",
+          "victoires",
+          " et "
+        ]
+      }
+    },
+    {
       "id": "out-of-scope-topic",
       "question": "quelle est la météo à Paris",
       "tags": [

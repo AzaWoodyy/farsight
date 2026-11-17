@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { APICallError, type LanguageModel, RetryError } from "ai";
+import { msg } from "./messages";
 
 /**
  * LLM access, through OpenRouter only.
@@ -20,10 +21,6 @@ export const LLM_CALL = { maxOutputTokens: 600, maxRetries: 1, timeoutMs: 15_000
 
 /** How long an exhausted key stays switched off before the next try. */
 export const QUOTA_COOLDOWN_MS = 15 * 60_000;
-
-/** Shown to the user when the answer was produced without the LLM because of the quota. */
-export const QUOTA_NOTE =
-  "Le modèle de langage est indisponible pour le moment : les questions les plus libres peuvent rester sans réponse.";
 
 export type Llm = { model: LanguageModel; id: string };
 
@@ -78,7 +75,7 @@ export function describeLlmError(error: Error): string {
   if (!isQuotaError(error)) return error.message;
   exhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS;
 
-  return "quota OpenRouter épuisé, bascule en mode déterministe";
+  return msg().llm.quotaError;
 }
 
 // Request-local cancellation reaches every cascade without global mutable state.

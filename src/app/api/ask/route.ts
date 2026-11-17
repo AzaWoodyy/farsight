@@ -2,10 +2,12 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
 import { z } from "zod";
+import { messagesIn } from "@/lib/agent/messages";
 import { runAgent } from "@/lib/agent/run";
 import { traceQuestion } from "@/lib/agent/trace";
 import type { AgentUIMessage } from "@/lib/agent/types";
 import { requestPolicy } from "@/lib/http/request-policy";
+import { DEFAULT_LOCALE, LOCALES } from "@/lib/locale";
 import { signFeedback } from "@/lib/tracing/feedback-token";
 import { flushTracing, startTracing } from "@/lib/tracing/langfuse";
 
@@ -24,6 +26,8 @@ export const maxDuration = 90;
 const ChatRequest = z.object({
   /** Anonymous id of the conversation, made up by the browser; it only groups the traces of one conversation. */
   sessionId: z.uuid().optional().catch(undefined),
+  /** Language of the page that asks: the answer is written in it. Anything else is answered in French. */
+  locale: z.enum(LOCALES).catch(DEFAULT_LOCALE),
   messages: z
     .array(
       z.object({
@@ -88,7 +92,7 @@ export async function POST(req: Request) {
           return runAgent(question, (event) => {
             if (event.type === "step") writer.write({ type: "data-step", id: event.part.step, data: event.part });
             else writer.write({ type: "data-answer", id: "answer", data: event.answer });
-          }, undefined, req.signal);
+          }, undefined, req.signal, body.data.locale);
         });
       } finally {
         answered.resolve();
@@ -99,7 +103,7 @@ export async function POST(req: Request) {
     onError: (err) => {
       console.error(err instanceof Error ? err.name : "AgentError");
 
-      return "Erreur interne.";
+      return messagesIn(body.data.locale).run.internalError;
     },
   });
 

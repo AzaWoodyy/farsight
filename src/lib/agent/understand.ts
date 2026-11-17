@@ -6,6 +6,7 @@ import { normalizeAlias } from "../aliases";
 import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
+import { msg } from "./messages";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
 import { ROLE_WORDS, SHORT_ROLE_MENTION } from "./roles";
@@ -238,24 +239,24 @@ export function resolvePlayer(db: DatabaseSync, mention: string, ctx: Context = 
     if (exact.length === 1 && (!hasContext || exact[0].contextGames > 0)) {
       candidates.sort((a, b) => Number(b.exactCase) - Number(a.exactCase) || rank(a, b));
       chosenBy = "case";
-      reason = `casse exacte « ${mention} »`;
+      reason = msg().understand.exactCase(mention);
     } else {
       candidates.sort(rank);
       const [top, second] = candidates;
 
       if (hasContext && top.contextGames > 0 && second.contextGames === 0) {
         chosenBy = "context";
-        reason = `seul à avoir joué dans le contexte de la question (${top.contextGames} parties)`;
+        reason = msg().understand.onlyInContext(top.contextGames);
       } else if (hasContext && top.contextGames > 0) {
         chosenBy = "context";
         uncertain = top.contextGames < CLEAR_MARGIN * second.contextGames;
-        reason = `plus de parties dans le contexte de la question (${top.contextGames} contre ${second.contextGames})`;
+        reason = msg().understand.moreInContext(top.contextGames, second.contextGames);
       } else {
         candidates.sort((a, b) => b.games - a.games);
         const [most, next] = candidates;
         chosenBy = "games";
         uncertain = most.games < CLEAR_MARGIN * next.games;
-        reason = `plus de parties au total (${most.games} contre ${next.games})`;
+        reason = msg().understand.moreOverall(most.games, next.games);
       }
     }
 
@@ -525,6 +526,9 @@ const NOT_OPPONENTS = new Set(
   "agir annee aren done driven else given gone hard juin name none real rely rien seen sent sept sert sets sinon sons sont soon tell then thin well when zero".split(" "),
 );
 
+/** Also the name of a team (Winners, 2015-2021): read as that team only when the question names no competition. */
+const WINNERS = /^winners?$/;
+
 /** A matchup word: the opponent may then follow the champion directly ("match up oriana lock"). */
 const MATCHUP_CUE = /(?<![\p{L}\p{N}])match[- ]?ups?(?![\p{L}\p{N}])/iu;
 
@@ -561,6 +565,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
   const { teams } = getIndexes(db);
+  const { league } = detectLeague(question);
 
   for (let size = 3; size >= 1; size--) {
     for (let i = 0; i + size <= tokens.length; i++) {
@@ -597,6 +602,9 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
         span.forEach((k) => used.add(k));
         continue;
       }
+
+      // "MSI winners", "winners of the LCK": the winners of the competition named, not the team Winners.
+      if (WINNERS.test(norm) && league) continue;
 
       const team = teams.get(norm);
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
@@ -801,10 +809,10 @@ const rulesDecider: Decider<Input, Entities> = {
       confidence,
       level: "rules",
       reason: entities.outOfScope
-        ? `hors périmètre : « ${entities.outOfScope} »`
+        ? msg().understand.outOfScope(entities.outOfScope)
         : n === 0
-          ? "aucun joueur, équipe ou champion connu dans la question"
-          : `${n} entité(s) reconnue(s) par les tables d'alias`,
+          ? msg().understand.nothingKnown
+          : msg().understand.recognized(n),
     };
   },
 };
@@ -863,7 +871,7 @@ const llmDecider: Decider<Input, Entities> = {
       result: entities,
       confidence: n ? 0.85 : 0.5,
       level: "llm",
-      reason: `${llm.id} : ${output.players.length + output.teams.length} mention(s) extraite(s)`,
+      reason: msg().understand.extracted(llm.id, output.players.length + output.teams.length),
     };
   },
 };
