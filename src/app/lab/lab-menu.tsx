@@ -13,6 +13,7 @@ import "./lab.css";
  *
  *   ← →      previous / next variation        /   open the list and search
  *   N        notes on this variation          Esc close
+ *   H        hide / show the menu (it floats over the end of the page)
  */
 const NOTES_KEY = "farsight-lab-notes";
 
@@ -77,6 +78,7 @@ export function LabMenu({ index, onSelect }: { index: number; onSelect: (i: numb
   const raw = useSyncExternalStore(subscribeNotes, storedNotes, () => "{}");
   const notes = useMemo(() => parseNotes(raw), [raw]);
   const [copied, setCopied] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const pad = useRef<HTMLTextAreaElement>(null);
@@ -136,9 +138,14 @@ export function LabMenu({ index, onSelect }: { index: number; onSelect: (i: numb
 
     if (e.key === "ArrowRight") onSelect(index + 1);
     else if (e.key === "ArrowLeft") onSelect(index - 1);
-    else if (e.key === "/") {
+    else if (e.key === "/" && !hidden) {
       e.preventDefault();
       setPanel("list");
+    } else if (e.key === "h" || e.key === "H") {
+      setPanel(null);
+      setHidden(!hidden);
+    } else if (hidden) {
+      return;
     } else if (e.key === "n" || e.key === "N") {
       e.preventDefault();
       setPanel("notes");
@@ -160,7 +167,7 @@ export function LabMenu({ index, onSelect }: { index: number; onSelect: (i: numb
   }, []);
 
   return (
-    <div ref={root} className="lab-menu">
+    <div ref={root} className="lab-menu" hidden={hidden}>
       {panel === "list" && (
         <div className="lab-panel" role="dialog" aria-label="Outils et variations">
           <div className="lab-search">
@@ -209,7 +216,7 @@ export function LabMenu({ index, onSelect }: { index: number; onSelect: (i: numb
           </div>
           <p className="lab-keys">
             <kbd>←</kbd>
-            <kbd>→</kbd> variation <kbd>/</kbd> chercher <kbd>N</kbd> note <kbd>Esc</kbd> fermer
+            <kbd>→</kbd> variation <kbd>/</kbd> chercher <kbd>N</kbd> note <kbd>H</kbd> masquer <kbd>Esc</kbd> fermer
           </p>
         </div>
       )}
