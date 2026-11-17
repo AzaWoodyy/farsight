@@ -25,16 +25,16 @@
     "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run data:pull && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"
   },
   "dependencies": {
-    "@ai-sdk/react": "4.0.176",
+    "@ai-sdk/react": "4.0.178",
     "@langfuse/otel": "6.1.1",
     "@langfuse/tracing": "6.1.1",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@opentelemetry/api": "1.10.0",
-    "@opentelemetry/context-async-hooks": "2.12.0",
-    "@opentelemetry/sdk-trace-base": "2.12.0",
+    "@opentelemetry/context-async-hooks": "2.12.1",
+    "@opentelemetry/sdk-trace-base": "2.12.1",
     "@vercel/analytics": "2.0.1",
-    "@vercel/functions": "3.11.2",
-    "ai": "7.0.172",
+    "@vercel/functions": "3.11.3",
+    "ai": "7.0.174",
     "aws4fetch": "1.0.20",
     "botid": "1.5.13",
     "next": "16.4.6",
@@ -43,16 +43,16 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@oxlint/plugins": "1.93.0",
+    "@oxlint/plugins": "1.94.0",
     "@tailwindcss/turbopack": "4.3.5",
     "@types/bun": "1.4.4",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "oxlint": "1.93.0",
+    "oxlint": "1.94.0",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2",
-    "vercel": "65.16.0"
+    "vercel": "65.17.0"
   },
   "packageManager": "bun@1.4.4",
   "trustedDependencies": [
@@ -62,6 +62,6 @@
   "overrides": {
     "js-yaml": "4.3.2",
     "smol-toml": "1.9.1",
-    "tar": "7.5.22"
+    "tar": "7.5.23"
   }
 }
