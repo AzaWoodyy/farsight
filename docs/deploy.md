@@ -273,10 +273,11 @@ premier déploiement v9 : la release précédente ayant un autre schéma, ses
 résumés in-game ne sont pas restaurés et sont relus sur R2 (environ 6 min).
 `data:package` refuse une release sans photo, et une release qui perd plus de
 2 % des joueurs avec photo par rapport à la précédente (`players_with_photo`
-dans le manifeste). L'instantané de CI (`ci/raw.tar.zst`) n'a pas
-`player_images.json` : la reconstruction hors ligne de la CI n'a donc aucune
-photo, et `data:package --check-only` se contente d'un avertissement. Ré-épingler
-`ci/data.json` sur la première release v9 supprime la reconstruction.
+dans le manifeste). Sans `player_images.json` dans les données brutes (cas
+d'un instantané de CI antérieur à la v9), `data:package --check-only` se
+contente d'un avertissement. `ci/data.json` épingle `data-20261117-2`, la
+première release v9 : `ci/raw.tar.zst` contient `player_images.json`, et la
+base reconstruite par la CI a les photos.
 
 ### Première release v8
 
