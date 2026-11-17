@@ -477,6 +477,8 @@ export type ChampionProfile = {
   players: ChampionPlayer[];
   /** Roles it was played in, most games first. */
   roles: { role: string; games: number }[];
+  /** The part the question is about (items, runes, summoner spells), shown first and large; null for the whole profile. */
+  focus: "items" | "runes" | "spells" | null;
   items: ChampionItems;
   setups: ChampionSetups;
 };

@@ -15,7 +15,8 @@ import { getLlm, LLM_CALL, type LlmStatus, llmStatus, QUOTA_NOTE, llmSignal, req
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
-import { playerProfiles } from "./tools";
+import { playerProfiles, type ToolOutput } from "./tools";
+import { teamLogoUrl } from "../domain/team-logos";
 import { understandQuestion } from "./understand";
 
 const MAX_ATTEMPTS = 3;
@@ -599,13 +600,38 @@ async function format(
     champion: out.champion ?? null,
     pool: out.pool ?? null,
     series: out.series ?? null,
-    icons: out.icons ?? {},
+    icons: { ...teamLogos(out), ...out.icons },
     profiles,
     sources: out.sources,
     followUps,
     notes,
     meta,
   };
+}
+
+/** Headers of the table columns that hold a team name. */
+const TEAM_COLUMN = /^(équipe|team|vainqueur|finaliste|adversaire|bleu|rouge)\b/i;
+
+/**
+ * The logo of every team the answer names (the two sides of a confrontation and of its series, a roster's
+ * team, the team columns of a table), by the name shown: the views put it beside that name.
+ */
+function teamLogos(out: ToolOutput) {
+  const columns = out.table?.columns.flatMap((c, i) => (TEAM_COLUMN.test(c) ? [i] : [])) ?? [];
+
+  const names = [
+    ...(out.teams ? [out.teams.teamA, out.teams.teamB, ...out.teams.series.flatMap((s) => [s.teamA, s.teamB])] : []),
+    ...(out.roster ? [out.roster.team, ...out.roster.names] : []),
+    ...(out.table?.rows.flatMap((r) => columns.flatMap((i) => z.string().safeParse(r[i]).data ?? [])) ?? []),
+  ];
+
+  return Object.fromEntries(
+    [...new Set(names)].flatMap((name) => {
+      const url = teamLogoUrl(name);
+
+      return url ? [[name, url]] : [];
+    }),
+  );
 }
 
 /**

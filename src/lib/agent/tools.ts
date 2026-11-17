@@ -1,4 +1,5 @@
-import { dragonLabel } from "../domain/dragons";
+import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } from "../domain/dragons";
+import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
@@ -150,10 +151,16 @@ export const PlayerComparisonInput = z.object({
   minute: MinuteInput,
 });
 
+/** The parts of a champion's profile a question can be about. */
+export const CHAMPION_FOCUS = ["items", "runes", "spells"] as const;
+
+export type ChampionFocus = (typeof CHAMPION_FOCUS)[number];
+
 export const ChampionStatsInput = z.object({
   champion: z.string().min(1).describe("Champion name (Ahri, Lee Sin, Kai'Sa...)"),
   league: League,
   ...Period,
+  focus: z.enum(CHAMPION_FOCUS).nullable().default(null).describe("What the question is about, when it names one: the champion's items, runes or summoner spells. The profile shows that part first."),
 });
 
 /** The per-game averages a champion ranking can sort by: end-of-game figures of v_game_players. */
@@ -533,6 +540,19 @@ const PlayerCounts = z.array(z.object({ player: z.string(), games: z.number() })
 const tidy = (sql: string) => sql.replace(/\n\s*\n/g, "\n");
 const hasPeriod = (i: Period) => i.yearFrom != null || i.yearTo != null;
 
+/** The period as a title says it: "2025", "entre 2019 et 2025", "depuis 2020"; empty without one. */
+const titlePeriod = (i: Period) => (hasPeriod(i) ? scopeLabel("toutes compétitions", i).replace(/^en /, "") : "");
+
+/**
+ * Where and when an answer stands, as its title's ending: " — Worlds 2025", " (LCK entre 2019 et 2025)". A title
+ * that names the competition without the season reads as every season.
+ */
+const titleScope = (league: string, i: Period, open: " — " | " (") => {
+  const scope = [league === "toutes compétitions" ? "" : league, titlePeriod(i)].filter(Boolean).join(" ");
+
+  return scope ? `${open}${scope}${open === " (" ? ")" : ""}` : "";
+};
+
 const noPeriod = <I extends Period>(input: I, what: string): Relaxation<I> => ({
   key: "period",
   input: { ...input, yearFrom: null, yearTo: null },
@@ -783,7 +803,7 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
     ).map((r) => r.player);
 
     return {
-      title: `${input.player} — ${league}`,
+      title: `${input.player} — ${[league, titlePeriod(input)].filter(Boolean).join(" ")}`,
       rows,
       facts,
       sources: [
@@ -884,7 +904,7 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     if (names.length > 1) facts += ` Noms pris en compte : ${names.map(displayTeam).join(", ")}.`;
 
     return {
-      title: `${team} — ${league === "toutes compétitions" ? "historique" : league}`,
+      title: `${team} — ${[league === "toutes compétitions" ? "historique" : league, titlePeriod(input)].filter(Boolean).join(" ")}`,
       table: {
         columns: ["Année", "Compétition", "Tournoi", ...(names.length > 1 ? ["Équipe"] : []), "Place", "V-D", "%"],
         rows: raw.map((r) => [
@@ -1256,7 +1276,7 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
         : `Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`);
 
     return {
-      title: `${a.team} vs ${b.team}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `${a.team} vs ${b.team}${titleScope(league, input, " — ")}`,
       table: {
         columns: ["Année", "Compétition", "Tournoi", a.team, b.team],
         rows: raw.map((r) => [r.year, r.league_short, r.tournament ?? r.event_page, r.wins_a, r.wins_b]),
@@ -1621,7 +1641,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         : [...rows, ...faced].some((r) => r.ingame_games < r.games) ? " Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement." : "");
 
     return {
-      title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `${input.playerA} vs ${input.playerB}${titleScope(league, input, " — ")}`,
       // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
       table: comparisonTable(rows, focus),
       versus: {
@@ -1920,6 +1940,7 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     ],
     players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
     roles,
+    focus: input.focus,
     items: championItems(db, input, picks),
     setups: championSetups(db, input, picks),
   };
@@ -2027,7 +2048,7 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       (picks ? itemsFacts(profile) + setupsFacts(profile) : "");
 
     return {
-      title: `${input.champion} — ${league}`,
+      title: `${input.champion} — ${[league, titlePeriod(input)].filter(Boolean).join(" ")}`,
       champion: profile,
       table: {
         columns: ["Année", "Tournoi", "Parties", "Picks", "Bans", "Présence %", "V-D", "% victoire", "Joueurs"],
@@ -2396,7 +2417,7 @@ LIMIT 20`),
     const figure = totalSort ? `total_${totalSort}` : average;
 
     const out: ToolOutput = {
-      title: `Champions ${label.title}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}`,
+      title: `Champions ${label.title}${role}${titleScope(league, input, " — ")}`,
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
       sources: [
@@ -2593,7 +2614,7 @@ LIMIT 200`),
     const where = inLeague(league);
 
     return {
-      title: `Champion pool — ${name}${league === "toutes compétitions" ? "" : ` — ${league}`}${hasPeriod(input) ? ` ${scopeLabel("toutes compétitions", input).replace(/^en /, "")}` : ""}${input.split ? ` ${input.split}` : ""}`,
+      title: `Champion pool — ${name}${titleScope(league, input, " — ")}${input.split ? ` ${input.split}` : ""}`,
       pool,
       table: {
         columns: [...CHAMPION_POOL_COLUMNS, ...(team ? ["players"] : [])],
@@ -2941,7 +2962,7 @@ ORDER BY is_total, first_game`),
     const statsPages = rows.flatMap((r) => r.stats_page ?? []).slice(-3);
 
     return {
-      title: `${input.player} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${input.player} — stats in-game${titleScope(league, input, " (")}`,
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...metrics.map((m) => (PLAYER_METRIC_DEFS[m].snapshot ? `${PLAYER_COLUMN_LABELS[m]} @${minute}` : PLAYER_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...metrics.map((m) => num(r, m))]),
@@ -3090,7 +3111,7 @@ LIMIT 20`),
       coverageNote(cov);
 
     return {
-      title: `Classement — ${label}${roleLabel}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Classement — ${label}${roleLabel}${titleScope(league, input, " (")}`,
       table: {
         // A rate shows its count too: "11 first dragons in 17 games, 64.7 %".
         columns: ["Rang", who, ...(input.subject === "player" ? ["Équipe (dernière)"] : []), "Parties", ...(def.aggregate === "rate" ? ["Nombre"] : []), def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : "Moyenne", ...(def.aggregate === "sum" ? ["Par partie"] : [])],
@@ -3309,7 +3330,7 @@ LIMIT 20`),
       (ongoing ? ` ${ongoing}` : "");
 
     return {
-      title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}${titleScope(league, input, " (")}`,
       table: {
         columns: ["Rang", "Joueur", "Équipe", "Parties", ...columns.map((c) => PLAYER_CRITERION_DEFS[c].label), "Écart or @15"],
         rows: rows.map((r, i) => [i + 1, r.player, r.team ? displayTeam(r.team) : null, r.games, ...columns.map((c) => value(r, c)), r.gold_diff_15]),
@@ -3420,7 +3441,7 @@ ORDER BY is_total, first_game`),
       coverageNote(cov);
 
     return {
-      title: `${team} — stats in-game${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${team} — stats in-game${titleScope(league, input, " (")}`,
       table: {
         columns: ["Année", "Compétition", "Parties", "V-D", ...TEAM_OVERVIEW.map((m) => (m === "gold_diff" ? `Écart or @${minute}` : TEAM_COLUMN_LABELS[m]))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...TEAM_OVERVIEW.map((m) => (r[m] == null ? null : Number(r[m])))]),
@@ -3547,7 +3568,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
       coverageNote(cov);
 
     return {
-      title: `${team ? `${team.team} — dragons et âmes` : "Dragons et âmes"}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${team ? `${team.team} — dragons et âmes` : "Dragons et âmes"}${titleScope(league, input, " (")}`,
       table: {
         columns: ["Dragon", "Pris", "Part %", "Âmes", "Victoires avec l'âme", "% victoire avec l'âme"],
         rows: rows.map((r) => {
@@ -3556,6 +3577,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
           return [name(r.kind), r.dragons, Math.round((1000 * r.dragons) / Math.max(1, total)) / 10, soul ? r.souls : null, soul ? r.soul_wins : null, soul && r.souls ? pct(r.soul_wins, r.souls) : null];
         }),
       },
+      icons: Object.fromEntries(rows.map((r) => [name(r.kind), wikiImageUrl(isDragonKind(r.kind) ? DRAGON_ICON_FILES[r.kind] : PLAIN_DRAGON_ICON_FILE, 48)])),
       facts,
       sources: [...(team ? team.members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })) : []), ...eventSources(pages, 12), RIOT_DATA_SOURCE],
       followUps: [
@@ -4634,7 +4656,7 @@ LIMIT 20`),
       (ongoing ? ` ${ongoing}` : "");
 
     return {
-      title: `Classement des équipes — ${def.label}${sideLabel(input.side)}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Classement des équipes — ${def.label}${sideLabel(input.side)}${titleScope(league, input, " (")}`,
       table: {
         columns: ["Rang", "Équipe", "Parties", ...columns.map((c) => TEAM_CRITERION_DEFS[c].label)],
         rows: rows.map((r, i) => [i + 1, displayTeam(r.name), r.games, ...columns.map((c) => value(r, c))]),
@@ -4829,7 +4851,7 @@ LIMIT 20`),
         (games > rows.length ? ` Les ${rows.length} parties les plus récentes sont listées.` : "");
 
       return {
-        title: `${input.champion} contre ${input.opponent}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+        title: `${input.champion} contre ${input.opponent}${role}${titleScope(league, input, " — ")}`,
         table: {
           columns: ["Date", "Compétition", "Rôle", input.champion, "K/D/A", input.opponent, "K/D/A ", "Vainqueur", "Écart or @15"],
           rows: rows.map((r) => [
@@ -4877,7 +4899,7 @@ LIMIT 20`),
         : "");
 
     return {
-      title: `Matchups ${of(input.champion)}${role}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
+      title: `Matchups ${of(input.champion)}${role}${titleScope(league, input, " — ")}`,
       table: {
         columns: ["rank", "champion", "games", "wins", "winrate", "kda", "gold_diff_15"],
         rows: rows.map((r, i) => [i + 1, r.champion, r.games, r.wins, r.winrate, r.kda, r.gold_diff_15]),
@@ -5018,7 +5040,7 @@ LIMIT 20`),
       (cov ? coverageNote(cov) : "");
 
     return {
-      title: `Records sur une partie — ${def.label.toLowerCase()}${who}${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `Records sur une partie — ${def.label.toLowerCase()}${who}${titleScope(league, input, " (")}`,
       table: {
         columns: ["Rang", "Joueur", "Champion joué", "Équipe", "Adversaire", "Compétition", "Date", def.label, "K/D/A", "Durée", "Résultat"],
         rows: rows.map((r, i) => [
@@ -5158,7 +5180,7 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
       (last ? ` Dernière partie : ${last.win == null ? "résultat n/d" : last.win ? "victoire" : "défaite"}${last.opponent ? ` contre ${displayTeam(last.opponent)}` : ""}${last.champion ? ` sur ${last.champion}` : ""} (${last.league_short}${last.year ? ` ${last.year}` : ""}).` : "");
 
     return {
-      title: `${input.player} — ${rows.length} dernières parties${league === "toutes compétitions" ? "" : ` (${league})`}`,
+      title: `${input.player} — ${rows.length} dernières parties${titleScope(league, input, " (")}`,
       table: {
         columns: ["Date", "Compétition", "Équipe", "Adversaire", "Champion joué", "Résultat", "K/D/A", "CS", "Dégâts", "Durée"],
         rows: rows.map((r) => [

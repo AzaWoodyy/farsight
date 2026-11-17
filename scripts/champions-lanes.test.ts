@@ -294,7 +294,7 @@ describe("tools on a seeded season", () => {
 
     try {
       seed(db);
-      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 } });
+      const out = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 , focus: null} });
       const p = out.champion!;
 
       expect(p).toMatchObject({ champion: "Azir", picks: 4, bans: 0, wins: 2, games: 4, kda: 2.78, roles: [{ role: "Mid", games: 4 }] });
@@ -327,7 +327,7 @@ describe("tools on a seeded season", () => {
           (7,1,1,1,'Mid',2,1,1,1,1,10000,200,10000,10,NULL),(8,1,1,2,'Mid',2,1,1,1,1,10000,200,10000,10,NULL);
       `);
 
-      const season = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 } });
+      const season = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 , focus: null} });
 
       // 4 picks over the 6 games of 2025, not over the 4 of the only edition with Azir.
       expect(season.totals).toMatchObject({ picks: 4, games: 6, events: 1 });
@@ -336,7 +336,7 @@ describe("tools on a seeded season", () => {
       expect(season.table!.rows).toEqual([[2025, "LEC25", 4, 4, 0, 100, "2-2", 50, "Caps ×3, Humanoid ×1"]]);
 
       // No period: the 2024 season widens the scope beyond Azir's years, and the sentence says so.
-      const all = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+      const all = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: null, yearTo: null , focus: null} });
 
       expect(all.totals).toMatchObject({ games: 8 });
       expect(all.facts).toContain("sur les 8 parties du périmètre, 2024–2025 (présence 50 %)");

@@ -280,9 +280,41 @@ export function ChampionProfileView({ p }: { p: Profile }) {
         </section>
       </div>
 
-      <ChampionItemsSection key={`${p.champion}|${p.scope}`} items={p.items} />
-      <ChampionSetupsSection key={`setups|${p.champion}|${p.scope}`} setups={p.setups} />
+      <ChampionBuild key={`${p.champion}|${p.scope}`} p={p} />
     </div>
+  );
+}
+
+/** Lines of a build section shown at full width (the one the question is about), and beside another. */
+const BUILD_LINES = { wide: 10, half: 5 };
+
+/**
+ * Items, runes and summoner spells: the one the question is about first, at full width, the two others side
+ * by side under it. A question about the champion as a whole leads with the items.
+ */
+function ChampionBuild({ p }: { p: Profile }) {
+  const first = p.focus ?? "items";
+
+  const section = (part: NonNullable<Profile["focus"]>, wide: boolean) => {
+    const lines = wide ? BUILD_LINES.wide : BUILD_LINES.half;
+
+    if (part === "items") return <ChampionItemsSection items={p.items} lines={wide ? ITEM_LINES : BUILD_LINES.half} />;
+
+    if (part === "runes") return <ChampionRunesSection setups={p.setups} lines={lines} />;
+
+    return <ChampionSpellsSection setups={p.setups} lines={lines} />;
+  };
+
+  const [second, third] = (["items", "runes", "spells"] as const).filter((part) => part !== first);
+
+  return (
+    <>
+      <div className="border-t border-line">{section(first, true)}</div>
+      <div className="grid border-t border-line md:grid-cols-2">
+        <div className="min-w-0 border-b border-line md:border-r md:border-b-0">{section(second, false)}</div>
+        <div className="min-w-0">{section(third, false)}</div>
+      </div>
+    </>
   );
 }
 
@@ -290,8 +322,6 @@ type ItemSortKey = "item" | "games" | "winrate";
 
 const RUNE_KIND_LABEL: Record<RuneKind, string> = { keystone: "keystones", primary: "primaires", secondary: "secondaires", shard: "fragments" };
 
-/** Lines shown per list of spells or runes. */
-const SETUP_LINES = 6;
 
 /** One spell pair or rune: icons, name, share of the games that have the data, games and win rate. */
 function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons: { name: string; src: string | null }[]; name: string; games: number; wins: number; of: number }) {
@@ -335,68 +365,72 @@ function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons
   );
 }
 
-/** The champion's summoner spell pairs and runes (by part of the page), from the scoreboards: share of the games that list them. */
-function ChampionSetupsSection({ setups }: { setups: ChampionSetups }) {
+/** The champion's summoner spell pairs, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
+function ChampionSpellsSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
+  return (
+    <section aria-labelledby="champion-spells" className="min-w-0 px-3 py-2">
+      <h3 id="champion-spells" className="text-[11px] text-muted">
+        ── sorts d&apos;invocateur <span className="text-muted/80">· {setups.spellGames} parties</span>
+      </h3>
+      {setups.spells.length > 0 ? (
+        <ol className="mt-2 border border-line">
+          {setups.spells.slice(0, lines).map((s, i) => (
+            <SetupLine
+              key={s.spells.map((x) => x.name).join("+")}
+              rank={i + 1}
+              icons={s.spells.map((x) => ({ name: x.name, src: x.iconUrl }))}
+              name={s.spells.map((x) => x.name).join(" + ")}
+              games={s.games}
+              wins={s.wins}
+              of={setups.spellGames}
+            />
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-1 text-xs text-muted">n/d</p>
+      )}
+    </section>
+  );
+}
+
+/** The champion's runes by part of the page, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
+function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
   const kinds = RUNE_KINDS.filter((k) => setups.runes.some((r) => r.kind === k));
   const [kind, setKind] = useState<RuneKind>(kinds[0] ?? "keystone");
-  const runes = setups.runes.filter((r) => r.kind === kind).slice(0, SETUP_LINES);
+  const runes = setups.runes.filter((r) => r.kind === kind).slice(0, lines);
   const runeGames = kind === "keystone" ? setups.keystoneGames : setups.pageGames;
 
-  if (!setups.spells.length && !setups.runes.length && !setups.notes.length) return null;
-
   return (
-    <section aria-labelledby="champion-setups" className="border-t border-line px-3 py-2">
-      <h3 id="champion-setups" className="text-[11px] text-muted">
-        ── sorts d&apos;invocateur et runes <span className="text-muted/80">· feuilles de match Leaguepedia</span>
+    <section aria-labelledby="champion-runes" className="min-w-0 px-3 py-2">
+      <h3 id="champion-runes" className="text-[11px] text-muted">
+        ── runes <span className="text-muted/80">· {runeGames} parties</span>
       </h3>
-
-      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-        {setups.spells.length > 0 && (
-          <div className="min-w-0">
-            <p className="text-[11px] text-muted">sorts · {setups.spellGames} parties</p>
-            <ol className="mt-1 border border-line">
-              {setups.spells.slice(0, SETUP_LINES).map((s, i) => (
-                <SetupLine
-                  key={s.spells.map((x) => x.name).join("+")}
-                  rank={i + 1}
-                  icons={s.spells.map((x) => ({ name: x.name, src: x.iconUrl }))}
-                  name={s.spells.map((x) => x.name).join(" + ")}
-                  games={s.games}
-                  wins={s.wins}
-                  of={setups.spellGames}
-                />
-              ))}
-            </ol>
+      {setups.runes.length > 0 ? (
+        <>
+          <div role="group" aria-label="partie de la page de runes" className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+            {kinds.map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+                className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+                  kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                {RUNE_KIND_LABEL[k]}
+              </button>
+            ))}
           </div>
-        )}
-
-        {setups.runes.length > 0 && (
-          <div className="min-w-0">
-            <div role="group" aria-label="partie de la page de runes" className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {kinds.map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={kind === k}
-                  onClick={() => setKind(k)}
-                  className={`tap press border px-2 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
-                    kind === k ? "border-accent text-accent" : "border-dashed border-line text-muted hover:border-accent hover:text-accent"
-                  }`}
-                >
-                  {RUNE_KIND_LABEL[k]}
-                </button>
-              ))}
-              <span className="text-muted">· {runeGames} parties</span>
-            </div>
-            <ol className="mt-1 border border-line">
-              {runes.map((r, i) => (
-                <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
-              ))}
-            </ol>
-          </div>
-        )}
-      </div>
-
+          <ol className="mt-2 border border-line">
+            {runes.map((r, i) => (
+              <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
+            ))}
+          </ol>
+        </>
+      ) : (
+        <p className="mt-1 text-xs text-muted">n/d</p>
+      )}
       {setups.notes.map((n) => (
         <p key={n} className="mt-1 text-[10px] text-warn">
           {n}
@@ -423,7 +457,7 @@ const winrateOf = (i: ChampionItem) => (i.games >= ITEM_WINRATE_MIN_GAMES ? (100
  * The champion's most built items: end-of-game inventories, filtered by kind (completed items first),
  * each line with its share of the champion's games and, on enough games, its win rate.
  */
-function ChampionItemsSection({ items }: { items: ChampionItems }) {
+function ChampionItemsSection({ items, lines: shownLines }: { items: ChampionItems; lines: number }) {
   const counts = new Map<ItemKind | "all", number>([["all", items.items.length]]);
 
   for (const i of items.items) if (i.kind) counts.set(i.kind, (counts.get(i.kind) ?? 0) + 1);
@@ -445,7 +479,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
     [items.items, kind, sort],
   );
 
-  const shown = all ? lines : lines.slice(0, ITEM_LINES);
+  const shown = all ? lines : lines.slice(0, shownLines);
   const max = Math.max(...lines.map((l) => l.games), 0);
 
   const toggle = (key: ItemSortKey) => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "item" ? 1 : -1 }));
@@ -455,7 +489,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
   );
 
   return (
-    <section aria-labelledby="champion-items" className="border-t border-line px-3 py-2">
+    <section aria-labelledby="champion-items" className="min-w-0 px-3 py-2">
       <h3 id="champion-items" className="text-[11px] text-muted">
         ── items les plus pris <span className="text-muted/80">· inventaire de fin de partie{items.games ? ` · ${items.games} parties` : ""}</span>
       </h3>
@@ -534,7 +568,7 @@ function ChampionItemsSection({ items }: { items: ChampionItems }) {
             </ol>
           </div>
 
-          {lines.length > ITEM_LINES && (
+          {lines.length > shownLines && (
             <button
               type="button"
               onClick={() => setAll(!all)}

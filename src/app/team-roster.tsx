@@ -1,4 +1,5 @@
 import type { RosterPlayer, TeamRoster as View } from "@/lib/agent/types";
+import { EntityIcon } from "./entity-icon";
 
 const ROLES: { role: string; label: string }[] = [
   { role: "Top", label: "Top" },
@@ -13,14 +14,15 @@ const ROLES: { role: string; label: string }[] = [
  * players fielded in the role, each with their games, record and tournaments. The tournaments of the
  * scope follow, with their Leaguepedia pages.
  */
-export function TeamRoster({ r }: { r: View }) {
+export function TeamRoster({ r, logos }: { r: View; logos: Record<string, string> }) {
   const known = new Set(ROLES.map((x) => x.role));
   const roles = [...ROLES, ...[...new Set(r.players.map((p) => p.role))].flatMap((x) => (known.has(x) ? [] : [{ role: x, label: x }]))];
 
   return (
     <div className="mt-4">
       <div className="border border-line px-3 py-3">
-        <div className="text-sm font-semibold" translate="no">
+        <div className="flex items-center gap-2 text-sm font-semibold" translate="no">
+          {logos[r.team] && <EntityIcon src={logos[r.team]} size={32} />}
           {r.team}
         </div>
         <p className="mt-1 text-xs text-muted tabular-nums">

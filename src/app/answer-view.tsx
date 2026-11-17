@@ -7,6 +7,7 @@ import { z } from "zod";
 import { detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
+import { EntityIcon } from "./entity-icon";
 import { GameScoreboard } from "./game-scoreboard";
 import { GameTimeline } from "./game-timeline";
 import { SeriesView } from "./series-view";
@@ -42,9 +43,9 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (
-        <TeamHeadToHead v={answer.teams} byTournament={answer.table && <GenericTable table={answer.table} />} />
+        <TeamHeadToHead v={answer.teams} logos={answer.icons} byTournament={answer.table && <GenericTable table={answer.table} icons={answer.icons} />} />
       ) : answer.roster ? (
-        <TeamRoster r={answer.roster} />
+        <TeamRoster r={answer.roster} logos={answer.icons} />
       ) : (
         answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}
@@ -311,9 +312,10 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
   if (champions) return <ChampionRankingView ranking={champions} fallback={<GenericTable table={table} />} />;
 
   // One line is not a table to scan: its figures read better as a card.
-  if (table.rows.length === 1) return <RowCard table={table} />;
+  // (Under a champion profile the line is its per-tournament detail: it stays a table.)
+  if (table.rows.length === 1 && !answer.champion) return <RowCard table={table} />;
 
-  return <GenericTable table={table} />;
+  return <GenericTable table={table} icons={answer.icons} />;
 }
 
 const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
@@ -411,7 +413,7 @@ function RowCard({ table }: { table: Table }) {
 }
 
 /** Any table, sortable by each column (numbers before text, missing figures last). */
-function GenericTable({ table }: { table: Table }) {
+function GenericTable({ table, icons }: { table: Table; icons?: Answer["icons"] }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
 
   const rows = useMemo(() => {
@@ -463,11 +465,20 @@ function GenericTable({ table }: { table: Table }) {
               {r.map((v, j) => {
                 const text = cellText(v, table.columns[j]);
                 // The column the question asks about stands out, as the ranking figure does in the champion lists.
+                const icon = icons?.[z.string().safeParse(v).data ?? ""];
                 const tone = v == null ? "text-muted" : table.columns[j] === table.focus ? "font-semibold text-accent" : "";
 
                 return (
                   <td key={j} className={`px-3 py-2 tabular-nums ${text.length <= SHORT_CELL ? "whitespace-nowrap" : ""} ${tone}`}>
-                    {text}
+                    {/* A name the answer has an image for (a team's logo, a dragon, a champion) carries it. */}
+                    {icon ? (
+                      <span className="inline-flex items-center gap-2 align-middle">
+                        <EntityIcon src={icon} />
+                        {text}
+                      </span>
+                    ) : (
+                      text
+                    )}
                   </td>
                 );
               })}
