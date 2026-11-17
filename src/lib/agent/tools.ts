@@ -448,8 +448,8 @@ export type ToolOutput = {
 
 type ToolDef<I> = {
   name: string;
-  /** French label, shown in the trace. */
-  label: string;
+  /** What the tool answers, shown in the trace. */
+  label: Phrase;
   description: string;
   plan: (db: DatabaseSync, input: I) => Plan;
   /** Deterministic corrections when the result is empty, most conservative first. */
@@ -682,7 +682,7 @@ const StandingsRow = z.object({
 
 const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   name: "player_event_history",
-  label: "historique joueur × compétition",
+  label: phrase("historique joueur × compétition", "player history × competition"),
   description:
     "A player's results in one competition, edition by edition: team, final place, game record (W-L) and champions played.",
   plan: (_db, input) => {
@@ -824,7 +824,7 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
 
 const teamHistory: ToolDef<TeamHistoryInput> = {
   name: "team_history",
-  label: "historique d'équipe",
+  label: phrase("historique d'équipe", "team history"),
   description:
     "A team's history tournament by tournament (all competitions or one): final place and game record. Renamed teams are merged (SK Telecom T1 → T1).",
   plan: (db, input) => {
@@ -865,7 +865,7 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toute son histoire"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toute son histoire", "its whole history")));
 
     if (input.league)
       out.push({
@@ -1013,7 +1013,7 @@ function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
 
 const teamRoster: ToolDef<TeamRosterInput> = {
   name: "team_roster",
-  label: "roster d'équipe",
+  label: phrase("roster d'équipe", "team roster"),
   description:
     "A team's roster over a period or a competition: every player who played for it, by role (Top, Jungle, Mid, Bot, Support), " +
     "with their games and the tournaments they played. Renamed teams are merged (Samsung Ozone → Samsung White, SK Telecom T1 → T1).",
@@ -1205,7 +1205,7 @@ function teamSeries(db: DatabaseSync, input: HeadToHeadInput) {
 
 const headToHead: ToolDef<HeadToHeadInput> = {
   name: "head_to_head",
-  label: "confrontations",
+  label: phrase("confrontations", "head-to-head"),
   description:
     "Games between two teams, tournament by tournament (wins of each side). For two players, use player_comparison.",
   plan: (db, input) => {
@@ -1568,7 +1568,7 @@ function laneFacts(lanes: VersusView["lanes"], met: number, profiles: [string | 
 
 const playerComparison: ToolDef<PlayerComparisonInput> = {
   name: "player_comparison",
-  label: "comparaison de deux joueurs",
+  label: phrase("comparaison de deux joueurs", "comparison of two players"),
   description:
     "Sets two players against each other in a competition and period: their statistics in the games they played against each other " +
     "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min, solo kills), the list of those games, " +
@@ -1586,7 +1586,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.league)
       out.push({
@@ -1973,7 +1973,7 @@ function averagesFacts(p: ChampionProfile): string {
 
 const championEventStats: ToolDef<ChampionStatsInput> = {
   name: "champion_event_stats",
-  label: "stats d'un champion × compétition",
+  label: phrase("stats d'un champion × compétition", "champion stats × competition"),
   description:
     "One champion in one competition and period: picks, bans, presence, win rate, KDA, average kills/deaths/assists, gold, CS, damage, vision " +
     "and gold/CS difference at 15 min, the players who played it most (games, win rate, KDA), the roles it was played in, its most built items, " +
@@ -2266,7 +2266,7 @@ const needsMinPicks = (input: Pick<ChampionRankingInput, "sort" | "total">) => !
 
 const championRanking: ToolDef<ChampionRankingInput> = {
   name: "champion_ranking",
-  label: "classement de champions",
+  label: phrase("classement de champions", "champion ranking"),
   description:
     "Ranks the champions of a competition and period: most played (picks), most banned (bans), most present (picks + bans share of games), " +
     "best win rate or KDA, highest per-game average of kills, deaths, assists, gold, CS, damage or vision, highest damage, gold or CS per minute, " +
@@ -2361,7 +2361,7 @@ LIMIT 20`),
     if ((needsMinPicks(input) || (totalSortOf(input) && input.minPicks != null)) && input.minPicks !== 1)
       out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: "Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", reason: "seuil de picks abaissé" });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     return out;
   },
@@ -2507,7 +2507,7 @@ function poolScope(db: DatabaseSync, input: ChampionPoolInput, params: Params): 
 
 const championPool: ToolDef<ChampionPoolInput> = {
   name: "champion_pool",
-  label: "champion pool",
+  label: phrase("champion pool", "champion pool"),
   description:
     "The champion pool of one player, or of one team (every champion its players picked), in a competition, period and split: games, " +
     "W-L, win rate and KDA on each champion, its share of the pool, and the pool's diversity (distinct champions, share of the three most played). " +
@@ -2680,7 +2680,7 @@ LIMIT 200`),
 
 const tournamentStandings: ToolDef<StandingsInput> = {
   name: "tournament_standings",
-  label: "palmarès / classement",
+  label: phrase("palmarès / classement", "winners / standings"),
   description:
     "Final standings of a competition: every placement of one edition (full), or the champion and finalist of each edition (roll of honour).",
   plan: (_db, input) => {
@@ -2875,7 +2875,7 @@ const IngameRow = z
 
 const playerIngameStats: ToolDef<PlayerIngameInput> = {
   name: "player_ingame_stats",
-  label: "stats in-game d'un joueur",
+  label: phrase("stats in-game d'un joueur", "in-game stats of a player"),
   description:
     "A player's in-game stats from the Riot game data, season by season: solo kills, multi-kills, first bloods, kills before 10 min, " +
     "gold/CS/XP and their difference with the lane opponent at 10/15/20 min, wards, plates. Not available for the LPL.",
@@ -2912,7 +2912,7 @@ ORDER BY is_total, first_game`),
   relaxations: (input, entities) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.league)
       out.push({
@@ -3038,7 +3038,7 @@ function minGamesOf(input: LeaderboardInput): number {
 
 const ingameLeaderboard: ToolDef<LeaderboardInput> = {
   name: "ingame_leaderboard",
-  label: "classement sur une stat in-game",
+  label: phrase("classement sur une stat in-game", "ranking on an in-game stat"),
   description:
     "Ranks players (or teams) of a competition and period on one in-game metric from the Riot game data: solo kills, pentakills, first bloods, " +
     "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference, " +
@@ -3083,7 +3083,7 @@ LIMIT 20`),
     if (input.minGames == null && minGamesOf(input) > 3)
       out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     return out;
   },
@@ -3247,7 +3247,7 @@ export function minGamesOfLeaderboard(input: PlayerLeaderboardInput): number {
 
 const playerLeaderboard: ToolDef<PlayerLeaderboardInput> = {
   name: "player_leaderboard",
-  label: "classement de joueurs",
+  label: phrase("classement de joueurs", "player ranking"),
   description:
     "Ranks the players of a competition and period, optionally of one role (top, jungle, mid, ADC/bot, support), on an explicit criterion " +
     "from the end-of-game stats: KDA (default for 'best'), win rate, games, total kills or assists, kill participation, share of the team's damage or gold, " +
@@ -3297,7 +3297,7 @@ LIMIT 20`),
     if (input.minGames == null && minGamesOfLeaderboard(input) > 3)
       out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     return out;
   },
@@ -3389,7 +3389,7 @@ const TEAM_COLUMN_LABELS: Record<TeamMetric, string> = {
 
 const teamIngameStats: ToolDef<TeamIngameInput> = {
   name: "team_ingame_stats",
-  label: "stats in-game d'une équipe",
+  label: phrase("stats in-game d'une équipe", "in-game stats of a team"),
   description:
     "A team's in-game profile from the Riot game data, season by season: first blood, first tower, dragon, herald and baron rates, dragon soul rate, " +
     "team gold difference at 10/15/20 min, turret plates. Renamed teams are merged. Not available for the LPL.",
@@ -3420,7 +3420,7 @@ ORDER BY is_total, first_game`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.league)
       out.push({ key: "league", input: { ...input, league: null }, note: "Aucune partie avec données in-game dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
@@ -3482,7 +3482,7 @@ const dragonTeams = (db: DatabaseSync, alias: string, team: string | null, param
 
 const dragonStats: ToolDef<DragonStatsInput> = {
   name: "dragon_stats",
-  label: "dragons par élément et âmes",
+  label: phrase("dragons par élément et âmes", "dragons by element and souls"),
   description:
     "Dragons killed by element (infernal, ocean, mountain, cloud, hextech, chemtech, elder) and dragon souls taken, with the win rate of the teams " +
     "that got each soul, in a competition and period, for every team or for one team. From the Riot game data: elements from 2016, souls from 2020. " +
@@ -3513,7 +3513,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.team && input.league)
       out.push({ key: "league", input: { ...input, league: null }, note: "Aucun dragon relevé dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
@@ -3954,7 +3954,7 @@ const SOURCE_LABEL = { cache: "Runtime Cache", r2: "R2", local: "cache local (da
 
 const gameTimeline: ToolDef<GameTimelineInput> = {
   name: "game_timeline",
-  label: "timeline d'une partie",
+  label: phrase("timeline d'une partie", "game timeline"),
   description:
     "The minute-by-minute story of one game: gold difference at every minute and the key events (first blood, towers, dragons, heralds, " +
     "barons, inhibitors, aces) with their time and team. The game is found by its teams, competition, season, stage of the series " +
@@ -4296,7 +4296,7 @@ const capitalize = (text: string) => text.replace(/^./, (c) => c.toUpperCase());
 
 const series: ToolDef<SeriesInput> = {
   name: "series",
-  label: "série (BO)",
+  label: phrase("série (BO)", "series (best-of)"),
   description:
     "Series (best-of) shown as one unit: the score (3-2), then every game with its winner, sides, duration, picks and bans. " +
     "For a final, a semifinal, a quarterfinal or another stage of a competition ('finale des Worlds 2025', 'demi-finales MSI 2024'), " +
@@ -4569,7 +4569,7 @@ export function minGamesOfTeams(input: TeamLeaderboardInput): number {
 
 const teamLeaderboard: ToolDef<TeamLeaderboardInput> = {
   name: "team_leaderboard",
-  label: "classement d'équipes",
+  label: phrase("classement d'équipes", "team ranking"),
   description:
     "Ranks the teams of a competition and period on one criterion from the end-of-game stats: win rate (default), games, win rate on blue or red side, " +
     "team KDA, kills or deaths per game, average game duration, distinct champions picked, dragons, barons, towers, heralds or void grubs per game, " +
@@ -4636,7 +4636,7 @@ LIMIT 20`),
     if (input.minGames == null && minGamesOfTeams(input) > 3)
       out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: "Peu de parties par équipe dans ce périmètre : seuil abaissé à 3 parties.", reason: "seuil de parties abaissé" });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     return out;
   },
@@ -4762,7 +4762,7 @@ const kdaText = (k: number | null, d: number | null, a: number | null) => (k == 
 
 const championMatchup: ToolDef<ChampionMatchupInput> = {
   name: "champion_matchup",
-  label: "matchup de champions",
+  label: phrase("matchup de champions", "champion matchup"),
   description:
     "A champion against its direct opponents (the champion played in the same role on the other team): against one named champion, the games, " +
     "the win rate, both KDAs and the gold difference at 15 min ('Azir contre Orianna', 'winrate de Jax face à Renekton en top'); " +
@@ -4820,7 +4820,7 @@ LIMIT 20`),
 
     if (input.role) out.push({ key: "role", input: { ...input, role: null }, note: `Aucune partie en ${ROLE_LABEL[input.role]} : affichage de tous les rôles.`, reason: "filtre de rôle retiré" });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.league)
       out.push({ key: "league", input: { ...input, league: null, yearFrom: null, yearTo: null }, note: "Aucune partie dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
@@ -4992,7 +4992,7 @@ function recordScope(input: GameRecordsInput, params: Params): string {
 
 const gameRecords: ToolDef<GameRecordsInput> = {
   name: "game_records",
-  label: "records sur une partie",
+  label: phrase("records sur une partie", "single-game records"),
   description:
     "The best single-game performances on one figure, in a competition and period, optionally of one role or of one player: most kills, deaths, " +
     "assists, damage, CS, gold or vision in one game, and, from the Riot game data, biggest gold or CS lead at 15 min and most solo kills. " +
@@ -5017,7 +5017,7 @@ LIMIT 20`),
   relaxations: (input) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.role) out.push({ key: "role", input: { ...input, role: null }, note: "Aucune partie à ce poste dans ce périmètre : tous les postes.", reason: "filtre de rôle retiré" });
 
@@ -5119,7 +5119,7 @@ const RecentGameRow = z.object({
 
 const playerRecentGames: ToolDef<PlayerRecentInput> = {
   name: "player_recent_games",
-  label: "dernières parties d'un joueur",
+  label: phrase("dernières parties d'un joueur", "latest games of a player"),
   description:
     "A player's latest games, newest first (10 by default): date, event, team, opponent, champion, result, K/D/A, CS, damage and duration, " +
     "with the record, the KDA and the current streak over those games. Use it for 'forme récente de Faker', 'dernières parties de Caps', " +
@@ -5145,7 +5145,7 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
   relaxations: (input, entities) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (hasPeriod(input)) out.push(noPeriod(input, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
     if (input.league)
       out.push({ key: "league", input: { ...input, league: null }, note: "Aucune partie dans cette compétition : affichage de toutes les compétitions.", reason: "filtre de compétition retiré" });
@@ -5239,7 +5239,7 @@ function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
       // SAFETY: defineTool captures this definition with its own validated schema.
       // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- TypeScript erases the captured heterogeneous pair.
       call: { tool: def.name, input: value } as unknown as ToolCall,
-      label: def.label,
+      label: tr(def.label),
       ...plan,
       relaxations: (entities) => def.relaxations(value, entities).map((r) => ({ ...r, next: () => bind(db, r.input) })),
       format: (formatDb, rows) => def.format(formatDb, value, rows),
