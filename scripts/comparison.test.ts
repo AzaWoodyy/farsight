@@ -76,18 +76,35 @@ test("two teams still route to their head-to-head; a metric keeps two opposed pl
     expect(routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE)).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
 });
 
-test("a metric the comparison does not hold is said in a note", () => {
-  const notesOf = (q: string) => {
+test.each([
+  ["Faker vs Chovy pentakills", "penta_kills", null],
+  ["Faker vs Chovy first bloods", "first_bloods", null],
+  ["compare les wards de Faker et Chovy", "wards_placed", null],
+  ["Faker vs Chovy gold diff at 10", "gold_diff", 10],
+  ["compare les solo kills de Faker et Chovy", "solo_kills", null],
+  ["Faker contre Chovy, qui a le moins de morts ?", "deaths", null],
+  ["compare les dégâts de Chovy et Faker", "damage", null],
+  ["Faker vs Chovy KDA", null, null],
+  ["Faker vs Chovy kills et morts", null, null],
+])("%s → the comparison puts %s first", (question, metric, minute) => {
+  const route = routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+
+  // The metric is read: no unread word puts the comparison in doubt, and no note says it is missing.
+  expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison", input: { metric, minute } } });
+  expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
+  expect(route.kind === "tool" && route.notes).toEqual([]);
+});
+
+test("a metric the comparison cannot put first is said in a note", () => {
+  for (const [q, note] of [
+    ["Faker vs Chovy first tower", "statistique d'équipe"],
+    ["Faker vs Chovy gold à 25 min", "qu'à 10, 15 et 20 min"],
+  ]) {
     const route = routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
 
-    expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
-
-    return route.kind === "tool" ? route.notes.filter((n) => n.includes("ne contient pas")) : [];
-  };
-
-  for (const q of ["Faker vs Chovy pentakills", "Faker vs Chovy first bloods", "compare les wards de Faker et Chovy", "Faker vs Chovy gold diff at 10"]) expect(notesOf(q)).toHaveLength(1);
-
-  for (const q of ["Faker vs Chovy KDA", "compare les solo kills de Faker et Chovy", "Faker vs Chovy gold diff at 15"]) expect(notesOf(q)).toEqual([]);
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "player_comparison", input: { metric: null } } });
+    expect(route.kind === "tool" && route.notes.some((n) => n.includes(note))).toBe(true);
+  }
 });
 
 /** LEC 2024: Caps (G2) and Humanoid (Fnatic) meet twice; Caps also plays MAD Lions (Elyoya) once, and once in the LCK. */
@@ -107,7 +124,7 @@ function seed(db: DatabaseSync) {
       VALUES (1,1,'Week 1',1,1,2,1,100),(2,1,'Week 2',1,2,1,1,200),(3,2,'Week 1',1,1,2,1,300),(4,1,'Week 3',1,1,3,1,400);
     INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0),(4,'K4','V5 data:K4',5,1,0);
     -- Riot data for games 1 and 4 only: solo kills average over those.
-    INSERT INTO game_player_stats(game_id,player_id,solo_kills) VALUES (1,1,1),(1,2,0),(4,1,2),(4,3,0);
+    INSERT INTO game_player_stats(game_id,player_id,solo_kills,penta_kills) VALUES (1,1,1,0),(1,2,0,1),(4,1,2,1),(4,3,0,0);
     -- game 1: Caps wins against Humanoid; game 2: Humanoid wins; game 3 is outside the LEC; game 4: Caps against Elyoya.
     INSERT INTO game_players VALUES
       (1,1,1,1,'Mid',1,1,4,1,6,15000,300,25000,40,NULL),
@@ -120,8 +137,8 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-const compare = (db: DatabaseSync, playerA: string, playerB: string) =>
-  bindTool(db, { tool: "player_comparison", input: { playerA, playerB, league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+const compare = (db: DatabaseSync, playerA: string, playerB: string, metric: "penta_kills" | "deaths" | null = null) =>
+  bindTool(db, { tool: "player_comparison", input: { playerA, playerB, league: "LoL EMEA Championship", yearFrom: null, yearTo: null, metric, minute: null } });
 
 test("two players who met: their games against each other first, the scope's statistics, and the list of games", async () => {
   const db = new DatabaseSync(":memory:");
@@ -209,6 +226,54 @@ test("the closing sentence on Riot data: partial coverage is said, no coverage a
 
     expect(facts).toEndWith(" Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre.");
     expect(facts).not.toContain("données Riot seulement");
+  } finally {
+    db.close();
+  }
+});
+
+test("a metric the question names comes first: in the facts, the tables and the totals, on the games with Riot data", async () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+
+    const run = async (metric: "penta_kills" | "deaths") => {
+      const tool = compare(db, "Caps", "Humanoid", metric);
+
+      expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+
+      return tool.format(db, db.prepare(tool.sql).all(tool.params));
+    };
+
+    const penta = await run("penta_kills");
+    const v = penta.versus!;
+
+    // Face to face over game 1 (the one with Riot data); globally over games 1 and 4.
+    expect(penta.facts).toStartWith(
+      "Caps et Humanoid en LEC, pentakills : face à face, Caps 0 (sur 1 partie avec données Riot), Humanoid 1 (sur 1 partie avec données Riot) ; " +
+        "sur toutes leurs parties, Caps 1 (sur 2 parties avec données Riot), Humanoid 1 (sur 1 partie avec données Riot). ",
+    );
+    expect(v.focus).toBe("penta_kills");
+    expect(v.h2h!.columns.slice(0, 5)).toEqual(["player", "games", "wins", "penta_kills", "ingame_games"]);
+    expect(v.h2h!.rows.map((r) => r.slice(3, 5))).toEqual([[0, 1], [1, 1]]);
+    expect(v.global.rows.map((r) => r.slice(3, 5))).toEqual([[1, 2], [1, 1]]);
+    expect(penta.table).toEqual(v.global);
+    expect(penta.totals).toMatchObject({ metric_a: 1, metric_b: 1, h2h_metric_a: 0, h2h_metric_b: 1 });
+
+    // An end-of-game average: every game counts, with its total.
+    const deaths = await run("deaths");
+
+    expect(deaths.facts).toStartWith("Caps et Humanoid en LEC, morts : face à face, Caps 2 par partie (4 au total), Humanoid 2 par partie (4 au total) ; sur toutes leurs parties, Caps 1,33 par partie (4 au total), ");
+    expect(deaths.versus!.global.columns.slice(0, 4)).toEqual(["player", "games", "wins", "avg_deaths"]);
+    expect(deaths.versus!.global.columns.filter((c) => c === "avg_deaths")).toHaveLength(1);
+
+    // No Riot data in the scope (an LPL comparison): the in-game figure is n/d, never 0.
+    db.exec("DELETE FROM game_riot");
+    const none = await run("penta_kills");
+
+    expect(none.facts).toStartWith("Caps et Humanoid en LEC, pentakills : n/d, aucune partie avec données Riot dans ce périmètre. ");
+    expect(none.versus!.global.rows.map((r) => r.slice(3, 5))).toEqual([[null, 0], [null, 0]]);
+    expect(none.totals).toMatchObject({ metric_a: "n/d", metric_b: "n/d" });
   } finally {
     db.close();
   }

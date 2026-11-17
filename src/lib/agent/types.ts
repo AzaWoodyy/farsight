@@ -214,6 +214,8 @@ export type VersusView = {
   playerB: string;
   /** "en LEC", "aux Worlds", "" for every competition, with the period when the question has one. */
   scope: string;
+  /** Column of the statistic the question names ("penta_kills", "avg_deaths"), shown first; null without one. */
+  focus: string | null;
   /** Statistics over every game of the scope. */
   global: { columns: string[]; rows: TableCell[][] };
   /** Statistics over their games against each other only; null when they never met in the scope. */

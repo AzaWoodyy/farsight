@@ -41,6 +41,7 @@ type Meaning = { label: string; better: Better; percent?: boolean; signed?: bool
 /** Column name (without avg_/total_ prefixes) → what it means. Order matters: first match wins. */
 const MEANINGS: [RegExp, Meaning][] = [
   [/^(games|games_played|parties|nb_games|game_count)$/, { label: "parties", better: null }],
+  [/^ingame_games$/, { label: "parties Riot", better: null }],
   [/^(wins|victoires|won)$/, { label: "victoires", better: "higher", count: true }],
   [/^(losses|defaites|lost)$/, { label: "défaites", better: "lower", count: true }],
   [/^(win_?rate|winrate_pct|win_pct|pct_wins)$/, { label: "winrate", better: "higher", percent: true }],

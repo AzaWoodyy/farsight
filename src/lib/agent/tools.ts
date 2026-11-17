@@ -120,11 +120,31 @@ export const HeadToHeadInput = z.object({
   ...Period,
 });
 
+const MinuteInput = z
+  .union([z.literal(10), z.literal(15), z.literal(20)])
+  .nullable()
+  .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
+
+/** End-of-game averages a comparison can put first ("Faker vs Chovy morts"); gold and CS stay in the overview. */
+export const COMPARISON_END_STATS = ["kills", "deaths", "assists", "damage", "vision"] as const;
+
+export type ComparisonEndStat = (typeof COMPARISON_END_STATS)[number];
+
+/** What a comparison puts first: an in-game metric of the Riot data, or an end-of-game average. */
+export const COMPARISON_METRICS = [...PLAYER_METRICS, ...COMPARISON_END_STATS] as const;
+
+export type ComparisonMetric = (typeof COMPARISON_METRICS)[number];
+
 export const PlayerComparisonInput = z.object({
   playerA: z.string().min(1).describe("First player's handle or Leaguepedia page"),
   playerB: z.string().min(1).describe("Second player's handle or Leaguepedia page"),
   league: League.nullable().describe("Restrict to one competition, null for every competition"),
   ...Period,
+  metric: z
+    .enum(COMPARISON_METRICS)
+    .nullable()
+    .describe("The statistic the question names (penta_kills, solo_kills, first_bloods, deaths...), shown first; null for the overview"),
+  minute: MinuteInput,
 });
 
 export const ChampionStatsInput = z.object({
@@ -207,11 +227,6 @@ export const StandingsInput = z.object({
   split: z.enum(["Spring", "Summer", "Winter"]).nullable(),
   full: z.boolean().describe("true: every placement of the event(s); false: champion and finalist of each event"),
 });
-
-const MinuteInput = z
-  .union([z.literal(10), z.literal(15), z.literal(20)])
-  .nullable()
-  .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
 
 const ROLES = ["Top", "Jungle", "Mid", "Bot", "Support"] as const;
 
@@ -1257,6 +1272,10 @@ const ComparisonRow = z.object({
   avg_solo_kills: z.number().nullable(),
   solo_kills: z.number().nullable(),
   ingame_games: z.number(),
+  /** The statistic the question names (null without one): total, average, and the games it is counted on. */
+  focus_total: z.number().nullable(),
+  focus_avg: z.number().nullable(),
+  focus_games: z.number(),
   pages: pageList,
 });
 
@@ -1293,6 +1312,61 @@ const VersusGameRow = z.object({
   assists_b: z.number().nullable(),
 });
 
+/**
+ * The statistic a comparison puts first, when the question names one ("Faker vs Chovy pentakills").
+ * `stat`: the column read, of v_game_player_stats for an in-game metric (counted on the games with Riot
+ * data only), of v_game_players otherwise. `column`: the table column the comparison layout reads.
+ */
+type ComparisonFocus = { label: string; ingame: boolean; aggregate: "sum" | "avg"; stat: string; column: string; digits: number; signed: boolean };
+
+const END_STAT_FOCUS: Record<ComparisonEndStat, { label: string; digits: number }> = {
+  kills: { label: "kills", digits: 2 },
+  deaths: { label: "morts", digits: 2 },
+  assists: { label: "assists", digits: 2 },
+  damage: { label: "dégâts aux champions", digits: 0 },
+  vision: { label: "score de vision", digits: 1 },
+};
+
+function comparisonFocus(input: PlayerComparisonInput): ComparisonFocus | null {
+  const end = COMPARISON_END_STATS.find((s) => s === input.metric);
+
+  if (end) return { label: END_STAT_FOCUS[end].label, ingame: false, aggregate: "avg", stat: end, column: `avg_${end}`, digits: END_STAT_FOCUS[end].digits, signed: false };
+  const metric = PLAYER_METRICS.find((m) => m === input.metric);
+
+  if (!metric) return null;
+  const def = PLAYER_METRIC_DEFS[metric];
+  const stat = metricColumn(def, input.minute);
+  const sum = def.aggregate === "sum";
+
+  // A count keeps the metric's name as its column (first_bloods, kills_before_10), an average its source column.
+  return { label: metricLabel(def, input.minute), ingame: true, aggregate: sum ? "sum" : "avg", stat, column: sum ? metric : `avg_${stat}`, digits: /gold|xp/.test(stat) ? 0 : 1, signed: /_diff_/.test(stat) };
+}
+
+/** The focus value of a row: the total of a count, the rounded average otherwise; null when nothing counts it. */
+const focusValue = (r: ComparisonRow, f: ComparisonFocus) => (r.focus_games === 0 ? null : f.aggregate === "sum" ? r.focus_total : roundTo(r.focus_avg, f.digits));
+
+/**
+ * The sentence the facts open with when the question names a statistic: face to face when they met, then over
+ * the scope. An in-game figure is n/d for a player without Riot data, and says on how many games it is counted.
+ */
+function focusFacts(f: ComparisonFocus, pair: string, names: [string, string], faced: ComparisonRow[], rows: ComparisonRow[]): string {
+  if (f.ingame && [...rows, ...faced].every((r) => r.focus_games === 0)) return `${pair}, ${f.label} : n/d, aucune partie avec données Riot dans ce périmètre. `;
+
+  const one = (name: string, r: ComparisonRow | undefined) => {
+    if (!r) return `${name} n/d`;
+
+    if (r.focus_games === 0) return `${name} n/d (aucune partie avec données Riot)`;
+    const v = frNumber(focusValue(r, f), f.signed);
+    const shown = f.aggregate === "sum" ? v : `${v} ${f.ingame ? "en moyenne" : "par partie"}${f.ingame ? "" : ` (${frNumber(r.focus_total)} au total)`}`;
+
+    return `${name} ${shown}${f.ingame && r.focus_games < r.games ? ` (sur ${r.focus_games} partie${r.focus_games > 1 ? "s" : ""} avec données Riot)` : ""}`;
+  };
+
+  const both = (list: ComparisonRow[]) => names.map((n) => one(n, list.find((r) => r.player === n))).join(", ");
+
+  return `${pair}, ${f.label} : ${faced.length ? `face à face, ${both(faced)} ; ` : ""}sur toutes leurs parties, ${both(rows)}. `;
+}
+
 /** Most games listed under the comparison (Faker and Chovy met 146 times). */
 const MAX_VERSUS_GAMES = 200;
 
@@ -1308,11 +1382,14 @@ const FACED = `EXISTS (SELECT 1 FROM v_game_players o
  * own joins stay small.
  */
 function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
+  const focus = comparisonFocus(input);
+  const focusSql = focus == null ? "NULL" : focus.ingame ? "st.focus" : `p.${focus.stat}`;
+
   return tidy(`WITH st AS (
-  SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills FROM v_game_player_stats WHERE player IN (:a, :b)
+  SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills${focus?.ingame ? `, ${focus.stat} AS focus` : ""} FROM v_game_player_stats WHERE player IN (:a, :b)
 ), g AS (
   SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
-         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame
+         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame, ${focusSql} AS focus
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
   WHERE p.player IN (:a, :b) AND ${competitionScope("p", input, params)}${faced ? `\n    AND ${FACED}` : ""}
@@ -1322,15 +1399,30 @@ SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(gold), 0) AS avg_gold, ROUND(AVG(cs), 1) AS avg_cs, ROUND(AVG(damage), 0) AS avg_damage, ROUND(AVG(vision), 1) AS avg_vision,
        ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
        ROUND(AVG(solo_kills), 2) AS avg_solo_kills, SUM(solo_kills) AS solo_kills,
-       SUM(ingame) AS ingame_games, json_group_array(DISTINCT event_page) AS pages
+       SUM(ingame) AS ingame_games, SUM(focus) AS focus_total, ROUND(AVG(focus), 2) AS focus_avg, COUNT(focus) AS focus_games,
+       json_group_array(DISTINCT event_page) AS pages
 FROM g GROUP BY player
 ORDER BY player = :a DESC`);
 }
 
-const comparisonTable = (rows: ComparisonRow[]) => ({
-  columns: [...COMPARISON_COLUMNS],
-  rows: rows.map((r) => COMPARISON_COLUMNS.map((c) => (c === "player" ? r.player : r[c]))),
-});
+/** The comparison table; the statistic the question names comes right after the record, with the games it is counted on when in-game. */
+function comparisonTable(rows: ComparisonRow[], focus: ComparisonFocus | null) {
+  const lead = focus ? [focus.column, ...(focus.ingame ? ["ingame_games"] : [])] : [];
+  const [head, rest] = [COMPARISON_COLUMNS.slice(0, 3), COMPARISON_COLUMNS.slice(3).filter((c) => !lead.includes(c))];
+
+  const cell = (r: ComparisonRow, c: string) => {
+    if (focus && c === focus.column) return focusValue(r, focus);
+
+    if (c === "ingame_games") return r.focus_games;
+    const known = COMPARISON_COLUMNS.find((k) => k === c);
+
+    return known == null ? null : known === "player" ? r.player : r[known];
+  };
+
+  const columns = [...head, ...lead, ...rest];
+
+  return { columns, rows: rows.map((r) => columns.map((c) => cell(r, c))) };
+}
 
 /** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
 function scopeLabel(league: string, input: Period): string {
@@ -1420,7 +1512,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   description:
     "Sets two players against each other in a competition and period: their statistics in the games they played against each other " +
     "(record, average kills/deaths/assists, gold, CS, damage, vision, gold and CS difference at 15 min, solo kills), the list of those games, " +
-    "and their statistics over every game of the scope. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
+    "and their statistics over every game of the scope. When the question names a statistic (pentakills, solo kills, first bloods, deaths, " +
+    "gold difference at 10 min...), set metric: it is shown first. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
     "'X contre Y', 'X or Y who is better', 'head to head', 'h2h', 'confrontations'.",
   plan: (_db, input) => {
     const params: Params = {};
@@ -1470,8 +1563,17 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
     const missing = [input.playerA, input.playerB].filter((p) => !rows.some((r) => r.player === p));
     const pair = `${input.playerA} et ${input.playerB}${scope ? ` ${scope}` : ""}`;
+    const focus = comparisonFocus(input);
+
+    const valueOf = (list: ComparisonRow[], player: string) => {
+      const r = list.find((x) => x.player === player);
+
+      return (focus && r && focusValue(r, focus)) ?? "n/d";
+    };
 
     const facts =
+      // The statistic the question names opens the facts, so the summary leads with it.
+      (focus ? focusFacts(focus, pair, [input.playerA, input.playerB], met ? faced : [], rows) : "") +
       (met
         ? `${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. ` +
           `Sur toutes leurs parties : ${rows.map(line).join(" ; ")}.` +
@@ -1485,13 +1587,14 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     return {
       title: `${input.playerA} vs ${input.playerB}${league === "toutes compétitions" ? "" : ` — ${league}`}`,
       // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
-      table: comparisonTable(rows),
+      table: comparisonTable(rows, focus),
       versus: {
         playerA: input.playerA,
         playerB: input.playerB,
         scope,
-        global: comparisonTable(rows),
-        h2h: met ? comparisonTable(faced) : null,
+        focus: focus?.column ?? null,
+        global: comparisonTable(rows, focus),
+        h2h: met ? comparisonTable(faced, focus) : null,
         lanes,
         games,
       },
@@ -1514,6 +1617,13 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         // The face-to-face when they met, else the scope: what the comparison shows first.
         solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? "n/d",
         solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? "n/d",
+        // The statistic the question names, over the scope and face to face.
+        ...(focus && {
+          metric_a: valueOf(rows, input.playerA),
+          metric_b: valueOf(rows, input.playerB),
+          h2h_metric_a: valueOf(faced, input.playerA),
+          h2h_metric_b: valueOf(faced, input.playerB),
+        }),
       },
     };
   },
