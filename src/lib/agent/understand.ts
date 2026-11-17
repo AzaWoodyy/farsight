@@ -6,6 +6,7 @@ import { normalizeAlias } from "../aliases";
 import { selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
+import { msg } from "./messages";
 import { COMMON_WORDS } from "./common-words";
 import { detectMetric } from "./metrics";
 import { ROLE_WORDS, SHORT_ROLE_MENTION } from "./roles";
@@ -238,24 +239,24 @@ export function resolvePlayer(db: DatabaseSync, mention: string, ctx: Context = 
     if (exact.length === 1 && (!hasContext || exact[0].contextGames > 0)) {
       candidates.sort((a, b) => Number(b.exactCase) - Number(a.exactCase) || rank(a, b));
       chosenBy = "case";
-      reason = `casse exacte « ${mention} »`;
+      reason = msg().understand.exactCase(mention);
     } else {
       candidates.sort(rank);
       const [top, second] = candidates;
 
       if (hasContext && top.contextGames > 0 && second.contextGames === 0) {
         chosenBy = "context";
-        reason = `seul à avoir joué dans le contexte de la question (${top.contextGames} parties)`;
+        reason = msg().understand.onlyInContext(top.contextGames);
       } else if (hasContext && top.contextGames > 0) {
         chosenBy = "context";
         uncertain = top.contextGames < CLEAR_MARGIN * second.contextGames;
-        reason = `plus de parties dans le contexte de la question (${top.contextGames} contre ${second.contextGames})`;
+        reason = msg().understand.moreInContext(top.contextGames, second.contextGames);
       } else {
         candidates.sort((a, b) => b.games - a.games);
         const [most, next] = candidates;
         chosenBy = "games";
         uncertain = most.games < CLEAR_MARGIN * next.games;
-        reason = `plus de parties au total (${most.games} contre ${next.games})`;
+        reason = msg().understand.moreOverall(most.games, next.games);
       }
     }
 
@@ -801,10 +802,10 @@ const rulesDecider: Decider<Input, Entities> = {
       confidence,
       level: "rules",
       reason: entities.outOfScope
-        ? `hors périmètre : « ${entities.outOfScope} »`
+        ? msg().understand.outOfScope(entities.outOfScope)
         : n === 0
-          ? "aucun joueur, équipe ou champion connu dans la question"
-          : `${n} entité(s) reconnue(s) par les tables d'alias`,
+          ? msg().understand.nothingKnown
+          : msg().understand.recognized(n),
     };
   },
 };
@@ -863,7 +864,7 @@ const llmDecider: Decider<Input, Entities> = {
       result: entities,
       confidence: n ? 0.85 : 0.5,
       level: "llm",
-      reason: `${llm.id} : ${output.players.length + output.teams.length} mention(s) extraite(s)`,
+      reason: msg().understand.extracted(llm.id, output.players.length + output.teams.length),
     };
   },
 };
