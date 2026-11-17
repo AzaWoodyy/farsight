@@ -1358,7 +1358,7 @@ const comparisonTable = (rows: ComparisonRow[]) => ({
 });
 
 /** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
-function scopeLabel(league: string, input: Period): string {
+export function scopeLabel(league: string, input: Period): string {
   const { yearFrom: from, yearTo: to } = input;
 
   const period =

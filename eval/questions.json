@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts. The `empty` case (2026-11-17) is an empty result the scope explains (src/lib/agent/empty.ts): a player's only games on a champion in regional qualifiers (Faker on Azir, LCK 2024 Regional Finals, shown as the answer's one row); cross-checked with independent SQL on v_game_players.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -5868,6 +5868,30 @@
           "Donnée absente de la base",
           "pentakills",
           "pour la LPL"
+        ]
+      }
+    },
+    {
+      "id": "empty-qualifier-only",
+      "question": "Faker sur Azir aux Worlds 2024",
+      "tags": [
+        "empty",
+        "sql",
+        "player"
+      ],
+      "expect": {
+        "route": "sql",
+        "players": [
+          "Faker"
+        ],
+        "champion": "Azir",
+        "league": "World Championship",
+        "attempts": 1,
+        "rows": 1,
+        "summaryIncludes": [
+          "seule partie",
+          "qualifications régionales",
+          "LCK 2024 Regional Finals"
         ]
       }
     }
