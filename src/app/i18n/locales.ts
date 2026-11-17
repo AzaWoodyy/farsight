@@ -1,13 +1,11 @@
+import type { Locale } from "@/lib/locale";
+
 /**
  * The languages of the site. French keeps the URLs it always had (`/`, `/mentions-legales`); English lives
  * under `/en`. The language of a page is its URL: nothing is read from a cookie or from Accept-Language, so
  * every page stays static and a search engine always gets the same language at the same address.
  */
-export const LOCALES = ["fr", "en"] as const;
-
-export type Locale = (typeof LOCALES)[number];
-
-export const DEFAULT_LOCALE: Locale = "fr";
+export { DEFAULT_LOCALE, type Locale, LOCALES } from "@/lib/locale";
 
 /**
  * The languages visitors and search engines are sent to: the language switch, hreflang and the sitemap list

@@ -1,5 +1,6 @@
 import type { ComparedPlayer, ComparedStat, Comparison } from "@/lib/comparison";
 import { formatStat, rowWinner } from "@/lib/comparison";
+import { useLocale, useUi } from "./i18n/locale-context";
 import { PlayerAvatar } from "./player-avatar";
 
 /**
@@ -17,24 +18,30 @@ export function PlayerComparison({ comparison }: { comparison: Comparison }) {
 
 /** What the page computed itself, and where the teams and roles come from. */
 export function ComparisonNote({ c }: { c: Comparison }) {
+  const ui = useUi();
+
   return (
     <p className="mt-2 text-[11px] text-muted">
-      <span aria-hidden>*</span> calculé par la page à partir des colonnes renvoyées
-      {c.players.some((p) => p.profile) ? " · équipes et rôle lus dans la base, sur la compétition et la période de la question" : ""}
+      <span aria-hidden>*</span> {ui.comparison.computed}
+      {c.players.some((p) => p.profile) ? ui.comparison.profiles : ""}
     </p>
   );
 }
 
-const Label = ({ s }: { s: ComparedStat }) => (
-  <>
-    {s.label}
-    {s.derived && (
-      <span aria-label=" (calculé)" className="text-muted">
-        *
-      </span>
-    )}
-  </>
-);
+function Label({ s }: { s: ComparedStat }) {
+  const ui = useUi();
+
+  return (
+    <>
+      {s.label}
+      {s.derived && (
+        <span aria-label={ui.comparison.computedMark} className="text-muted">
+          *
+        </span>
+      )}
+    </>
+  );
+}
 
 /** Text and weight of a value: the better one in the accent color. */
 const tone = (s: ComparedStat, i: 0 | 1) => {
@@ -71,6 +78,7 @@ function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
 
 /** `focus`: key of the statistic the question names, set apart from the rest. */
 export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | null }) {
+  const ui = useUi();
   const [a, b] = c.players;
 
   return (
@@ -98,10 +106,10 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
       </ul>
       <p className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
         {c.leader == null ? (
-          <>égalité sur les lignes comparées ({c.wins[0]}–{c.wins[1]})</>
+          <>{ui.comparison.tie(c.wins[0], c.wins[1])}</>
         ) : (
           <>
-            <span className="text-accent">{c.players[c.leader].name}</span> devant sur {c.wins[c.leader]} lignes sur {c.wins[0] + c.wins[1]}
+            <span className="text-accent">{c.players[c.leader].name}</span> {ui.comparison.ahead(c.wins[c.leader], c.wins[0] + c.wins[1])}
           </>
         )}
       </p>
@@ -110,6 +118,7 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
 }
 
 function MirrorBar({ s, i }: { s: ComparedStat; i: 0 | 1 }) {
+  const locale = useLocale();
   const winner = rowWinner(s) === i;
   const left = i === 0;
 
@@ -121,7 +130,7 @@ function MirrorBar({ s, i }: { s: ComparedStat; i: 0 | 1 }) {
           style={{ width: `${(share(s, i) * 100).toFixed(1)}%` }}
         />
       </div>
-      <span className={`w-14 shrink-0 tabular-nums ${left ? "text-right" : ""} ${tone(s, i)}`}>{formatStat(s, s.values[i])}</span>
+      <span className={`w-14 shrink-0 tabular-nums ${left ? "text-right" : ""} ${tone(s, i)}`}>{formatStat(s, s.values[i], locale)}</span>
     </div>
   );
 }
