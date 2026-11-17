@@ -31,6 +31,8 @@ These decisions describe the current implementation.
 
 - **Schema contract**: `src/lib/db/schema.ts` owns DDL and `SCHEMA_VERSION`; `openDb` refuses another version. Table/view changes require updating the versioned fingerprint test and rebuilding. Index changes preserve the schema version.
 
+- **Languages**: French and English, chosen by the URL alone. French keeps `/` and `/mentions-legales`; English is `/en` and `/en/legal-notice`. Each language has its own root layout (`src/app/(fr)`, `src/app/en`) so `<html lang>` is static, and an unmatched URL gets the bilingual `src/app/global-not-found.tsx` (`experimental.globalNotFound`); no proxy, cookie or `Accept-Language` redirect. Paths and the public list are in `src/app/i18n/locales.ts`, texts in typed catalogs (`en` typed on `fr`). `PUBLIC_LOCALES` decides the switch, hreflang, the sitemap and `noindex`: English stays out of it until the console and the agent answer in English.
+
 - **Observability**: Langfuse Cloud (Hobby), one trace per question with one observation per step and one generation per LLM call (AI SDK telemetry callbacks), plus a thumbs up / down score (`/api/feedback`). Off without the three `LANGFUSE_*` variables (local, eval). No IP, cookie or visitor identifier in a trace: only a random conversation id made up by the browser and kept in page memory, sent as the Langfuse session; spans are sent after the response (`after`). Observation names and tags in `src/lib/agent/trace.ts` are what the Langfuse filters target: keep them stable.
 
 ## Data
