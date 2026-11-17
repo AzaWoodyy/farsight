@@ -14,15 +14,15 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 
 const gold = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${(Math.abs(n) / 1000).toFixed(1)}k`;
 
-function eventText(e: TimelineView["events"][number], labels: Ui["timeline"]["events"]): string {
-  if (e.kind === "grubs") return e.detail ?? labels.grubs;
+function eventText(e: TimelineView["events"][number], t: Ui["timeline"]): string {
+  if (e.kind === "grubs") return e.detail ?? t.events.grubs;
 
-  return e.detail ? `${labels[e.kind]} ${e.detail}` : labels[e.kind];
+  return e.detail ? t.detailed(t.events[e.kind], e.detail) : t.events[e.kind];
 }
 
 export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
   const ui = useUi();
-  const { marks, events } = ui.timeline;
+  const { marks } = ui.timeline;
   const end = Math.max(t.durationS ?? 0, t.gold.at(-1)?.s ?? 0, 60);
   const peak = Math.max(2000, ...t.gold.map((g) => Math.abs(g.diff)));
   const max = Math.ceil(peak / 2000) * 2000;
@@ -111,7 +111,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
 
             return (
               <g key={`${e.s}-${e.kind}-${i}`}>
-                <title>{`${clock(e.s)} ${name(e.side)} : ${eventText(e, events)}`}</title>
+                <title>{`${clock(e.s)} ${name(e.side)} : ${eventText(e, ui.timeline)}`}</title>
                 {marks[e.kind] ? (
                   <text x={cx} y={top ? cy + 4 : cy + 22} textAnchor="middle" className={`${cls} text-[9px] font-semibold`}>
                     {marks[e.kind]}
@@ -138,9 +138,9 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           </li>
           {t.events.map((e, i) => (
             <li key={`${e.s}-${e.kind}-${i}`} className="contents">
-              <span className={`text-right ${e.side === "blue" ? SIDE_CLS.blue : ""}`}>{e.side === "blue" ? `${eventText(e, events)} ◂` : ""}</span>
+              <span className={`text-right ${e.side === "blue" ? SIDE_CLS.blue : ""}`}>{e.side === "blue" ? `${eventText(e, ui.timeline)} ◂` : ""}</span>
               <span className="text-center tabular-nums text-muted">{clock(e.s)}</span>
-              <span className={e.side === "red" ? SIDE_CLS.red : ""}>{e.side === "red" ? `▸ ${eventText(e, events)}` : ""}</span>
+              <span className={e.side === "red" ? SIDE_CLS.red : ""}>{e.side === "red" ? `▸ ${eventText(e, ui.timeline)}` : ""}</span>
             </li>
           ))}
         </ol>

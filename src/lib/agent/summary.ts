@@ -1,3 +1,5 @@
+import { say } from "./messages";
+
 /** A rephrasing may omit facts, but may not permute or invent their numbers. */
 const numbers = (text: string) => [...text.replaceAll("−", "-").matchAll(/(?<![\p{L}\p{N}])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\p{N}])/gu)].map((m) => m[0].replace(",", "."));
 const PERIODS = ["saison", "season", "cette année", "this year", "actuellement", "en cours", "currently"];
@@ -23,14 +25,14 @@ export function claimsBeyondFacts(text: string, facts: string, question = ""): s
   // numeric wording (decimal commas/punctuation may change) instead of guessing.
   const wording = (s: string) => fold(s).replace(/[^\p{L}\p{N}.%+-]+/gu, " ").replace(/\.$/, "").trim();
 
-  if (/\d/.test(text) && !wording(facts).includes(wording(text))) issues.push("formulation chiffrée différente des faits");
+  if (/\d/.test(text) && !wording(facts).includes(wording(text))) issues.push(say("formulation chiffrée différente des faits", "figures worded differently from the facts"));
   const known = numbers(facts);
   let index = 0;
 
   for (const n of numbers(text)) {
     while (index < known.length && known[index] !== n) index++;
 
-    if (index === known.length) issues.push(`chiffre ou ordre : ${n}`);
+    if (index === known.length) issues.push(say(`chiffre ou ordre : ${n}`, `figure or order: ${n}`));
     else index++;
   }
 
@@ -41,7 +43,7 @@ export function claimsBeyondFacts(text: string, facts: string, question = ""): s
   const context = `${facts} ${question}`;
 
   for (const m of text.matchAll(/(?<![\p{L}\p{N}])[\p{Lu}][\p{L}\p{N}.]*(?:\.[\p{L}\p{N}]+)*/gu)) {
-    if (!STARTERS.has(m[0]) && !context.includes(m[0])) issues.push(`nom : ${m[0]}`);
+    if (!STARTERS.has(m[0]) && !context.includes(m[0])) issues.push(say(`nom : ${m[0]}`, `name: ${m[0]}`));
   }
 
   const factMetrics = metricValues(facts);
@@ -49,7 +51,7 @@ export function claimsBeyondFacts(text: string, facts: string, question = ""): s
   for (const [metric, values] of metricValues(text)) {
     const expected = factMetrics.get(metric);
 
-    if (expected && values.some((v, i) => expected[i] !== v)) issues.push(`métrique : ${metric}`);
+    if (expected && values.some((v, i) => expected[i] !== v)) issues.push(say(`métrique : ${metric}`, `metric: ${metric}`));
   }
 
   return [...new Set(issues)];
