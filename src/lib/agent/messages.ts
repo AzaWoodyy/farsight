@@ -196,6 +196,10 @@ const fr = {
     readNothing: "la donnée demandée (la requête générée ne lisait aucune donnée réelle)",
     modelSays: (model: string, text: string) => `${model} : ${text}`,
     dataAbsent: "donnée absente",
+    /** Data the questions ask for and no column holds. */
+    concepts: { spells: "les sorts d'invocateur", mvp: "les distinctions MVP et joueur du match" },
+    /** The language of this catalog, as the SQL prompt names it to the model. */
+    promptLanguage: "French",
   },
 
   llm: {
@@ -409,6 +413,8 @@ const en: Messages = {
     readNothing: "the data asked (the generated query read no real data)",
     modelSays: (model, text) => `${model}: ${text}`,
     dataAbsent: "data missing",
+    concepts: { spells: "summoner spells", mvp: "MVP and player-of-the-game awards" },
+    promptLanguage: "English",
   },
 
   llm: {

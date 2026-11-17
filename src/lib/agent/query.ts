@@ -67,13 +67,13 @@ const UNSUPPORTED = word(
  * views switches the detection off by itself.
  */
 const DATA_CONCEPTS = [
-  { label: "les sorts d'invocateur", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
-  { label: "les distinctions MVP et joueur du match", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
+  { concept: "spells", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
+  { concept: "mvp", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
 ] as const;
 
 /** The concepts of the question that no column of the schema holds. */
 export function missingConcepts(question: string, schema: Record<string, string[]>): string[] {
-  return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [c.label] : []));
+  return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [msg().route.concepts[c.concept]] : []));
 }
 
 /** Games of a scope and how many have in-game (Riot) data. */
@@ -1353,7 +1353,8 @@ export function schemaPrompt(db: DatabaseSync): string {
     .join("\n");
 }
 
-const SQL_RULES =
+/** `language`: the one the model names the missing data in, as the answer shows it. */
+const sqlRules = (language: string) =>
   "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
   "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
   "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
@@ -1377,7 +1378,7 @@ const SQL_RULES =
   "a tournament named 'Regional Finals' is a regional qualifier, not the final of the international event. " +
   "If the answer needs data that no listed column holds (for example MVP awards), " +
   "do not approximate it with other columns and do not return a constant: set sql to an empty string and name the missing data, " +
-  "in French, in `missing`. Otherwise `missing` is empty. `explanation` is one short sentence.";
+  `in ${language}, in \`missing\`. Otherwise \`missing\` is empty. \`explanation\` is one short sentence.`;
 
 const SqlOutput = z.object({ sql: z.string(), explanation: z.string(), missing: z.array(z.string()) });
 
@@ -1400,7 +1401,7 @@ async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sq
   const { output } = await generateText({
     model: llm.model,
     output: Output.object({ schema: SqlOutput }),
-    instructions: `${SQL_RULES}\nSchema:\n${schemaPrompt(db)}`,
+    instructions: `${sqlRules(msg().route.promptLanguage)}\nSchema:\n${schemaPrompt(db)}`,
     prompt,
     telemetry: { functionId },
     maxOutputTokens: LLM_CALL.maxOutputTokens,
