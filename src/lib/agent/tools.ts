@@ -2102,7 +2102,7 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       sources: [
         { label: `Leaguepedia — ${input.champion}`, url: wikiUrl(input.champion) },
         ...eventSources(raw.map((r) => String(r.event_page)), 15),
-        ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [RIOT_DATA_SOURCE] : []),
+        ...(profile.averages.some((a) => a.key === "gold_diff_15" && a.counted > 0) ? [riotDataSource()] : []),
         { label: "Riot Data Dragon — champions", url: icon ?? `${DDRAGON_BASE}/api/versions.json` },
         ...(profile.items.items.length ? [itemsSource(), { label: "Riot Data Dragon — items", url: `${DDRAGON_BASE}/api/versions.json` }] : []),
         ...(profile.setups.spells.length || profile.setups.runes.length ? [setupsSource()] : []),
@@ -2172,24 +2172,54 @@ const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: stri
   double_kills: { title: "avec le plus de double kills", criterion: "double kills au total, sur les parties avec données Riot" },
 };
 
+/** The same in English, where the adjective comes first: the whole title, "champions" included. */
+const CHAMPION_SORT_LABEL_EN: Record<ChampionSort, { title: string; criterion: string }> = {
+  picks: { title: "Most played champions", criterion: "number of picks" },
+  bans: { title: "Most banned champions", criterion: "number of bans" },
+  presence: { title: "Most present champions", criterion: "presence, (picks + bans) / games" },
+  winrate: { title: "Champions with the best win rate", criterion: "wins / picks" },
+  kda: { title: "Champions with the best KDA", criterion: "KDA, (kills + assists) / deaths" },
+  kills: { title: "Champions with the most kills per game", criterion: "kills per game, on average" },
+  deaths: { title: "Champions with the most deaths per game", criterion: "deaths per game, on average" },
+  assists: { title: "Champions with the most assists per game", criterion: "assists per game, on average" },
+  gold: { title: "Champions with the most gold per game", criterion: "gold per game, on average" },
+  cs: { title: "Champions with the most CS per game", criterion: "CS per game, on average" },
+  damage: { title: "Champions with the most damage per game", criterion: "damage to champions per game, on average" },
+  vision: { title: "Champions with the most vision per game", criterion: "vision score per game, on average" },
+  dpm: { title: "Champions with the most damage per minute", criterion: "damage to champions per minute" },
+  gpm: { title: "Champions with the most gold per minute", criterion: "gold earned per minute" },
+  cspm: { title: "Champions with the most CS per minute", criterion: "CS per minute" },
+  gold_diff_15: { title: "Champions with the best gold difference at 15 min", criterion: "average gold difference at 15 min against the lane opponent, over the games with Riot data" },
+  cs_diff_15: { title: "Champions with the best CS difference at 15 min", criterion: "average CS difference at 15 min against the lane opponent, over the games with Riot data" },
+  xp_diff_15: { title: "Champions with the best XP difference at 15 min", criterion: "average XP difference at 15 min against the lane opponent, over the games with Riot data" },
+  first_blood: { title: "Champions that take first blood most often", criterion: "share of the games where the champion takes first blood, over the games with Riot data" },
+  solo_kills: { title: "Champions with the most solo kills per game", criterion: "solo kills per game, over the games with Riot data" },
+  players: { title: "Champions played by the most players", criterion: "number of different players who played it" },
+  penta_kills: { title: "Champions with the most pentakills", criterion: "pentakills in total, over the games with Riot data" },
+  quadra_kills: { title: "Champions with the most quadrakills", criterion: "quadrakills in total, over the games with Riot data" },
+  triple_kills: { title: "Champions with the most triple kills", criterion: "triple kills in total, over the games with Riot data" },
+  double_kills: { title: "Champions with the most double kills", criterion: "double kills in total, over the games with Riot data" },
+};
+
 /**
  * A total over the scope: the column it sums, in v_game_players (end-of-game) or v_game_player_stats (Riot data,
  * named as metrics.ts defines it), its title, and how a figure reads (`one` for a count of 1, when it differs).
  */
 function ingameTotal(metric: keyof typeof PLAYER_METRIC_DEFS) {
-  const { column, label } = PLAYER_METRIC_DEFS[metric];
+  const { column, label, en } = PLAYER_METRIC_DEFS[metric];
 
-  return { ingame: true, column, title: `avec le plus de ${label}`, unit: label, one: label.replace(/s$/, "") };
+  return { ingame: true, column, title: `avec le plus de ${label}`, unit: label, one: label.replace(/s$/, ""), en: { title: `Champions with the most ${en}`, unit: en, one: en.replace(/s$/, "") } };
 }
 
-const CHAMPION_TOTAL: Record<ChampionTotalSort, { ingame: boolean; column: string; title: string; unit: string; one?: string }> = {
-  kills: { ingame: false, column: "kills", title: "avec le plus de kills", unit: "kills", one: "kill" },
-  deaths: { ingame: false, column: "deaths", title: "avec le plus de morts", unit: "morts", one: "mort" },
-  assists: { ingame: false, column: "assists", title: "avec le plus d'assists", unit: "assists", one: "assist" },
-  gold: { ingame: false, column: "gold", title: "avec le plus d'or", unit: "d'or" },
-  cs: { ingame: false, column: "cs", title: "avec le plus de CS", unit: "CS" },
-  damage: { ingame: false, column: "damage", title: "avec le plus de dégâts", unit: "de dégâts" },
-  vision: { ingame: false, column: "vision", title: "avec le plus de score de vision", unit: "de score de vision" },
+/** `en`: the same in English, with the whole title. */
+const CHAMPION_TOTAL: Record<ChampionTotalSort, { ingame: boolean; column: string; title: string; unit: string; one?: string; en: { title: string; unit: string; one?: string } }> = {
+  kills: { ingame: false, column: "kills", title: "avec le plus de kills", unit: "kills", one: "kill", en: { title: "Champions with the most kills", unit: "kills", one: "kill" } },
+  deaths: { ingame: false, column: "deaths", title: "avec le plus de morts", unit: "morts", one: "mort", en: { title: "Champions with the most deaths", unit: "deaths", one: "death" } },
+  assists: { ingame: false, column: "assists", title: "avec le plus d'assists", unit: "assists", one: "assist", en: { title: "Champions with the most assists", unit: "assists", one: "assist" } },
+  gold: { ingame: false, column: "gold", title: "avec le plus d'or", unit: "d'or", en: { title: "Champions with the most gold", unit: "gold" } },
+  cs: { ingame: false, column: "cs", title: "avec le plus de CS", unit: "CS", en: { title: "Champions with the most CS", unit: "CS" } },
+  damage: { ingame: false, column: "damage", title: "avec le plus de dégâts", unit: "de dégâts", en: { title: "Champions with the most damage", unit: "damage" } },
+  vision: { ingame: false, column: "vision", title: "avec le plus de score de vision", unit: "de score de vision", en: { title: "Champions with the most vision score", unit: "vision score" } },
   solo_kills: ingameTotal("solo_kills"),
   first_blood: ingameTotal("first_bloods"),
   penta_kills: ingameTotal("penta_kills"),
@@ -2205,23 +2235,23 @@ const totalSortOf = (input: Pick<ChampionRankingInput, "sort" | "total">): Champ
 const totalText = (sort: ChampionTotalSort, n: number | null) => {
   const t = CHAMPION_TOTAL[sort];
 
-  return `${frNumber(n)} ${t.one && (n ?? 0) < 2 ? t.one : t.unit}`;
+  return `${frNumber(n)} ${say(t.one && (n ?? 0) < 2 ? t.one : t.unit, t.en.one && n === 1 ? t.en.one : t.en.unit)}`;
 };
 
 const totalCriterion = (sort: ChampionTotalSort) =>
-  `${CHAMPION_TOTAL[sort].unit} au total sur le périmètre${CHAMPION_TOTAL[sort].ingame ? ", sur les parties avec données Riot" : ""}`;
+  say(`${CHAMPION_TOTAL[sort].unit} au total sur le périmètre${CHAMPION_TOTAL[sort].ingame ? ", sur les parties avec données Riot" : ""}`, `${CHAMPION_TOTAL[sort].en.unit} in total over the scope${CHAMPION_TOTAL[sort].ingame ? ", over the games with Riot data" : ""}`);
 
 /** How each extra figure reads in a sentence. */
 const CHAMPION_EXTRA_TEXT: Record<ChampionExtraSort, (v: number | null) => string> = {
-  dpm: (v) => `${frNumber(v)} dégâts/min`,
-  gpm: (v) => `${frNumber(v)} d'or/min`,
+  dpm: (v) => say(`${frNumber(v)} dégâts/min`, `${frNumber(v)} damage/min`),
+  gpm: (v) => say(`${frNumber(v)} d'or/min`, `${frNumber(v)} gold/min`),
   cspm: (v) => `${frNumber(v)} CS/min`,
-  gold_diff_15: (v) => `${frNumber(v, true)} d'or à 15 min`,
-  cs_diff_15: (v) => `${frNumber(v, true)} CS à 15 min`,
-  xp_diff_15: (v) => `${frNumber(v, true)} d'XP à 15 min`,
-  first_blood: (v) => `first blood dans ${frNumber(v)} % des parties`,
-  solo_kills: (v) => `${frNumber(v)} solo kills par partie`,
-  players: (v) => `${frNumber(v)} joueurs`,
+  gold_diff_15: (v) => say(`${frNumber(v, true)} d'or à 15 min`, `${frNumber(v, true)} gold at 15 min`),
+  cs_diff_15: (v) => say(`${frNumber(v, true)} CS à 15 min`, `${frNumber(v, true)} CS at 15 min`),
+  xp_diff_15: (v) => say(`${frNumber(v, true)} d'XP à 15 min`, `${frNumber(v, true)} XP at 15 min`),
+  first_blood: (v) => say(`first blood dans ${frNumber(v)} % des parties`, `first blood in ${frNumber(v)}% of games`),
+  solo_kills: (v) => say(`${frNumber(v)} solo kills par partie`, `${frNumber(v)} solo kills per game`),
+  players: (v) => say(`${frNumber(v)} joueurs`, `${frNumber(v)} players`),
 };
 
 const extraSortOf = (sort: ChampionSort): ChampionExtraSort | null => CHAMPION_EXTRA_SORTS.find((s) => s === sort) ?? null;
@@ -2230,14 +2260,14 @@ const extraSortOf = (sort: ChampionSort): ChampionExtraSort | null => CHAMPION_E
 const CHAMPION_INGAME_SORTS: ChampionSort[] = ["gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", ...CHAMPION_MULTIKILL_SORTS];
 
 /** What a per-game average is called in a sentence, and its decimals. */
-const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; digits: number }> = {
-  kills: { unit: "kills", digits: 2 },
-  deaths: { unit: "morts", digits: 2 },
-  assists: { unit: "assists", digits: 2 },
-  gold: { unit: "d'or", digits: 0 },
-  cs: { unit: "CS", digits: 1 },
-  damage: { unit: "de dégâts", digits: 0 },
-  vision: { unit: "de vision", digits: 1 },
+const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; en: string; digits: number }> = {
+  kills: { unit: "kills", en: "kills", digits: 2 },
+  deaths: { unit: "morts", en: "deaths", digits: 2 },
+  assists: { unit: "assists", en: "assists", digits: 2 },
+  gold: { unit: "d'or", en: "gold", digits: 0 },
+  cs: { unit: "CS", en: "CS", digits: 1 },
+  damage: { unit: "de dégâts", en: "damage", digits: 0 },
+  vision: { unit: "de vision", en: "vision", digits: 1 },
 };
 
 const averageSortOf = (sort: ChampionSort): ChampionAverageSort | null => CHAMPION_AVERAGE_SORTS.find((s) => s === sort) ?? null;
@@ -2381,7 +2411,7 @@ LIMIT 20`),
     const out: Relaxation<typeof input>[] = [];
 
     if ((needsMinPicks(input) || (totalSortOf(input) && input.minPicks != null)) && input.minPicks !== 1)
-      out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: "Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", reason: "seuil de picks abaissé" });
+      out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: say("Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", "Too few picks per champion in this scope: threshold lowered to 1 pick."), reason: say("seuil de picks abaissé", "pick threshold lowered") });
 
     if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
 
@@ -2393,12 +2423,13 @@ LIMIT 20`),
     const scope = scopeLabel(league, input);
     const totalSort = totalSortOf(input);
     const label = totalSort ? { title: CHAMPION_TOTAL[totalSort].title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL[input.sort];
+    const labelEn = totalSort ? { title: CHAMPION_TOTAL[totalSort].en.title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL_EN[input.sort];
     const games = all[0]?.games ?? 0;
     const minPicks = all[0]?.min_picks ?? 0;
     const ingameGames = all[0]?.ingame_games ?? 0;
     const average = totalSort ? null : averageSortOf(input.sort);
     const extra = totalSort ? null : extraSortOf(input.sort);
-    const role = `${input.role ? ` en ${ROLE_LABEL[input.role]}` : ""}${sideLabel(input.side)}`;
+    const role = `${input.role ? say(` en ${ROLE_LABEL[input.role]}`, ` in ${ROLE_LABEL[input.role]}`) : ""}${sideLabel(input.side)}`;
     const params: Params = {};
     // The Riot data has no game of the scope (the LPL): the figure is absent, not zero.
     const absent = CHAMPION_INGAME_SORTS.includes(input.sort) && ingameGames === 0;
@@ -2407,7 +2438,7 @@ LIMIT 20`),
     const ingamePicks = rows.reduce((n, r) => n + r.ingame_picks, 0);
 
     const counted =
-      totalSort && CHAMPION_TOTAL[totalSort].ingame ? `${ingameGames}${ingameGames < games ? ` sur ${games}` : ""} parties avec données Riot` : `${games} parties`;
+      totalSort && CHAMPION_TOTAL[totalSort].ingame ? say(`${ingameGames}${ingameGames < games ? ` sur ${games}` : ""} parties avec données Riot`, `${ingameGames}${ingameGames < games ? ` out of ${games}` : ""} games with Riot data`) : say(`${games} parties`, `${games} games`);
 
     const pages = selectAll(
       db,
@@ -2421,50 +2452,50 @@ LIMIT 20`),
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
       `${i + 1}. ${r.champion} (${totalSort ? `${totalText(totalSort, r.total)}, ` : ""}` +
-      `${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].unit} par partie, ` : ""}${extra ? `${CHAMPION_EXTRA_TEXT[extra](r[extra])}, ` : ""}` +
-      `${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, ` +
-      `${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`;
+      say(`${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].unit} par partie, ` : ""}${extra ? `${CHAMPION_EXTRA_TEXT[extra](r[extra])}, ` : ""}`, `${average ? `${frNumber(r.average)} ${CHAMPION_AVERAGE_UNIT[average].en} per game, ` : ""}${extra ? `${CHAMPION_EXTRA_TEXT[extra](r[extra])}, ` : ""}`) +
+      say(`${r.picks} pick${r.picks > 1 ? "s" : ""}, ${r.bans} ban${r.bans > 1 ? "s" : ""}, présence ${frNumber(r.presence)} %, `, `${r.picks} pick${r.picks === 1 ? "" : "s"}, ${r.bans} ban${r.bans === 1 ? "" : "s"}, presence ${frNumber(r.presence)}%, `) +
+      say(`${r.winrate == null ? "winrate n/d" : `${frNumber(r.winrate)} % de victoires`}, KDA ${frNumber(r.kda)})`, `${r.winrate == null ? "win rate n/a" : `${frNumber(r.winrate)}% wins`}, KDA ${frNumber(r.kda)})`);
 
     const threshold = minPicks ? `, minimum ${minPicks} picks` : "";
-    const head = `Champions ${label.title}${role} ${scope || allCompetitions()}`;
+    const head = say(`Champions ${label.title}${role} ${scope || allCompetitions()}`, `${labelEn.title}${role} ${scope || allCompetitions()}`);
 
     const ranking = absent
-      ? `Aucune partie ${scope || "de ce périmètre"} n'a de données Riot sur Leaguepedia (${games} parties) : pas de ${CHAMPION_SORT_LABEL[input.sort].criterion.split(",")[0]} par champion.`
+      ? say(`Aucune partie ${scope || "de ce périmètre"} n'a de données Riot sur Leaguepedia (${games} parties) : pas de ${CHAMPION_SORT_LABEL[input.sort].criterion.split(",")[0]} par champion.`, `No game ${scope || "of this scope"} has Riot data on Leaguepedia (${games} games): no ${CHAMPION_SORT_LABEL_EN[input.sort].criterion.split(",")[0]} per champion.`)
       : totalSort && !rows.length
-        ? `Aucun ${CHAMPION_TOTAL[totalSort].one ?? CHAMPION_TOTAL[totalSort].unit}${role} ${scope || allCompetitions()} : 0 au total sur les ${counted}${threshold}.`
-        : `${head} (${counted}) : ${rows.slice(0, 3).map(line).join(", ")}. Critère : ${label.criterion}${threshold}.`;
+        ? say(`Aucun ${CHAMPION_TOTAL[totalSort].one ?? CHAMPION_TOTAL[totalSort].unit}${role} ${scope || allCompetitions()} : 0 au total sur les ${counted}${threshold}.`, `No ${CHAMPION_TOTAL[totalSort].en.one ?? CHAMPION_TOTAL[totalSort].en.unit}${role} ${scope || allCompetitions()}: 0 in total over the ${counted}${threshold}.`)
+        : say(`${head} (${counted}) : ${rows.slice(0, 3).map(line).join(", ")}. Critère : ${label.criterion}${threshold}.`, `${head} (${counted}): ${rows.slice(0, 3).map(line).join(", ")}. Criterion: ${labelEn.criterion}${threshold}.`);
 
     const facts =
       ranking +
       (rows.length && input.role
-        ? ` Picks, victoires, KDA et moyennes${role} seulement ; bans et présence${sideLabel(input.side)} tous rôles confondus.`
+        ? say(` Picks, victoires, KDA et moyennes${role} seulement ; bans et présence${sideLabel(input.side)} tous rôles confondus.`, ` Picks, wins, KDA and averages${role} only; bans and presence${sideLabel(input.side)} across all roles.`)
         : rows.length && input.side
-          ? ` Picks, bans et présence${role} seulement, sur les ${games} parties.`
+          ? say(` Picks, bans et présence${role} seulement, sur les ${games} parties.`, ` Picks, bans and presence${role} only, over the ${games} games.`)
           : "") +
       (ongoing ? ` ${ongoing}` : "");
 
     const multikill = CHAMPION_MULTIKILL_SORTS.findIndex((m) => m === totalSort);
     const lowerMultikill = multikill >= 0 ? (CHAMPION_MULTIKILL_SORTS[multikill + 1] ?? null) : null;
-    const where = `${inLeague(league) || "aux Worlds"}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`;
+    const where = `${inLeague(league) || say("aux Worlds", "at Worlds")}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`;
 
     // A total or a per-game average is one more column, named as the sort: the champion layout gives it the bar.
     const figure = totalSort ? `total_${totalSort}` : average;
 
     const out: ToolOutput = {
-      title: `Champions ${label.title}${role}${titleScope(league, input, " — ")}`,
+      title: `${say(`Champions ${label.title}${role}`, `${labelEn.title}${role}`)}${titleScope(league, input, " — ")}`,
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
       sources: [
         ...eventSources(pages, 12),
-        ...(ingamePicks || (totalSort && CHAMPION_TOTAL[totalSort].ingame && ingameGames) ? [RIOT_DATA_SOURCE] : []),
+        ...(ingamePicks || (totalSort && CHAMPION_TOTAL[totalSort].ingame && ingameGames) ? [riotDataSource()] : []),
         { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` },
       ],
       followUps: rows.length
-        ? rows.slice(0, 2).map((r) => `Stats de ${r.champion} ${where}`)
+        ? rows.slice(0, 2).map((r) => say(`Stats de ${r.champion} ${where}`, `${r.champion} stats ${where}`))
         : [
             // No champion to look at: the next multikill down, and the champions of the same scope.
-            ...(lowerMultikill ? [`Champions avec le plus de ${CHAMPION_TOTAL[lowerMultikill].unit} ${where}`] : []),
-            `Champions les plus joués ${where}`,
+            ...(lowerMultikill ? [say(`Champions avec le plus de ${CHAMPION_TOTAL[lowerMultikill].unit} ${where}`, `Champions with the most ${CHAMPION_TOTAL[lowerMultikill].en.unit} ${where}`)] : []),
+            say(`Champions les plus joués ${where}`, `Most played champions ${where}`),
           ],
       totals: {
         leader: rows[0]?.champion ?? "",
@@ -2569,7 +2600,7 @@ LIMIT 200`),
   relaxations: (input, entities) => {
     const out: Relaxation<typeof input>[] = [];
 
-    if (input.split) out.push({ key: "split", input: { ...input, split: null }, note: `Aucune partie en ${input.split} : toute la saison.`, reason: "filtre de split retiré" });
+    if (input.split) out.push({ key: "split", input: { ...input, split: null }, note: say(`Aucune partie en ${input.split} : toute la saison.`, `No game in ${input.split}: the whole season.`), reason: say("filtre de split retiré", "split filter removed") });
 
     if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, say("toutes les saisons", "every season")));
 
@@ -2581,8 +2612,8 @@ LIMIT 200`),
         out.push({
           key: `player:${other}`,
           input: { ...input, name: other },
-          note: `« ${resolved!.mention} » désigne aussi ${other} : champion pool de ${other}.`,
-          reason: `alias homonyme essayé : ${other}`,
+          note: say(`« ${resolved!.mention} » désigne aussi ${other} : champion pool de ${other}.`, `"${resolved!.mention}" also names ${other}: champion pool of ${other}.`),
+          reason: say(`alias homonyme essayé : ${other}`, `homonym alias tried: ${other}`),
         });
 
     return out;
@@ -2633,14 +2664,14 @@ LIMIT 200`),
     ).map((r) => r.event_page);
 
     const line = (l: ChampionPoolLine) =>
-      `${l.champion} (${l.games} partie${l.games > 1 ? "s" : ""}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)} % de victoires, KDA ${frNumber(l.kda)}` +
-      `${team && l.players[0] ? `, surtout ${l.players[0].player}` : ""})`;
+      say(`${l.champion} (${l.games} partie${l.games > 1 ? "s" : ""}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)} % de victoires, KDA ${frNumber(l.kda)}`, `${l.champion} (${l.games} game${l.games === 1 ? "" : "s"}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)}% wins, KDA ${frNumber(l.kda)}`) +
+      `${team && l.players[0] ? say(`, surtout ${l.players[0].player}`, `, mostly ${l.players[0].player}`) : ""})`;
 
     const facts =
-      `Champion pool de ${name}${scope ? ` ${scope}` : " toutes compétitions"} : ${pool.unique} champion${pool.unique > 1 ? "s" : ""} différent${pool.unique > 1 ? "s" : ""} ` +
-      `sur ${pool.games} partie${pool.games > 1 ? "s" : ""} (${pool.wins} victoire${pool.wins > 1 ? "s" : ""}, ${pool.losses} défaite${pool.losses > 1 ? "s" : ""})${team ? `, ${pool.picks} picks` : ""}. ` +
-      `Les plus joués : ${lines.slice(0, 3).map(line).join(", ")}. ` +
-      `Les ${Math.min(3, lines.length)} premiers font ${frNumber(top3Share)} % du pool.`;
+      say(`Champion pool de ${name}${scope ? ` ${scope}` : " toutes compétitions"} : ${pool.unique} champion${pool.unique > 1 ? "s" : ""} différent${pool.unique > 1 ? "s" : ""} `, `Champion pool of ${name}${scope ? ` ${scope}` : " all competitions"}: ${pool.unique} different champion${pool.unique === 1 ? "" : "s"} `) +
+      say(`sur ${pool.games} partie${pool.games > 1 ? "s" : ""} (${pool.wins} victoire${pool.wins > 1 ? "s" : ""}, ${pool.losses} défaite${pool.losses > 1 ? "s" : ""})${team ? `, ${pool.picks} picks` : ""}. `, `over ${pool.games} game${pool.games === 1 ? "" : "s"} (${pool.wins} win${pool.wins === 1 ? "" : "s"}, ${pool.losses} loss${pool.losses === 1 ? "" : "es"})${team ? `, ${pool.picks} picks` : ""}. `) +
+      say(`Les plus joués : ${lines.slice(0, 3).map(line).join(", ")}. `, `Most played: ${lines.slice(0, 3).map(line).join(", ")}. `) +
+      say(`Les ${Math.min(3, lines.length)} premiers font ${frNumber(top3Share)} % du pool.`, `The top ${Math.min(3, lines.length)} make up ${frNumber(top3Share)}% of the pool.`);
 
     const ongoingParams: Params = {};
     const ongoing = inProgressNote(db, `g.game_id IN (SELECT gp.game_id FROM v_game_players gp WHERE ${poolScope(db, input, ongoingParams)})`, ongoingParams);
@@ -2666,9 +2697,9 @@ LIMIT 200`),
         { label: "Riot Data Dragon — champions", url: `${DDRAGON_BASE}/api/versions.json` },
       ],
       followUps: [
-        ...lines.slice(0, 1).map((l) => `Stats ${/^[AEIOUYH]/i.test(l.champion) ? "d'" : "de "}${l.champion} ${where || "aux Worlds"}${period}`),
-        team ? `Historique de ${name}${where ? ` ${where}` : ""}` : `Résultats de ${name} ${where || "à tous les Worlds"}`,
-        `Champions les plus joués ${where || "aux Worlds"}${period}`,
+        ...lines.slice(0, 1).map((l) => say(`Stats ${/^[AEIOUYH]/i.test(l.champion) ? "d'" : "de "}${l.champion} ${where || "aux Worlds"}${period}`, `${l.champion} stats ${where || "at Worlds"}${period}`)),
+        team ? say(`Historique de ${name}${where ? ` ${where}` : ""}`, `${name} history${where ? ` ${where}` : ""}`) : say(`Résultats de ${name} ${where || "à tous les Worlds"}`, `${name}'s results ${where || "at every Worlds"}`),
+        say(`Champions les plus joués ${where || "aux Worlds"}${period}`, `Most played champions ${where || "at Worlds"}${period}`),
       ],
       totals: {
         games: pool.games,
@@ -2738,7 +2769,7 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
   },
   relaxations: (input) =>
     input.split
-      ? [{ key: "split", input: { ...input, split: null }, note: `Aucun classement pour le split ${input.split} : affichage de toute l'année.`, reason: "filtre de split retiré" }]
+      ? [{ key: "split", input: { ...input, split: null }, note: say(`Aucun classement pour le split ${input.split} : affichage de toute l'année.`, `No standings for the ${input.split} split: showing the whole year.`), reason: say("filtre de split retiré", "split filter removed") }]
       : [],
   format: (db, input, sqlRows): ToolOutput => {
     const raw = z.array(StandingsRow).parse(sqlRows);
@@ -2763,15 +2794,15 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
             const name = nameOf(p);
 
             return w
-              ? `${name} : ${displayTeam(String(w.team))} champion${f ? `, ${displayTeam(String(f.team))} finaliste` : ""}.`
-              : `${name} : finale pas encore publiée sur Leaguepedia.`;
+              ? say(`${name} : ${displayTeam(String(w.team))} champion${f ? `, ${displayTeam(String(f.team))} finaliste` : ""}.`, `${name}: ${displayTeam(String(w.team))} champion${f ? `, ${displayTeam(String(f.team))} runner-up` : ""}.`)
+              : say(`${name} : finale pas encore publiée sur Leaguepedia.`, `${name}: final not yet published on Leaguepedia.`);
           })
-          .join(" ") + ` ${raw.length} équipes classées.`;
+          .join(" ") + say(` ${raw.length} équipes classées.`, ` ${raw.length} teams ranked.`);
 
       return {
-        title: `Classement — ${pages.length === 1 ? nameOf(pages[0]) : `${league} ${span(raw.map((r) => r.year))}`}`,
+        title: say(`Classement — ${pages.length === 1 ? nameOf(pages[0]) : `${league} ${span(raw.map((r) => r.year))}`}`, `Standings — ${pages.length === 1 ? nameOf(pages[0]) : `${league} ${span(raw.map((r) => r.year))}`}`),
         table: {
-          columns: [...(multi ? ["Tournoi"] : []), "Place", "Équipe", "Gains (USD)"],
+          columns: [...(multi ? [say("Tournoi", "Tournament")] : []), "Place", say("Équipe", "Team"), say("Gains (USD)", "Prize (USD)")],
           rows: raw.map((r) => [
             ...(multi ? [nameOf(r.event_page)] : []),
             r.place ? `${placeLabel(r.place)} (${r.place})` : "—",
@@ -2781,7 +2812,7 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
         },
         facts,
         sources,
-        followUps: champions.slice(0, 2).map((w) => `Historique de ${displayTeam(w.team)}`),
+        followUps: champions.slice(0, 2).map((w) => say(`Historique de ${displayTeam(w.team)}`, `${displayTeam(w.team)} history`)),
         totals: { champion: champions[0] ? displayTeam(champions[0].team) : "", teams: raw.length, events: pages.length },
       };
     }
@@ -2806,17 +2837,17 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
     const latest = editions.findLast((e) => e.winner)?.winner ?? "";
 
     const facts =
-      `Palmarès ${league === "Worlds" ? "des Worlds" : `de ${league}`}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(editions.map((e) => e.year))}). ` +
+      say(`Palmarès ${league === "Worlds" ? "des Worlds" : `de ${league}`}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(editions.map((e) => e.year))}). `, `Winners of ${league}${input.split ? ` (${input.split})` : ""}: ${rows.length} tournaments (${span(editions.map((e) => e.year))}). `) +
       (ranking.length
-        ? `Plus titrés : ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Dernier vainqueur : ${latest}.`
-        : "Aucun vainqueur publié.");
+        ? say(`Plus titrés : ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Dernier vainqueur : ${latest}.`, `Most titles: ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Latest winner: ${latest}.`)
+        : say("Aucun vainqueur publié.", "No winner published."));
 
     return {
-      title: `Palmarès — ${league}${hasPeriod(input) ? ` ${yearSpan(editions.map((e) => e.year))}` : ""}`,
-      table: { columns: ["Année", "Tournoi", "Vainqueur", "Finaliste"], rows },
+      title: say(`Palmarès — ${league}${hasPeriod(input) ? ` ${yearSpan(editions.map((e) => e.year))}` : ""}`, `Winners — ${league}${hasPeriod(input) ? ` ${yearSpan(editions.map((e) => e.year))}` : ""}`),
+      table: { columns: [say("Année", "Year"), say("Tournoi", "Tournament"), say("Vainqueur", "Winner"), say("Finaliste", "Runner-up")], rows },
       facts,
       sources,
-      followUps: ranking.slice(0, 2).map(([t]) => `Historique de ${t}`),
+      followUps: ranking.slice(0, 2).map(([t]) => say(`Historique de ${t}`, `${t} history`)),
       totals: { events: rows.length, most_titles: ranking[0]?.[0] ?? "", most_titles_count: ranking[0]?.[1] ?? 0, latest_champion: latest },
     };
   },
@@ -2826,10 +2857,10 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
 // In-game stats (Riot JSON on Leaguepedia, not the LPL) ------------------------------
 
 /** Where the in-game numbers come from, cited with every in-game answer. */
-const RIOT_DATA_SOURCE: Source = {
-  label: "Leaguepedia — données Riot des parties (PostgameJsonMetadata)",
+const riotDataSource = (): Source => ({
+  label: say("Leaguepedia — données Riot des parties (PostgameJsonMetadata)", "Leaguepedia — Riot game data (PostgameJsonMetadata)"),
   url: wikiUrl("Special:CargoTables/PostgameJsonMetadata"),
-};
+});
 
 /** "2024", or "2019–2024". */
 const yearSpan = (years: number[]) => (years.length && Math.min(...years) === Math.max(...years) ? String(years[0]) : span(years));
@@ -2859,7 +2890,7 @@ function coverage(db: DatabaseSync, sql: string, params: Params) {
 
 const coverageNote = (c: { games: number; ingame: number }) =>
   c.ingame < c.games
-    ? ` Données in-game disponibles pour ${c.ingame} parties sur ${c.games} (Leaguepedia ne publie pas les données Riot de toutes les parties, aucune en LPL).`
+    ? say(` Données in-game disponibles pour ${c.ingame} parties sur ${c.games} (Leaguepedia ne publie pas les données Riot de toutes les parties, aucune en LPL).`, ` In-game data available for ${c.ingame} games out of ${c.games} (Leaguepedia does not publish the Riot data of every game, none in the LPL).`)
     : "";
 
 /** Metrics of the player overview, then the one the question asks about. */
@@ -3008,7 +3039,7 @@ ORDER BY is_total, first_game`),
         { label: `Leaguepedia — ${input.player}`, url: wikiUrl(input.player) },
         ...eventSources(pages, 10),
         ...statsPages.map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) })),
-        RIOT_DATA_SOURCE,
+        riotDataSource(),
       ],
       followUps: [
         input.league ? `Joueurs avec le plus de solo kills ${inLeague(league)}` : "Joueurs avec le plus de solo kills aux Worlds",
@@ -3165,7 +3196,7 @@ LIMIT 20`),
       sources: [
         ...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.name}`, url: wikiUrl(r.name) })),
         ...eventSources(pages, 12),
-        RIOT_DATA_SOURCE,
+        riotDataSource(),
       ],
       followUps: rows.slice(0, 2).map((r) => (input.subject === "team" ? `Stats in-game de ${displayTeam(r.name)}` : `Stats in-game de ${r.name}`)),
       totals,
@@ -3373,7 +3404,7 @@ LIMIT 20`),
       sources: [
         ...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.player}`, url: wikiUrl(r.player) })),
         ...eventSources(pages, 12),
-        ...(ingame ? [RIOT_DATA_SOURCE] : []),
+        ...(ingame ? [riotDataSource()] : []),
       ],
       followUps: [
         ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${scope ? ` ${scope}` : ""}`] : []),
@@ -3483,7 +3514,7 @@ ORDER BY is_total, first_game`),
       sources: [
         ...members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
         ...eventSources(rows.flatMap((r) => r.pages), 10),
-        RIOT_DATA_SOURCE,
+        riotDataSource(),
       ],
       followUps: [`Historique de ${team}`, `Équipes qui prennent le plus souvent le first blood ${input.league ? inLeague(league) : "aux Worlds"}`],
       totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? nd()])) },
@@ -3612,7 +3643,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
       },
       icons: Object.fromEntries(rows.map((r) => [name(r.kind), wikiImageUrl(isDragonKind(r.kind) ? DRAGON_ICON_FILES[r.kind] : PLAIN_DRAGON_ICON_FILE, 48)])),
       facts,
-      sources: [...(team ? team.members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })) : []), ...eventSources(pages, 12), RIOT_DATA_SOURCE],
+      sources: [...(team ? team.members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })) : []), ...eventSources(pages, 12), riotDataSource()],
       followUps: [
         `Équipes qui prennent le plus souvent l'âme du dragon ${input.league ? inLeague(league) : "aux Worlds"}`,
         ...(team ? [`Stats in-game de ${team.team}`] : []),
@@ -4130,7 +4161,7 @@ ORDER BY g.played_at DESC, g.game_n`,
       timeline: view,
       scoreboard,
       facts: timelineFacts(pick, view),
-      sources: [...gameSources(pick), RIOT_DATA_SOURCE],
+      sources: [...gameSources(pick), riotDataSource()],
       followUps: followUpsFor(pick.game_n),
       totals: {
         ...base,
@@ -4702,7 +4733,7 @@ LIMIT 20`),
       sources: [
         ...rows.slice(0, 3).map((r) => ({ label: `Leaguepedia — ${r.name}`, url: wikiUrl(r.name) })),
         ...eventSources(pages, 12),
-        ...(ingame ? [RIOT_DATA_SOURCE] : []),
+        ...(ingame ? [riotDataSource()] : []),
       ],
       followUps: [
         ...rows.slice(0, 1).map((r) => `Historique de ${displayTeam(r.name)}`),
@@ -4904,7 +4935,7 @@ LIMIT 20`),
         },
         icons,
         facts,
-        sources: [...names.map(championSource), ...eventSources(rows.map((r) => r.event_page).reverse(), 10), ...(t?.ingame_games ? [RIOT_DATA_SOURCE] : []), ddragon],
+        sources: [...names.map(championSource), ...eventSources(rows.map((r) => r.event_page).reverse(), 10), ...(t?.ingame_games ? [riotDataSource()] : []), ddragon],
         followUps: [`Matchups ${of(input.champion)}${role}`, `Stats ${of(input.champion)} ${inLeague(league) || "aux Worlds"}`, `Stats ${of(input.opponent)} ${inLeague(league) || "aux Worlds"}`],
         totals: {
           games,
@@ -4942,7 +4973,7 @@ LIMIT 20`),
       },
       icons: { ...icons, ...Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))) },
       facts,
-      sources: [championSource(input.champion), ...(rows.some((r) => r.gold_diff_15 != null) ? [RIOT_DATA_SOURCE] : []), ddragon],
+      sources: [championSource(input.champion), ...(rows.some((r) => r.gold_diff_15 != null) ? [riotDataSource()] : []), ddragon],
       followUps: [...rows.slice(0, 2).map((r) => `${input.champion} contre ${r.champion}${role}`), `Stats ${of(input.champion)} ${inLeague(league) || "aux Worlds"}`],
       totals: {
         games,
@@ -5099,7 +5130,7 @@ LIMIT 20`),
       sources: [
         ...[...new Set(rows.slice(0, 3).map((r) => r.player))].map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) })),
         ...eventSources(rows.map((r) => r.event_page).reverse(), 10),
-        ...(def.ingame ? [RIOT_DATA_SOURCE] : []),
+        ...(def.ingame ? [riotDataSource()] : []),
       ],
       followUps: [
         ...[...new Set(rows.map((r) => r.player))].slice(0, 2).map((p) => `Dernières parties de ${p}`),

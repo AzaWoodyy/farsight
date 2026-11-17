@@ -17,7 +17,7 @@ import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
-import { playerProfiles, type ToolOutput } from "./tools";
+import { playerProfiles, type ToolCall, type ToolOutput } from "./tools";
 import { teamLogo } from "../domain/team-logos";
 import { understandQuestion } from "./understand";
 
@@ -398,6 +398,25 @@ function missingSummary(missing: string[], route: Route): string {
 }
 
 /** Every view empty: what an answer holds before a tool or a table fills it. */
+/**
+ * The players an answer is about, profiled on the scope it ran on (a relaxation may have widened the one asked):
+ * both sides of a comparison, the one player of a player's statistics. Their photo heads the answer.
+ */
+export function answerProfiles(db: DatabaseSync, call: ToolCall) {
+  switch (call.tool) {
+    case "player_comparison":
+      return playerProfiles(db, [call.input.playerA, call.input.playerB], call.input);
+    case "player_event_history":
+    case "player_ingame_stats":
+    case "player_recent_games":
+      return playerProfiles(db, [call.input.player], call.input);
+    case "champion_pool":
+      return call.input.subject === "player" ? playerProfiles(db, [call.input.name], call.input) : [];
+    default:
+      return [];
+  }
+}
+
 const EMPTY_VIEWS = {
   rows: [],
   table: null,
@@ -518,8 +537,9 @@ async function format(
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
       iconTones: {},
-      // Several named players: the comparison layouts show their team and role next to the generated table.
-      profiles: entities.players.length > 1 ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
+      // The named players: the comparison layouts show their team and role next to the generated table, and one
+      // player alone heads the answer with their photo.
+      profiles: entities.players.length ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
       sources: pages.length
         ? pages.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }],
@@ -552,8 +572,7 @@ async function format(
   );
 
   const call = plan.tool.call;
-  // The scope the comparison ran on: a relaxation may have widened the one asked.
-  const profiles = call.tool === "player_comparison" ? playerProfiles(db, [call.input.playerA, call.input.playerB], call.input) : [];
+  const profiles = answerProfiles(db, call);
   const logos = teamLogos(out, meta.teams);
 
   return {
