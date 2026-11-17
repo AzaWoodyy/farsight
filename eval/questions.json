@@ -5212,7 +5212,7 @@
     },
     {
       "id": "champion-unranked-metric",
-      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "question": "champions avec le plus de dragons aux Worlds 2024",
       "tags": [
         "champion",
         "sql"
@@ -5415,6 +5415,60 @@
     {
       "id": "matchup-typo-orianna-locke-worlds-2026",
       "question": "Match up oriana locke au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "matchup-typo-orianna-vs-lock-worlds-2026",
+      "question": "oriana vs lock au worlds 2026",
+      "tags": [
+        "champion",
+        "matchup",
+        "worlds",
+        "typo"
+      ],
+      "expect": {
+        "route": "champion_matchup",
+        "league": "World Championship",
+        "input": {
+          "champion": "Orianna",
+          "opponent": "Locke",
+          "role": null,
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "rows": 6,
+        "totals": {
+          "games": 6,
+          "wins": 3
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "id": "matchup-typo-orianna-lock-worlds-2026",
+      "question": "Match up oriana lock au worlds 2026",
       "tags": [
         "champion",
         "matchup",
@@ -5769,6 +5823,217 @@
         },
         "summaryIncludes": [
           "Critère : dégâts aux champions par minute, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-total-deaths-worlds-2026",
+      "question": "champion avec le plus de mort au worlds 2026",
+      "tags": [
+        "worlds",
+        "champion",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true,
+          "yearFrom": 2026,
+          "yearTo": 2026,
+          "minPicks": null
+        },
+        "rows": 20,
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "leader_picks": 25,
+          "games": 98,
+          "min_picks": 0
+        },
+        "summaryIncludes": [
+          "1. Alistar (100 morts, 25 picks",
+          "Critère : morts au total sur le périmètre"
+        ]
+      }
+    },
+    {
+      "id": "champ-total-deaths-short",
+      "question": "Champions les plus morts — Worlds 2026",
+      "tags": [
+        "worlds",
+        "champion",
+        "total",
+        "paraphrase"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true
+        },
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "games": 98
+        }
+      }
+    },
+    {
+      "id": "champ-total-deaths-min-games",
+      "question": "champion avec le plus de morts au worlds 2026 avec plus de 4 parties",
+      "tags": [
+        "worlds",
+        "champion",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": true,
+          "minPicks": 5
+        },
+        "totals": {
+          "leader": "Alistar",
+          "leader_value": 100,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : morts au total sur le périmètre, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-deaths-per-game-min-games",
+      "question": "champion avec le plus de morts par game au worlds 2026 avec plus de 4 parties",
+      "tags": [
+        "worlds",
+        "champion"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "deaths",
+          "total": false,
+          "minPicks": 5
+        },
+        "totals": {
+          "leader": "Rell",
+          "leader_value": 4.4,
+          "min_picks": 5
+        },
+        "summaryIncludes": [
+          "Critère : morts par partie, en moyenne, minimum 5 picks"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-worlds-2024-zero",
+      "question": "quel champion a le plus de pentakills aux Worlds 2024",
+      "tags": [
+        "worlds",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "penta_kills",
+          "total": true,
+          "yearFrom": 2024,
+          "yearTo": 2024
+        },
+        "rows": 0,
+        "totals": {
+          "rows": 0,
+          "games": 106,
+          "ingame_games": 106,
+          "leader": ""
+        },
+        "summaryIncludes": [
+          "Aucun pentakill aux Worlds en 2024",
+          "106 parties avec données Riot"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-lck-2024",
+      "question": "champions avec le plus de pentakills en LCK 2024",
+      "tags": [
+        "lck",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL Champions Korea",
+        "input": {
+          "sort": "penta_kills",
+          "total": true
+        },
+        "totals": {
+          "leader": "Zeri",
+          "leader_value": 4,
+          "ingame_games": 481,
+          "games": 482
+        },
+        "summaryIncludes": [
+          "1. Zeri (4 pentakills",
+          "481 sur 482 parties avec données Riot"
+        ]
+      }
+    },
+    {
+      "id": "champ-solo-kills-total-worlds-2025",
+      "question": "champions avec le plus de solo kills aux Worlds 2025",
+      "tags": [
+        "worlds",
+        "champion",
+        "ingame",
+        "total"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "World Championship",
+        "input": {
+          "sort": "solo_kills",
+          "total": true
+        },
+        "totals": {
+          "leader": "Ambessa",
+          "leader_value": 10,
+          "min_picks": 0
+        },
+        "summaryIncludes": [
+          "1. Ambessa (10 solo kills"
+        ]
+      }
+    },
+    {
+      "id": "champ-pentakills-lpl-absent",
+      "question": "champion avec le plus de pentakills en LPL 2025",
+      "tags": [
+        "lpl",
+        "champion",
+        "ingame",
+        "missing"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "league": "Tencent LoL Pro League",
+        "noFigure": true,
+        "summaryIncludes": [
+          "Donnée absente de la base",
+          "pentakills",
+          "pour la LPL"
         ]
       }
     }

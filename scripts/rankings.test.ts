@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf } from "../src/lib/agent/query";
 import { detectMetric } from "../src/lib/agent/metrics";
-import { bindTool } from "../src/lib/agent/tools";
+import { bindTool, type ChampionRankingInput } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer } from "../src/lib/agent/types";
 import { understandQuestion } from "../src/lib/agent/understand";
 import { detectChampionRanking } from "../src/lib/champions";
@@ -106,9 +106,33 @@ describe("routes of the rankings", () => {
       kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "gold_diff_15", role: "Mid" } },
     });
     expect(route("champions avec le plus de dégâts par minute en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "dpm" } } });
-    // The ranking has no snapshot at 10 min, and pentakills are not a column: generated SQL.
+    // The ranking has no snapshot at 10 min: generated SQL.
     expect(route("champions avec le meilleur écart d'or à 10 min en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
-    expect(route("quel champion a le plus de pentakills en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+  });
+
+  test("champions ranked on a total over the scope: end-of-game figures, multikills and lane counts of the Riot data", () => {
+    const ranked = (q: string, input: Partial<ChampionRankingInput>, e = LEC25) =>
+      expect(route(q, e)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input } });
+
+    ranked("champion avec le plus de mort au worlds 2026", { sort: "deaths", total: true, minPicks: null, league: "World Championship" }, WORLDS);
+    ranked("Champions les plus morts — Worlds 2026", { sort: "deaths", total: true }, WORLDS);
+    ranked("champions avec le plus de kills en LEC 2025", { sort: "kills", total: true });
+    ranked("quel champion fait le plus de dégâts en LEC 2025", { sort: "damage", total: true });
+    ranked("quel champion a le plus de pentakills en LEC 2025", { sort: "penta_kills", total: true });
+    ranked("champions avec le plus de quadra kills en LEC 2025", { sort: "quadra_kills", total: true });
+    ranked("champions avec le plus de solo kills en LEC 2025", { sort: "solo_kills", total: true });
+    ranked("quels champions ont le plus de first bloods au total en LEC 2025", { sort: "first_blood", total: true });
+    // A champion's games are its picks: "plus de 4 parties" is a minimum of 5, for a total as for an average.
+    ranked("champion avec le plus de morts au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: true, minPicks: 5 }, WORLDS);
+    ranked("champion avec le plus de morts par game au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: false, minPicks: 5 }, WORLDS);
+    // A share, a figure per minute or per game keep their own sort.
+    ranked("champions avec le plus de first bloods en LEC 2025", { sort: "first_blood", total: false });
+    ranked("champions avec le plus de solo kills par partie en LEC 2025", { sort: "solo_kills", total: false });
+    ranked("champions avec le plus de dégâts par minute en LEC 2025", { sort: "dpm", total: false });
+    // The lowest figure, two figures at once: generated SQL. A competition without Riot data has no multikill.
+    expect(route("champion avec le moins de morts en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(route("champions avec le plus de kills et d'assists en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(routeQuestion("quel champion a le plus de pentakills aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
   });
 
   test("teams ranked on a named criterion; the standings keep 'meilleures équipes'", () => {
@@ -186,7 +210,7 @@ function seed(db: DatabaseSync) {
   db.exec(`
     INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade'),(4,'Oscarinin');
-    INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL);
+    INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL),(5,'Locke',NULL);
     INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at,blue_dragons,red_dragons,blue_barons,red_barons,blue_towers,red_towers)
       VALUES (1,1,'Week 1',1,2,1,1800,1735776000,3,1,1,0,9,2),(2,1,'Week 1',2,1,2,1500,1735862400,1,2,0,1,3,8),(3,1,'Week 2',1,2,2,2400,1736380800,1,4,0,2,4,11);
     INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0),(2,'K2','V5 data:K2',5,1,0),(3,'K3','V5 data:K3',5,1,0);
@@ -237,7 +261,7 @@ describe("rankings on a seeded season", () => {
   test("champion ranking: per-minute figures, lane figures of the Riot data, players, and one side of the map", () =>
     seeded(async (db) => {
       const input = { ...LEC, role: null, side: null, minPicks: null };
-      const out = await run(db, { tool: "champion_ranking", input: { ...input, sort: "picks" } });
+      const out = await run(db, { tool: "champion_ranking", input: { total: false, ...input, sort: "picks" } });
       const cell = (row: number, column: string) => out.table!.rows[row][out.table!.columns.indexOf(column)];
 
       expect(out.table!.columns).toEqual(["rank", "champion", "picks", "bans", "presence", "winrate", "kda", "dpm", "gpm", "cspm", "gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", "players"]);
@@ -249,7 +273,7 @@ describe("rankings on a seeded season", () => {
       expect(out.sources.some((s) => s.label.includes("données Riot"))).toBe(true);
 
       // The champion layout reads every column, the ranking one from the tool's sort.
-      const lead = await run(db, { tool: "champion_ranking", input: { ...input, sort: "gold_diff_15", minPicks: 3 } });
+      const lead = await run(db, { tool: "champion_ranking", input: { total: false, ...input, sort: "gold_diff_15", minPicks: 3 } });
 
       expect(lead.table!.rows.map((r) => r[1])).toEqual(["Azir", "Orianna"]);
       expect(lead.facts).toContain("1. Azir (+100 d'or à 15 min, 3 picks");
@@ -262,11 +286,56 @@ describe("rankings on a seeded season", () => {
       expect(layout.metrics.map((m) => m.key)).not.toContain("cs_diff_15");
 
       // Blue side: Azir's games 1 and 3, one win; presence counts the blue picks and bans only.
-      const blue = await run(db, { tool: "champion_ranking", input: { ...input, sort: "picks", side: "blue" } });
+      const blue = await run(db, { tool: "champion_ranking", input: { total: false, ...input, sort: "picks", side: "blue" } });
 
       expect(blue.table!.rows[0].slice(0, 7)).toEqual([1, "Azir", 2, 0, 66.7, 50, 2.8]);
       expect(blue.title).toBe("Champions les plus joués côté bleu — LEC 2025");
       expect(blue.facts).toContain("Picks, bans et présence côté bleu seulement, sur les 3 parties.");
+    }));
+
+  test("champion ranking on a total: no minimum of picks, multikills of the Riot data, a true zero and an absent figure", () =>
+    seeded(async (db) => {
+      const input = { ...LEC, role: null, side: null, minPicks: null, total: true };
+      const deaths = await run(db, { tool: "champion_ranking", input: { ...input, sort: "deaths" } });
+
+      // Jax: 5 + 4 (Oscarinin) + 3 (BrokenBlade) deaths; Gnar, 2 picks, is ranked without a minimum.
+      expect(deaths.table!.columns.slice(0, 4)).toEqual(["rank", "champion", "total_deaths", "picks"]);
+      expect(deaths.table!.rows.map((r) => r.slice(1, 4))).toEqual([["Jax", 12, 3], ["Azir", 7, 3], ["Orianna", 6, 3], ["Gnar", 1, 3]]);
+      expect(deaths.title).toBe("Champions avec le plus de morts — LEC 2025");
+      expect(deaths.facts).toContain("(3 parties) : 1. Jax (12 morts, 3 picks");
+      expect(deaths.facts).toContain("Critère : morts au total sur le périmètre.");
+      const layout = detectChampionRanking(deaths.table!, { ...deaths.icons, Jax: "jax.png" }, "total_deaths")!;
+
+      expect(layout.metrics[layout.primary]).toEqual({ key: "total_deaths", label: "morts (total)", percent: false });
+
+      // A minimum the question sets still applies to a total.
+      const min = await run(db, { tool: "champion_ranking", input: { ...input, sort: "deaths", minPicks: 3 } });
+
+      expect(min.facts).toContain("minimum 3 picks");
+
+      db.exec("UPDATE game_player_stats SET penta_kills = 0, quadra_kills = CASE WHEN game_id = 1 AND player_id = 1 THEN 1 ELSE 0 END");
+      const quadras = await run(db, { tool: "champion_ranking", input: { ...input, sort: "quadra_kills" } });
+
+      // Champions without one are left out of a total ranking.
+      expect(quadras.table!.rows.map((r) => r.slice(1, 3))).toEqual([["Azir", 1]]);
+      expect(quadras.facts).toContain("(3 parties avec données Riot) : 1. Azir (1 quadrakill, 3 picks");
+      expect(quadras.sources.some((s) => s.label.includes("données Riot"))).toBe(true);
+
+      // No pentakill in games that have Riot data: a true zero, said as such, without an empty table.
+      const pentas = await run(db, { tool: "champion_ranking", input: { ...input, sort: "penta_kills" } });
+
+      expect(pentas.table).toBeUndefined();
+      expect(pentas.facts).toStartWith("Aucun pentakill en LEC en 2025 : 0 au total sur les 3 parties avec données Riot.");
+      expect(pentas.totals).toMatchObject({ rows: 0, games: 3, ingame_games: 3, leader: "" });
+      expect(pentas.followUps).toEqual(["Champions avec le plus de quadrakills en LEC 2025", "Champions les plus joués en LEC 2025"]);
+
+      // No Riot data at all in the scope (the LPL): the figure is absent, not zero, and the scope is not widened.
+      db.exec("DELETE FROM game_player_stats");
+      const absent = await run(db, { tool: "champion_ranking", input: { ...input, sort: "penta_kills" } });
+
+      expect(absent.table).toBeUndefined();
+      expect(absent.facts).toStartWith("Aucune partie en LEC en 2025 n'a de données Riot sur Leaguepedia (3 parties)");
+      expect(absent.totals).toMatchObject({ rows: 0, ingame_games: 0 });
     }));
 
   test("player leaderboard: share of the team's damage and gold, and one side of the map", () =>
@@ -439,6 +508,22 @@ describe("rankings on a seeded season", () => {
       expect(await read("oriana en mid")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: null });
       // An everyday word one letter away from a champion is not one, nor a short word.
       expect(await read("given the stats of Azir")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+    }));
+
+  test("a short or everyday word one letter away is the opponent only next to a champion in a matchup", () =>
+    seeded(async (db) => {
+      const read = async (question: string) => (await understandQuestion(db, question, new Date("2026-11-15")))?.result;
+
+      expect(await read("oriana vs lock au worlds 2026")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { mention: "lock", champion: "Locke" } });
+      expect(await read("Match up oriana lock au worlds 2026")).toMatchObject({ champion: { champion: "Orianna" }, opponentChampion: { champion: "Locke" } });
+      expect(await read("lock contre Azir")).toMatchObject({ champion: { champion: "Locke" }, opponentChampion: { champion: "Azir" } });
+      // Without a matchup word, away from the champion, or a grammar word: "lock" and "when" stay words.
+      expect(await read("Azir lock in")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir lock in vs G2 at Worlds 2026")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("Azir lock in vs Orianna")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: { champion: "Orianna" } });
+      expect(await read("pick Azir puis lock le mid vs G2")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
+      expect(await read("matchups d'Azir when playing mid")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
       expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
     }));
 });

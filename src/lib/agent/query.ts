@@ -13,6 +13,7 @@ import {
   type ChampionAverageSort,
   type ChampionExtraSort,
   type ChampionSort,
+  type ChampionTotalSort,
   COMPARISON_END_STATS,
   type ComparisonMetric,
   type GamePhase,
@@ -241,6 +242,38 @@ export function championAverageSortOf(question: string): ChampionAverageSort | n
   return asked.length === 1 && PER_GAME.test(question) && !LOWEST.test(question) ? asked[0][0] : null;
 }
 
+/** "au total", "nombre de", "combien": a total over the scope, in so many words. */
+const TOTAL = word("au total|en tout|in total|totale?s?|cumul[ée]e?s?|nombre (?:de|d')|number of|combien|how many");
+
+/** The multikills and lane counts of the Riot data a champion ranking totals. */
+const CHAMPION_INGAME_TOTAL: Partial<Record<NonNullable<MetricCue["player"]>, ChampionTotalSort>> = {
+  penta_kills: "penta_kills",
+  quadra_kills: "quadra_kills",
+  triple_kills: "triple_kills",
+  double_kills: "double_kills",
+  solo_kills: "solo_kills",
+  first_bloods: "first_blood",
+};
+
+/**
+ * The total over the scope a champion ranking is asked for: "le plus de morts" without "par partie", "le plus de
+ * pentakills", "le plus de solo kills". A first blood is a share of games unless the question says a total ("nombre
+ * de first bloods"). Null for a per-game or per-minute figure, the lowest figure, or several figures at once.
+ */
+export function championTotalSortOf(question: string, cue: MetricCue | null): ChampionTotalSort | null {
+  if (LOWEST.test(question) || PER_GAME.test(question) || PER_MINUTE.test(question)) return null;
+
+  if (cue) {
+    const sort = cue.player ? CHAMPION_INGAME_TOTAL[cue.player] : undefined;
+
+    return sort && (sort !== "first_blood" || TOTAL.test(question)) ? sort : null;
+  }
+
+  const asked = CHAMPION_AVERAGE_CUES.filter(([, re]) => re.test(question));
+
+  return asked.length === 1 ? asked[0][0] : null;
+}
+
 /** "par minute", "/min", and the per-minute figures by name. */
 const PER_MINUTE = word("par min(?:ute)?|per min(?:ute)?|/ ?min(?:ute)?|dpm|gpm|cspm");
 
@@ -339,16 +372,20 @@ const withoutTeamShare = (question: string) =>
 
 export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
 
-/** Champions ranked on picks, bans, presence, win rate, KDA or a per-game average, optionally in one role. */
-function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question)): Route {
+/**
+ * Champions ranked on picks, bans, presence, win rate, KDA, a per-game average or a total, optionally in one role.
+ * A champion's games are its picks: "plus de 4 parties" is a minimum of 5 picks.
+ */
+function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question), total = false): Route {
   const role = roleOf(question);
   const side = sideOf(question);
+  const minPicks = minimumOf(question, "picks") ?? minimumOf(question, "games");
 
   return {
     kind: "tool",
-    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, role, side, minPicks: minimumOf(question, "picks") } },
+    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, total, role, side, minPicks } },
     confidence: 0.9,
-    reason: `classement de champions (tri : ${sort}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
+    reason: `classement de champions (tri : ${sort}${total ? " au total" : ""}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
     notes: e.league ? [] : ["Aucune compétition précisée : classement sur les Worlds."],
   };
 }
@@ -944,6 +981,11 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     const figure = cue?.mention ?? CHAMPION_UNRANKED.exec(question)?.[0];
     const average = cue ? null : championAverageSortOf(question);
     const extra = championExtraSortOf(question, cue);
+    const total = championTotalSortOf(question, cue);
+
+    // "champion avec le plus de morts aux Worlds", "quel champion a le plus de pentakills": a total over the scope.
+    // A figure of the Riot data where the scope has none (the LPL) is absent, not zero.
+    if (total && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, total, true);
 
     // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
     if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, extra);
@@ -1098,10 +1140,14 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     PER_GAME,
     PER_MINUTE,
     MOST_PLAYERS,
+    TOTAL,
     MINUTE,
     ...SIDE_CUES.map(([, re]) => re),
     ...ROLE_CUES.map((r) => r.pattern),
-    word("champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often"),
+    word(
+      "champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often|" +
+        "parties|games|matchs|matches|au moins|at least|minimum|plus de|more than|over",
+    ),
   ],
   champion_pool: [
     POOL,
