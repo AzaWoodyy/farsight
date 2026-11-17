@@ -266,10 +266,9 @@ premier déploiement. La release précédente ayant un autre schéma, le workflo
 ne restaure pas ses résumés in-game : il les recalcule tous depuis R2 (environ
 6 min), avec les dragons. Une release refuse un résumé d'une version
 antérieure ; seul le contrôle hors ligne de la CI (`data:package --check-only`)
-les accepte, parce que l'instantané épinglé ne peut pas être recalculé. Tant
-que `ci/data.json` épingle la release v6, la base de la CI n'a donc ni dragons
-ni âmes : les questions d'eval sur ces données sont à ajouter en ré-épinglant
-sur la première release v8.
+les accepte, parce que l'instantané épinglé ne peut pas être recalculé.
+`ci/data.json` épingle `data-20261117`, la première release v8 : la base de la
+CI a les dragons et les âmes, et l'eval déterministe les interroge.
 
 ### Première release v7
 
