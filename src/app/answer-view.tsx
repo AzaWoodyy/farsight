@@ -13,6 +13,7 @@ import { GameTimeline } from "./game-timeline";
 import { useLocale, useUi } from "./i18n/locale-context";
 import { SeriesView } from "./series-view";
 import { PlayerComparison } from "./player-comparison";
+import { PlayerHeader } from "./player-header";
 import { TeamHeadToHead } from "./team-h2h";
 import { TeamRoster } from "./team-roster";
 import { Versus } from "./versus";
@@ -37,6 +38,8 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       <h2 className="text-base font-semibold">
         <span className="text-accent">#</span> {answer.title}
       </h2>
+      {/* One player's statistics: who they are first. Two players get their photos in the comparison layouts. */}
+      {answer.profiles.length === 1 && answer.profiles[0].teams.length > 0 && <PlayerHeader p={answer.profiles[0]} />}
       {answer.rows.length > 0 && <ResultsTable rows={answer.rows} />}
       {answer.champion && <ChampionProfileView p={answer.champion} />}
       {answer.series ? (

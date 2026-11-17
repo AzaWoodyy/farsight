@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
+import { answerProfiles } from "../src/lib/agent/run";
 import { bindTool, playerProfiles } from "../src/lib/agent/tools";
 import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
@@ -132,6 +133,25 @@ test("profiles follow the scope given, not a narrower one", () => {
     expect(playerProfiles(db, ["SAKEN"], lec)).toEqual([{ player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null }]);
     // No competition: Zeus's Worlds game counts.
     expect(playerProfiles(db, ["Zeus"], { league: null, yearFrom: null, yearTo: null })).toEqual([{ player: "Zeus", teams: ["T1"], role: "Top", photo: null }]);
+  } finally {
+    db.close();
+  }
+});
+
+test("an answer profiles the player its statistics are about, both compared players, and no team", () => {
+  const db = new DatabaseSync(":memory:");
+
+  try {
+    seed(db);
+    const call = (c: Parameters<typeof bindTool>[1]) => bindTool(db, c).call;
+    const lec = { league: "LoL EMEA Championship" as const, yearFrom: null, yearTo: null };
+    const saken = { player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null };
+
+    expect(answerProfiles(db, call({ tool: "player_event_history", input: { player: "SAKEN", ...lec } }))).toEqual([saken]);
+    expect(answerProfiles(db, call({ tool: "player_recent_games", input: { player: "SAKEN", ...lec, count: null } }))).toEqual([saken]);
+    expect(answerProfiles(db, call({ tool: "champion_pool", input: { subject: "player", name: "SAKEN", ...lec, split: null } }))).toEqual([saken]);
+    expect(answerProfiles(db, call({ tool: "champion_pool", input: { subject: "team", name: "Team Vitality", ...lec, split: null } }))).toEqual([]);
+    expect(answerProfiles(db, call({ tool: "team_history", input: { team: "T1", league: "World Championship", yearFrom: null, yearTo: null } }))).toEqual([]);
   } finally {
     db.close();
   }
