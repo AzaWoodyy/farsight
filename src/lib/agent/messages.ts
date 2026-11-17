@@ -462,6 +462,19 @@ export const withLocale = <T>(locale: Locale, run: () => T): T => requestLocale.
 
 export const answerLocale = (): Locale => requestLocale.getStore() ?? DEFAULT_LOCALE;
 
+/**
+ * A text written where it is used, in the language of the request: the tools build their sentences from many
+ * small parts, each one next to the figures it names.
+ */
+export const say = <T>(fr: T, en: T): T => (answerLocale() === "fr" ? fr : en);
+
+/** A label kept in a table read later, in both languages. */
+export type Phrase = Record<Locale, string>;
+
+export const phrase = (fr: string, en: string): Phrase => ({ fr, en });
+
+export const tr = (phrase: Phrase): string => phrase[answerLocale()];
+
 /** The agent's texts in the language of the request. */
 export const msg = (): Messages => MESSAGES[answerLocale()];
 
