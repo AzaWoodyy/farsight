@@ -1,17 +1,8 @@
-/**
- * Name, tagline and base URL of the site, shared by the header, the metadata and the generated images.
- * The description is the search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that
- * stands alone, about 150 characters so Google shows it whole. Tagline and description both carry "LoL":
- * people search "farsight lol" more than "farsight league of legends", and Google ranks a brand query on the
- * words a page actually contains.
- */
-export const SITE = {
-  name: "Farsight",
-  tagline: "L'esport League of Legends (LoL) en une question",
-  description:
-    "Farsight répond à tes questions sur les matchs pros de LoL (League of Legends) : Worlds, MSI, LCK, LPL, LEC, LCS, avec un tableau et ses sources Leaguepedia.",
-  url: "https://askfarsight.com",
-} as const;
+/** Name and base URL of the site. Its texts are per language: see i18n/shell. */
+export const SITE = { name: "Farsight", url: "https://askfarsight.com" } as const;
+
+/** A path as an absolute URL; the home page keeps the bare domain, without a trailing slash. */
+export const absoluteUrl = (path: string) => (path === "/" ? SITE.url : `${SITE.url}${path}`);
 
 /** The palette the generated images use (globals.css holds the page's). */
 export const PALETTE = {
