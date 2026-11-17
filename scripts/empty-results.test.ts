@@ -114,6 +114,61 @@ test("games only in regional qualifiers are shown and said to be excluded", () =
   }
 });
 
+test("a statistic the Riot data does not give is no zero", () => {
+  const db = fresh();
+
+  try {
+    // plates is NULL in every game: the data does not measure it.
+    const why = explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "plates"));
+
+    expect(why?.reason).toBe("unexplained");
+    expect(why?.conclusive).toBe(false);
+  } finally {
+    db.close();
+  }
+});
+
+test("a split the games are not in leaves no game", () => {
+  const db = fresh();
+
+  try {
+    expect(explainEmpty(db, scope({ split: "Summer" }), PENTAS)?.summary).toBe("Aucune partie au split Summer aux Worlds en 2024 dans la base.");
+  } finally {
+    db.close();
+  }
+});
+
+test("several players are not explained: their games together, or each one's own", () => {
+  const db = fresh();
+
+  try {
+    const chovy: ResolvedPlayer = { ...faker, mention: "Chovy", player: "Chovy", matchedAlias: "Chovy" };
+
+    expect(explainEmpty(db, scope({ players: [faker, chovy] }), PENTAS)).toBeNull();
+  } finally {
+    db.close();
+  }
+});
+
+test("a team whose games are all in qualifiers gets one row per game", () => {
+  const db = fresh();
+
+  try {
+    db.exec(`
+      INSERT INTO teams VALUES(3,'Dplus KIA');
+      INSERT INTO players(id,page) VALUES(3,'ShowMaker'),(4,'Canyon');
+      INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES(4,1,3,1,2,1800,1726380000);
+      INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win) VALUES(4,3,3,1,'Mid',3,0),(4,4,3,1,'Jungle',2,0),(4,1,1,2,'Mid',1,1);
+    `);
+    const why = explainEmpty(db, scope({ teams: [{ mention: "DK", team: "Dplus KIA", members: ["Dplus KIA"] }] }), "SELECT 1");
+
+    expect(why?.reason).toBe("qualifier_only");
+    expect(why?.table?.rows).toEqual([["2024-09-15", "LCK 2024 Regional Finals", "Dplus KIA", "T1", "T1"]]);
+  } finally {
+    db.close();
+  }
+});
+
 test("a scope without any game says so", () => {
   const db = fresh();
 
