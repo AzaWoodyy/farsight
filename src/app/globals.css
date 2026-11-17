@@ -14,6 +14,9 @@
   --fix: #7c3aed;
   --blue: #1d4ed8;
   --red: #b91c1c;
+  /* Plate behind a logo that has the page's own tone (see .entity-icon): none for a dark logo on a light page. */
+  --plate-dark-logo: transparent;
+  --plate-light-logo: #44403c;
 }
 
 /* Dark follows the system unless the visitor picked a theme (data-theme, set by the toggle and the script
@@ -31,6 +34,8 @@
     --fix: #a78bfa;
     --blue: #60a5fa;
     --red: #f87171;
+    --plate-dark-logo: #d6d3d1;
+    --plate-light-logo: transparent;
   }
 }
 
@@ -48,6 +53,8 @@
   --fix: #a78bfa;
   --blue: #60a5fa;
   --red: #f87171;
+  --plate-dark-logo: #d6d3d1;
+  --plate-light-logo: transparent;
 }
 
 :root[data-theme="light"] {
@@ -126,6 +133,22 @@ body {
    being seen (and measured, CLS) sliding up the page. */
 main:has([data-running]) ~ footer {
   visibility: hidden;
+}
+
+/* A logo that is nearly black or nearly white all over disappears on a page of the same tone: there, and only
+   there, it sits on a contrasting plate. The tone comes from the data (measured per logo), the plate from the
+   theme, so no logo is special-cased. */
+.entity-icon[data-tone] {
+  padding: 1px;
+  border-radius: 2px;
+}
+
+.entity-icon[data-tone="dark"] {
+  background: var(--plate-dark-logo);
+}
+
+.entity-icon[data-tone="light"] {
+  background: var(--plate-light-logo);
 }
 
 /* Pressable controls answer the press. */

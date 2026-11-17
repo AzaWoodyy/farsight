@@ -16,7 +16,7 @@ import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { playerProfiles, type ToolOutput } from "./tools";
-import { teamLogoUrl } from "../domain/team-logos";
+import { teamLogo } from "../domain/team-logos";
 import { understandQuestion } from "./understand";
 
 const MAX_ATTEMPTS = 3;
@@ -446,6 +446,7 @@ const EMPTY_VIEWS = {
   pool: null,
   series: null,
   icons: {},
+  iconTones: {},
   profiles: [],
   sources: [],
 } satisfies Partial<Answer>;
@@ -527,6 +528,7 @@ async function format(
       summary,
       table: why?.table ?? null,
       icons: why?.table ? championIcons(db, why.table.columns, why.table.rows.map((r) => Object.fromEntries(why.table!.columns.map((c, i) => [c, r[i]])))) : {},
+      iconTones: {},
       sources: why?.sources.length
         ? why.sources.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
         : [],
@@ -550,6 +552,7 @@ async function format(
       table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
       // A column of champion names gets the champion layout, with their icons.
       icons: championIcons(db, columns, raw),
+      iconTones: {},
       // Several named players: the comparison layouts show their team and role next to the generated table.
       profiles: entities.players.length > 1 ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
       sources: pages.length
@@ -586,6 +589,7 @@ async function format(
   const call = plan.tool.call;
   // The scope the comparison ran on: a relaxation may have widened the one asked.
   const profiles = call.tool === "player_comparison" ? playerProfiles(db, [call.input.playerA, call.input.playerB], call.input) : [];
+  const logos = teamLogos(out);
 
   return {
     title: out.title,
@@ -600,7 +604,8 @@ async function format(
     champion: out.champion ?? null,
     pool: out.pool ?? null,
     series: out.series ?? null,
-    icons: { ...teamLogos(out), ...out.icons },
+    icons: { ...logos.icons, ...out.icons },
+    iconTones: logos.tones,
     profiles,
     sources: out.sources,
     followUps,
@@ -625,13 +630,16 @@ function teamLogos(out: ToolOutput) {
     ...(out.table?.rows.flatMap((r) => columns.flatMap((i) => z.string().safeParse(r[i]).data ?? [])) ?? []),
   ];
 
-  return Object.fromEntries(
-    [...new Set(names)].flatMap((name) => {
-      const url = teamLogoUrl(name);
+  const logos = [...new Set(names)].flatMap((name) => {
+    const logo = teamLogo(name);
 
-      return url ? [[name, url]] : [];
-    }),
-  );
+    return logo ? [{ name, ...logo }] : [];
+  });
+
+  return {
+    icons: Object.fromEntries(logos.map((l) => [l.name, l.url])),
+    tones: Object.fromEntries(logos.flatMap((l) => (l.tone ? [[l.name, l.tone]] : []))),
+  };
 }
 
 /**

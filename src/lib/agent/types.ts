@@ -544,6 +544,8 @@ export type Answer = {
   series: SeriesList | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */
   icons: Record<string, string>;
+  /** Names of `icons` whose image is nearly black ("dark") or nearly white ("light") all over: the view sets it on a contrasting plate when the page has the same tone. */
+  iconTones: Record<string, "dark" | "light">;
   /** Database profile of each player the question names, for comparison layouts. */
   profiles: PlayerProfile[];
   sources: Source[];
