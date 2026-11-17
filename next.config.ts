@@ -37,6 +37,9 @@ const nextConfig: NextConfig = {
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
     ] }];
   },
+  // Two root layouts (one per language) leave an unmatched URL without a layout: src/app/global-not-found.tsx
+  // is its 404, rendered on the server.
+  experimental: { globalNotFound: true },
   cacheComponents: true,
   partialPrefetching: true,
   // The database is opened at runtime from a computed path, so the tracer
