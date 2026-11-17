@@ -1,5 +1,6 @@
 import type { ComparedPlayer, ComparedStat, Comparison } from "@/lib/comparison";
 import { formatStat, rowWinner } from "@/lib/comparison";
+import { PlayerAvatar } from "./player-avatar";
 
 /**
  * Two players face to face: one row per stat, mirrored bars from a central label, the better value in the
@@ -52,15 +53,18 @@ function share(s: ComparedStat, i: 0 | 1): number {
 
 function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
   return (
-    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      <div className="truncate text-sm font-semibold" translate="no">
-        {p.name}
-      </div>
-      {p.profile && (
-        <div className="truncate text-[11px] text-muted">
-          {[p.profile.role, p.profile.teams.join(", ")].filter(Boolean).join(" · ")}
+    <div className={`flex min-w-0 items-center gap-2 ${align === "right" ? "flex-row-reverse text-right" : ""}`}>
+      <PlayerAvatar name={p.name} photo={p.profile?.photo} size={44} />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold" translate="no">
+          {p.name}
         </div>
-      )}
+        {p.profile && (
+          <div className="truncate text-[11px] text-muted">
+            {[p.profile.role, p.profile.teams.join(", ")].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

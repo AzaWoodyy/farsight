@@ -1,4 +1,5 @@
 import type { GameScoreboard as Scoreboard, ScoreboardPlayer, ScoreboardTeam, Side } from "@/lib/agent/types";
+import { PlayerAvatar } from "./player-avatar";
 
 const SIDE_LABEL: Record<Side, string> = { blue: "côté bleu", red: "côté rouge" };
 
@@ -174,6 +175,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
     <tr className="border-t border-dashed border-line align-middle">
       <td className="px-3 py-1.5">
         <div className="flex items-center gap-2">
+          <PlayerAvatar name={p.player} photo={p.photo} size={32} />
           <div className="relative">
             {p.championIcon && p.champion ? (
               <Icon src={p.championIcon} alt={p.champion} size={32} />

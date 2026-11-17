@@ -381,6 +381,33 @@ for (const [pid, links] of linksByPlayer) for (const link of links) alias(link, 
 
 for (const [pid, names] of ignByPlayer) for (const n of names) alias(n, pid);
 
+// Player photos -----------------------------------------------------------------
+// Leaguepedia headshots, dated by the start of the tournament they were taken for. An image's link is resolved
+// like a scoreboard link (case, older handle). Absent from an older raw cache: the players then have no photo.
+const insImage = db.prepare("INSERT OR IGNORE INTO player_images (player_id, taken_at, file) VALUES (?,?,?)");
+const photoCounts = { kept: 0, other_players: 0, undated: 0, wide_shot: 0 };
+
+// ImageType is free text (Headshot, headshot, Portrait, Profile, Bodyshot, Stageshot...): wide shots crop badly into an avatar.
+const WIDE_SHOT = /body|full|stage|tilt|valentine/i;
+const imagesFile = datasetFile("player_images");
+
+for (const r of existsSync(imagesFile) ? load("player_images", Rows) : []) {
+  const file = text(r.File);
+  const link = text(r.Link);
+  const date = text(r.DateStart) ?? text(r.SortDate);
+  const pid = link ? playerId.get(canonical(link).page) : undefined;
+
+  if (!file || pid == null) photoCounts.other_players++;
+  else if (r.Type != null && WIDE_SHOT.test(String(r.Type))) photoCounts.wide_shot++;
+  else if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date)) photoCounts.undated++;
+  else {
+    insImage.run(pid, Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / 1000, file);
+    photoCounts.kept++;
+  }
+}
+
+if (!existsSync(imagesFile)) console.warn(`  ${imagesFile} is missing: no player photo (run \`bun run data:fetch\`)`);
+
 // Data Dragon -------------------------------------------------------------------
 const DdragonData = z.object({
   version: z.string(),
@@ -658,7 +685,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity }),
+  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity, player_images: photoCounts }),
 );
 
 db.exec("COMMIT");

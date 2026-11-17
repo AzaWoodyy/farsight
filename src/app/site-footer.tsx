@@ -38,8 +38,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           rel="noreferrer"
         >
           Riot Data Dragon
-        </a>
-        . {footer.madeBy}{" "}
+        </a>{" "}
+        · {footer.photos}. {footer.madeBy}{" "}
         <a
           className="font-medium text-accent underline decoration-accent underline-offset-2 hover:decoration-2"
           href="https://enzoneault.dev"

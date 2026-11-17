@@ -1,4 +1,5 @@
 import type { RosterPlayer, TeamRoster as View } from "@/lib/agent/types";
+import { PlayerAvatar } from "./player-avatar";
 
 const ROLES: { role: string; label: string }[] = [
   { role: "Top", label: "Top" },
@@ -91,13 +92,18 @@ function PlayerRow({ p, label }: { p: RosterPlayer; label: string }) {
     <tr className="border-b border-dashed border-line align-top last:border-0">
       <td className="whitespace-nowrap px-3 py-1.5 text-muted">{label}</td>
       <td className="whitespace-nowrap px-3 py-1.5">
-        <span className={p.starter ? "text-accent" : "text-muted"} aria-hidden="true">
-          {p.starter ? "● " : "○ "}
+        <span className="flex items-center gap-2">
+          <PlayerAvatar name={p.player} photo={p.photo} size={28} />
+          <span>
+            <span className={p.starter ? "text-accent" : "text-muted"} aria-hidden="true">
+              {p.starter ? "● " : "○ "}
+            </span>
+            <a href={p.source.url} target="_blank" rel="noreferrer" title={p.source.label} translate="no" className={`tap underline decoration-line underline-offset-2 hover:text-accent ${p.starter ? "font-semibold" : ""}`}>
+              {p.player}
+            </a>
+            <span className="sr-only">{p.starter ? " (titulaire)" : " (remplaçant)"}</span>
+          </span>
         </span>
-        <a href={p.source.url} target="_blank" rel="noreferrer" title={p.source.label} translate="no" className={`tap underline decoration-line underline-offset-2 hover:text-accent ${p.starter ? "font-semibold" : ""}`}>
-          {p.player}
-        </a>
-        <span className="sr-only">{p.starter ? " (titulaire)" : " (remplaçant)"}</span>
       </td>
       <td className="px-3 py-1.5 text-right tabular-nums">{p.games}</td>
       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-muted">

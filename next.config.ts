@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https://ddragon.leagueoflegends.com",
+      "img-src 'self' data: https://ddragon.leagueoflegends.com https://static.wikia.nocookie.net",
       "font-src 'self'",
       `connect-src 'self'${dev ? " ws: wss:" : ""}`,
       "worker-src 'self' blob:",

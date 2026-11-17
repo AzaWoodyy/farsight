@@ -114,6 +114,11 @@ const fr: Legal = {
             servir le site et limiter les abus, et compte les pages vues (Vercel Web Analytics).
           </p>
           <p>
+            Les icônes viennent des serveurs de Riot Games (Data Dragon) et les photos des joueurs de ceux de Fandom,
+            qui héberge Leaguepedia : ton navigateur les télécharge directement, et ces serveurs voient donc ton
+            adresse IP et l&apos;adresse du site.
+          </p>
+          <p>
             Ces traitements reposent sur l&apos;intérêt légitime de l&apos;éditeur. Vercel et OpenRouter sont des
             sociétés américaines : des données sont traitées hors de l&apos;Union européenne.
           </p>
@@ -139,17 +144,25 @@ const fr: Legal = {
       id: "licences",
       label: "Licences",
       body: (
-        <p>
-          Les données viennent de <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, sous licence{" "}
-          <Ext href={CC_BY_SA_URL} rel="noreferrer license">
-            CC BY-SA 3.0
-          </Ext>{" "}
-          : la base de Farsight, qui en est dérivée, est partagée dans les mêmes conditions. Le code est sous{" "}
-          <Ext href={LICENSE_URL} rel="noreferrer license">
-            licence MIT
-          </Ext>
-          .
-        </p>
+        <>
+          <p>
+            Les données viennent de <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, sous licence{" "}
+            <Ext href={CC_BY_SA_URL} rel="noreferrer license">
+              CC BY-SA 3.0
+            </Ext>{" "}
+            : la base de Farsight, qui en est dérivée, est partagée dans les mêmes conditions. Le code est sous{" "}
+            <Ext href={LICENSE_URL} rel="noreferrer license">
+              licence MIT
+            </Ext>
+            .
+          </p>
+          <p>
+            Les photos des joueurs appartiennent à Riot Games et aux organisateurs des compétitions. Elles ne font pas
+            partie de la base ni de sa licence : Farsight garde seulement le nom de chaque fichier et affiche la photo
+            depuis <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, qui la publie au titre de l&apos;usage
+            équitable (fair use). Le survol d&apos;une photo indique son année.
+          </p>
+        </>
       ),
     },
   ],
@@ -212,6 +225,11 @@ const en: Legal = {
             page views (Vercel Web Analytics).
           </p>
           <p>
+            Icons come from Riot Games&apos; servers (Data Dragon) and player photos from those of Fandom, which hosts
+            Leaguepedia: your browser downloads them directly, so these servers see your IP address and the site&apos;s
+            address.
+          </p>
+          <p>
             This processing relies on the publisher&apos;s legitimate interest. Vercel and OpenRouter are American
             companies: data is processed outside the European Union.
           </p>
@@ -232,18 +250,26 @@ const en: Legal = {
       id: "licenses",
       label: "Licenses",
       body: (
-        <p>
-          The data comes from <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, under the{" "}
-          <Ext href={CC_BY_SA_URL} rel="noreferrer license">
-            CC BY-SA 3.0
-          </Ext>{" "}
-          license: Farsight&apos;s database, which is derived from it, is shared under the same terms. The code is under
-          the{" "}
-          <Ext href={LICENSE_URL} rel="noreferrer license">
-            MIT license
-          </Ext>
-          .
-        </p>
+        <>
+          <p>
+            The data comes from <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, under the{" "}
+            <Ext href={CC_BY_SA_URL} rel="noreferrer license">
+              CC BY-SA 3.0
+            </Ext>{" "}
+            license: Farsight&apos;s database, which is derived from it, is shared under the same terms. The code is
+            under the{" "}
+            <Ext href={LICENSE_URL} rel="noreferrer license">
+              MIT license
+            </Ext>
+            .
+          </p>
+          <p>
+            Player photos belong to Riot Games and to the competition organizers. They are not part of the database or
+            its license: Farsight keeps only each file&apos;s name and shows the photo from{" "}
+            <Ext href="https://lol.fandom.com">Leaguepedia</Ext>, which publishes it as fair use. Hovering a photo
+            shows its year.
+          </p>
+        </>
       ),
     },
   ],

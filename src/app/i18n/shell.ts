@@ -20,6 +20,7 @@ const fr = {
   footer: {
     data: "Données",
     icons: "icônes",
+    photos: "photos des joueurs © Riot Games et les ligues, via Leaguepedia",
     madeBy: "Projet réalisé par",
     privacy:
       "Les questions posées sont enregistrées sans adresse IP ni identifiant personnel, pour améliorer l'agent. Elles sont aussi envoyées à OpenRouter et au fournisseur du modèle de langage. Évite d’y inclure des informations personnelles.",
@@ -47,6 +48,7 @@ const en: Shell = {
   footer: {
     data: "Data from",
     icons: "icons from",
+    photos: "player photos © Riot Games and the leagues, via Leaguepedia",
     madeBy: "Built by",
     privacy:
       "Questions are logged without an IP address or a personal identifier, to improve the agent. They are also sent to OpenRouter and to the language model provider. Avoid including personal information.",
