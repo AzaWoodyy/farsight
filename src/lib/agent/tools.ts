@@ -1043,7 +1043,7 @@ ORDER BY role, SUM(games) DESC, player`),
     if (input.split)
       out.push({ key: "split", input: { ...input, split: null }, note: say(`Aucune partie de ${input.team} au split ${input.split} : affichage de toute la saison.`, `No game of ${input.team} in the ${input.split} split: showing the whole season.`), reason: say("filtre de split retiré", "split filter removed") });
 
-    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, "tous les joueurs de son histoire"));
+    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, say("tous les joueurs de son histoire", "every player in its history")));
 
     if (input.league)
       out.push({
@@ -2549,7 +2549,7 @@ LIMIT 200`),
 
     if (input.split) out.push({ key: "split", input: { ...input, split: null }, note: `Aucune partie en ${input.split} : toute la saison.`, reason: "filtre de split retiré" });
 
-    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, "toutes les saisons"));
+    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, say("toutes les saisons", "every season")));
 
     if (input.subject !== "player") return out;
     const resolved = entities.players.find((p) => p.player === input.name || p.otherCandidates.includes(input.name));
