@@ -92,7 +92,8 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
           </li>
         ))}
       </ul>
-      <p className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
+      {/* No line compared (one of the two has no figure): no verdict to give. */}
+      <p hidden={c.wins[0] + c.wins[1] === 0} className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
         {c.leader == null ? (
           <>égalité sur les lignes comparées ({c.wins[0]}–{c.wins[1]})</>
         ) : (

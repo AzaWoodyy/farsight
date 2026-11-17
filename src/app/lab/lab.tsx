@@ -162,16 +162,12 @@ function Variant({ fixture, state, onAsk }: { fixture: Fixture; state?: LabState
     );
   }
 
-  if (state === "error") {
+  if (state === "error")
     return (
-      <>
-        <HowIFoundIt steps={runningAt(steps, "build")} running={false} />
-        <p role="alert" className="mt-4 text-sm text-error">
-          <span aria-hidden>xx</span> Erreur interne de l&apos;agent.
-        </p>
-      </>
+      <p role="alert" className="mt-4 text-sm text-error">
+        <span aria-hidden>xx</span> Erreur interne.
+      </p>
     );
-  }
 
   if (state === "load-failed") {
     return (

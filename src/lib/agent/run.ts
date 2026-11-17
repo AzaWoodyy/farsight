@@ -394,16 +394,12 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
       `Question hors périmètre : ${route.reason.replace(/\.$/, "")}. La base couvre : ${SCOPE_LABEL}.`
     );
 
-  if (!plan) {
-    const why = `Aucun outil typé ne couvre cette question (${route.kind === "sql" ? route.reason : "routage"})`;
-    const status = llmStatus();
-
-    if (status === "ready") return `${why} et la requête générée n'a rien donné.`;
-
-    return status === "exhausted"
-      ? `${why}. Le text-to-SQL de secours est indisponible pour le moment (quota du modèle épuisé).`
-      : `${why}. Le text-to-SQL de secours demande une clé OpenRouter, absente ici.`;
-  }
+  // In the visitor's words: which part of the agent gave up (no typed tool, no model for the generated query)
+  // is in the trace, for who opens it.
+  if (!plan)
+    return llmStatus() === "ready"
+      ? "Je ne sais pas encore répondre à cette question : ma recherche n'a rien donné. Essaie de la reformuler, ou l'une des questions ci-dessous."
+      : "Je ne sais pas encore répondre à cette question. Essaie de la reformuler, ou l'une des questions ci-dessous.";
 
   const who = [...entities.players.map((p) => p.player), ...entities.teams.map((t) => t.team), entities.champion?.champion]
     .filter(Boolean)

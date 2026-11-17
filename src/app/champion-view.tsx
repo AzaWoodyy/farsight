@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { type ChampionItem, type ChampionItems, type ChampionPool as Pool, type ChampionProfile as Profile, type ChampionSetups, RUNE_KINDS, type RuneKind } from "@/lib/agent/types";
 import { type ChampionRanking as Ranking, formatChampionValue } from "@/lib/champions";
 import { ITEM_KIND_LABEL, ITEM_KINDS, type ItemKind } from "@/lib/domain/items";
@@ -79,6 +79,13 @@ function SortHeader({ active, dir, label, title, className, onClick }: { active:
   );
 }
 
+/**
+ * Width of a metric's column, shared by its header and its values: 6 rem, or more when the header is longer
+ * ("pentakills (total)"), so a header never breaks onto two lines. In ch of the header (capitals, tracked).
+ */
+// SAFETY: a CSS custom property is a valid inline style that React's CSSProperties type does not list.
+const columnWidth = (label: string) => ({ "--col": `max(6rem, ${Math.ceil(label.length * 1.1) + 1}ch)` }) as CSSProperties;
+
 /** How many metrics sit beside the ranking one in the champion view. */
 const SIDE_METRICS = 5;
 
@@ -117,9 +124,9 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
           <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase sm:flex">
             <span className="w-8 shrink-0">#</span>
             <span className="min-w-0 flex-1">champion</span>
-            <span className="w-24 shrink-0 text-right text-foreground">{primary.label}</span>
+            <span style={columnWidth(primary.label)} className="w-(--col) shrink-0 text-right whitespace-nowrap text-foreground">{primary.label}</span>
             {others.map(({ m }) => (
-              <span key={m.key} className="w-24 shrink-0 text-right">
+              <span key={m.key} style={columnWidth(m.label)} className="w-(--col) shrink-0 text-right whitespace-nowrap">
                 {m.label}
               </span>
             ))}
@@ -145,7 +152,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                       </div>
                     </div>
                   </div>
-                  <span aria-hidden className="text-right font-semibold tabular-nums text-accent sm:w-24 sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
+                  <span aria-hidden style={columnWidth(primary.label)} className="text-right font-semibold tabular-nums text-accent sm:w-(--col) sm:shrink-0">{formatChampionValue(value, primary.percent)}</span>
                   {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
                   <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
                     {others.map(({ m, i }) => (
@@ -156,7 +163,7 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                     ))}
                   </dl>
                   {others.map(({ m, i }) => (
-                    <span key={m.key} className="hidden w-24 shrink-0 text-right tabular-nums sm:block">
+                    <span key={m.key} style={columnWidth(m.label)} className="hidden w-(--col) shrink-0 text-right tabular-nums sm:block">
                       <Label>{m.label}</Label>
                       {formatChampionValue(l.values[i], m.percent)}
                     </span>

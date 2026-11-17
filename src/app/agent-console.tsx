@@ -256,7 +256,8 @@ export function AgentConsole() {
               steps stream in under it. Once the run is over and the answer is shown, the trace goes folded under
               the answer: the visitor reads the result first, the way it was found after. */}
           {running && <Progress steps={steps} />}
-          {steps.size > 0 && !traceBelow && <HowIFoundIt steps={steps} running={running} />}
+          {/* A run that failed shows its error alone: a half-run trace under it explains nothing to the visitor. */}
+          {steps.size > 0 && !traceBelow && !(error && !answer) && <HowIFoundIt steps={steps} running={running} />}
           {error && !answer && (
             <p role="alert" className="mt-4 text-sm text-error">
               <span aria-hidden>xx</span> {error.message}
@@ -382,18 +383,33 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
           const active = part.state === "running" && running;
           const s = STATUS[interrupted ? "error" : part.status];
 
+          const head = (
+            <>
+              <span aria-hidden className="text-muted">
+                {branch}
+              </span>
+              <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>{active ? ".." : s.mark}</span>
+              <span className="w-32 shrink-0 text-muted">{STEP_LABEL[name]}</span>
+              <span className="min-w-0">
+                {interrupted ? "interrompue" : part.title}
+                {part.entries.length > 0 && <span className="ml-2 text-muted group-open/step:hidden">[+]</span>}
+              </span>
+            </>
+          );
+
+          // A step without detail is a plain row, skipped by Tab.
+          if (part.entries.length === 0)
+            return (
+              <li key={name} className="flex gap-2">
+                {head}
+              </li>
+            );
+
+          // The four steps read as four lines; the detail of a step (decisions, SQL, retries) opens on click.
           return (
             <li key={name}>
-              <div className="flex gap-2">
-                <span aria-hidden className="text-muted">
-                  {branch}
-                </span>
-                <span className={`${active ? "animate-pulse text-muted" : s.cls} w-5 shrink-0`}>
-                  {active ? ".." : s.mark}
-                </span>
-                <span className="w-32 shrink-0 text-muted">{STEP_LABEL[name]}</span>
-                <span className="min-w-0">{interrupted ? "interrompue" : part.title}</span>
-              </div>
+              <details className="group/step">
+                <summary className="flex min-h-6 cursor-pointer list-none gap-2 marker:hidden hover:text-accent pointer-coarse:min-h-11 pointer-coarse:items-center">{head}</summary>
               <ul className="mt-1 ml-[4.5rem] space-y-0.5 border-l border-line pl-3">
                 {part.entries.map((e, j) => {
                   const line = (
@@ -429,6 +445,7 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                   );
                 })}
               </ul>
+              </details>
             </li>
           );
         })}

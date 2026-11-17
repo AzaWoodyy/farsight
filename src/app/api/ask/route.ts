@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     onError: (err) => {
       console.error(err instanceof Error ? err.name : "AgentError");
 
-      return "Erreur interne de l'agent.";
+      return "Erreur interne.";
     },
   });
 

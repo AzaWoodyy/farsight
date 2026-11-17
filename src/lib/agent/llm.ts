@@ -23,7 +23,7 @@ export const QUOTA_COOLDOWN_MS = 15 * 60_000;
 
 /** Shown to the user when the answer was produced without the LLM because of the quota. */
 export const QUOTA_NOTE =
-  "Le quota du modèle de langage est épuisé pour le moment : réponse en mode déterministe (règles et outils typés uniquement, sans text-to-SQL).";
+  "Le modèle de langage est indisponible pour le moment : les questions les plus libres peuvent rester sans réponse.";
 
 export type Llm = { model: LanguageModel; id: string };
 

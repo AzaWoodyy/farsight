@@ -1,4 +1,5 @@
 import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } from "../domain/dragons";
+import { runeIcon } from "../domain/rune-icons";
 import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
@@ -1861,7 +1862,7 @@ function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: numb
     })),
     keystoneGames: counts.keystones,
     pageGames: counts.pages,
-    runes,
+    runes: runes.map((r) => ({ ...r, icon: runeIcon(r.rune, r.icon) })),
     notes,
   };
 }
@@ -3863,12 +3864,12 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
               damage: p.damage,
               vision: p.vision,
               keystone: p.keystone,
-              keystoneIcon: runes.find((x) => x.player === p.player && x.slot === 1)?.icon_url ?? null,
+              keystoneIcon: p.keystone ? runeIcon(p.keystone, runes.find((x) => x.player === p.player && x.slot === 1)?.icon_url ?? null) : null,
               spells: [
                 ...(p.spell1 ? [{ name: p.spell1, iconUrl: p.spell1_icon }] : []),
                 ...(p.spell2 ? [{ name: p.spell2, iconUrl: p.spell2_icon }] : []),
               ],
-              runes: runes.flatMap((x) => (x.player === p.player && x.slot > 1 ? [{ name: x.rune, kind: x.kind, iconUrl: x.icon_url }] : [])),
+              runes: runes.flatMap((x) => (x.player === p.player && x.slot > 1 ? [{ name: x.rune, kind: x.kind, iconUrl: runeIcon(x.rune, x.icon_url) }] : [])),
               items: items.flatMap((i) => (i.player === p.player ? [{ name: i.item, iconUrl: i.icon_url }] : [])),
             },
           ]

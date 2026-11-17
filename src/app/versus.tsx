@@ -17,12 +17,13 @@ const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", 
  */
 export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Answer["profiles"]; fallback: ReactNode }) {
   const h2h = useMemo(() => (v.h2h ? detectComparison(v.h2h, profiles, v.focus) : null), [v.h2h, profiles, v.focus]);
-  const global = useMemo(() => detectComparison(v.global, profiles, v.focus), [v.global, profiles, v.focus]);
+  const scope = useMemo(() => bothPlayers(v), [v]);
+  const global = useMemo(() => detectComparison(scope.table, profiles, v.focus), [scope.table, profiles, v.focus]);
   const [tab, setTab] = useState<"h2h" | "global">("h2h");
   const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
 
-  // One of them has no game in the scope: nothing to set face to face, the plain table says so.
+  // A table the face-off cannot read (no player column): the plain table.
   if (!shown) return <>{fallback}</>;
 
   const tabs = [
@@ -51,7 +52,16 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
       ) : (
         <p className="mb-2 text-xs text-muted">
           <span translate="no">{v.playerA}</span> et <span translate="no">{v.playerB}</span> ne se sont jamais affrontés
-          {v.scope ? ` ${v.scope}` : ""} : statistiques sur toutes leurs parties.
+          {v.scope ? ` ${v.scope}` : ""}
+          {scope.absent ? (
+            <>
+              {" "}
+              : <span className="text-foreground" translate="no">{scope.absent}</span> n&apos;y a aucune partie, seules les statistiques de l&apos;autre
+              sont connues.
+            </>
+          ) : (
+            " : statistiques sur toutes leurs parties."
+          )}
         </p>
       )}
       {met > 0 && <Lanes v={v} met={met} />}
@@ -60,6 +70,27 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
       {v.games.length > 0 && <Games v={v} />}
     </div>
   );
+}
+
+/**
+ * The scope's statistics with a line for each of the two players. One of them without any game there has no
+ * line in the answer: it gets an empty one (0 games, every figure n/d), so the two still stand face to face
+ * and the absence reads as such, instead of a one-line table about the other player alone.
+ */
+function bothPlayers(v: VersusView) {
+  const at = v.global.columns.indexOf("player");
+  const only = v.global.rows.length === 1 ? v.global.rows[0] : null;
+
+  if (at < 0 || !only) return { table: v.global, absent: null };
+
+  const present = String(only[at]).toLowerCase();
+  const absent = [v.playerA, v.playerB].find((p) => p.toLowerCase() !== present) ?? null;
+
+  if (!absent) return { table: v.global, absent: null };
+
+  const empty = v.global.columns.map((c, i) => (i === at ? absent : c === "games" ? 0 : null));
+
+  return { table: { ...v.global, rows: absent === v.playerA ? [empty, only] : [only, empty] }, absent };
 }
 
 /** The statistic the question names, moved to the top of the face-off. */

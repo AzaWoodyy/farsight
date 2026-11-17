@@ -25,7 +25,8 @@ export default function Home() {
           <ThemeToggle />
         </div>
       </header>
-      <main className="flex-1 pb-8">
+      {/* Not stretched to the screen: under a short answer the footer follows it, instead of an empty screen between the two. */}
+      <main className="pb-8">
         <AgentConsole />
       </main>
       <SiteFooter />
