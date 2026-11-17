@@ -16,8 +16,10 @@
   --red: #b91c1c;
 }
 
+/* Dark follows the system unless the visitor picked a theme (data-theme, set by the toggle and the script
+   before first paint, see brand/theme.ts). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0c0a09;
     --foreground: #e7e5e4;
     --muted: #a8a29e;
@@ -30,6 +32,49 @@
     --blue: #60a5fa;
     --red: #f87171;
   }
+}
+
+/* A chosen theme also sets the native controls' scheme (scrollbars, form fields). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0c0a09;
+  --foreground: #e7e5e4;
+  --muted: #a8a29e;
+  --line: #292524;
+  --accent: #f59e0b;
+  --ok: #4ade80;
+  --warn: #facc15;
+  --error: #f87171;
+  --fix: #a78bfa;
+  --blue: #60a5fa;
+  --red: #f87171;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* The theme toggle shows the theme it switches to: a sun on a dark page, a moon on a light one. */
+.theme-toggle [data-when="dark"] {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle [data-when="dark"] {
+    display: inline;
+  }
+
+  :root:not([data-theme="light"]) .theme-toggle [data-when="light"] {
+    display: none;
+  }
+}
+
+:root[data-theme="dark"] .theme-toggle [data-when="dark"] {
+  display: inline;
+}
+
+:root[data-theme="dark"] .theme-toggle [data-when="light"] {
+  display: none;
 }
 
 @theme inline {
