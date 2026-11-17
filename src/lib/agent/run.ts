@@ -585,7 +585,7 @@ async function format(
   const call = plan.tool.call;
   // The scope the comparison ran on: a relaxation may have widened the one asked.
   const profiles = call.tool === "player_comparison" ? playerProfiles(db, [call.input.playerA, call.input.playerB], call.input) : [];
-  const logos = teamLogos(out);
+  const logos = teamLogos(out, meta.teams);
 
   return {
     title: out.title,
@@ -614,13 +614,15 @@ async function format(
 const TEAM_COLUMN = /^(équipe|team|vainqueur|finaliste|adversaire|bleu|rouge)\b/i;
 
 /**
- * The logo of every team the answer names (the two sides of a confrontation and of its series, a roster's
+ * The logo of every team the question or the answer names (the two sides of a confrontation and of its series, a roster's
  * team, the team columns of a table), by the name shown: the views put it beside that name.
  */
-function teamLogos(out: ToolOutput) {
+function teamLogos(out: ToolOutput, asked: string[]) {
   const columns = out.table?.columns.flatMap((c, i) => (TEAM_COLUMN.test(c) ? [i] : [])) ?? [];
 
   const names = [
+    // The teams the question names: an answer about one team shows its logo even when no cell holds its name.
+    ...asked,
     ...(out.teams ? [out.teams.teamA, out.teams.teamB, ...out.teams.series.flatMap((s) => [s.teamA, s.teamB])] : []),
     ...(out.roster ? [out.roster.team, ...out.roster.names] : []),
     ...(out.table?.rows.flatMap((r) => columns.flatMap((i) => z.string().safeParse(r[i]).data ?? [])) ?? []),

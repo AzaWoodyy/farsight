@@ -313,9 +313,22 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
 
   // One line is not a table to scan: its figures read better as a card.
   // (Under a champion profile the line is its per-tournament detail: it stays a table.)
-  if (table.rows.length === 1 && !answer.champion) return <RowCard table={table} />;
+  const body = table.rows.length === 1 && !answer.champion ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
+  // An answer about one team (its in-game stats, its history, its dragons) is headed by that team and its logo.
+  const [team] = answer.meta.teams.length === 1 ? answer.meta.teams : [];
+  const logo = team ? answer.icons[team] : undefined;
 
-  return <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
+  if (!team || !logo) return body;
+
+  return (
+    <>
+      <p className="mt-4 flex items-center gap-2 text-sm font-semibold" translate="no">
+        <EntityIcon src={logo} size={32} tone={answer.iconTones[team]} />
+        {team}
+      </p>
+      <div className="[&>div]:mt-2">{body}</div>
+    </>
+  );
 }
 
 const NUMBER = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
