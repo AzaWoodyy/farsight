@@ -9,10 +9,10 @@ export { DEFAULT_LOCALE, type Locale, LOCALES } from "@/lib/locale";
 
 /**
  * The languages visitors and search engines are sent to: the language switch, hreflang and the sitemap list
- * only these, and a page in another language is served with `noindex`. English joins the list once the
- * console and the agent's answers are in English too; until then `/en` is reachable by its address only.
+ * only these, and a page in another language is served with `noindex`. A language joins the list once its
+ * pages, the console and the agent's answers are all written in it.
  */
-export const PUBLIC_LOCALES: readonly Locale[] = ["fr"];
+export const PUBLIC_LOCALES: readonly Locale[] = ["fr", "en"];
 
 export const isPublic = (locale: Locale): boolean => PUBLIC_LOCALES.includes(locale);
 

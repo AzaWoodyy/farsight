@@ -425,6 +425,7 @@ const en: Messages = {
     names: {
       "regex + alias": "regex + alias",
       "outil typé": "typed tool",
+      "choix d'outil": "tool choice",
       "corrections déterministes": "deterministic corrections",
       "réparation SQL": "SQL repair",
       "modèle de phrase": "sentence template",

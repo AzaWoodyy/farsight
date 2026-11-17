@@ -1,3 +1,4 @@
+import { say } from "../agent/messages";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -11,7 +12,12 @@ const Result = z.object({ rows: z.array(z.record(z.string(), z.union([z.string()
 
 export class SqlTimeoutError extends Error {
   constructor() {
-    super("La requête SQL a dépassé le délai de 4 secondes. Précise une période ou un joueur, puis réessaie.");
+    super(
+      say(
+        "La requête SQL a dépassé le délai de 4 secondes. Précise une période ou un joueur, puis réessaie.",
+        "The SQL query ran past its 4-second limit. Name a period or a player, then try again.",
+      ),
+    );
     this.name = "SqlTimeoutError";
   }
 }

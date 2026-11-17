@@ -202,6 +202,8 @@ const fr = {
     caption: (blue: string, red: string) =>
       `écart d'or ${blue} − ${red} par minute · FB first blood · D dragon · DA ancestral · H héraut · L larves · B baron · At Atakhan · I inhibiteur · ACE · trait : tour`,
     keyEvents: "événements clés",
+    /** An event with its detail: "tour extérieure bot", "dragon hextech". */
+    detailed: (event: string, detail: string) => `${event} ${detail}`,
   },
 
   scoreboard: {
@@ -456,6 +458,7 @@ const en: Ui = {
     caption: (blue, red) =>
       `gold difference ${blue} − ${red} per minute · FB first blood · D dragon · E elder · H herald · G grubs · B baron · At Atakhan · I inhibitor · ACE · tick: tower`,
     keyEvents: "key events",
+    detailed: (event, detail) => `${detail} ${event}`,
   },
 
   scoreboard: {
