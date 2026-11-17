@@ -46,10 +46,25 @@ const LABELS: [RegExp, string, boolean][] = [
   [/^first_blood$/, "first blood", true],
   [/^solo_kills$/, "solo kills", false],
   [/^(players|joueurs)$/, "joueurs", false],
+  [/^kills$/, "kills", false],
+  [/^assists$/, "assists", false],
+  [/^vision$/, "vision", false],
+  [/^penta_kills$/, "pentakills", false],
+  [/^quadra_kills$/, "quadrakills", false],
+  [/^triple_kills$/, "triple kills", false],
+  [/^double_kills$/, "double kills", false],
 ];
 
 function metricOf(column: string): ChampionMetric {
   const key = column.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+  // A total over the scope (champion_ranking): the figure's own label, never a percentage ("total_first_blood" counts them).
+  if (key.startsWith("total_")) {
+    const base = LABELS.find(([re]) => re.test(key.slice(6)))?.[1] ?? key.slice(6).replace(/_/g, " ");
+
+    return { key: column, label: `${base} (total)`, percent: false };
+  }
+
   const hit = LABELS.find(([re]) => re.test(key));
 
   return { key: column, label: hit?.[1] ?? column.replace(/_/g, " "), percent: hit?.[2] ?? /pct|percent|rate/.test(key) };

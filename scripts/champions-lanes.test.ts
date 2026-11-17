@@ -74,14 +74,12 @@ describe("champion questions route to the champion tools, decided by the rules",
 
   test("a figure the ranking does not sort by goes to generated SQL", () => {
     for (const [q, e] of [
-      // A total, the lowest figure, two figures at once: not the ranking's per-game average, highest first.
+      // The lowest figure, two figures at once, a figure of the game: not the ranking's figure, highest first.
       ["champion avec le moins de morts par partie aux Worlds 2024", WORLDS24],
       ["champions avec le plus de kills et d'assists par partie en LCK 2024", LCK24],
       ["champions avec le plus de kills et d'or par partie en LCK 2024", LCK24],
       ["champions avec le plus de dragons par partie en LCK 2024", LCK24],
-      ["quel champion a le plus de pentakills aux Worlds 2024", WORLDS24],
-      ["quel champion fait le plus de dégâts aux Worlds 2024", WORLDS24],
-      ["champions avec le plus de kills en LCK 2024", LCK24],
+      ["champions avec le plus de dragons en LCK 2024", LCK24],
     ] as const)
       expect(routeQuestion(q, e, SCHEMA, COVERAGE).kind).toBe("sql");
   });
@@ -238,7 +236,7 @@ describe("tools on a seeded season", () => {
     try {
       seed(db);
       const lec = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minPicks: null, side: null };
-      const out = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "picks", role: null } });
+      const out = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "picks", role: null } });
 
       // The figures of the picks beside them (per minute, lane, players) have their own test in rankings.test.ts.
       const head = (rows: (typeof out.table & {})["rows"], n = 7) => rows.map((r) => r.slice(0, n));
@@ -253,26 +251,26 @@ describe("tools on a seeded season", () => {
       expect(out.icons).toEqual({ Azir: "https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Azir.png", Orianna: "https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Orianna.png" });
       expect(out.facts).toContain("Critère : nombre de picks.");
 
-      const bans = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "bans", role: null } });
+      const bans = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "bans", role: null } });
 
       expect(bans.table!.rows[0].slice(0, 7)).toEqual([1, "Ahri", 0, 2, 50, null, null]);
 
-      const tops = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "picks", role: "Top" } });
+      const tops = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "picks", role: "Top" } });
 
       expect(head(tops.table!.rows)).toEqual([[1, "Gnar", 2, 0, 50, 50, 1.5]]);
       expect(tops.facts).toContain("bans et présence tous rôles confondus");
 
       // Winrate needs a minimum of picks: 3 by default here (2 % of 4 games, at least 3).
-      const winrate = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "winrate", role: null } });
+      const winrate = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "winrate", role: null } });
 
       expect(winrate.table!.rows.map((r) => r[1])).toEqual(["Azir", "Orianna"]);
       expect(winrate.facts).toContain("minimum 3 picks");
 
       // A per-game average needs 5 picks by default: nobody here has them.
-      expect((await run(db, { tool: "champion_ranking", input: { ...lec, sort: "deaths", role: null } })).table!.rows).toEqual([]);
+      expect((await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "deaths", role: null } })).table!.rows).toEqual([]);
 
       // One more column for the average; Gnar (2 picks, 2 deaths a game) stays under the minimum asked.
-      const deaths = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "deaths", role: null, minPicks: 3 } });
+      const deaths = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "deaths", role: null, minPicks: 3 } });
 
       expect(deaths.table!.columns.slice(0, 8)).toEqual(["rank", "champion", "deaths", "picks", "bans", "presence", "winrate", "kda"]);
       expect(head(deaths.table!.rows, 8)).toEqual([
@@ -283,7 +281,7 @@ describe("tools on a seeded season", () => {
       expect(deaths.facts).toContain("Critère : morts par partie, en moyenne, minimum 3 picks.");
 
       // Games without the figure are left out of the average, not counted as zero.
-      const damage = await run(db, { tool: "champion_ranking", input: { ...lec, sort: "damage", role: null, minPicks: 1 } });
+      const damage = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "damage", role: null, minPicks: 1 } });
 
       expect(damage.table!.rows.slice(0, 2).map((r) => [r[1], r[2]])).toEqual([["Azir", 25000], ["Orianna", 19667]]);
     } finally {
