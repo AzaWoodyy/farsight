@@ -198,7 +198,8 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
         <button
           type="button"
           onClick={() => setSort({ key, dir: active ? (sort.dir === 1 ? -1 : 1) : 1 })}
-          className={`tap uppercase hover:text-accent sm:tracking-wider ${active ? "text-foreground" : "text-muted"}`}
+          // One line: a label that wraps its sort arrow under it sits higher than its neighbours.
+          className={`tap whitespace-nowrap uppercase hover:text-accent sm:tracking-wider ${active ? "text-foreground" : "text-muted"}`}
         >
           {label}
           <span aria-hidden className="ml-1 inline-block w-2">
