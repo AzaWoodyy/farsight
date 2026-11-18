@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
-import { type Coverage, coverageLookup, routeQuestion } from "../src/lib/agent/query";
+import { type Coverage, type CoverageLookup, coverageLookup, groundLeague, routeQuestion } from "../src/lib/agent/query";
 import { bindTool, TOOLS } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer, ResolvedTeam } from "../src/lib/agent/types";
 import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
@@ -145,6 +145,60 @@ describe("one team and a roster word: its players by role, decided by the rules"
   });
 });
 
+describe("one player and a team or roster word: the roster of the team they last played for", () => {
+  const found = { team: "Shifters", year: 2026, others: ["Team BDS"] };
+  const lookup: CoverageLookup = { ...COVERAGE, playerTeam: (p) => (p === "Rooster" ? found : null) };
+  const rooster = player("Rooster");
+
+  test.each(["Rooster team 2026", "l'équipe de Rooster en 2026", "Rooster roster 2026", "coéquipiers de Rooster en 2026", "who played with Rooster in 2026", "dans quelle équipe jouait Rooster en 2026 ?", "which team did Rooster play for in 2026?"])("%s", (q) => {
+    const route = routeQuestion(q, entities({ players: [rooster], ...year(2026) }), SCHEMA, lookup);
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_roster", input: { team: "Shifters", league: null, yearFrom: 2026, yearTo: 2026, split: null, role: null } }, forced: true });
+    expect(route.kind === "tool" && route.unread).toBeUndefined();
+    expect(route.kind === "tool" && route.notes).toEqual([
+      "Équipe de Rooster sur la période demandée : Shifters.",
+      "Rooster a aussi joué pour Team BDS sur cette période : seule sa dernière équipe est affichée.",
+    ]);
+  });
+
+  test("without a period, the season of the player's latest game", () => {
+    const route = routeQuestion("Rooster team", entities({ players: [rooster] }), SCHEMA, lookup);
+
+    expect(route).toMatchObject({ kind: "tool", call: { tool: "team_roster", input: { team: "Shifters", yearFrom: 2026, yearTo: 2026 } } });
+    expect(route.kind === "tool" && route.notes).toEqual(["Aucune période précisée : dernière équipe de Rooster (Shifters, 2026)."]);
+  });
+
+  test("the player's name is not a roster word, and the other rules are kept", () => {
+    const route = (q: string, e: Entities, coverage: CoverageLookup = lookup) => {
+      const r = routeQuestion(q, e, SCHEMA, coverage);
+
+      return r.kind === "tool" ? r.call.tool : r.kind;
+    };
+
+    expect(route("Rooster 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("résultats de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("meilleure équipe de Rooster", entities({ players: [rooster] }))).not.toBe("team_roster");
+    expect(route("KDA de Rooster avec son équipe", entities({ players: [rooster] }))).not.toBe("team_roster");
+    expect(route("Rooster team ranking 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("Rooster team record 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("How did Rooster's team rank in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Rooster team placement 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Which team beat Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("l'équipe qui a battu Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("How did Rooster's team do in 2026?", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("Which team did Rooster play in the 2026 final?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Did Rooster's team qualify for Worlds in 2026?", entities({ players: [rooster], ...league("World Championship", "Worlds"), ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Which team was Rooster facing in the 2026 final?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Who did Rooster's team play at Worlds 2026?", entities({ players: [rooster], ...league("World Championship", "Worlds"), ...year(2026) }))).not.toBe("team_roster");
+    expect(route("who was Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    // A team named keeps its own roster, and a player without a game in the scope keeps their history.
+    expect(routeQuestion("roster de Fnatic en 2018", entities({ teams: [FNC], ...year(2018) }), SCHEMA, lookup)).toMatchObject({ call: { input: { team: "Fnatic" } } });
+    expect(route("Faker team 2026", entities({ players: [player("Faker")], ...year(2026) }))).toBe("player_event_history");
+    expect(route("Rooster team 2026", entities({ players: [rooster], ...year(2026) }), COVERAGE)).toBe("player_event_history");
+  });
+});
+
 describe("in-game statistics of one team: absent data is said", () => {
   const UP = team("Ultra Prime", "Ultra Prime");
   const stub = (team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage) => ({ ...COVERAGE, team });
@@ -234,6 +288,77 @@ describe("team coverage on a seeded database", () => {
       db.exec("INSERT INTO game_riot VALUES (4,'k4','V5 data:W14_1',5,1,0),(1,'k1','V5 data:OGN14Sp_1',5,1,0)");
       expect(coverage.team(names, null, null, null)).toEqual({ games: 6, ingame: 2 });
       expect(coverage.team(names, "World Championship", 2014, 2014)).toEqual({ games: 2, ingame: 1 });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a player's team on a seeded database", () => {
+  test("the team of their latest game in the scope, its year, and the other teams of the scope", () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const { playerTeam } = coverageLookup(db);
+
+      expect(playerTeam!("Looper", null, null, null, null)).toEqual({ team: "Samsung White", year: 2015, others: [] });
+      db.exec("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (5,6,3,'Top',1,0)");
+      expect(playerTeam!("Homme", null, null, null, null)).toEqual({ team: "Samsung Blue", year: 2014, others: ["Samsung Ozone"] });
+      expect(playerTeam!("Looper", null, 2014, 2014, "Spring")).toEqual({ team: "Samsung Ozone", year: 2014, others: [] });
+      expect(playerTeam!("Looper", "World Championship", 2014, 2014, null)).toEqual({ team: "Samsung White", year: 2014, others: [] });
+      expect(playerTeam!("Deft", null, null, null, null)).toEqual({ team: "Samsung Blue", year: 2014, others: [] });
+      expect(playerTeam!("Looper", null, 2016, null, null)).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a competition the LLM router adds on its own", () => {
+  const looper = player("Looper");
+  const history = (league: LeagueName, y: number | null = 2014) => ({ tool: "player_event_history" as const, input: { player: "Looper", league, yearFrom: y, yearTo: y } });
+  const roster = (league: LeagueName | null) => ({ tool: "team_roster" as const, input: { team: "Samsung White", league, yearFrom: 2014, yearTo: 2014, split: null, role: null } });
+  const WORLDS_NAME: LeagueName = "World Championship";
+  // Not the LEC: its family holds "LoL The Champions", where the seeded team played.
+  const LEC: LeagueName = "LoL EMEA Championship";
+
+  test("no game of the player in it: back to the rules' competition for the same tool, to every competition otherwise", () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      db.exec("INSERT INTO player_aliases(alias,player_id,raw) VALUES ('looper',1,'Looper')");
+      const coverage = coverageLookup(db);
+      const e = entities({ players: [looper], ...year(2014) });
+      const rules = routeQuestion("Looper 2014", e, SCHEMA, coverage);
+
+      expect(rules).toMatchObject({ call: { tool: "player_event_history", input: { league: WORLDS_NAME } } });
+      expect(groundLeague(db, history(LEC), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: LEC });
+      expect(groundLeague(db, roster(LEC), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: LEC });
+      // The rules' own default, confirmed by the router: kept as is, nothing was added.
+      expect(groundLeague(db, history(WORLDS_NAME, 2015), entities({ players: [player("Homme")], ...year(2014) }), rules, coverage)).toEqual({ call: history(WORLDS_NAME, 2015), dropped: null });
+      // A required competition with no rules' pick to fall back on: the router's call is declined.
+      expect(groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: LEC });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("kept when the data agrees, when the question named a competition, when nobody is named or nothing was played", () => {
+    const db = new DatabaseSync(":memory:");
+
+    try {
+      seed(db);
+      const coverage = coverageLookup(db);
+      const open: Parameters<typeof groundLeague>[3] = { kind: "sql", reason: "", open: true };
+      const kept = (call: Parameters<typeof groundLeague>[1], e: Entities) => expect(groundLeague(db, call, e, open, coverage)).toEqual({ call, dropped: null });
+
+      kept(history(WORLDS_NAME), entities({ players: [looper], ...year(2014) }));
+      kept(history(LEC), entities({ players: [looper], ...league(LEC, "LEC"), ...year(2014) }));
+      kept(roster(LEC), entities({ ...year(2014) }));
+      kept(history(LEC, 2020), entities({ players: [looper], ...year(2020) }));
+      kept(roster(null), entities({ teams: [SSW], ...year(2014) }));
     } finally {
       db.close();
     }
