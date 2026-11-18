@@ -135,6 +135,37 @@
   }
 }
 
+/* A language change is a full page load. Where the browser animates between documents, the previous language
+   stays on screen until the new page shuffles its letters and ends the transition (i18n/arrival); any other
+   navigation is skipped there. The 1.2 s is a ceiling for a page whose script never runs, not a duration. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+:root[data-lang-arriving]::view-transition-old(root) {
+  animation: lang-hold-shown 1.2s both;
+}
+
+:root[data-lang-arriving]::view-transition-new(root) {
+  animation: lang-hold-hidden 1.2s both;
+}
+
+@keyframes lang-hold-shown {
+  from,
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lang-hold-hidden {
+  from,
+  to {
+    opacity: 0;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
