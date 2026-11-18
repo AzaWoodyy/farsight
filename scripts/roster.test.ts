@@ -181,6 +181,10 @@ describe("one player and a team or roster word: the roster of the team they last
     expect(route("KDA de Rooster avec son équipe", entities({ players: [rooster] }))).not.toBe("team_roster");
     expect(route("Rooster team ranking 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
     expect(route("Rooster team record 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("How did Rooster's team rank in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Rooster team placement 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Which team beat Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("l'équipe qui a battu Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(route("who was Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     // A team named keeps its own roster, and a player without a game in the scope keeps their history.

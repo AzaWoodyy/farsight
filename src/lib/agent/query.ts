@@ -215,10 +215,14 @@ const PLAYER_TEAM = word(
 /** "dans quelle équipe jouait Faker", "which team did Faker play for": the team asked, not a ranking of teams. */
 const WHICH_TEAM = /quelle [ée]quipe|which team/giu;
 
+/** The verb that makes "which team" a membership question; "which team beat Faker" asks for an opponent. */
+const PLAYS_FOR = word("jouait|jouaient|joue|jouent|a jou[ée]|[ée]volue|[ée]voluait|[ée]tait|est|play|plays|played|playing|was|is");
+
 /** What a player's team did, not who was in it: the player's history answers. */
 const TEAM_RESULTS = word(
-  "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|rankings?|standings|places?|" +
-    "carri[èe]re|career|victoires?|wins?|d[ée]faites?|losses|combien|how many",
+  "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|class[ée]e?s?|rankings?|rank|ranks|ranked|standings|places?|" +
+    "placements?|podiums?|finish|finished|termin[ée]e?s?|fini|carri[èe]re|career|victoires?|wins?|won|gagn[ée]e?s?|d[ée]faites?|losses|lost|perdu|" +
+    "battue?s?|bat|beat|beats|beaten|vaincue?s?|defeated|[ée]limin[ée]e?s?|eliminated|affront[ée]e?s?|faced|combien|how many",
 );
 
 /**
@@ -1084,7 +1088,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
   const asksPlayerTeam =
     e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
-    PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(rest.replace(WHICH_TEAM, " "));
+    PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(PLAYS_FOR.test(rest) ? rest.replace(WHICH_TEAM, " ") : rest);
 
   const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
 
