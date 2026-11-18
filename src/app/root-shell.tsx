@@ -25,8 +25,7 @@ export const VIEWPORT: Viewport = {
  */
 export function RootShell({ locale, children }: { locale: Locale; children: ReactNode }) {
   return (
-    // The page's draw script and the theme script set attributes on <html> before hydration (see
-    // home-examples-data and brand/theme).
+    // The theme script sets attributes on <html> before hydration (see brand/theme).
     <html lang={locale} className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
         {/* First in the body: the stored theme is applied before anything is painted. */}
