@@ -15,7 +15,7 @@ function Chips({ examples, onAsk, copy }: AskProps & { examples: Example[]; copy
         type="button"
         tabIndex={copy ? -1 : undefined}
         onClick={() => onAsk(e.question)}
-        className="press inline-flex min-h-11 items-center gap-2 border border-line px-3 text-sm whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
+        className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-sm whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
       >
         <span aria-hidden className="text-accent">
           &gt;
@@ -47,7 +47,7 @@ export function HomeExamples({ onAsk }: AskProps) {
           {paused ? ui.examples.resume : ui.examples.pause}
         </button>
       </div>
-      <div className="mt-2" data-paused={paused ? "" : undefined}>
+      <div className="marquees mt-2" data-paused={paused ? "" : undefined}>
         {exampleRows(locale).map((examples, row) => (
           <div key={row} className="marquee">
             <ul className="marquee-track">
