@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { SiteAnalytics } from "./analytics";
 import { PALETTE } from "./brand/site";
 import { THEME_SCRIPT } from "./brand/theme";
+import { ARRIVAL_SCRIPT } from "./i18n/arrival";
+import { LanguageArrival } from "./i18n/language-arrival";
 import type { Locale } from "./i18n/locales";
 import "./globals.css";
 
@@ -27,10 +29,15 @@ export function RootShell({ locale, children }: { locale: Locale; children: Reac
   return (
     // The theme script sets attributes on <html> before hydration (see brand/theme).
     <html lang={locale} className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Before the first paint: the page must hear `pagereveal` to animate a language change. */}
+        <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         {/* First in the body: the stored theme is applied before anything is painted. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {children}
+        <LanguageArrival />
         <SiteAnalytics />
       </body>
     </html>

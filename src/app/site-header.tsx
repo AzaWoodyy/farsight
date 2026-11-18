@@ -1,4 +1,5 @@
 import { HomeLink } from "./home-link";
+import { LANG_SWITCH_ATTR } from "./i18n/arrival";
 import { isPublic, LOCALE_NAME, LOCALES, type Locale, type PageKey, PATHS } from "./i18n/locales";
 import { SHELL } from "./i18n/shell";
 import { ThemeToggle } from "./theme-toggle";
@@ -22,6 +23,7 @@ export function SiteHeader({ locale, page, trail }: { locale: Locale; page: Page
 /**
  * The same page in the other public languages. Plain links, not `next/link`: each language has its own root
  * layout, so the change is a full page load either way, and a crawler reads them as the alternates they are.
+ * The page that follows a click plays the arrival in its language (i18n/arrival).
  */
 function LocaleSwitch({ locale, page }: { locale: Locale; page: PageKey }) {
   return LOCALES.filter((other) => other !== locale && isPublic(other)).map((other) => (
@@ -32,6 +34,7 @@ function LocaleSwitch({ locale, page }: { locale: Locale; page: PageKey }) {
       lang={other}
       aria-label={LOCALE_NAME[other]}
       title={LOCALE_NAME[other]}
+      {...{ [LANG_SWITCH_ATTR]: "" }}
       className="press inline-flex size-11 shrink-0 items-center justify-center border border-line text-xs text-muted uppercase hover:border-accent hover:text-accent sm:pointer-fine:size-8"
     >
       {other}
