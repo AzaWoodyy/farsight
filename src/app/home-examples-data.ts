@@ -1,10 +1,8 @@
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
+import type { Locale } from "@/lib/locale";
 
 /**
  * Home examples, grouped by what the question is about. Each one is answered by a typed tool without the
  * LLM (checked with `bun run ask`); `display` names the layout the question opens.
- *
- * Kept out of the client component so that the page (a server component) can ship the draw script below.
  */
 export const CATEGORIES = ["players", "teams", "champions", "games"] as const;
 
@@ -12,10 +10,7 @@ export type Category = (typeof CATEGORIES)[number];
 
 export type Example = { question: string; display: string; category: Category };
 
-/**
- * The same examples in each language, in the same order: the draw is made on positions, before the page
- * knows its language (see PICK_SCRIPT). The English questions take the same route as the French ones.
- */
+/** The same examples in each language, in the same order. The English questions take the same route as the French ones. */
 export const EXAMPLES: Record<Locale, Example[]> = {
   fr: [
     { category: "players", question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
@@ -67,50 +62,18 @@ export const EXAMPLES: Record<Locale, Example[]> = {
 
 export const byCategory = (locale: Locale, c: Category) => EXAMPLES[locale].filter((e) => e.category === c);
 
-// Every language has the same examples: the counts of the default one are the counts of all.
-const COUNTS = CATEGORIES.map((c) => byCategory(DEFAULT_LOCALE, c).length);
-
-const ATTR = "data-ex";
-
-/** Attribute of `<html>` holding the example drawn for category `i`. */
-const pickAttr = (i: number) => `${ATTR}${i}`;
+/** Number of rows the home examples drift on. */
+const ROWS = 4;
 
 /**
- * The random draw happens in the static HTML, before the first paint: this script, placed ahead of the
- * examples, sets one attribute per category on `<html>`, and PICK_CSS hides every other example of the
- * category. The visitor reads the drawn examples from the first frame, on a slow connection too, and
- * hydration keeps them (it reads the same attributes) instead of swapping texts on screen.
+ * The examples dealt on the rows of the home page. They are first taken one subject after the other, then each
+ * round of subjects is dealt one row further than the round before: every row mixes the subjects, and two
+ * neighbours seldom look alike.
  */
-export const PICK_SCRIPT = `try{var d=document.documentElement;${JSON.stringify(COUNTS)}.forEach(function(n,i){d.setAttribute("${ATTR}"+i,Math.floor(Math.random()*n))})}catch(e){}`;
+export function exampleRows(locale: Locale): Example[][] {
+  const groups = CATEGORIES.map((c) => byCategory(locale, c));
+  const rounds = Math.max(...groups.map((g) => g.length));
+  const order = Array.from({ length: rounds }, (_, n) => groups.flatMap((g) => g.slice(n, n + 1))).flat();
 
-// Without the attribute (the script did not run), the first example of each category stays visible. The others are
-// hidden but keep their place: every example of a category sits in the same grid cell, so the block is as tall as
-// its longest example from the first frame, and a later draw changes no height.
-export const PICK_CSS = `${COUNTS.flatMap((n, i) => [
-  `:root:not([${pickAttr(i)}]) [data-c="${i}"]>[data-i]:not([data-i="0"])`,
-  ...Array.from({ length: n }, (_, p) => `:root[${pickAttr(i)}="${p}"] [data-c="${i}"]>[data-i]:not([data-i="${p}"])`),
-]).join(",")}{visibility:hidden}`;
-
-/** The draw read back on the client; out-of-range or missing values fall back to the first example. */
-export function readPicks(root: Pick<Element, "getAttribute">): number[] {
-  return COUNTS.map((n, i) => {
-    const v = Number(root.getAttribute(pickAttr(i)));
-
-    return Number.isInteger(v) && v >= 0 && v < n ? v : 0;
-  });
-}
-
-/** Delay between two automatic draws on the home page: time to read four short questions. */
-export const ROTATE_MS = 7000;
-
-/**
- * A new draw: in each category with more than one example, another example than the one shown, so the same set
- * never comes back twice in a row. `random` returns a number in [0, 1), like Math.random.
- */
-export function nextPicks(shown: readonly number[], random: () => number = Math.random): number[] {
-  return COUNTS.map((n, i) => {
-    const current = shown[i] ?? 0;
-
-    return n < 2 ? 0 : (current + 1 + Math.floor(random() * (n - 1))) % n;
-  });
+  return Array.from({ length: ROWS }, (_, row) => order.filter((_, i) => (i + Math.floor(i / ROWS)) % ROWS === row));
 }

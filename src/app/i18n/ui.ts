@@ -78,10 +78,9 @@ const fr = {
 
   examples: {
     heading: "Essaie par exemple",
-    more: "Autres exemples",
-    hide: "Masquer la liste",
-    all: (n: number) => `Tous les exemples (${n})`,
-    categories: { players: "joueurs", teams: "équipes", champions: "champions", games: "parties" },
+    /** Stops and restarts the drift of the examples. */
+    pause: "[ pause ]",
+    resume: "[ reprendre ]",
   },
 
   answer: {
@@ -339,10 +338,8 @@ const en: Ui = {
 
   examples: {
     heading: "Try for example",
-    more: "Other examples",
-    hide: "Hide the list",
-    all: (n) => `All examples (${n})`,
-    categories: { players: "players", teams: "teams", champions: "champions", games: "games" },
+    pause: "[ pause ]",
+    resume: "[ resume ]",
   },
 
   answer: {

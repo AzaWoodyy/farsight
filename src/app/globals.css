@@ -254,31 +254,116 @@ details[data-how][open] > summary [data-chevron] {
   }
 }
 
-/* Home examples fade out, then the new draw fades in (automatic rotation or "Autres exemples"). */
-.ex-in {
-  animation: ex-in 200ms var(--ease-out-strong) both;
+/* Home examples drift past on four rows, every other one the opposite way. Each row holds its examples twice
+   and slides by half its width, so the loop has no seam. It stops under the pointer, under keyboard focus,
+   under a finger and on demand. The padding leaves room for the focus ring of an example. */
+.marquee {
+  overflow: hidden;
+  padding-block: 4px;
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
 
-.ex-out {
-  animation: ex-out 150ms ease-in both;
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 82s linear infinite;
 }
 
-@keyframes ex-out {
+.marquee:nth-child(even) .marquee-track {
+  animation-direction: reverse;
+}
+
+.marquee:focus-within .marquee-track,
+.marquee:has(:active) .marquee-track,
+[data-paused] > .marquee .marquee-track {
+  animation-play-state: paused;
+}
+
+@media (hover: hover) {
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes marquee {
   to {
-    opacity: 0;
+    transform: translateX(-50%);
   }
 }
 
-@keyframes ex-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
+/* With reduced motion nothing drifts: the rows wrap, the second copy and the pause control go, and a long
+   example wraps inside its frame instead of being cut by the row. */
 @media (prefers-reduced-motion: reduce) {
-  .ex-in,
-  .ex-out {
+  .marquee {
+    overflow: visible;
+    mask-image: none;
+  }
+
+  .marquee-track {
+    width: auto;
+    flex-wrap: wrap;
+    row-gap: 8px;
     animation: none;
   }
+
+  .marquee-track > li {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .marquee-track button {
+    display: block;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .marquee-track button > span {
+    margin-inline: 0.5rem;
+  }
+
+  .marquee-track button > span:first-child {
+    margin-inline-start: 0;
+  }
+
+  .marquee-track > [data-copy],
+  .marquee-toggle {
+    display: none;
+  }
+}
+
+/* The same still, wrapped rows while the keyboard is in the examples: a drifting row would leave the focused
+   example outside its frame. */
+.marquees:has(:focus-visible) .marquee {
+  overflow: visible;
+  mask-image: none;
+}
+
+.marquees:has(:focus-visible) .marquee-track {
+  width: auto;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  animation: none;
+}
+
+.marquees:has(:focus-visible) .marquee-track > li {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.marquees:has(:focus-visible) .marquee-track button {
+  display: block;
+  white-space: normal;
+  text-align: left;
+}
+
+.marquees:has(:focus-visible) .marquee-track button > span {
+  margin-inline: 0.5rem;
+}
+
+.marquees:has(:focus-visible) .marquee-track button > span:first-child {
+  margin-inline-start: 0;
+}
+
+.marquees:has(:focus-visible) .marquee-track > [data-copy] {
+  display: none;
 }
