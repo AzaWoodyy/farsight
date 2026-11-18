@@ -3581,6 +3581,37 @@
       }
     },
     {
+      "id": "var-roster-player-team",
+      "question": "Faker team 2017",
+      "tags": [
+        "variant",
+        "roster"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [],
+        "players": [
+          "Faker"
+        ],
+        "input": {
+          "team": "SK Telecom T1",
+          "league": null,
+          "yearFrom": 2017,
+          "yearTo": 2017
+        },
+        "unread": [],
+        "rows": 8,
+        "totals": {
+          "games": 136,
+          "top": "Huni",
+          "jungle": "Peanut",
+          "mid": "Faker",
+          "bot": "Bang",
+          "support": "Wolf (Lee Jae-wan)"
+        }
+      }
+    },
+    {
       "id": "var-jungler-g2",
       "question": "who is the jungler of G2",
       "tags": [

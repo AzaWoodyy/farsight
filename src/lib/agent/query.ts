@@ -3,7 +3,7 @@ import { leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { readSchema, selectOne } from "../db";
+import { readSchema, selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
@@ -25,6 +25,7 @@ import {
   type RecordMetric,
   type TeamCriterion,
   type ToolCall,
+  withLeague,
 } from "./tools";
 import { detectMetric, DRAGON_ELEMENT, isDragonCue, isSnapshot, type MetricCue, type Minute, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
@@ -86,7 +87,16 @@ export type CoverageLookup = {
   player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
   /** Games of a team (every name of the franchise) and how many have Riot data. */
   team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+  /**
+   * The team a player last played for in the scope, the year of that game, and the other teams they played for there.
+   * null when they have no competition game in it. Optional: a lookup without it leaves the player's own routes in place.
+   */
+  playerTeam?: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null, split: string | null) => PlayerTeam | null;
 };
+
+export type PlayerTeam = { team: string; year: number; others: string[] };
+
+const PlayerTeamRow = z.object({ team: z.string(), year: z.number() });
 
 const CoverageRow = z.object({ games: z.number().nullable(), ingame: z.number().nullable() });
 
@@ -145,6 +155,25 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
         params,
       );
     },
+    playerTeam: (player, league, yearFrom, yearTo, split) => {
+      const params: (string | number)[] = [player];
+      const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
+      const inLeague = league ? (params.push(...members), ` AND p.league IN (${members.map(() => "?").join(",")})`) : "";
+      const inPeriod = period("p.year", yearFrom, yearTo, params);
+      const inSplit = split ? (params.push(split), " AND p.tournament_page IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = ?)") : "";
+
+      // Latest team first: the stages are the ones the roster counts, so the team found has a roster in the scope.
+      const rows = selectAll(
+        db,
+        PlayerTeamRow,
+        `SELECT p.team, MAX(p.year) AS year FROM v_game_players p
+         WHERE p.player = ? AND p.stage IN ('main_event', 'play_in', 'season', 'playoffs')${inLeague}${inPeriod}${inSplit}
+         GROUP BY p.team ORDER BY MAX(p.played_at) DESC, p.team`,
+        params,
+      );
+
+      return rows.length ? { team: rows[0].team, year: rows[0].year, others: rows.slice(1).map((r) => r.team) } : null;
+    },
   };
 }
 
@@ -167,6 +196,14 @@ export const ROSTER = word(
 /** Who is "best" or "most" in a team, or an in-game figure: a ranking or a metric, not its roster. */
 const NOT_ROSTER = word(
   "le plus|la plus|les plus|most|meilleure?s?|best|pires?|worst|top ?\\d+|kda|kills?|gold|golds|cs|d[ée]g[âa]ts|damage|vision|winrate|win rate|stats?|statistiques?",
+);
+
+/** With one player named: their team ("Rooster team 2026", "l'équipe de Faker en 2017", "coéquipiers de Caps"). */
+const PLAYER_TEAM = word("[ée]quipe|team|co[ée]quipiers?|team ?mates?|partenaires?");
+
+/** What a player's team did, not who was in it: the player's history answers. */
+const TEAM_RESULTS = word(
+  "r[ée]sultats?|results?|parcours|historique|history|bilan|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|carri[èe]re|career|victoires?|wins?|d[ée]faites?|losses|combien|how many",
 );
 
 /**
@@ -762,6 +799,31 @@ function rosterRoute(question: string, e: Entities): Route {
   };
 }
 
+/**
+ * One player and a team or roster word, no team named: the roster of the team they last played for in the scope asked.
+ * Without a period, the season of their latest game: a player who left keeps the roster they were in.
+ */
+function playerTeamRoute(e: Entities, rest: string, found: PlayerTeam): Route {
+  const player = e.players[0].player;
+  const cue = (ROSTER.exec(rest) ?? PLAYER_TEAM.exec(rest))![0];
+  const asked = e.yearFrom != null || e.yearTo != null;
+  const notes = [asked ? msg().route.playerTeamAsked(player, found.team) : msg().route.playerTeamLatest(player, found.team, found.year)];
+
+  if (asked && found.others.length) notes.push(msg().route.playerTeamOthers(player, found.others.join(", ")));
+
+  return {
+    kind: "tool",
+    call: {
+      tool: "team_roster",
+      input: { team: found.team, league: e.league, yearFrom: asked ? e.yearFrom : found.year, yearTo: asked ? e.yearTo : found.year, split: e.split, role: teamRoleOf(rest) },
+    },
+    confidence: 0.9,
+    reason: msg().route.playerTeam(cue, found.team),
+    notes,
+    forced: true,
+  };
+}
+
 /** One player's or one team's champion pool, in the competition and period asked (every competition when none is named). */
 function poolRoute(question: string, e: Entities): Route {
   const team = e.players.length === 0;
@@ -1002,6 +1064,17 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?", "top fpx 2019", "jg de G2"): the roster, that role first.
   // Read without the entities and years: "top 2019" is the top of 2019, not a "top N" ranking, and "Top Esports" is a team.
   const rest = maskUnderstood(question, e).rest;
+
+  // One player and a team or roster word, no team named ("Rooster team 2026", "coéquipiers de Faker en 2017"): the roster of their team.
+  // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
+  const asksPlayerTeam =
+    e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
+    (ROSTER.test(rest) || PLAYER_TEAM.test(rest)) && !TEAM_RESULTS.test(rest);
+
+  const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
+
+  if (playerTeam) return playerTeamRoute(e, rest, playerTeam);
+
   const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !detectMetric(question);
 
   if (oneTeam && (ROSTER.test(question) || (teamRoleOf(rest) && !RANKING.test(rest) && !COMPARE.test(question) && !HISTORY_WORDS.test(question) && !UNSUPPORTED.test(rest))))
@@ -1163,7 +1236,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ROSTER,
     ...TEAM_ROLE_CUES.map((r) => word(r.words)),
     ...SPLIT_CUES.map((c) => c.pattern),
-    word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
+    word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|co[ée]quipiers?|team ?mates?|partenaires?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
   ],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
   player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...COMPARISON_END_CUES.map(([, re]) => re), ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
@@ -1471,6 +1544,34 @@ const UNREAD_RULES =
   "a ranking of champions or players, personal details...), call no tool: " +
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
+/** The router's call once checked against the data, and the competition taken out of it. */
+export type GroundedCall = { call: ToolCall; dropped: string | null };
+
+/**
+ * A competition the LLM router adds on its own. When the understand step read none and the question names a player or a team,
+ * the router sometimes fills the argument from what it remembers of them ("Rooster team 2026" → LCK, where he no longer plays):
+ * the query then returns nothing. Such a competition is kept only when one of the names has a game in it over the period asked;
+ * otherwise the call goes back to the rules' competition (same tool) or to every competition, and the one removed is returned.
+ * Nobody named, or no game at all over the period: the competition stays, the data does not contradict it.
+ */
+export function groundLeague(db: DatabaseSync, call: ToolCall, e: Entities, route: Route, coverage: CoverageLookup): GroundedCall {
+  const league = "league" in call.input ? call.input.league : null;
+  const kept: GroundedCall = { call, dropped: null };
+
+  if (!league || e.league || e.players.length + e.teams.length === 0) return kept;
+
+  const games = (inLeague: string | null) =>
+    e.players.reduce((n, p) => n + coverage.player(p.player, inLeague, e.yearFrom, e.yearTo).games, 0) +
+    e.teams.reduce((n, t) => n + coverage.team(t.members, inLeague, e.yearFrom, e.yearTo).games, 0);
+
+  if (games(league) > 0 || games(null) === 0) return kept;
+
+  const rules = route.kind === "tool" && route.call.tool === call.tool && "league" in route.call.input ? route.call.input.league : null;
+  const grounded = withLeague(db, call, rules);
+
+  return grounded ? { call: grounded, dropped: league } : kept;
+}
+
 /** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */
 const llmRouter: Decider<BuildInput, BuildResult> = {
   level: "llm",
@@ -1481,7 +1582,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
     if (!llm || (route.kind === "sql" && !route.open)) return null;
 
     const unread = route.kind === "tool" || route.kind === "sql" ? (route.unread ?? []) : [];
-    const picked = route.kind === "tool" ? ` They picked ${route.call.tool} ${JSON.stringify(route.call.input)}.` : "";
+    const rulesPick = route.kind === "tool" ? ` They picked ${route.call.tool} ${JSON.stringify(route.call.input)}.` : "";
 
     const { toolCalls } = await generateText({
       model: llm.model,
@@ -1489,11 +1590,12 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       toolChoice: "auto",
       instructions:
         "Pick the one tool that answers the League of Legends esports question exactly, with its arguments. " +
-        "If no tool answers it exactly (other metrics such as end-of-game kills, durations, objective counts, or open rankings), call no tool." +
+        "If no tool answers it exactly (other metrics such as end-of-game kills, durations, objective counts, or open rankings), call no tool. " +
+        "Only filter on a competition, a period or a split that the question states: otherwise keep the resolved ones, null when there is none." +
         (unread.length ? UNREAD_RULES : ""),
       prompt:
         `Question: ${question}\nResolved entities: ${entitySummary(entities)}` +
-        (unread.length ? `\nWords the rules could not read: ${unread.join(", ")}.${picked}` : ""),
+        (unread.length ? `\nWords the rules could not read: ${unread.join(", ")}.${rulesPick}` : ""),
       telemetry: { functionId: "pick-tool" },
       maxOutputTokens: LLM_CALL.maxOutputTokens,
       maxRetries: LLM_CALL.maxRetries,
@@ -1504,16 +1606,18 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
     const typed = toolCalls.find((c) => !c.dynamic);
 
     if (!typed || typed.dynamic) return null;
-    const call = normalizeToolCall(db, typed);
+    const picked = normalizeToolCall(db, typed);
 
-    if (!call) return null;
+    if (!picked) return null;
+    const { call, dropped } = groundLeague(db, picked, entities, route, coverageLookup(db));
+    const said = msg().route.modelSays(llm.id, `${picked.tool}(${JSON.stringify(picked.input)})`);
 
     return {
       // The rules' notes (a default competition...) still hold when the LLM confirms their tool.
       result: { plan: toolPlan(bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
       confidence: 0.85,
       level: "llm",
-      reason: msg().route.modelSays(llm.id, `${call.tool}(${JSON.stringify(call.input)})`),
+      reason: dropped ? `${said} ; ${msg().route.leagueDropped(dropped)}` : said,
     };
   },
 };

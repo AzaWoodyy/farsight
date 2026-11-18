@@ -5444,3 +5444,11 @@ export const aiTools = Object.fromEntries(Object.entries(TOOLS).map(([name, def]
 export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof aiTools>): ToolCall | null {
   return TOOLS[call.toolName].normalize(db, call.input);
 }
+
+/** The same call on another competition (null for every competition), or null when the tool does not take that value. */
+export function withLeague(db: DatabaseSync, call: ToolCall, league: string | null): ToolCall | null {
+  const def = TOOLS[call.tool];
+  const raw = { ...call.input, league };
+
+  return def.input.safeParse(raw).success ? def.normalize(db, raw) : null;
+}
