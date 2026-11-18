@@ -215,14 +215,20 @@ const PLAYER_TEAM = word(
 /** "dans quelle équipe jouait Faker", "which team did Faker play for": the team asked, not a ranking of teams. */
 const WHICH_TEAM = /quelle [ée]quipe|which team/giu;
 
-/** The verb that makes "which team" a membership question; "which team beat Faker" asks for an opponent. */
-const PLAYS_FOR = word("jouait|jouaient|joue|jouent|a jou[ée]|[ée]volue|[ée]voluait|[ée]tait|est|play|plays|played|playing|was|is");
+/**
+ * What makes "which team" a membership question: "dans quelle équipe", "which team did Faker play for", "quelle équipe était".
+ * "Which team beat Faker" and "which team did Faker play in the final" ask for an opponent.
+ */
+const PLAYS_FOR = word(
+  "(?:dans|pour|chez|in|for|on) (?:quelle [ée]quipe|which team)|(?:quelle [ée]quipe|which team) (?:est|[ée]tait|is|was)|" +
+    "play(?:s|ed|ing)? (?:for|on|with)|jou(?:e|ait|[ée]) (?:pour|chez|dans|avec)",
+);
 
 /** What a player's team did, not who was in it: the player's history answers. */
 const TEAM_RESULTS = word(
   "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|class[ée]e?s?|rankings?|rank|ranks|ranked|standings|places?|" +
     "placements?|podiums?|finish|finished|termin[ée]e?s?|fini|carri[èe]re|career|victoires?|wins?|won|gagn[ée]e?s?|d[ée]faites?|losses|lost|perdu|" +
-    "battue?s?|bat|beat|beats|beaten|vaincue?s?|defeated|[ée]limin[ée]e?s?|eliminated|affront[ée]e?s?|faced|combien|how many",
+    "battue?s?|bat|beat|beats|beaten|vaincue?s?|defeated|[ée]limin[ée]e?s?|eliminated|affront[ée]e?s?|faced|combien|how many|how did|how well|comment",
 );
 
 /**
