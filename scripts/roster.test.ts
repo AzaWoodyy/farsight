@@ -179,6 +179,7 @@ describe("one player and a team or roster word: the roster of the team they last
     expect(route("résultats de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
     expect(route("meilleure équipe de Rooster", entities({ players: [rooster] }))).not.toBe("team_roster");
     expect(route("KDA de Rooster avec son équipe", entities({ players: [rooster] }))).not.toBe("team_roster");
+    expect(route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     // A team named keeps its own roster, and a player without a game in the scope keeps their history.
     expect(routeQuestion("roster de Fnatic en 2018", entities({ teams: [FNC], ...year(2018) }), SCHEMA, lookup)).toMatchObject({ call: { input: { team: "Fnatic" } } });
     expect(route("Faker team 2026", entities({ players: [player("Faker")], ...year(2026) }))).toBe("player_event_history");

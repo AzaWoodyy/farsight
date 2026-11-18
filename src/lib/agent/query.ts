@@ -1069,7 +1069,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
   const asksPlayerTeam =
     e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
-    (ROSTER.test(rest) || PLAYER_TEAM.test(rest)) && !TEAM_RESULTS.test(rest);
+    (ROSTER.test(rest) || PLAYER_TEAM.test(rest)) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(rest);
 
   const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
 
