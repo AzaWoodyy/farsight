@@ -150,7 +150,7 @@ describe("one player and a team or roster word: the roster of the team they last
   const lookup: CoverageLookup = { ...COVERAGE, playerTeam: (p) => (p === "Rooster" ? found : null) };
   const rooster = player("Rooster");
 
-  test.each(["Rooster team 2026", "l'équipe de Rooster en 2026", "Rooster roster 2026", "coéquipiers de Rooster en 2026", "who played with Rooster in 2026"])("%s", (q) => {
+  test.each(["Rooster team 2026", "l'équipe de Rooster en 2026", "Rooster roster 2026", "coéquipiers de Rooster en 2026", "who played with Rooster in 2026", "dans quelle équipe jouait Rooster en 2026 ?", "which team did Rooster play for in 2026?"])("%s", (q) => {
     const route = routeQuestion(q, entities({ players: [rooster], ...year(2026) }), SCHEMA, lookup);
 
     expect(route).toMatchObject({ kind: "tool", call: { tool: "team_roster", input: { team: "Shifters", league: null, yearFrom: 2026, yearTo: 2026, split: null, role: null } }, forced: true });
@@ -179,6 +179,9 @@ describe("one player and a team or roster word: the roster of the team they last
     expect(route("résultats de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
     expect(route("meilleure équipe de Rooster", entities({ players: [rooster] }))).not.toBe("team_roster");
     expect(route("KDA de Rooster avec son équipe", entities({ players: [rooster] }))).not.toBe("team_roster");
+    expect(route("Rooster team ranking 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("Rooster team record 2026", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
+    expect(route("who was Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     // A team named keeps its own roster, and a player without a game in the scope keeps their history.
     expect(routeQuestion("roster de Fnatic en 2018", entities({ teams: [FNC], ...year(2018) }), SCHEMA, lookup)).toMatchObject({ call: { input: { team: "Fnatic" } } });
@@ -290,7 +293,9 @@ describe("a player's team on a seeded database", () => {
       seed(db);
       const { playerTeam } = coverageLookup(db);
 
-      expect(playerTeam!("Looper", null, null, null, null)).toEqual({ team: "Samsung White", year: 2015, others: ["Samsung Ozone"] });
+      expect(playerTeam!("Looper", null, null, null, null)).toEqual({ team: "Samsung White", year: 2015, others: [] });
+      db.exec("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (5,6,3,'Top',1,0)");
+      expect(playerTeam!("Homme", null, null, null, null)).toEqual({ team: "Samsung Blue", year: 2014, others: ["Samsung Ozone"] });
       expect(playerTeam!("Looper", null, 2014, 2014, "Spring")).toEqual({ team: "Samsung Ozone", year: 2014, others: [] });
       expect(playerTeam!("Looper", "World Championship", 2014, 2014, null)).toEqual({ team: "Samsung White", year: 2014, others: [] });
       expect(playerTeam!("Deft", null, null, null, null)).toEqual({ team: "Samsung Blue", year: 2014, others: [] });

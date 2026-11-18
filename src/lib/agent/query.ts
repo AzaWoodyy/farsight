@@ -30,7 +30,7 @@ import {
 import { detectMetric, DRAGON_ELEMENT, isDragonCue, isSnapshot, type MetricCue, type Minute, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
 import type { Entities, QueryPlan, ToolName } from "./types";
-import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, SPLIT_CUES } from "./understand";
+import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, resolveTeam, SPLIT_CUES } from "./understand";
 
 // Rules router ----------------------------------------------------------------------
 
@@ -172,7 +172,12 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
         params,
       );
 
-      return rows.length ? { team: rows[0].team, year: rows[0].year, others: rows.slice(1).map((r) => r.team) } : null;
+      if (!rows.length) return null;
+
+      // The roster merges the names of one franchise (SK Telecom T1 → T1): they are not other teams.
+      const franchise = resolveTeam(db, rows[0].team)?.members ?? [];
+
+      return { team: rows[0].team, year: rows[0].year, others: rows.slice(1).map((r) => r.team).filter((t) => !franchise.includes(t)) };
     },
   };
 }
@@ -198,12 +203,22 @@ const NOT_ROSTER = word(
   "le plus|la plus|les plus|most|meilleure?s?|best|pires?|worst|top ?\\d+|kda|kills?|gold|golds|cs|d[ée]g[âa]ts|damage|vision|winrate|win rate|stats?|statistiques?",
 );
 
-/** With one player named: their team ("Rooster team 2026", "l'équipe de Faker en 2017", "coéquipiers de Caps"). */
-const PLAYER_TEAM = word("[ée]quipe|team|co[ée]quipiers?|team ?mates?|partenaires?");
+/**
+ * With one player named: their team ("Rooster team 2026", "l'équipe de Faker en 2017", "coéquipiers de Caps", "who played with Caps").
+ * Narrower than ROSTER: "who was Faker" names no team, so a verb needs its "with".
+ */
+const PLAYER_TEAM = word(
+  "[ée]quipe|team|co[ée]quipiers?|team ?mates?|partenaires?|ro[ao]?sters?|line[- ]?ups?|effectifs?|" +
+    "qui (?:jouait|jouaient|joue|jouent|a jou[ée]|ont jou[ée]) avec|who (?:played|plays) with",
+);
+
+/** "dans quelle équipe jouait Faker", "which team did Faker play for": the team asked, not a ranking of teams. */
+const WHICH_TEAM = /quelle [ée]quipe|which team/giu;
 
 /** What a player's team did, not who was in it: the player's history answers. */
 const TEAM_RESULTS = word(
-  "r[ée]sultats?|results?|parcours|historique|history|bilan|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|carri[èe]re|career|victoires?|wins?|d[ée]faites?|losses|combien|how many",
+  "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|rankings?|standings|places?|" +
+    "carri[èe]re|career|victoires?|wins?|d[ée]faites?|losses|combien|how many",
 );
 
 /**
@@ -805,7 +820,7 @@ function rosterRoute(question: string, e: Entities): Route {
  */
 function playerTeamRoute(e: Entities, rest: string, found: PlayerTeam): Route {
   const player = e.players[0].player;
-  const cue = (ROSTER.exec(rest) ?? PLAYER_TEAM.exec(rest))![0];
+  const cue = PLAYER_TEAM.exec(rest)![0];
   const asked = e.yearFrom != null || e.yearTo != null;
   const notes = [asked ? msg().route.playerTeamAsked(player, found.team) : msg().route.playerTeamLatest(player, found.team, found.year)];
 
@@ -1069,7 +1084,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
   const asksPlayerTeam =
     e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
-    (ROSTER.test(rest) || PLAYER_TEAM.test(rest)) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(rest);
+    PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(rest.replace(WHICH_TEAM, " "));
 
   const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
 
@@ -1236,7 +1251,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ROSTER,
     ...TEAM_ROLE_CUES.map((r) => word(r.words)),
     ...SPLIT_CUES.map((c) => c.pattern),
-    word("jou[ée]e?s?|jouait|jouaient|played|joueurs?|players?|[ée]quipes?|teams?|co[ée]quipiers?|team ?mates?|partenaires?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
+    word("jou[ée]e?s?|jouait|jouaient|played|plays?|joueurs?|players?|[ée]quipes?|teams?|co[ée]quipiers?|team ?mates?|partenaires?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
   ],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
   player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...COMPARISON_END_CUES.map(([, re]) => re), ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
