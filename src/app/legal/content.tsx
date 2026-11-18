@@ -111,7 +111,8 @@ const fr: Legal = {
             Les questions posées sont enregistrées chez Langfuse, sans adresse IP ni identifiant de visiteur, pour
             améliorer l&apos;agent, et envoyées à OpenRouter et au fournisseur du modèle de langage pour y répondre.
             L&apos;éditeur peut les consulter pendant 30 jours. Vercel, l&apos;hébergeur, reçoit ton adresse IP pour
-            servir le site et limiter les abus, et compte les pages vues (Vercel Web Analytics).
+            servir le site et limiter les abus, compte les pages vues (Vercel Web Analytics) et mesure leur temps
+            de chargement (Vercel Speed Insights).
           </p>
           <p>
             Les icônes viennent des serveurs de Riot Games (Data Dragon) ; les photos des joueurs, les logos des
@@ -227,7 +228,7 @@ const en: Legal = {
             The questions asked are logged at Langfuse, without an IP address or a visitor identifier, to improve the
             agent, and sent to OpenRouter and to the language model provider to answer them. The publisher can read
             them for 30 days. Vercel, the host, receives your IP address to serve the site and limit abuse, and counts
-            page views (Vercel Web Analytics).
+            page views (Vercel Web Analytics) and measures how fast they load (Vercel Speed Insights).
           </p>
           <p>
             Icons come from Riot Games&apos; servers (Data Dragon); player photos, team logos and dragon icons from

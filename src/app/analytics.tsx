@@ -1,33 +1,38 @@
 "use client";
 
-import { Analytics, type BeforeSendEvent } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
-// Page views only: no custom event is ever sent, and a question travels in the
-// body of POST /api/ask, never in the URL. Dropping the query string and the
-// hash keeps that true if a shareable `?q=` link is added one day.
-function pathOnly(event: BeforeSendEvent): BeforeSendEvent {
+// Page views and web vitals only: no custom event is ever sent, and a question
+// travels in the body of POST /api/ask, never in the URL. Dropping the query
+// string and the hash keeps that true if a shareable `?q=` link is added one day.
+function pathOnly<Event extends { url: string }>(event: Event): Event {
   const url = new URL(event.url);
 
   return { ...event, url: `${url.origin}${url.pathname}` };
 }
 
-// Outside production the package loads a debug script from another origin,
-// which the CSP refuses. In production the script is same-origin
-// (/_vercel/insights), injected with `defer` after hydration.
+// Outside production the packages load a debug script from another origin,
+// which the CSP refuses. In production the scripts are same-origin
+// (/_vercel/insights, /_vercel/speed-insights), injected with `defer` after hydration.
 //
-// The React component, not the Next one: that one reads the search params to name the route, which takes its
+// The React components, not the Next ones: those read the search params to name the route, which takes its
 // part of the page out of the static HTML (Next then closes the document and appends its scripts after
-// </html>). No route here has a parameter, and the script counts navigations by itself. The Next component
-// also read where Vercel serves the script from; these two variables are what it passed.
+// </html>). No route here has a parameter, and the scripts follow navigations by themselves. The Next
+// components also read where Vercel serves the scripts from; these two variables are what they passed.
 export function SiteAnalytics() {
   if (process.env.NODE_ENV !== "production") return null;
 
+  const served = {
+    framework: "next",
+    basePath: process.env.NEXT_PUBLIC_VERCEL_OBSERVABILITY_BASEPATH,
+    configString: process.env.NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG,
+  };
+
   return (
-    <Analytics
-      beforeSend={pathOnly}
-      framework="next"
-      basePath={process.env.NEXT_PUBLIC_VERCEL_OBSERVABILITY_BASEPATH}
-      configString={process.env.NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG}
-    />
+    <>
+      <Analytics beforeSend={pathOnly} {...served} />
+      <SpeedInsights beforeSend={pathOnly} {...served} />
+    </>
   );
 }
