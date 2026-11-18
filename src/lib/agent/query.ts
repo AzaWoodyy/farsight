@@ -1097,8 +1097,10 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(PLAYS_FOR.test(rest) ? rest.replace(WHICH_TEAM, " ") : rest);
 
   const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
+  const ofPlayerTeam = playerTeam ? playerTeamRoute(e, rest, playerTeam) : null;
 
-  if (playerTeam) return playerTeamRoute(e, rest, playerTeam);
+  // Only when the roster reads every word: "did Faker's team qualify" or "which team was Faker facing" ask something else about the team.
+  if (ofPlayerTeam?.kind === "tool" && unreadWords(question, e, ofPlayerTeam.call).words.length === 0) return ofPlayerTeam;
 
   const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !detectMetric(question);
 
@@ -1261,7 +1263,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ROSTER,
     ...TEAM_ROLE_CUES.map((r) => word(r.words)),
     ...SPLIT_CUES.map((c) => c.pattern),
-    word("jou[ée]e?s?|jouait|jouaient|played|plays?|joueurs?|players?|[ée]quipes?|teams?|co[ée]quipiers?|team ?mates?|partenaires?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
+    word("jou[ée]e?s?|jouait|jouaient|played|play(?:s|ed|ing)? (?:for|on|with)|joueurs?|players?|[ée]quipes?|teams?|co[ée]quipiers?|team ?mates?|partenaires?|chez|liste|list|actuel(?:le)?s?|current|now|maintenant|aujourd'hui|today|c'est"),
   ],
   head_to_head: [OPPOSE, VERSUS, HISTORY_WORDS, GAME_WORDS],
   player_comparison: [OPPOSE, VERSUS, HISTORY_WORDS, INGAME_WORDS, GAME_WORDS, ...COMPARISON_END_CUES.map(([, re]) => re), ...ROLE_CUES.map((r) => r.pattern), word("m[êe]me (?:lane|poste|r[ôo]le)|same (?:lane|role)|lanes?|laners?|postes?|r[ôo]les?")],
@@ -1570,13 +1572,14 @@ const UNREAD_RULES =
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
 /** The router's call once checked against the data, and the competition taken out of it. */
-export type GroundedCall = { call: ToolCall; dropped: string | null };
+export type GroundedCall = { call: ToolCall | null; dropped: string | null };
 
 /**
  * A competition the LLM router adds on its own. When the understand step read none and the question names a player or a team,
  * the router sometimes fills the argument from what it remembers of them ("Rooster team 2026" → LCK, where he no longer plays):
  * the query then returns nothing. Such a competition is kept only when one of the names has a game in it over the period asked;
  * otherwise the call goes back to the rules' competition (same tool) or to every competition, and the one removed is returned.
+ * A tool that needs a competition and has none to go back to gives no call: the router's pick is declined.
  * Nobody named, or no game at all over the period: the competition stays, the data does not contradict it.
  */
 export function groundLeague(db: DatabaseSync, call: ToolCall, e: Entities, route: Route, coverage: CoverageLookup): GroundedCall {
@@ -1594,7 +1597,7 @@ export function groundLeague(db: DatabaseSync, call: ToolCall, e: Entities, rout
   const rules = route.kind === "tool" && route.call.tool === call.tool && "league" in route.call.input ? route.call.input.league : null;
   const grounded = withLeague(db, call, rules);
 
-  return grounded ? { call: grounded, dropped: league } : kept;
+  return { call: grounded, dropped: league };
 }
 
 /** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */
@@ -1635,6 +1638,8 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
 
     if (!picked) return null;
     const { call, dropped } = groundLeague(db, picked, entities, route, coverageLookup(db));
+
+    if (!call) return null;
     const said = msg().route.modelSays(llm.id, `${picked.tool}(${JSON.stringify(picked.input)})`);
 
     return {

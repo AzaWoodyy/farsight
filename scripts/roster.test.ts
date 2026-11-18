@@ -187,6 +187,9 @@ describe("one player and a team or roster word: the roster of the team they last
     expect(route("l'équipe qui a battu Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(route("How did Rooster's team do in 2026?", entities({ players: [rooster], ...year(2026) }))).toBe("player_event_history");
     expect(route("Which team did Rooster play in the 2026 final?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Did Rooster's team qualify for Worlds in 2026?", entities({ players: [rooster], ...league("World Championship", "Worlds"), ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Which team was Rooster facing in the 2026 final?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
+    expect(route("Who did Rooster's team play at Worlds 2026?", entities({ players: [rooster], ...league("World Championship", "Worlds"), ...year(2026) }))).not.toBe("team_roster");
     expect(route("who was Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     // A team named keeps its own roster, and a player without a game in the scope keeps their history.
@@ -333,8 +336,8 @@ describe("a competition the LLM router adds on its own", () => {
       expect(rules).toMatchObject({ call: { tool: "player_event_history", input: { league: WORLDS_NAME } } });
       expect(groundLeague(db, history(LEC), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: LEC });
       expect(groundLeague(db, roster(LEC), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: LEC });
-      // A required competition with no rules' pick to fall back on stays as the router gave it.
-      expect(groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: history(LEC), dropped: null });
+      // A required competition with no rules' pick to fall back on: the router's call is declined.
+      expect(groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: LEC });
     } finally {
       db.close();
     }
