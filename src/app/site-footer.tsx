@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LanguageArrival } from "./i18n/language-arrival";
 import { type Locale, PATHS } from "./i18n/locales";
 import { SHELL } from "./i18n/shell";
 
@@ -58,6 +59,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           {footer.legal}
         </Link>
       </p>
+      {/* Last in the page, not in the root shell: its effect must run once the page's own text is hydrated. */}
+      <LanguageArrival />
     </footer>
   );
 }
