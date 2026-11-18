@@ -33,6 +33,11 @@ const nextConfig: NextConfig = {
       { key: "Content-Security-Policy", value: csp },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
+      // Vercel sends HSTS without includeSubDomains. Every subdomain is served by Vercel over HTTPS, so cover
+      // them too. No `preload`: the browser lists are a commitment that takes months to undo.
+      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+      // The site opens no window it talks to: outgoing links must not keep a handle on this one either.
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
     ] }];
