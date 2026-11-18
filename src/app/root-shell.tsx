@@ -5,7 +5,6 @@ import { SiteAnalytics } from "./analytics";
 import { PALETTE } from "./brand/site";
 import { THEME_SCRIPT } from "./brand/theme";
 import { ARRIVAL_SCRIPT } from "./i18n/arrival";
-import { LanguageArrival } from "./i18n/language-arrival";
 import type { Locale } from "./i18n/locales";
 import "./globals.css";
 
@@ -37,7 +36,6 @@ export function RootShell({ locale, children }: { locale: Locale; children: Reac
         {/* First in the body: the stored theme is applied before anything is painted. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {children}
-        <LanguageArrival />
         <SiteAnalytics />
       </body>
     </html>
