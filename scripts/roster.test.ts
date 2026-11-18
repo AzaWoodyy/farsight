@@ -336,6 +336,8 @@ describe("a competition the LLM router adds on its own", () => {
       expect(rules).toMatchObject({ call: { tool: "player_event_history", input: { league: WORLDS_NAME } } });
       expect(groundLeague(db, history(LEC), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: LEC });
       expect(groundLeague(db, roster(LEC), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: LEC });
+      // The rules' own default, confirmed by the router: kept as is, nothing was added.
+      expect(groundLeague(db, history(WORLDS_NAME, 2015), entities({ players: [player("Homme")], ...year(2014) }), rules, coverage)).toEqual({ call: history(WORLDS_NAME, 2015), dropped: null });
       // A required competition with no rules' pick to fall back on: the router's call is declined.
       expect(groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: LEC });
     } finally {

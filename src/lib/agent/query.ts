@@ -1595,6 +1595,9 @@ export function groundLeague(db: DatabaseSync, call: ToolCall, e: Entities, rout
   if (games(league) > 0 || games(null) === 0) return kept;
 
   const rules = route.kind === "tool" && route.call.tool === call.tool && "league" in route.call.input ? route.call.input.league : null;
+
+  // The rules' own default (the Worlds for a player's history): nothing the router added, and its note already says so.
+  if (rules === league) return kept;
   const grounded = withLeague(db, call, rules);
 
   return { call: grounded, dropped: league };
