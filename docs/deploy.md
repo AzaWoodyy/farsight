@@ -577,7 +577,22 @@ injecté en `defer` après l'hydratation. Il ne pose aucun cookie et n'envoie qu
 des pages vues : l'URL réduite au chemin (`beforeSend` retire la query string et
 le hash), le référent et l'appareil. Aucun événement personnalisé, donc jamais
 le texte d'une question, qui ne passe que dans le corps de `POST /api/ask`.
-Speed Insights n'est pas installé, comme sur le portfolio.
+
+### 6. Speed Insights
+
+Projet → **Speed Insights** → **Enable** (palier gratuit, disponible sur le plan Hobby ; Speed Insights Plus
+demande le plan Pro), puis redéployer : comme pour Web Analytics, les routes
+`/_vercel/speed-insights/*` n'existent qu'à partir du déploiement suivant, et d'ici là le script répond 404
+sans autre effet.
+
+Le même fichier monte le composant de `@vercel/speed-insights`, avec les mêmes règles : production seulement,
+script du même domaine, aucun cookie, URL réduite au chemin. Il envoie les Web Vitals mesurés dans le
+navigateur (LCP, INP, CLS, FCP, TTFB) avec le chemin, l'appareil et le pays.
+
+Le palier gratuit n'affiche que le Real Experience Score, par chemin, sur 24 heures ou 7 jours. Il compte
+10 000 événements sur 30 jours glissants, partagés entre les projets du compte : au-delà, Vercel suspend la
+collecte au moins 14 jours, sans facturation ni effet sur le site. Si le trafic s'en approche, baisser
+`sampleRate` sur le composant.
 
 ## Contrôles avant déploiement
 
