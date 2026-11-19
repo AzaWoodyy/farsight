@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 
@@ -8,7 +9,30 @@ import type { NextConfig } from "next";
 if (process.env.VERCEL === "1" && !existsSync("data/lol.sqlite"))
   throw new Error("data/lol.sqlite is missing: the build command must run `bun run data:pull` first (see docs/deploy.md).");
 
+/**
+ * The figures of the "how it works" pages (src/app/how/facts.ts), read once when Next starts and inlined in
+ * the bundle. Those pages are prerendered, but Next renders them again at request time for some crawlers, in a
+ * function that does not ship the database: they must not open it. Empty without a database (a fresh clone).
+ */
+function howFacts(): string {
+  if (!existsSync("data/lol.sqlite")) return "";
+  const db = new DatabaseSync("data/lol.sqlite", { readOnly: true });
+
+  try {
+    const built = db.prepare("SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1").get()?.finished_at ?? null;
+
+    const leagues = db
+      .prepare("SELECT league, SUM(games) AS games, SUM(ingame_games) AS ingame, MIN(CASE WHEN ingame_games > 0 THEN year END) AS first_ingame FROM v_ingame_coverage GROUP BY league")
+      .all();
+
+    return JSON.stringify({ built, leagues });
+  } finally {
+    db.close();
+  }
+}
+
 const nextConfig: NextConfig = {
+  env: { HOW_FACTS: howFacts() },
   // Static rendering needs inline bootstrap scripts. Keep this explicit policy
   // compatible with Next and BotID's same-origin challenge rewrites.
   headers() {
