@@ -22,6 +22,7 @@ Le sitemap garde ses quatre URL, `robots.txt` interdit toujours `/api/`.
 | Précédent / suivant | accueil et réponses dans l'ordre, sans nouvel appel à `/api/ask` ni requête au serveur |
 | Changement de langue depuis une réponse | `/en?q=Faker+contre+Chovy` : la question est reposée, réponse en anglais |
 | Page légale puis retour | la réponse est toujours là, sans nouvel appel |
+| Page légale ouverte pendant qu'une question tourne, puis retour | la question est reposée, sa réponse s'affiche |
 | Page légale puis logo | écran d'accueil, adresse sans `q` ; la question suivante part de zéro |
 | `?q=` vide, espaces seuls, 501 caractères, `%E0%A4%A`, `a%00b` | écran d'accueil, `q` retiré de l'adresse, aucun appel |
 | `?utm_source=x` | écran d'accueil, adresse inchangée |

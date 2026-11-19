@@ -3,7 +3,7 @@
 import "./zod-client";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
+import { type Ref, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { AgentUIMessage } from "@/lib/agent/types";
 import { type Locale, LOCALES } from "@/lib/locale";
 import { useLocale } from "./i18n/locale-context";
@@ -92,40 +92,75 @@ export function ChatEngine({
 
   const running = status === "submitted" || status === "streaming";
 
+  // The question the chat is on, kept to ask it again when its request was cut short (see below).
+  const current = useRef<{ text: string; sessionId: string } | null>(null);
+
+  const send = useCallback(
+    (question: { text: string; sessionId: string }) => {
+      current.current = question;
+      void sendMessage({ text: question.text }, { body: { sessionId: question.sessionId, locale } });
+    },
+    [sendMessage, locale],
+  );
+
   useImperativeHandle(
     controls,
     () => ({
       ask(text, sessionId) {
         if (running) void stop();
+        left.current = false;
         // One question at a time: the agent does not use the chat history.
         setMessages([]);
-        void sendMessage({ text }, { body: { sessionId, locale } });
+        send({ text, sessionId });
       },
       show(restored) {
         if (running) void stop();
+        left.current = false;
+        current.current = null;
         setMessages(restored);
       },
       reset() {
         if (running) void stop();
+        left.current = false;
+        current.current = null;
         setMessages([]);
       },
     }),
-    [running, stop, setMessages, sendMessage, locale],
+    [running, stop, setMessages, send],
   );
 
   useEffect(() => onChange({ messages, status, error }), [messages, status, error, onChange]);
 
   // The question that made the console load the chat: asked once, when it mounts. Once, not once per run of
-  // the effect: a page left for another one and shown again runs its effects again, with its state intact.
-  const asked = useRef(false);
+  // the effect: a page left for another one keeps its state and runs its effects again when it is shown again.
+  const mounted = useRef(false);
+  // The page left: useChat stops the request that was running, and nothing says so when the page comes back.
+  const left = useRef(false);
 
   useEffect(() => {
-    if (!first || first.restored || asked.current) return;
+    if (!mounted.current && first && !first.restored) send(first);
 
-    asked.current = true;
-    void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId, locale } });
+    mounted.current = true;
+
+    return () => {
+      left.current = true;
+    };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Shown again: a question left without its answer is asked again, instead of a trace that stays unfinished.
+  const answered = messages.some((m) => m.role === "assistant" && m.parts.some((p) => p.type === "data-answer"));
+
+  useEffect(() => {
+    if (!left.current || running) return;
+
+    left.current = false;
+
+    if (!current.current || error || answered) return;
+
+    setMessages([]);
+    send(current.current);
+  }, [running, error, answered, setMessages, send]);
 
   return null;
 }
