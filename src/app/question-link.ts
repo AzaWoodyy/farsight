@@ -23,17 +23,30 @@ export const questionLinkRead = () => document.documentElement.removeAttribute(O
 export const normalizeQuestion = (text: string): string => text.replace(/\s+/g, " ").trim();
 
 /**
- * The question a query string carries, or null: no `q`, an empty one, one longer than the field accepts, or
- * a malformed one (U+FFFD is what a broken percent-escape decodes to; a control character cannot be typed).
+ * The question a query string carries, or null: no `q`, an empty one, or one the field could not hold (longer
+ * than it accepts, a control character, a broken percent-escape). Decoded strictly, where URLSearchParams
+ * would let a broken escape through as text; a literal percent sign is `%25`.
  */
 export function questionIn(search: string): string | null {
-  const raw = new URLSearchParams(search).get(PARAM);
+  const encoded = search
+    .replace(/^\?/, "")
+    .split("&")
+    .find((pair) => pair.startsWith(`${PARAM}=`))
+    ?.slice(PARAM.length + 1);
 
-  if (raw == null) return null;
+  if (!encoded) return null;
 
-  const text = normalizeQuestion(raw);
+  let raw: string;
 
-  return !text || text.length > QUESTION_MAX_LENGTH || /[\uFFFD\p{Cc}]/u.test(text) ? null : text;
+  try {
+    raw = decodeURIComponent(encoded.replaceAll("+", " "));
+  } catch {
+    return null;
+  }
+
+  if (raw.length > QUESTION_MAX_LENGTH || /\p{Cc}/u.test(raw)) return null;
+
+  return normalizeQuestion(raw) || null;
 }
 
 /** The question of the page's address. */

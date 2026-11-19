@@ -10,7 +10,8 @@ LLM (mode règles). `/?q=<question>` en français, `/en?q=<question>` en anglais
 | `/en` | 1 | `https://askfarsight.com/en` |
 | `/en?q=Faker+vs+Chovy` | 1 | `https://askfarsight.com/en` |
 
-Le sitemap garde ses quatre URL, `robots.txt` interdit toujours `/api/`.
+Le sitemap garde ses quatre URL, `robots.txt` interdit toujours `/api/`. `Referrer-Policy: strict-origin` : les
+requêtes de la page, même vers le site lui-même, n'emportent que l'origine, jamais `?q=`.
 
 | Parcours | Résultat |
 |---|---|
@@ -24,7 +25,8 @@ Le sitemap garde ses quatre URL, `robots.txt` interdit toujours `/api/`.
 | Page légale puis retour | la réponse est toujours là, sans nouvel appel |
 | Page légale ouverte pendant qu'une question tourne, puis retour | la question est reposée, sa réponse s'affiche |
 | Page légale puis logo | écran d'accueil, adresse sans `q` ; la question suivante part de zéro |
-| `?q=` vide, espaces seuls, 501 caractères, `%E0%A4%A`, `a%00b` | écran d'accueil, `q` retiré de l'adresse, aucun appel |
+| `?q=` vide, espaces seuls, 501 caractères, `%E0%A4%A`, `Faker%ZZ`, `a%00b` | écran d'accueil, `q` retiré de l'adresse, aucun appel |
+| `?q=100%25` | la question « 100% » est posée |
 | `?utm_source=x` | écran d'accueil, adresse inchangée |
 
 Non vérifié ici : BotID et la règle du pare-feu, qui n'existent que sur Vercel. Le lien passe par le même
