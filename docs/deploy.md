@@ -470,6 +470,14 @@ nom `ask hourly cap`, mêmes conditions, `Fixed Window`, `3600` secondes,
 `40` requêtes, clé `IP`, action `Too Many Requests`. Elle laisse une règle
 personnalisée libre sur les 3 du plan Hobby.
 
+Aperçus de liens : `GET /api/card` (l'image d'une réponse) et les liens
+`/?q=…`, `/en?q=…` sont lus par les robots des messageries, donc sans BotID.
+Ils ne coûtent jamais d'appel au modèle : une lecture SQL et, pour l'image, son
+rendu, mis en cache par le CDN pour la durée du déploiement. Le code limite
+`/api/card` à 300 requêtes par IP et par 10 minutes, par instance. Si le
+trafic le demande, la troisième règle du firewall peut plafonner
+`Request Path` `equals` `/api/card` ; elle n'est pas créée par défaut.
+
 ### 2. BotID
 
 Le mode Basic n'a rien à activer : il marche dès le premier déploiement.

@@ -2,8 +2,9 @@ import { QUESTION_MAX_LENGTH } from "@/lib/agent/types";
 
 /**
  * The link to an answer: the question on screen is the `q` of the home page's address (`/?q=…`, `/en?q=…`).
- * The address is read and written in the browser only: the home pages stay static, and a link runs its
- * question through the same POST /api/ask as a typed one (BotID, rate limit, length limit).
+ * The console reads and writes the address in the browser only, and a link runs its question through the same
+ * POST /api/ask as a typed one (BotID, rate limit, length limit). The server reads `q` once, when a link is
+ * opened: for the metadata of its preview (answer-metadata), computed without the model.
  */
 const PARAM = "q";
 

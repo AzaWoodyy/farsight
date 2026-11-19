@@ -53,6 +53,8 @@ export function llmStatus(): LlmStatus {
 export function getLlm(): Llm | null {
   requestSignal.getStore()?.throwIfAborted();
 
+  if (rulesOnly.getStore()) return null;
+
   return llmStatus() === "ready" ? configured() : null;
 }
 
@@ -77,6 +79,11 @@ export function describeLlmError(error: Error): string {
 
   return msg().llm.quotaError;
 }
+
+// A run that must never call the model (the card of a link preview, asked by crawlers): every cascade stays at
+// its rules level, as without a key.
+const rulesOnly = new AsyncLocalStorage<boolean>();
+export const withoutLlm = <T>(run: () => T): T => rulesOnly.run(true, run);
 
 // Request-local cancellation reaches every cascade without global mutable state.
 const requestSignal = new AsyncLocalStorage<AbortSignal | undefined>();

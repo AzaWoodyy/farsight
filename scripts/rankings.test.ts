@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
+import { withLocale } from "../src/lib/agent/messages";
 import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf } from "../src/lib/agent/query";
 import { detectMetric } from "../src/lib/agent/metrics";
 import { bindTool, type ChampionRankingInput } from "../src/lib/agent/tools";
@@ -513,6 +514,28 @@ describe("rankings on a seeded season", () => {
       expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "azir", opponent: "ORIANNA" })).toMatchObject({ input: { champion: "Azir", opponent: "Orianna" } });
       expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Azir" })).toMatchObject({ input: { champion: "Azir", opponent: null } });
       expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Nobody" })).toBeNull();
+    }));
+
+  test("the ranked column a table names as its focus is one of its columns, in both languages", () =>
+    seeded(async (db) => {
+      const calls: Parameters<typeof bindTool>[1][] = [
+        { tool: "team_leaderboard", input: { ...LEC, order: "desc", side: null, minGames: 1, criterion: "winrate" } },
+        { tool: "team_leaderboard", input: { ...LEC, order: "desc", side: null, minGames: 1, criterion: "games" } },
+        { tool: "game_records", input: { ...LEC, player: null, role: null, metric: "kills" } },
+        { tool: "game_records", input: { ...LEC, player: null, role: null, metric: "damage" } },
+      ];
+
+      for (const call of calls)
+        for (const locale of ["fr", "en"] as const) {
+          const { table } = await withLocale(locale, () => run(db, call));
+
+          expect(table!.columns).toContain(table!.focus!);
+        }
+
+      // The views and the link preview read the focus by name: an English table with a French focus has none.
+      const en = await withLocale("en", () => run(db, calls[0]));
+
+      expect(en.table).toMatchObject({ focus: "win %" });
     }));
 
   test("game records: one line per game, of everyone, of a role or of one player", () =>

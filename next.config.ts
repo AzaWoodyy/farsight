@@ -31,6 +31,11 @@ function howFacts(): string {
   }
 }
 
+const DATABASE = "./data/lol.sqlite";
+
+// The functions that answer a link's preview without the model: the image, and the two pages a link opens.
+const CARD_ROUTES = ["/api/card", "/q", "/en/q"];
+
 const nextConfig: NextConfig = {
   env: { HOW_FACTS: howFacts() },
   // Static rendering needs inline bootstrap scripts. Keep this explicit policy
@@ -70,21 +75,31 @@ const nextConfig: NextConfig = {
   },
   // Two root layouts (one per language) leave an unmatched URL without a layout: src/app/global-not-found.tsx
   // is its 404, rendered on the server.
+  // A link to an answer (`/?q=…`) is served by a page rendered per request, which writes the answer's metadata
+  // for link previews (src/app/answer-metadata.ts). The home pages without a question stay static.
+  rewrites: async () => ({
+    beforeFiles: [
+      { source: "/", has: [{ type: "query", key: "q" }], destination: "/q" },
+      { source: "/en", has: [{ type: "query", key: "q" }], destination: "/en/q" },
+    ],
+    afterFiles: [],
+    fallback: [],
+  }),
   experimental: { globalNotFound: true },
   cacheComponents: true,
   partialPrefetching: true,
   // The database is opened at runtime from a computed path, so the tracer
-  // cannot see it: ship it inside the /api/ask function (read-only).
+  // cannot see it: ship it inside every function that reads it (read-only).
+  // scripts/size.ts measures each of them.
   outputFileTracingIncludes: {
-    "/api/ask": ["./data/lol.sqlite", "./src/lib/db/sql-child.mjs"],
+    "/api/ask": [DATABASE, "./src/lib/db/sql-child.mjs"],
+    ...Object.fromEntries(CARD_ROUTES.map((route) => [route, [DATABASE]])),
   },
   // The ingestion cache (data/raw: Cargo responses, Riot game JSON) and release
   // assets are never read at runtime, but the tracer picks up the cache files a
   // shared module can write: keep them out, or a local `vercel build` with a
   // full cache would ship gigabytes.
-  outputFileTracingExcludes: {
-    "/api/ask": ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"],
-  },
+  outputFileTracingExcludes: Object.fromEntries(["/api/ask", ...CARD_ROUTES].map((route) => [route, ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"]])),
   turbopack: {
     rules: {
       "*.css": {
