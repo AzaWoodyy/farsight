@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const locale = LOCALES.find((l) => l === url.searchParams.get("l")) ?? DEFAULT_LOCALE;
   const question = questionIn(url.search);
   const card = question ? await shareCard(question, locale) : null;
-  const image = card ? answerCard(card, locale) : siteCard(locale, CARD_SIZE);
+  const image = await (card ? answerCard(card, locale) : siteCard(locale, CARD_SIZE));
 
   // An answer changes with the database, and each data release is a new deployment: the CDN keeps the image for
   // the life of this one, a browser for an hour.
