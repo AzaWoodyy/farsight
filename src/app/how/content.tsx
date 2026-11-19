@@ -149,9 +149,7 @@ function fr(facts: Facts): How {
             <Step>1. Comprendre</Step>
             <p>
               Farsight repère d&apos;abord de qui et de quoi tu parles : joueurs, équipes, champion, compétition,
-              période. Il le fait avec des règles et des tables d&apos;alias tirées de Leaguepedia, complétées par quelques surnoms ajoutés à la main. Chovy, 정지훈 et
-              Jihun mènent au même joueur, une équipe renommée est rangée sous son nom actuel, et « oriana » est lu
-              comme Orianna.
+              période. Il le fait avec des règles et des tables d&apos;alias tirées de Leaguepedia.
             </p>
             <p>
               Quand un nom peut désigner plusieurs joueurs, Farsight en choisit un, le dit dans une note et propose les
@@ -310,7 +308,7 @@ function fr(facts: Facts): How {
               depuis 2016, la rune principale depuis 2018.
             </li>
             <li>
-              <strong>Ce qui est hors périmètre.</strong> Les ligues absentes du tableau (LJL, PCS, VCS, CBLOL…), les
+              <strong>Ce qui est hors périmètre.</strong> Les ligues absentes du tableau (LLA, TCL, LCO…), les
               autres jeux, et tout ce qui précède {YEAR_MIN}.
             </li>
             <li>
@@ -327,11 +325,6 @@ function fr(facts: Facts): How {
             <li>
               <strong>Les noms qu&apos;il ne connaît pas.</strong> Farsight reconnaît les alias que Leaguepedia liste
               et une poignée de surnoms ajoutés à la main. Un autre surnom n&apos;est pas reconnu, et il le signale.
-            </li>
-            <li>
-              <strong>Les questions très libres, sans garantie.</strong> Une requête générée est limitée à {MAX_ROWS}{" "}
-              lignes et {SQL_TIMEOUT_S} secondes, et le modèle peut mal lire la question. Le SQL exécuté est affiché
-              dans les étapes : c&apos;est là qu&apos;il faut regarder en cas de doute.
             </li>
           </List>
         ),
@@ -399,8 +392,7 @@ function en(facts: Facts): How {
             <Step>1. Understand</Step>
             <p>
               Farsight first works out who and what you are asking about: players, teams, a champion, a competition, a
-              period. It does this with rules and alias tables taken from Leaguepedia, plus a few nicknames added by hand. Chovy, 정지훈 and Jihun lead to
-              the same player, a renamed team is filed under its current name, and “oriana” is read as Orianna.
+              period. It does this with rules and alias tables taken from Leaguepedia.
             </p>
             <p>
               When a name could be several players, Farsight picks one, says so in a note and offers the others: it
@@ -549,7 +541,7 @@ function en(facts: Facts): How {
               Some statistics only exist from a given season: dragon elements from 2016, the keystone rune from 2018.
             </li>
             <li>
-              <strong>Anything out of scope.</strong> Leagues that are not in the table (LJL, PCS, VCS, CBLOL…), other
+              <strong>Anything out of scope.</strong> Leagues that are not in the table (LLA, TCL, LCO…), other
               games, and everything before {YEAR_MIN}.
             </li>
             <li>
@@ -567,11 +559,6 @@ function en(facts: Facts): How {
             <li>
               <strong>Names it does not know.</strong> Farsight recognizes the aliases Leaguepedia lists and a handful
               of nicknames added by hand. Any other nickname is not recognized, and it says so.
-            </li>
-            <li>
-              <strong>Very open questions, with no guarantee.</strong> A generated query is limited to {MAX_ROWS} rows
-              and {SQL_TIMEOUT_S} seconds, and the model can misread the question. The SQL that ran is shown in the
-              steps: that is where to look when in doubt.
             </li>
           </List>
         ),
