@@ -9,7 +9,13 @@ import { openDb, selectOne } from "./index";
  */
 export function dataReleaseDay(db = openDb()): string | null {
   const run = selectOne(db, z.object({ finished_at: z.string() }), "SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1");
-  const time = run ? Date.parse(run.finished_at) : Number.NaN;
+
+  return utcDay(run?.finished_at ?? null);
+}
+
+/** The UTC day (`YYYY-MM-DD`) of a recorded time, null when it is missing or unreadable. */
+export function utcDay(recorded: string | null): string | null {
+  const time = recorded ? Date.parse(recorded) : Number.NaN;
 
   return Number.isNaN(time) ? null : new Date(time).toISOString().slice(0, 10);
 }
