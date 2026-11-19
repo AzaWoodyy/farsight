@@ -65,7 +65,7 @@ Les contrôles de taille gardent la base sous 190 Mo et chaque fonction qui l'em
 
 ## Licence
 
-Le code est sous licence [MIT](LICENSE). La base, les releases de données et les fixtures dérivées de Leaguepedia restent sous [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), avec attribution à Leaguepedia. Les noms et icônes de League of Legends appartiennent à Riot Games et ne sont pas couverts par ces licences.
+Le code est sous licence [MIT](LICENSE). La police Geist Mono des images de partage (`src/app/brand/fonts`) est sous [SIL Open Font License 1.1](src/app/brand/fonts/OFL.txt). La base, les releases de données et les fixtures dérivées de Leaguepedia restent sous [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), avec attribution à Leaguepedia. Les noms et icônes de League of Legends appartiennent à Riot Games et ne sont pas couverts par ces licences.
 
 ## Audits
 
