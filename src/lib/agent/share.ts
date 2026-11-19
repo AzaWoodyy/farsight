@@ -42,11 +42,18 @@ const LABELS: Record<Locale, { faced: (games: number) => string; series: (n: num
   },
 };
 
+/** What the history tools count over the scope (player_event_history, team_history). */
+const HistoryTotals = z.object({ events: z.number(), wins: z.number(), losses: z.number() });
+
 const LINE_MAX = 200;
 const TOP = 3;
 
-/** A period that ends a sentence: not the one of "nov. 2025" or "Gen.G", which no capital letter follows. */
-const SENTENCE_END = /\.(?=\s+\p{Lu}|\s*$)/u;
+/**
+ * A period that ends a sentence: a capital letter or a number follows it (not "Gen.G", not "66.7 %"). Two
+ * periods are followed by one without ending anything: the rank of a list (": 1. PSG Talon, 2. T1"), which a
+ * ranking's summary writes after a separator, and a French month ("9 nov. 2025").
+ */
+const SENTENCE_END = /(?<![:;,]\s\d{1,2})(?<!\b(?:janv|févr|avr|juil|sept|oct|nov|déc))\.(?=\s+[\p{Lu}\d]|\s*$)/u;
 
 function firstSentence(text: string): string {
   const end = text.search(SENTENCE_END);
@@ -109,13 +116,16 @@ export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCa
     card.heading = one.label;
     card.duel = { a: one.teamA, b: one.teamB, scoreA: one.winsA, scoreB: one.winsB, caption: one.bestOf ? `BO${one.bestOf}` : "" };
   } else if (answer.rows.length) {
+    // The tool's own counts, the ones its summary writes: a tournament played for two teams is two rows.
+    const totals = HistoryTotals.safeParse(meta.totals).data;
     const best = answer.rows.filter((r) => r.placeNumber != null).toSorted((x, y) => x.placeNumber! - y.placeNumber! || y.year - x.year)[0];
 
-    card.figures = [
-      { label: t.events, value: String(answer.rows.length) },
-      { label: t.record, value: `${answer.rows.reduce((n, r) => n + r.wins, 0)}-${answer.rows.reduce((n, r) => n + r.losses, 0)}` },
-      ...(best ? [{ label: t.best, value: `${best.placeLabel} ${best.year}` }] : []),
-    ];
+    if (totals)
+      card.figures = [
+        { label: t.events, value: String(totals.events) },
+        { label: t.record, value: `${totals.wins}-${totals.losses}` },
+        ...(best ? [{ label: t.best, value: `${best.placeLabel} ${best.year}` }] : []),
+      ];
   } else {
     Object.assign(card, ranking(answer, locale));
   }

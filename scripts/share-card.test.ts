@@ -78,6 +78,14 @@ describe("which answers get a card", () => {
     expect(cardOf(answer({ summary: "T1 bat Gen.G 3-2 le 9 nov. 2025, KDA 3.13. Game 1 : T1 en 36:10." }))?.line).toBe("T1 bat Gen.G 3-2 le 9 nov. 2025, KDA 3.13.");
   });
 
+  test("the rank of a list does not end the sentence either; a number that closes or opens one does", () => {
+    const ranking = "Part des parties avec premier dragon au MSI (2023) : 1. PSG Talon (6 sur 9 parties, 66.7 %), 2. T1 (11 sur 17 parties, 64.7 %). 76 parties avec données in-game.";
+    const matchup = "Azir contre Orianna : 24 parties, Azir en gagne 9 (38 %) et Orianna 15. KDA d'Azir : 2,26, d'Orianna : 4,88.";
+
+    expect(cardOf(answer({ summary: ranking }))?.line).toBe("Part des parties avec premier dragon au MSI (2023) : 1. PSG Talon (6 sur 9 parties, 66.7 %), 2. T1 (11 sur 17 parties, 64.7 %).");
+    expect(cardOf(answer({ summary: matchup }))?.line).toBe("Azir contre Orianna : 24 parties, Azir en gagne 9 (38 %) et Orianna 15.");
+  });
+
   test("a long sentence is cut", () => {
     const line = cardOf(answer({ summary: `${"Faker ".repeat(60)}gagne.` }))?.line ?? "";
 
@@ -129,7 +137,7 @@ describe("history of a player or a team", () => {
   test("tournaments, record, and the best place (the latest of equal ones)", () => {
     const rows = [row(2024, 2, "Finaliste", 10, 5), row(2025, 5, "Quart de finale", 4, 3), row(2026, 2, "Finaliste", 12, 4)];
 
-    expect(cardOf(answer({ rows }))?.figures).toEqual([
+    expect(cardOf(answer({ rows }, { totals: { events: 3, wins: 26, losses: 12 } }))?.figures).toEqual([
       { label: "tournois", value: "3" },
       { label: "victoires-défaites", value: "26-12" },
       { label: "meilleur résultat", value: "Finaliste 2026" },
@@ -137,10 +145,20 @@ describe("history of a player or a team", () => {
   });
 
   test("no best place when none is known", () => {
-    expect(cardOf(answer({ rows: [row(2024, null, "n/d", 1, 2)] }), "en")?.figures).toEqual([
+    expect(cardOf(answer({ rows: [row(2024, null, "n/d", 1, 2)] }, { totals: { events: 1, wins: 1, losses: 2 } }), "en")?.figures).toEqual([
       { label: "tournaments", value: "1" },
       { label: "wins-losses", value: "1-2" },
     ]);
+  });
+
+  test("the counts are the tool's, as its summary writes them: a tournament played for two teams is one", () => {
+    const rows = [row(2025, 3, "Demi-finale", 6, 4), row(2025, 3, "Demi-finale", 2, 1)];
+
+    expect(cardOf(answer({ rows }, { totals: { events: 1, wins: 8, losses: 5 } }))?.figures.slice(0, 2)).toEqual([
+      { label: "tournois", value: "1" },
+      { label: "victoires-défaites", value: "8-5" },
+    ]);
+    expect(cardOf(answer({ rows }))?.figures).toEqual([]);
   });
 });
 

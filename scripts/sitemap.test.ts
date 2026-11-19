@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { sitemapEntries } from "../src/app/i18n/metadata";
+import robots from "../src/app/robots";
 import { dataReleaseDay } from "../src/lib/db/release";
 
 const RUNS = "CREATE TABLE ingest_runs (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL)";
@@ -39,4 +40,8 @@ test("the sitemap dates each page with its own day and keeps its alternates", ()
 
 test("a page without a known day gets no lastModified", () => {
   expect(sitemapEntries({ legal: "2026-11-15" })[0]?.lastModified).toBeUndefined();
+});
+
+test("robots.txt lets a link preview fetch its image, and nothing else under /api/", () => {
+  expect(robots().rules).toEqual({ userAgent: "*", allow: ["/", "/api/card"], disallow: "/api/" });
 });
