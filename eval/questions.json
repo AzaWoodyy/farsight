@@ -1780,6 +1780,31 @@
       }
     },
     {
+      "id": "ingame-cblol-first-dragon-2024",
+      "question": "Qui prend le plus souvent le premier dragon en CBLOL 2024 ?",
+      "tags": [
+        "ingame",
+        "leaderboard",
+        "team",
+        "cblol"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "Circuit Brazilian League of Legends",
+        "input": {
+          "subject": "team",
+          "metric": "first_dragon",
+          "yearFrom": 2024
+        },
+        "totals": {
+          "leader": "KaBuM! Esports",
+          "leader_value": 61.4,
+          "leader_count": 27
+        },
+        "rows": 10
+      }
+    },
+    {
       "id": "out-of-scope-game",
       "question": "qui a gagné les VCT Champions 2024",
       "tags": [
