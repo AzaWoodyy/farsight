@@ -107,7 +107,7 @@ test("router prioritizes timeline, missing coverage, unsupported data and tools"
       ["palmarès Worlds 2024", base, "tool"],
       ["first blood en LPL", {...base,league:"Tencent LoL Pro League"}, "missing"],
       ["MVP des Worlds 2024",base,"missing"],
-      ["résultats LJL",{...base,outOfScope:"LJL"},"out_of_scope"],
+      ["résultats LLA",{...base,outOfScope:"LLA"},"out_of_scope"],
       ["timeline finale Worlds 2024 game 3",base,"tool"],
     ] as const) expect(routeQuestion(q,entities,schema,coverage).kind).toBe(kind);
   } finally { db.close(); }
