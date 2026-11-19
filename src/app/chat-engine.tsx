@@ -3,7 +3,7 @@
 import "./zod-client";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { type Ref, useEffect, useImperativeHandle } from "react";
+import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
 import type { AgentUIMessage } from "@/lib/agent/types";
 import { type Locale, LOCALES } from "@/lib/locale";
 import { useLocale } from "./i18n/locale-context";
@@ -19,6 +19,8 @@ export type ChatState = {
 /** What the console drives. */
 export type ChatControls = {
   ask: (text: string, sessionId: string) => void;
+  /** Puts an answer already received back on screen, without asking again. */
+  show: (messages: AgentUIMessage[]) => void;
   reset: () => void;
 };
 
@@ -69,7 +71,8 @@ const transports = new Map(
 
 /**
  * The chat itself (AI SDK and its stream parsing), without any markup. The console loads it apart from the
- * home page, which then ships about half its JavaScript; `first` is the question asked before it was there.
+ * home page, which then ships about half its JavaScript; `first` is the question asked before it was there,
+ * with its answer when the console already has it (back to a question of this visit).
  */
 export function ChatEngine({
   controls,
@@ -78,10 +81,15 @@ export function ChatEngine({
 }: {
   controls: Ref<ChatControls>;
   onChange: (state: ChatState) => void;
-  first: { text: string; sessionId: string } | null;
+  first: { text: string; sessionId: string; restored?: AgentUIMessage[] } | null;
 }) {
   const locale = useLocale();
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport: transports.get(locale) });
+
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
+    transport: transports.get(locale),
+    messages: first?.restored,
+  });
+
   const running = status === "submitted" || status === "streaming";
 
   useImperativeHandle(
@@ -93,6 +101,10 @@ export function ChatEngine({
         setMessages([]);
         void sendMessage({ text }, { body: { sessionId, locale } });
       },
+      show(restored) {
+        if (running) void stop();
+        setMessages(restored);
+      },
       reset() {
         if (running) void stop();
         setMessages([]);
@@ -103,9 +115,15 @@ export function ChatEngine({
 
   useEffect(() => onChange({ messages, status, error }), [messages, status, error, onChange]);
 
-  // The question that made the console load the chat: asked once, when it mounts.
+  // The question that made the console load the chat: asked once, when it mounts. Once, not once per run of
+  // the effect: a page left for another one and shown again runs its effects again, with its state intact.
+  const asked = useRef(false);
+
   useEffect(() => {
-    if (first) void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId, locale } });
+    if (!first || first.restored || asked.current) return;
+
+    asked.current = true;
+    void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId, locale } });
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

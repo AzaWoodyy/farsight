@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
-import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
+import { type AgentUIMessage, type Answer, QUESTION_MAX_LENGTH, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
 import { HomeExamples } from "./home-examples";
 import { HOME_EVENT } from "./home-link";
 import { LocaleProvider, useUi } from "./i18n/locale-context";
 import type { Ui } from "./i18n/ui";
 import type { Locale } from "@/lib/locale";
+import { addressQuestion, normalizeQuestion, questionLink, questionLinkRead, setAddressQuestion } from "./question-link";
 
 // The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
 // itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
@@ -27,6 +28,9 @@ const loadModules = () =>
     }));
 
 const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
+
+/** Answers kept in the page for back and forward; the oldest goes first. */
+const KEPT_ANSWERS = 20;
 
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   ok: { mark: "ok", cls: "text-ok" },
@@ -54,8 +58,11 @@ function Console() {
 
   const chat = useRef<ChatControls>(null);
   // The latest question asked; the chat, loaded with the first one, sends that one when it mounts.
-  const [first, setFirst] = useState<{ text: string; sessionId: string } | null>(null);
-  const [{ messages, status, error }, setChatState] = useState<ChatState>(IDLE);
+  const [first, setFirst] = useState<{ text: string; sessionId: string; restored?: AgentUIMessage[] } | null>(null);
+  const [chatState, setChatState] = useState<ChatState>(IDLE);
+  // Without a question there is nothing to show, whatever the chat last said: a page shown again after
+  // another one runs the chat's effects again, and they report its state once more.
+  const { messages, status, error } = first ? chatState : IDLE;
   const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
   // The chat could not load: the question waits for nothing, say so (asking again retries).
   const [loadFailed, setLoadFailed] = useState(false);
@@ -85,8 +92,12 @@ function Console() {
     return () => window.removeEventListener("load", idle);
   }, [preload]);
 
-  function ask(q: string) {
-    const text = q.trim();
+  /**
+   * `address`: a question asked here goes in the address bar as a new history entry, so the address is always
+   * the link to what is on screen; one read from the address (a link, back, forward) leaves it as it is.
+   */
+  function ask(q: string, address: "push" | "keep" = "push") {
+    const text = normalizeQuestion(q);
 
     if (!text) return;
 
@@ -95,14 +106,22 @@ function Console() {
     setQuestion("");
     sessionId.current ??= crypto.randomUUID();
 
+    if (address === "push") setAddressQuestion(text);
+
     // Also the question shown until the chat has taken it in (the chat reads `first` only when it mounts).
     setFirst({ text, sessionId: sessionId.current });
-    chat.current?.ask(text, sessionId.current);
+
+    // No chat yet (first question, or after the home screen): it starts from nothing, not from what was last shown.
+    if (chat.current) chat.current.ask(text, sessionId.current);
+    else setChatState(IDLE);
+
     // A follow-up or a new question asked from low on the page: back up to where the new answer starts.
     scrollToTop();
   }
 
-  function restart() {
+  function restart(address: "push" | "keep" = "push") {
+    if (address === "push") setAddressQuestion(null);
+
     chat.current?.reset();
     // The chat unmounts with `first`: its last state would otherwise stay on screen.
     setFirst(null);
@@ -112,6 +131,73 @@ function Console() {
     sessionId.current = null;
     scrollToTop();
   }
+
+  // The answers of this visit, by question: back and forward show them again without asking the agent twice.
+  const answers = useRef(new Map<string, AgentUIMessage[]>());
+
+  useEffect(() => {
+    const text = messages.findLast((m) => m.role === "user")?.parts.find((p) => p.type === "text")?.text;
+    const answered = messages.some((m) => m.role === "assistant" && m.parts.some((p) => p.type === "data-answer"));
+
+    if (status !== "ready" || error || !text || !answered) return;
+
+    const kept = answers.current;
+
+    kept.delete(text);
+    kept.set(text, messages);
+
+    for (const oldest of kept.keys()) {
+      if (kept.size <= KEPT_ANSWERS) break;
+      kept.delete(oldest);
+    }
+  }, [messages, status, error]);
+
+  // The address is the question to show: a link opened cold, back or forward, or this page shown again after
+  // another one. A `q` nobody could have typed (empty, too long, malformed) is the home screen, and leaves
+  // the address.
+  const followAddress = useEffectEvent(() => {
+    const text = addressQuestion();
+
+    if (text == null) {
+      setAddressQuestion(null, "replace");
+
+      if (first) restart("keep");
+
+      return;
+    }
+
+    if (text === first?.text) return;
+
+    const restored = answers.current.get(text);
+
+    if (!restored) return ask(text, "keep");
+
+    sessionId.current ??= crypto.randomUUID();
+    setLoadFailed(false);
+    setQuestion("");
+    setFirst({ text, sessionId: sessionId.current, restored });
+    setChatState({ messages: restored, status: "ready", error: undefined });
+    chat.current?.show(restored);
+    scrollToTop();
+  });
+
+  // A layout effect: a link shows its question at the first paint of the console, not the home screen first.
+  useLayoutEffect(() => {
+    // A page the browser prerenders ahead of a visit (address bar, speculation) asks nothing until it is shown.
+    if ("prerendering" in document && document.prerendering)
+      document.addEventListener("prerenderingchange", followAddress, { once: true });
+    // The address is outside React: reading it is what this effect is for.
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
+    else followAddress();
+
+    questionLinkRead();
+    window.addEventListener("popstate", followAddress);
+
+    return () => {
+      document.removeEventListener("prerenderingchange", followAddress);
+      window.removeEventListener("popstate", followAddress);
+    };
+  }, []);
 
   // The logo in the header goes back to the home screen (see HomeLink).
   const onHome = useEffectEvent(() => restart());
@@ -140,7 +226,7 @@ function Console() {
   const askedText = asked ? asked.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : first && messages.length === 0 ? first.text : undefined;
 
   return (
-    <section>
+    <section data-console>
       {first && modules && <modules.chat.ChatEngine controls={chat} onChange={onChatChange} first={first} />}
       {askedText ? (
         <h1 className="sr-only">{askedText}</h1>
@@ -175,7 +261,7 @@ function Console() {
         <input
           id="question"
           value={question}
-          maxLength={500}
+          maxLength={QUESTION_MAX_LENGTH}
           onChange={(e) => setQuestion(e.target.value)}
           onFocus={preload}
           placeholder={ui.console.placeholder}
@@ -233,7 +319,7 @@ function Console() {
           <p role="status" className="sr-only">
             {running ? progressLabel(steps, ui) : answer ? ui.console.ready(answer.title) : ""}
           </p>
-          {/* A long question takes the whole line and pushes the button under it, instead of a narrow column. */}
+          {/* A long question takes the whole line and pushes the buttons under it, instead of a narrow column. */}
           <div className="flex flex-wrap items-start justify-between gap-x-4">
             <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
               <span aria-hidden className="text-muted">
@@ -241,13 +327,17 @@ function Console() {
               </span>{" "}
               {askedText}
             </p>
-            <button
-              type="button"
-              onClick={restart}
-              className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:pointer-fine:min-h-8"
-            >
-              {ui.console.restart}
-            </button>
+            {/* One group, kept to the right: on a narrow screen the two actions go under the question together. */}
+            <div className="ml-auto flex shrink-0 items-center gap-x-4">
+              <CopyLink key={askedText} question={askedText} />
+              <button
+                type="button"
+                onClick={() => restart()}
+                className="press inline-flex min-h-11 shrink-0 items-center text-xs text-muted underline decoration-line underline-offset-2 hover:text-accent sm:pointer-fine:min-h-8"
+              >
+                {ui.console.restart}
+              </button>
+            </div>
           </div>
           {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top and the
               steps stream in under it. Once the run is over and the answer is shown, the trace goes folded under
@@ -281,6 +371,56 @@ function Console() {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Copies the link to the question on screen. The three labels share one cell, so the button keeps its width
+ * and nothing next to it moves when the label changes.
+ */
+function CopyLink({ question }: { question: string }) {
+  const ui = useUi();
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const id = window.setTimeout(() => setState("idle"), 2500);
+
+    return () => window.clearTimeout(id);
+  }, [state]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(questionLink(question));
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  const labels = [
+    { when: "idle", text: ui.console.copyLink, cls: "underline decoration-line underline-offset-2" },
+    { when: "copied", text: ui.console.linkCopied, cls: "text-ok" },
+    { when: "failed", text: ui.console.copyFailed, cls: "text-error" },
+  ] as const;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={copy}
+        className="press inline-grid min-h-11 shrink-0 items-center justify-items-end text-xs text-muted hover:text-accent sm:pointer-fine:min-h-8"
+      >
+        {labels.map(({ when, text, cls }) => (
+          <span key={when} aria-hidden={state !== when || undefined} className={`col-start-1 row-start-1 ${cls} ${state === when ? "" : "invisible"}`}>
+            {text}
+          </span>
+        ))}
+      </button>
+      <span role="status" className="sr-only">
+        {state === "copied" ? ui.console.linkCopied : state === "failed" ? ui.console.copyFailed : ""}
+      </span>
+    </>
   );
 }
 

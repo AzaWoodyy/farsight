@@ -3,9 +3,9 @@
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
-// Page views and web vitals only: no custom event is ever sent, and a question
-// travels in the body of POST /api/ask, never in the URL. Dropping the query
-// string and the hash keeps that true if a shareable `?q=` link is added one day.
+// Page views and web vitals only: no custom event is ever sent. The link to an
+// answer carries its question in the address (`?q=`, see question-link):
+// dropping the query string and the hash keeps every question out of analytics.
 function pathOnly<Event extends { url: string }>(event: Event): Event {
   const url = new URL(event.url);
 

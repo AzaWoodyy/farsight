@@ -9,6 +9,9 @@ export const STEPS = ["understand", "build", "execute", "format"] as const;
 
 export type StepName = (typeof STEPS)[number];
 
+/** Longest question the agent takes: the field, a `?q=` link and POST /api/ask all hold to it. */
+export const QUESTION_MAX_LENGTH = 500;
+
 export { LEAGUE_NAMES, type LeagueName } from "../domain/leagues";
 
 import type { ItemKind } from "../domain/items";
