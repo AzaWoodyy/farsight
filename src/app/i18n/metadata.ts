@@ -49,19 +49,16 @@ export function pageMetadata(locale: Locale, page: PageKey, text?: { title: stri
   };
 }
 
-const SITEMAP: Record<PageKey, Pick<MetadataRoute.Sitemap[number], "changeFrequency" | "priority">> = {
-  home: { changeFrequency: "weekly", priority: 1 },
-  how: { changeFrequency: "weekly", priority: 0.6 },
-  legal: { changeFrequency: "yearly", priority: 0.2 },
-};
-
-/** Every page in every public language, each with its alternates. */
-export function sitemapEntries(): MetadataRoute.Sitemap {
+/**
+ * Every page in every public language, each with its alternates. `lastModified` is the day each page really
+ * changed (`YYYY-MM-DD`), given by the caller; a page without a known day gets none.
+ */
+export function sitemapEntries(lastModified: Partial<Record<PageKey, string>> = {}): MetadataRoute.Sitemap {
   return PAGES.flatMap((page) =>
     PUBLIC_LOCALES.map((locale) => {
       const alternates = languages(page, locale, absoluteUrl);
 
-      return { url: absoluteUrl(PATHS[page][locale]), ...SITEMAP[page], alternates: alternates && { languages: alternates } };
+      return { url: absoluteUrl(PATHS[page][locale]), lastModified: lastModified[page], alternates: alternates && { languages: alternates } };
     }),
   );
 }
