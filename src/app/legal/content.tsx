@@ -5,6 +5,11 @@ import { CC_BY_SA_URL, RIOT_BOILERPLATE, TEXT_LINK } from "../site-footer";
 const CONTACT_URL = "https://enzoneault.dev";
 const LICENSE_URL = "https://github.com/AzaWoodyy/farsight/blob/main/LICENSE";
 
+/** Day the text below last changed: shown on the page and sent as `lastmod` in the sitemap. Change it with the text. */
+export const LEGAL_UPDATED = "2026-11-15";
+
+const updatedOn = (tag: string) => new Intl.DateTimeFormat(tag, { dateStyle: "long", timeZone: "UTC" }).format(new Date(LEGAL_UPDATED));
+
 type Legal = {
   title: string;
   description: string;
@@ -62,7 +67,7 @@ const fr: Legal = {
   description:
     "Éditeur et hébergeur de Farsight, ce que deviennent les questions posées, notice Riot Games et licences des données et du code.",
   trail: "mentions légales",
-  updated: "Dernière mise à jour : 15 novembre 2026.",
+  updated: `Dernière mise à jour : ${updatedOn("fr-FR")}.`,
   toc: "Sommaire",
   sections: [
     {
@@ -179,7 +184,7 @@ const en: Legal = {
   description:
     "Publisher and host of Farsight, what happens to the questions asked, the Riot Games notice and the licenses of the data and the code.",
   trail: "legal notice",
-  updated: "Last updated: 15 November 2026.",
+  updated: `Last updated: ${updatedOn("en-GB")}.`,
   toc: "Contents",
   sections: [
     {
