@@ -4,7 +4,7 @@ import "./zod-client";
 import { Fragment, useMemo, useState } from "react";
 import type { Answer, ResultRow, TableCell } from "@/lib/agent/types";
 import { z } from "zod";
-import { detectChampionRanking } from "@/lib/champions";
+import { championSortKey, detectChampionRanking } from "@/lib/champions";
 import { detectComparison } from "@/lib/comparison";
 import { compareText, numberFormat } from "@/lib/locale";
 import { ChampionPoolView, ChampionProfileView, ChampionRankingView } from "./champion-view";
@@ -304,16 +304,6 @@ function ResultChampions({ champions }: { champions: ResultRow["champions"] }) {
   );
 }
 
-/** The ranking order a tool was asked for, when it has one (champion_ranking): the champion layout's bar. */
-const sortHint = (answer: Answer) => {
-  const input = answer.meta.input;
-
-  if (!input || !("sort" in input)) return undefined;
-
-  // A total is its own column ("total_deaths"), beside the per-game figures of the same name.
-  return "total" in input && input.total ? `total_${input.sort}` : input.sort;
-};
-
 /**
  * A two-player comparison or a champion ranking gets its own layout, detected from the table itself (typed
  * tool or generated SQL); any other table stays the sortable generic one.
@@ -321,7 +311,7 @@ const sortHint = (answer: Answer) => {
 function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Answer["table"]> }) {
   const locale = useLocale();
   const comparison = useMemo(() => detectComparison(table, answer.profiles, null, locale), [table, answer.profiles, locale]);
-  const champions = useMemo(() => detectChampionRanking(table, answer.icons, sortHint(answer), locale), [table, answer, locale]);
+  const champions = useMemo(() => detectChampionRanking(table, answer.icons, championSortKey(answer.meta.input), locale), [table, answer, locale]);
 
   if (comparison) return <PlayerComparison comparison={comparison} />;
 

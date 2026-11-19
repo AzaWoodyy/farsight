@@ -120,6 +120,13 @@ const fr: Legal = {
             de chargement (Vercel Speed Insights).
           </p>
           <p>
+            La question affichée figure dans l&apos;adresse de la page (<code>?q=</code>), pour que tu puisses
+            partager le lien vers une réponse. Elle reste donc dans l&apos;historique de ton navigateur, et quand
+            une page est ouverte ou rechargée à cette adresse, Vercel la reçoit avec ton adresse IP dans ses
+            journaux de requêtes. Les mesures d&apos;audience ne la reçoivent pas, et elle n&apos;est pas transmise
+            aux autres sites.
+          </p>
+          <p>
             Les icônes viennent des serveurs de Riot Games (Data Dragon) ; les photos des joueurs, les logos des
             équipes et les icônes de dragons de ceux de Fandom, qui héberge Leaguepedia : ton navigateur les télécharge directement, et ces serveurs voient donc ton
             adresse IP et l&apos;adresse du site.
@@ -234,6 +241,12 @@ const en: Legal = {
             agent, and sent to OpenRouter and to the language model provider to answer them. The publisher can read
             them for 30 days. Vercel, the host, receives your IP address to serve the site and limit abuse, and counts
             page views (Vercel Web Analytics) and measures how fast they load (Vercel Speed Insights).
+          </p>
+          <p>
+            The question on screen is part of the page address (<code>?q=</code>), so that you can share the link
+            to an answer. It therefore stays in your browser history, and when a page is opened or reloaded at
+            that address, Vercel receives it with your IP address in its request logs. The audience measurements
+            do not receive it, and it is not passed on to other sites.
           </p>
           <p>
             Icons come from Riot Games&apos; servers (Data Dragon); player photos, team logos and dragon icons from

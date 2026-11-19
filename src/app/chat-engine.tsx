@@ -3,7 +3,7 @@
 import "./zod-client";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { type Ref, useEffect, useImperativeHandle } from "react";
+import { type Ref, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { AgentUIMessage } from "@/lib/agent/types";
 import { type Locale, LOCALES } from "@/lib/locale";
 import { useLocale } from "./i18n/locale-context";
@@ -19,6 +19,8 @@ export type ChatState = {
 /** What the console drives. */
 export type ChatControls = {
   ask: (text: string, sessionId: string) => void;
+  /** Puts an answer already received back on screen, without asking again. */
+  show: (messages: AgentUIMessage[]) => void;
   reset: () => void;
 };
 
@@ -69,7 +71,8 @@ const transports = new Map(
 
 /**
  * The chat itself (AI SDK and its stream parsing), without any markup. The console loads it apart from the
- * home page, which then ships about half its JavaScript; `first` is the question asked before it was there.
+ * home page, which then ships about half its JavaScript; `first` is the question asked before it was there,
+ * with its answer when the console already has it (back to a question of this visit).
  */
 export function ChatEngine({
   controls,
@@ -78,36 +81,86 @@ export function ChatEngine({
 }: {
   controls: Ref<ChatControls>;
   onChange: (state: ChatState) => void;
-  first: { text: string; sessionId: string } | null;
+  first: { text: string; sessionId: string; restored?: AgentUIMessage[] } | null;
 }) {
   const locale = useLocale();
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({ transport: transports.get(locale) });
+
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat<AgentUIMessage>({
+    transport: transports.get(locale),
+    messages: first?.restored,
+  });
+
   const running = status === "submitted" || status === "streaming";
+
+  // The question the chat is on, kept to ask it again when its request was cut short (see below).
+  const current = useRef<{ text: string; sessionId: string } | null>(null);
+
+  const send = useCallback(
+    (question: { text: string; sessionId: string }) => {
+      current.current = question;
+      void sendMessage({ text: question.text }, { body: { sessionId: question.sessionId, locale } });
+    },
+    [sendMessage, locale],
+  );
 
   useImperativeHandle(
     controls,
     () => ({
       ask(text, sessionId) {
         if (running) void stop();
+        left.current = false;
         // One question at a time: the agent does not use the chat history.
         setMessages([]);
-        void sendMessage({ text }, { body: { sessionId, locale } });
+        send({ text, sessionId });
+      },
+      show(restored) {
+        if (running) void stop();
+        left.current = false;
+        current.current = null;
+        setMessages(restored);
       },
       reset() {
         if (running) void stop();
+        left.current = false;
+        current.current = null;
         setMessages([]);
       },
     }),
-    [running, stop, setMessages, sendMessage, locale],
+    [running, stop, setMessages, send],
   );
 
   useEffect(() => onChange({ messages, status, error }), [messages, status, error, onChange]);
 
-  // The question that made the console load the chat: asked once, when it mounts.
+  // The question that made the console load the chat: asked once, when it mounts. Once, not once per run of
+  // the effect: a page left for another one keeps its state and runs its effects again when it is shown again.
+  const mounted = useRef(false);
+  // The page left: useChat stops the request that was running, and nothing says so when the page comes back.
+  const left = useRef(false);
+
   useEffect(() => {
-    if (first) void sendMessage({ text: first.text }, { body: { sessionId: first.sessionId, locale } });
+    if (!mounted.current && first && !first.restored) send(first);
+
+    mounted.current = true;
+
+    return () => {
+      left.current = true;
+    };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Shown again: a question left without its answer is asked again, instead of a trace that stays unfinished.
+  const answered = messages.some((m) => m.role === "assistant" && m.parts.some((p) => p.type === "data-answer"));
+
+  useEffect(() => {
+    if (!left.current || running) return;
+
+    left.current = false;
+
+    if (!current.current || error || answered) return;
+
+    setMessages([]);
+    send(current.current);
+  }, [running, error, answered, setMessages, send]);
 
   return null;
 }

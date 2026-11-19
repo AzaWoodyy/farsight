@@ -11,7 +11,7 @@ import { DEFAULT_LOCALE, type Locale, NO_DATA, numberFormat, percent, sameLabel 
 /** Column names that hold a champion's name. */
 export const CHAMPION_COLUMN = /^(champion|champion_name|champ|champions|nom_champion)$/i;
 
-const RANK_COLUMN = /^(rank|rang|position|#)$/i;
+export const RANK_COLUMN = /^(rank|rang|position|#)$/i;
 
 export type ChampionMetric = { key: string; label: string; percent: boolean };
 
@@ -79,6 +79,16 @@ const Finite = z.number().finite();
 const numberOf = (v: TableCell) => Finite.safeParse(v).data ?? null;
 
 const textOf = (v: TableCell) => z.string().min(1).safeParse(v).data ?? null;
+
+/**
+ * The ranking order a tool was asked for, when it has one (champion_ranking): the column the champion layout
+ * gives its bar to. A total is its own column ("total_deaths"), beside the per-game figure of the same name.
+ */
+export function championSortKey(input: Answer["meta"]["input"]): string | undefined {
+  if (!input || !("sort" in input)) return undefined;
+
+  return "total" in input && input.total ? `total_${input.sort}` : input.sort;
+}
 
 export function detectChampionRanking(table: Answer["table"], icons: Record<string, string>, sortKey?: string, locale: Locale = DEFAULT_LOCALE): ChampionRanking | null {
   if (!table || table.rows.length === 0) return null;

@@ -1,13 +1,14 @@
 import { ImageResponse } from "next/og";
 import type { Locale } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
+import { cardFonts } from "./card-font";
 import { Mark } from "./logo";
 import { PALETTE, SITE } from "./site";
 
 export const shareAlt = (locale: Locale) => `${SITE.name} : ${SHELL[locale].tagline}`;
 
 /** Share card of a language: the mark and name, the tagline, and three real questions, on the dark palette. */
-export function shareCard(locale: Locale, size: { width: number; height: number }) {
+export async function shareCard(locale: Locale, size: { width: number; height: number }) {
   const { background, foreground, muted, accent } = PALETTE.dark;
   const { tagline, share } = SHELL[locale];
 
@@ -30,6 +31,6 @@ export function shareCard(locale: Locale, size: { width: number; height: number 
       </div>
       <div style={{ display: "flex", fontSize: 24, color: muted }}>{share.credit}</div>
     </div>,
-    size,
+    { ...size, fonts: await cardFonts() },
   );
 }

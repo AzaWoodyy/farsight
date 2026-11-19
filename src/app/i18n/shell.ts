@@ -23,8 +23,9 @@ const fr = {
     photos: "photos des joueurs et logos des équipes © Riot Games, les ligues et les équipes, via Leaguepedia",
     madeBy: "Projet réalisé par",
     privacy:
-      "Questions enregistrées sans adresse IP ni identifiant, et envoyées au modèle de langage : évite d'y mettre des informations personnelles.",
+      "Questions enregistrées sans adresse IP ni identifiant, envoyées au modèle de langage et visibles dans l'adresse de la page : évite d'y mettre des informations personnelles.",
     riot: "Farsight n'est ni approuvé ni sponsorisé par Riot Games.",
+    how: "Comment Farsight fonctionne",
     legal: "Mentions légales et confidentialité",
   },
   share: {
@@ -49,8 +50,10 @@ const en: Shell = {
     icons: "icons from",
     photos: "player photos and team logos © Riot Games, the leagues and the teams, via Leaguepedia",
     madeBy: "Built by",
-    privacy: "Questions are logged without an IP address or an identifier, and sent to the language model: avoid personal information.",
+    privacy:
+      "Questions are logged without an IP address or an identifier, sent to the language model and visible in the page address: avoid personal information.",
     riot: "Farsight isn't endorsed or sponsored by Riot Games.",
+    how: "How Farsight works",
     legal: "Legal notice and privacy",
   },
   share: {
