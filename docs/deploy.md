@@ -594,6 +594,21 @@ Le palier gratuit n'affiche que le Real Experience Score, par chemin, sur 24 heu
 collecte au moins 14 jours, sans facturation ni effet sur le site. Si le trafic s'en approche, baisser
 `sampleRate` sur le composant.
 
+### 7. Search Console après une nouvelle page
+
+Quand une page s'ajoute au site (une entrée de plus dans `PAGES`), une fois la
+production déployée :
+
+1. Vérifier que `https://askfarsight.com/sitemap.xml` liste la page dans chaque
+   langue, avec son `<lastmod>` et ses alternates.
+2. Search Console → **Sitemaps** → soumettre à nouveau `sitemap.xml`. Google
+   le relit de lui-même, la soumission demande seulement une lecture plus tôt.
+3. Search Console → **Inspection de l'URL** → pour chaque nouvelle adresse,
+   **Tester l'URL en direct** puis **Demander une indexation**.
+4. Quelques jours plus tard, rapport **Pages** : les nouvelles adresses doivent
+   être « Indexées », chacune avec son canonical et sa version dans l'autre
+   langue reconnue. L'indexation reste la décision de Google.
+
 ## Contrôles avant déploiement
 
 `PR CI` exécute les contrôles sur les PR et main. Deploy ne consomme automatiquement que les runs réussis issus d’un push du dépôt sur main, et ignore un SHA dépassé. Les données de CI sont épinglées dans `ci/data.json` ; leur release est exclue de la rétention. Voir `ci/README.md`. Le CLI Vercel est verrouillé dans le lockfile.

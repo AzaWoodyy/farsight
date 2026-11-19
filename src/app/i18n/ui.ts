@@ -55,6 +55,7 @@ const fr = {
     iconsFrom: "Noms et icônes des champions, objets et runes :",
     photos: "Photos des joueurs et logos des équipes : Leaguepedia, © Riot Games, les ligues et les équipes.",
     cited: "Chaque réponse cite ses pages.",
+    how: "Comment Farsight trouve ses réponses",
     ready: (title: string) => `Réponse prête : ${title}`,
     restart: "Nouvelle conversation",
     /** Copies the address of the answer (`?q=`), then says so in place. */
@@ -319,6 +320,7 @@ const en: Ui = {
     iconsFrom: "Names and icons of champions, items and runes:",
     photos: "Player photos and team logos: Leaguepedia, © Riot Games, the leagues and the teams.",
     cited: "Every answer cites its pages.",
+    how: "How Farsight finds its answers",
     ready: (title) => `Answer ready: ${title}`,
     restart: "New conversation",
     copyLink: "Copy link",
