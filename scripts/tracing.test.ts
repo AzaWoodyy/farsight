@@ -249,6 +249,15 @@ afterEach(async () => {
 });
 
 
+test("a step outside a question's trace is run without an observation", async () => {
+  // The card of a link preview runs the agent for a crawler: not a question, so nothing goes to Langfuse.
+  const result = await traceStep("understand", { question: QUESTION }, async () => entities, (e) => understandReport(QUESTION, e, undefined));
+
+  await flushTracing();
+  expect(result).toBe(entities);
+  expect(exporter.getFinishedSpans()).toEqual([]);
+});
+
 test("a question is one trace: root, step observations and the LLM generation", async () => {
   expect(startTracing(exporter)).toBe(true);
 

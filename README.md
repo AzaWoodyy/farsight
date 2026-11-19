@@ -2,7 +2,7 @@
 
 Un agent de recherche sur l’esport League of Legends (LoL), disponible sur [askfarsight.com](https://askfarsight.com).
 
-Pose une question comme « Résultats de Chovy à tous les Worlds », « T1 contre Gen.G en LCK » ou « Qui prend le plus souvent le premier dragon au MSI 2023 ? ». L’interface montre quatre étapes : compréhension des noms et alias, construction d’une requête, exécution avec correction éventuelle, puis tableau triable, synthèse et liens vers les sources. Une timeline montre aussi l’or et les événements d’une partie lorsque la source existe.
+Pose une question comme « Résultats de Chovy à tous les Worlds », « T1 contre Gen.G en LCK » ou « Qui prend le plus souvent le premier dragon au MSI 2023 ? ». L’interface montre quatre étapes : compréhension des noms et alias, construction d’une requête, exécution avec correction éventuelle, puis tableau triable, synthèse et liens vers les sources. Une timeline montre aussi l’or et les événements d’une partie lorsque la source existe. Chaque réponse a une adresse (`/?q=…`) : collée dans un chat, elle s’affiche avec le titre de la réponse et une image de ses chiffres, calculés sans le modèle.
 
 ## Stack
 
@@ -61,7 +61,7 @@ La couverture dépend de Leaguepedia et n’est pas exhaustive ni en temps réel
 
 Les questions peuvent être envoyées à OpenRouter et au fournisseur du modèle, et, si activé, à Langfuse. Le traçage masque certaines données personnelles courantes ; il ne faut pas saisir de renseignements sensibles. Aucun identifiant de visiteur ni IP n’est envoyé dans une trace. Les avis portent une signature expirante ; les compteurs de débit dans le code sont par instance et complètent les règles du pare-feu Vercel.
 
-Les contrôles de taille gardent la base sous 190 Mo et la fonction sous 250 Mo non compressés. Les quotas Hobby et le plafond de clé peuvent rendre le modèle temporairement indisponible. Les synthèses chiffrées sont conservatrices : une reformulation qui ne préserve pas le texte des faits est remplacée par la phrase déterministe.
+Les contrôles de taille gardent la base sous 190 Mo et chaque fonction qui l'embarque sous 250 Mo non compressés. Les quotas Hobby et le plafond de clé peuvent rendre le modèle temporairement indisponible. Les synthèses chiffrées sont conservatrices : une reformulation qui ne préserve pas le texte des faits est remplacée par la phrase déterministe.
 
 ## Licence
 

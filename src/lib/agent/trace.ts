@@ -163,6 +163,9 @@ export function formatReport(answer: Answer, part: StepPart | undefined): StepRe
 
 /** Runs one step inside its observation; `report` describes it once it is done. */
 export function traceStep<T>(step: StepName, input: StepInput, run: () => Promise<T>, report: (result: T) => StepReport): Promise<T> {
+  // Outside a question's trace (the card of a link preview), a step would open a trace of its own.
+  if (!scope.getStore()) return run();
+
   const observed = async (span: Pick<LangfuseSpan, "update">) => {
     span.update({ input });
     const result = await run();
