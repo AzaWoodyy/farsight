@@ -8,9 +8,9 @@ import { SITE } from "./brand/site";
 export const HOME_EVENT = "farsight:home";
 
 /**
- * The logo and the site name, linking to the home page of the language (`href`). On the home page itself a
- * search is page state, not a URL: the click then tells the console to start over instead of navigating to the
- * same address.
+ * The logo and the site name, linking to the home page of the language (`href`). On the home page itself the
+ * click tells the console to start over instead of navigating: the console owns the question of the address
+ * (`?q=`, see question-link) and takes it out, so the home screen is one step back from the answer.
  */
 export function HomeLink({ href, label }: { href: string; label: string }) {
   return (

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { messagesIn } from "@/lib/agent/messages";
 import { runAgent } from "@/lib/agent/run";
 import { traceQuestion } from "@/lib/agent/trace";
-import type { AgentUIMessage } from "@/lib/agent/types";
+import { type AgentUIMessage, QUESTION_MAX_LENGTH } from "@/lib/agent/types";
 import { requestPolicy } from "@/lib/http/request-policy";
 import { DEFAULT_LOCALE, LOCALES } from "@/lib/locale";
 import { signFeedback } from "@/lib/tracing/feedback-token";
@@ -70,7 +70,8 @@ export async function POST(req: Request) {
     .join(" ")
     .trim();
 
-  if (question.length > 500) return Response.json({ error: "question exceeds 500 characters" }, { status: 400 });
+  if (question.length > QUESTION_MAX_LENGTH)
+    return Response.json({ error: `question exceeds ${QUESTION_MAX_LENGTH} characters` }, { status: 400 });
 
   if (!question) return Response.json({ error: "question is required" }, { status: 400 });
 

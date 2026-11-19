@@ -398,3 +398,20 @@ details[data-how][open] > summary [data-chevron] {
 .marquees:has(:focus-visible) .marquee-track > [data-copy] {
   display: none;
 }
+
+/* A home page opened on a link to an answer (`?q=`, see question-link): its static HTML is the home screen,
+   which the visitor did not come for. The console stays hidden until it has read the address, then shows the
+   question at once. The 3 s is a ceiling for a page whose script never runs, not a duration. */
+:root[data-question-link] [data-console] {
+  animation: question-link-hold 3s step-end both;
+}
+
+@keyframes question-link-hold {
+  from {
+    visibility: hidden;
+  }
+
+  to {
+    visibility: visible;
+  }
+}

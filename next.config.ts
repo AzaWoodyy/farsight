@@ -38,7 +38,9 @@ const nextConfig: NextConfig = {
       { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
       // The site opens no window it talks to: outgoing links must not keep a handle on this one either.
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      // The origin alone, even to this site: the address of an answer holds its question (`?q=`), and the
+      // analytics scripts and their beacons are same-origin requests that would carry it as their referrer.
+      { key: "Referrer-Policy", value: "strict-origin" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
     ] }];
   },

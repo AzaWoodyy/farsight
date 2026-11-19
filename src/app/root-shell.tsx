@@ -6,6 +6,7 @@ import { PALETTE } from "./brand/site";
 import { THEME_SCRIPT } from "./brand/theme";
 import { ARRIVAL_SCRIPT } from "./i18n/arrival";
 import type { Locale } from "./i18n/locales";
+import { QUESTION_LINK_SCRIPT } from "./question-link";
 import "./globals.css";
 
 // The whole page is set in Geist Mono: Geist Sans would only add a preloaded font nobody reads.
@@ -31,6 +32,8 @@ export function RootShell({ locale, children }: { locale: Locale; children: Reac
       <head>
         {/* Before the first paint: the page must hear `pagereveal` to animate a language change. */}
         <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
+        {/* Before the first paint too: a page opened on a link to an answer does not show the home screen first. */}
+        <script dangerouslySetInnerHTML={{ __html: QUESTION_LINK_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
         {/* First in the body: the stored theme is applied before anything is painted. */}
