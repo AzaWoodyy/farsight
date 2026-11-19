@@ -271,8 +271,8 @@ function fr(facts: Facts): How {
             </p>
             <p>
               Le périmètre est fixe : les Worlds et le MSI, les ligues majeures de Corée, de Chine, d&apos;Europe et
-              d&apos;Amérique du Nord sous leurs noms successifs, et quelques ligues de développement et nationales. La
-              base commence en {YEAR_MIN}.
+              d&apos;Amérique du Nord sous leurs noms successifs, les ligues du Japon, du Pacifique, du Vietnam et du
+              Brésil, et quelques ligues de développement et nationales. La base commence en {YEAR_MIN}.
             </p>
             <Coverage
               locale="fr"
@@ -507,7 +507,8 @@ function en(facts: Facts): How {
             </p>
             <p>
               The scope is fixed: Worlds and MSI, the major leagues of Korea, China, Europe and North America under
-              their successive names, and a few development and national leagues. The database starts in {YEAR_MIN}.
+              their successive names, the leagues of Japan, the Pacific, Vietnam and Brazil, and a few development and
+              national leagues. The database starts in {YEAR_MIN}.
             </p>
             <Coverage
               locale="en"
