@@ -1678,6 +1678,108 @@
       }
     },
     {
+      "id": "ljl-standings-2023",
+      "question": "classement de la LJL 2023",
+      "tags": [
+        "ljl",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LoL Japan League",
+        "rows": 2
+      }
+    },
+    {
+      "id": "cblol-winners",
+      "question": "palmarès CBLOL",
+      "tags": [
+        "cblol",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Circuit Brazilian League of Legends",
+        "rowsMin": 25
+      }
+    },
+    {
+      "id": "vcs-champions-2024",
+      "question": "champions les plus joués en VCS 2024",
+      "tags": [
+        "vcs",
+        "champion",
+        "ranking"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "Vietnam Championship Series",
+        "rows": 20
+      }
+    },
+    {
+      "id": "h2h-loud-pain",
+      "question": "LOUD contre paiN Gaming",
+      "tags": [
+        "cblol",
+        "team",
+        "h2h"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "LOUD",
+          "paiN Gaming"
+        ],
+        "rowsMin": 21
+      }
+    },
+    {
+      "id": "pcs-winners-2023-en",
+      "question": "PCS 2023 winners",
+      "tags": [
+        "pcs",
+        "team",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Pacific Championship Series",
+        "rows": 2
+      }
+    },
+    {
+      "id": "lcp-standings-2025",
+      "question": "classement LCP 2025",
+      "tags": [
+        "lcp",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "League of Legends Championship Pacific",
+        "rows": 2
+      }
+    },
+    {
+      "id": "lta-south-winners-2025",
+      "question": "palmarès LTA Sud 2025",
+      "tags": [
+        "lta",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "League of Legends Championship of The Americas South",
+        "rows": 3
+      }
+    },
+    {
       "id": "out-of-scope-game",
       "question": "qui a gagné les VCT Champions 2024",
       "tags": [
