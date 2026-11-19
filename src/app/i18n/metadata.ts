@@ -51,6 +51,7 @@ export function pageMetadata(locale: Locale, page: PageKey, text?: { title: stri
 
 const SITEMAP: Record<PageKey, Pick<MetadataRoute.Sitemap[number], "changeFrequency" | "priority">> = {
   home: { changeFrequency: "weekly", priority: 1 },
+  how: { changeFrequency: "weekly", priority: 0.6 },
   legal: { changeFrequency: "yearly", priority: 0.2 },
 };
 

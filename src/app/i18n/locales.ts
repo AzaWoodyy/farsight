@@ -19,12 +19,13 @@ export const isPublic = (locale: Locale): boolean => PUBLIC_LOCALES.includes(loc
 /** The pages that exist in every language, and the path of each one. */
 export const PATHS = {
   home: { fr: "/", en: "/en" },
+  how: { fr: "/comment-ca-marche", en: "/en/how-it-works" },
   legal: { fr: "/mentions-legales", en: "/en/legal-notice" },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 export type PageKey = keyof typeof PATHS;
 
-export const PAGES: PageKey[] = ["home", "legal"];
+export const PAGES: PageKey[] = ["home", "how", "legal"];
 
 /** Each language named in itself, for the switch. */
 export const LOCALE_NAME: Record<Locale, string> = { fr: "Français", en: "English" };

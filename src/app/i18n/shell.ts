@@ -25,6 +25,7 @@ const fr = {
     privacy:
       "Questions enregistrées sans adresse IP ni identifiant, et envoyées au modèle de langage : évite d'y mettre des informations personnelles.",
     riot: "Farsight n'est ni approuvé ni sponsorisé par Riot Games.",
+    how: "Comment Farsight fonctionne",
     legal: "Mentions légales et confidentialité",
   },
   share: {
@@ -51,6 +52,7 @@ const en: Shell = {
     madeBy: "Built by",
     privacy: "Questions are logged without an IP address or an identifier, and sent to the language model: avoid personal information.",
     riot: "Farsight isn't endorsed or sponsored by Riot Games.",
+    how: "How Farsight works",
     legal: "Legal notice and privacy",
   },
   share: {

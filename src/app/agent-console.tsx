@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { type Answer, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
 import { HomeExamples } from "./home-examples";
 import { HOME_EVENT } from "./home-link";
-import { LocaleProvider, useUi } from "./i18n/locale-context";
+import { LocaleProvider, useLocale, useUi } from "./i18n/locale-context";
+import { PATHS } from "./i18n/locales";
 import type { Ui } from "./i18n/ui";
 import type { Locale } from "@/lib/locale";
 
@@ -46,6 +48,7 @@ export function AgentConsole({ locale }: { locale: Locale }) {
 
 function Console() {
   const ui = useUi();
+  const locale = useLocale();
   const [question, setQuestion] = useState("");
   // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
   // so a reload or "nouvelle conversation" starts another. It groups the traces of the conversation, and
@@ -154,7 +157,10 @@ function Console() {
             <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
           </h1>
           <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
-            {ui.console.intro}
+            {ui.console.intro}{" "}
+            <Link className="underline decoration-line underline-offset-2 hover:text-accent" href={PATHS.how[locale]}>
+              {ui.console.how}
+            </Link>
           </p>
         </div>
       )}

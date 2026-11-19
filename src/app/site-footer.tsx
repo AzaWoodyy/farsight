@@ -54,7 +54,10 @@ export function SiteFooter({ locale }: { locale: Locale }) {
       <p className="mt-2 max-w-[80ch]">
         {footer.privacy} {footer.riot}
       </p>
-      <p className="mt-2">
+      <p className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+        <Link className={`tap ${TEXT_LINK}`} href={PATHS.how[locale]}>
+          {footer.how}
+        </Link>
         <Link className={`tap ${TEXT_LINK}`} href={PATHS.legal[locale]}>
           {footer.legal}
         </Link>
