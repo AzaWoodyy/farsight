@@ -92,7 +92,7 @@ export type Entities = {
   yearTo: number | null;
   /** Spring / Summer / Winter, when the question names a split. */
   split: Split | null;
-  /** Out-of-scope competition or game named in the question (LJL, Valorant...). */
+  /** Out-of-scope competition or game named in the question (LLA, Valorant...). */
   outOfScope: string | null;
 };
 

@@ -31,7 +31,7 @@ Les variables facultatives et leur rôle sont dans [.env.example](.env.example).
 
 - [Leaguepedia](https://lol.fandom.com/wiki/League_of_Legends_Esports_Wiki) fournit tournois, scoreboards, joueurs, alias, classements et liens vers les JSON Riot, sous [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Les réponses citent les pages concernées. La base et les fixtures dérivées de Leaguepedia conservent cette attribution et cette licence.
 - [Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon) fournit les noms et icônes des champions, objets et runes. League of Legends et ses éléments appartiennent à Riot Games ; ce projet indépendant n’est pas affilié à Riot Games.
-- Le périmètre exact est défini dans [leagues.ts](src/lib/domain/leagues.ts) : Worlds et MSI, ligues majeures coréennes, chinoise, européenne et nord-américaines, plusieurs ligues de développement, France et deuxième division espagnole. Les périodes datées qui traversent un renommage incluent les noms historiques et affichent une note.
+- Le périmètre exact est défini dans [leagues.ts](src/lib/domain/leagues.ts) : Worlds et MSI, ligues majeures coréennes, chinoise, européenne et nord-américaines, ligues japonaise, pacifique, vietnamienne et brésilienne, plusieurs ligues de développement, France et deuxième division espagnole. Les périodes datées qui traversent un renommage incluent les noms historiques et affichent une note.
 
 Une seule base versionnée est utilisée dans les environnements de déploiement. Le workflow hebdomadaire collecte les nouvelles données et publie une release. Pour reconstruire localement depuis les sources :
 

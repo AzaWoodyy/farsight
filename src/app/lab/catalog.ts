@@ -219,7 +219,7 @@ export const LAB_GROUPS: LabGroup[] = [
       { id: "state-self-correction", label: "auto-correction", question: "first blood de Fnatic aux Worlds 2016" },
       { id: "state-missing", label: "donnée absente", question: "pentakills de Ruler en LPL" },
       { id: "state-missing-mvp", label: "donnée jamais stockée", question: "qui a été MVP des Worlds 2024" },
-      { id: "state-out-of-scope", label: "hors périmètre", question: "classement de la LJL 2023" },
+      { id: "state-out-of-scope", label: "hors périmètre", question: "classement de la LLA 2023" },
       { id: "state-off-topic", label: "hors sujet", question: "quelle est la météo à Paris" },
       { id: "state-no-llm", label: "SQL sans LLM", question: "durée moyenne des games en LPL 2024" },
       { id: "state-error", label: "erreur de l'agent", question: "Faker contre Chovy", state: "error" },

@@ -27,7 +27,7 @@ import {
  * agent says "not covered" instead of answering about something else.
  */
 const OUT_OF_SCOPE =
-  /\b(ljl|pcs|vcs|cblol|lla|tcl|lco|lcl|opl|lms|lst|lck cl? ?vietnam|valorant|vct|dota ?2?|counter[- ]strike|cs ?go|cs2|overwatch|fortnite|teamfight tactics|tft|wild rift|rocket league|fifa)\b/i;
+  /\b(lla|tcl|lco|lcl|opl|lms|lst|lck cl? ?vietnam|valorant|vct|dota ?2?|counter[- ]strike|cs ?go|cs2|overwatch|fortnite|teamfight tactics|tft|wild rift|rocket league|fifa)\b/i;
 
 export const SPLIT_CUES: { split: Split; pattern: RegExp }[] = [
   { split: "Spring", pattern: /\b(spring|printemps)\b/i },
