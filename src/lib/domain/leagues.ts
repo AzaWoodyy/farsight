@@ -10,10 +10,12 @@ export const LEAGUES = [
   { name: "World Championship", short: "Worlds", region: "International", international: true, cue: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i, family: "", from: 2011, to: null },
   { name: "Mid-Season Invitational", short: "MSI", region: "International", international: true, cue: /\b(msi|mid[- ]season invitational)\b/i, family: "", from: 2011, to: null },
   { name: "First Stand", short: "First Stand", region: "International", international: true, cue: /\bfirst stand\b/i, family: "", from: 2011, to: null },
+  { name: "Esports World Cup", short: "EWC", region: "International", international: true, cue: /\b(e-?sports? world cup|world cup|ewc|coupe du monde (de l'|des )e-?sports?)\b/i, family: "", from: 2011, to: null },
   { name: "LoL The Champions", short: "OGN Champions", region: "Korea", international: false, cue: /\b(ogn|champions korea \d{4}|the champions)\b/i, family: "LCK", from: 2011, to: 2015 },
   { name: "LoL Champions Korea", short: "LCK", region: "Korea", international: false, cue: /\blck\b/i, family: "LCK", from: 2016, to: null },
   { name: "LCK Challengers League", short: "LCK CL", region: "Korea", international: false, cue: /\b(lck cl|lck challengers)\b/i, family: "", from: 2011, to: null },
   { name: "Challengers Korea", short: "CK", region: "Korea", international: false, cue: /\bchallengers korea\b/i, family: "", from: 2011, to: null },
+  { name: "KeSPA Cup", short: "KeSPA Cup", region: "Korea", international: false, cue: /\bkespa( cup)?\b/i, family: "", from: 2011, to: null },
   { name: "LCK Academy Series", short: "LCK AS", region: "Korea", international: false, cue: /\blck (as|academy)\b/i, family: "", from: 2011, to: null },
   { name: "Tencent LoL Pro League", short: "LPL", region: "China", international: false, cue: /\blpl\b/i, family: "", from: 2011, to: null },
   { name: "LoL Japan League", short: "LJL", region: "Japan", international: false, cue: /\bljl\b/i, family: "", from: 2011, to: null },
@@ -44,36 +46,50 @@ export const LEAGUE_NAMES = LEAGUES.map((l) => l.name);
 
 /**
  * Cross-league competitions of the scope: a team plays them besides its own league (a French team in the
- * LFL and in the EMEA Masters), so they never name the league a team is in. Worlds, MSI and First Stand are `international`.
+ * LFL and in the EMEA Masters, an LCK team in the KeSPA Cup), so they never name the league a team is in. Worlds, MSI,
+ * First Stand and the Esports World Cup are `international`.
  */
-export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters"]);
+export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters", "KeSPA Cup"]);
 
-/** How French names a competition: "les Worlds", "le MSI", "la LCK". */
-export function frenchArticle(short: string): "les" | "le" | "la" {
+/** How French names a competition: "les Worlds", "le MSI", "l'EWC", "la LCK". */
+export function frenchArticle(short: string): "les" | "le" | "l'" | "la" {
   if (short === "Worlds" || short.endsWith("Masters")) return "les";
+
+  if (short === "EWC") return "l'";
 
   return short === "MSI" || short === "First Stand" ? "le" : "la";
 }
 
-/** "aux Worlds", "au MSI", "en LCK". */
+/** "les Worlds", "l'EWC", "la LCK". */
+export const frenchNamed = (short: string) => `${frenchArticle(short)}${frenchArticle(short) === "l'" ? "" : " "}${short}`;
+
+/** "aux Worlds", "au MSI", "à l'EWC", "à la KeSPA Cup", "en LCK". */
 export function frenchIn(short: string): string {
   const article = frenchArticle(short);
 
-  return article === "les" ? `aux ${short}` : article === "le" ? `au ${short}` : `en ${short}`;
+  if (article === "les") return `aux ${short}`;
+
+  if (article === "le") return `au ${short}`;
+
+  return article === "l'" || short.endsWith(" Cup") ? `à ${frenchNamed(short)}` : `en ${short}`;
 }
 
-/** "des Worlds", "du MSI", "de la LCK". */
+/** "des Worlds", "du MSI", "de l'EWC", "de la LCK". */
 export function frenchOf(short: string): string {
   const article = frenchArticle(short);
 
-  return article === "les" ? `des ${short}` : article === "le" ? `du ${short}` : `de la ${short}`;
+  return article === "les" ? `des ${short}` : article === "le" ? `du ${short}` : `de ${frenchNamed(short)}`;
 }
 
-/** English names an international event bare ("at Worlds", "at First Stand") and a league with "the". */
+/** English names an international event bare ("at Worlds", "at First Stand") and a league with "the" ("the EWC"). */
 export const englishBare = (short: string) => short === "Worlds" || short === "MSI" || short === "First Stand" || short.endsWith("Masters");
 
-/** "at Worlds", "at First Stand", "in LCK". */
-export const englishIn = (short: string) => (englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : `in ${short}`);
+/** "at Worlds", "at First Stand", "at the EWC", "at the KeSPA Cup", "in LCK". */
+export function englishIn(short: string): string {
+  if (englishBare(short) && !short.endsWith("Masters")) return `at ${short}`;
+
+  return short === "EWC" || short.endsWith(" Cup") ? `at the ${short}` : `in ${short}`;
+}
 
 export const SCOPE_LABEL = LEAGUES.map((l) => l.short).join(", ");
 

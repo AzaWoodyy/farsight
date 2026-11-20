@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
-import { englishBare, englishIn, frenchArticle, frenchIn } from "../domain/leagues";
+import { englishBare, englishIn, frenchIn, frenchNamed } from "../domain/leagues";
 import type { LlmStatus } from "./llm";
 
 /**
@@ -140,7 +140,7 @@ const fr = {
     playerRanking: (role: string | null, criterion: string, side: string | null) => `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion}${side ? `, côté ${side}` : ""})`,
     teamRanking: (criterion: string, ascending: boolean, side: string | null) => `classement d'équipes (critère : ${criterion}${ascending ? ", ordre croissant" : ""}${side ? `, côté ${side}` : ""})`,
     /** A league of the scope as a sentence names it: "la LPL", "le MSI", "les Worlds". */
-    leagueScope: (short: string | null) => (!short ? "cette compétition" : `${frenchArticle(short)} ${short}`),
+    leagueScope: (short: string | null) => (!short ? "cette compétition" : frenchNamed(short)),
     ingameStats: (mention: string) => `les statistiques in-game (${mention})`,
     ingameFor: (what: string, scope: string) => `${what} pour ${scope}`,
     noRiotGames: (league: string, year: number | null) => `aucune partie de ${league} ${year ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),

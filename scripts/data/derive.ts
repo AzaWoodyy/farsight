@@ -204,11 +204,16 @@ export function deriveDataset() {
   };
 
   // Tournaments -------------------------------------------------------------------
+  // A page named after its edition is that year: Leaguepedia files the December KeSPA Cup ("2025 LoL KeSPA Cup")
+  // under the next LCK season.
   const yearOf = (t: Row) => {
+    const page = String(t.Page);
+    const edition = /^(\d{4}) /.exec(page);
+
+    if (edition) return Number(edition[1]);
     const y = int(t.Year);
 
     if (y) return y;
-    const page = String(t.Page);
     const m = /(\d{4})/.exec(page) ?? /Season (\d)\b/.exec(page);
 
     if (m) return m[1].length === 4 ? Number(m[1]) : 2010 + Number(m[1]);

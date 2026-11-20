@@ -87,7 +87,7 @@ export type Classification = {
 };
 
 const INTERNATIONAL_EVENT =
-  /^(?:\d{4} Season World Championship|Season \d World Championship|\d{4} Mid-Season Invitational|\d{4} First Stand)$/;
+  /^(?:\d{4} Season World Championship|Season \d World Championship|\d{4} Mid-Season Invitational|\d{4} First Stand|Esports World Cup \d{4})$/;
 
 const QUALIFIER = /Regional Finals|Qualif|Promotion|Relegation|LCQ|Placements|Road to /i;
 

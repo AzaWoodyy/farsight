@@ -53,6 +53,34 @@ test("First Stand is its own international event, apart from Worlds and MSI", ()
   expect(classifyTournament("2025 First Stand", LEAGUES.find((l) => l.name === "First Stand")!)).toEqual({ stage: "main_event", eventPage: "2025 First Stand" });
 });
 
+describe("the Esports World Cup and the KeSPA Cup do not take the cues of Worlds", () => {
+  test.each([
+    ["EWC 2025 vainqueur", "Esports World Cup"],
+    ["qui a gagné l'Esports World Cup 2024", "Esports World Cup"],
+    ["who won the esports world cup 2026", "Esports World Cup"],
+    ["LoL World Cup 2025 winner", "Esports World Cup"],
+    ["vainqueur de la coupe du monde de l'esport 2025", "Esports World Cup"],
+    ["KeSPA Cup 2025", "KeSPA Cup"],
+    ["qui a gagné la kespa 2024", "KeSPA Cup"],
+    ["qui a gagné les Worlds 2024", "World Championship"],
+    ["world championship 2019", "World Championship"],
+    ["résultats de Faker au mondial", "World Championship"],
+    ["coupe du monde 2023", "World Championship"],
+    ["Chovy at Worlds", "World Championship"],
+    ["T1 en LCK 2025", "LoL Champions Korea"],
+    ["LCK Cup 2025", "LoL Champions Korea"],
+    ["vainqueur du MSI 2025", "Mid-Season Invitational"],
+  ] as const)("%s", (question, league) => expect(detectLeague(question).league).toBe(league));
+
+  test("the edition pages are the event itself", () => {
+    const ewc = LEAGUES.find((l) => l.name === "Esports World Cup")!;
+    const kespa = LEAGUES.find((l) => l.name === "KeSPA Cup")!;
+    expect(classifyTournament("Esports World Cup 2025", ewc)).toEqual({ stage: "main_event", eventPage: "Esports World Cup 2025" });
+    expect(classifyTournament("Esports World Cup 2026/Online Qualifiers/Korea", ewc)?.stage).toBe("qualifier");
+    expect(classifyTournament("2025 LoL KeSPA Cup", kespa)?.stage).toBe("season");
+  });
+});
+
 test("periods spanning renamings read both leagues in parameterized tool SQL", async () => {
   const db = await testDb();
 
