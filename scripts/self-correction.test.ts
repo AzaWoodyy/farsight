@@ -13,13 +13,6 @@ const entities: Entities = {
 
 const WORLDS = "World Championship";
 
-async function fresh() {
-  const db = await testDb();
-
-
-  return db;
-}
-
 /** One Worlds 2023 game of T1 against Gen.G, with Riot data and team stats for both sides. */
 async function seed(db: TestDb) {
   const league = LEAGUES.find((l) => l.name === WORLDS)!;
@@ -67,7 +60,7 @@ afterEach(() => {
 });
 
 test("gives up after three attempts once every relaxation came back empty", async () => {
-  const db = await fresh();
+  const db = await testDb();
 
   try {
     const out = await run(db, await plan(db, { league: WORLDS, yearFrom: 2023, yearTo: 2023 }));
@@ -88,7 +81,7 @@ test("gives up after three attempts once every relaxation came back empty", asyn
 });
 
 test("stops at once when an empty result has no relaxation left", async () => {
-  const db = await fresh();
+  const db = await testDb();
 
   try {
     const out = await run(db, await plan(db, { league: null, yearFrom: null, yearTo: null }));
@@ -106,7 +99,7 @@ test("stops at once when an empty result has no relaxation left", async () => {
 });
 
 test("succeeds on the second attempt after dropping the period", async () => {
-  const db = await fresh();
+  const db = await testDb();
 
   try {
     await seed(db);
@@ -126,7 +119,7 @@ test("succeeds on the second attempt after dropping the period", async () => {
 });
 
 test("succeeds at once when the scope has games", async () => {
-  const db = await fresh();
+  const db = await testDb();
 
   try {
     await seed(db);

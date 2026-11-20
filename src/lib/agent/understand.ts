@@ -1,3 +1,4 @@
+import { displayTeam } from "../domain/teams";
 import { detectLeague, eraLeague, LEAGUES, leagueMembers } from "../domain/leagues";
 import { generateText, Output } from "ai";
 import { z } from "zod";
@@ -494,8 +495,7 @@ async function readIndexes(db: Db): Promise<Indexes> {
   for (const { name } of rows) {
     add(name, single(name), "name");
 
-    const short = name
-      .replace(/\s*\(.*?\)\s*$/, "")
+    const short = displayTeam(name)
       .replace(/^Team\s+/i, "")
       .replace(/\s+(Esports|e-Sports|Gaming|Esport)$/i, "");
 
@@ -506,8 +506,12 @@ async function readIndexes(db: Db): Promise<Indexes> {
   for (const [alias, name] of Object.entries(TEAM_SHORTHANDS))
     if (gamesOf.has(name)) add(alias, single(name), "curated");
 
+  const franchiseOf = new Map<string, ResolvedTeam>();
+
   for (const f of FRANCHISES) {
     const team = { mention: "", team: f.team, members: f.members.filter((m) => gamesOf.has(m)) };
+
+    for (const member of team.members) franchiseOf.set(member, team);
 
     for (const a of [...f.aliases, ...f.members]) add(a, team, "curated");
   }
@@ -517,10 +521,6 @@ async function readIndexes(db: Db): Promise<Indexes> {
   const abbreviations = new Map<string, string[]>();
 
   // A member of a curated franchise keeps the franchise's names: "KRX" (Kiwoom DRX) counts every DRX game, like "DRX".
-  const franchiseOf = new Map<string, ResolvedTeam>();
-
-  for (const f of FRANCHISES) for (const m of f.members) if (gamesOf.has(m)) franchiseOf.set(m, { mention: "", team: f.team, members: f.members.filter((x) => gamesOf.has(x)) });
-
   for (const { name, short } of rows) {
     const abbr = short ? abbreviation(short) : null;
 
@@ -533,7 +533,7 @@ async function readIndexes(db: Db): Promise<Indexes> {
   for (const [alias, name] of Object.entries(TEAM_SHORTHANDS)) abbreviations.set(name, [...(abbreviations.get(name) ?? []), alias]);
 
   for (const { name } of rows) {
-    const words = name.replace(/\s*\(.*?\)\s*$/, "").split(/\s+/);
+    const words = displayTeam(name).split(/\s+/);
     const forms = [name];
 
     for (let i = 1; i < words.length; i++) {

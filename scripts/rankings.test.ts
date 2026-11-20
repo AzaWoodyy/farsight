@@ -383,6 +383,16 @@ describe("rankings on a seeded season", () => {
       expect(out.title).toBe("Classement — solo kills côté rouge (LEC 2025)");
     }));
 
+  test("an in-game ranking keeps the identity of players sharing a handle", () =>
+    seeded(async (db) => {
+      await db.exec("UPDATE players SET page = CASE id WHEN 1 THEN 'Echo (Kim)' ELSE 'Echo (Lee)' END WHERE id IN (1, 2)");
+      const out = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "player", metric: "solo_kills", minute: null, role: null, minGames: null, side: null } });
+
+      expect(out.table!.rows.map((r) => r[1])).toEqual(["Echo (Kim)", "Echo (Lee)"]);
+      expect(out.totals.leader).toBe("Echo (Kim)");
+      expect(out.facts).toContain("2. Echo (Lee)");
+    }));
+
   test("dragons and souls: kills by element, souls and the wins of the teams that got them, for every team or one", () =>
     seeded(async (db) => {
       // Game 1: G2 (blue, winner) takes four dragons and the mountain soul. Game 2: no soul. Game 3: Fnatic (red, winner) the chemtech soul, G2 the elder.

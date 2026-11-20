@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /**
- * Images Leaguepedia hosts that are not CC BY-SA (team logos, Riot's dragon icons): fair use, so the code and
+ * Images Leaguepedia hosts that are not CC BY-SA (player photos, team logos, Riot's dragon icons): fair use, so the code and
  * the database keep file names only, and the browser loads the image from Fandom's CDN at the width it needs.
  */
 const CDN = "https://static.wikia.nocookie.net/lolesports_gamepedia_en/images";

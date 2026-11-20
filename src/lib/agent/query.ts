@@ -50,7 +50,7 @@ export const OPPOSE = word(
 );
 
 const STANDINGS = word(
-  "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|who won|classements?|standings|podium|sacr[ée]s?|finale",
+  "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|qui a soulev[ée] (?:la coupe|le troph[ée]e)|who won|who lifted the (?:cup|trophy)|classements?|standings|podium|sacr[ée]s?|finale",
 );
 
 /** Metrics and open rankings no typed tool computes: they go to text-to-SQL. */

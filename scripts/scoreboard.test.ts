@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { answerProfiles } from "../src/lib/agent/run";
 import { bindTool, playerProfiles } from "../src/lib/agent/tools";
 import { LEAGUES } from "../src/lib/domain/leagues";
-import { photoUrl, playerPhoto } from "../src/lib/domain/player-photos";
+import { wikiImageUrl } from "../src/lib/domain/wiki-images";
+import { playerPhoto } from "../src/lib/domain/player-photos";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
 const ICON = "https://ddragon.leagueoflegends.com/cdn/img/x.png";
@@ -174,7 +175,7 @@ test("a player's photo is the one of the period: latest taken by then, else the 
     expect(await file(at("2020-05-01"))).toBe("BLG_Bin_2023_Split_1.png");
     expect(await file(null)).toBe("BLG_Bin_2025_Split_1.png");
     expect(await playerPhoto(db, "Bin", at("2024-10-02"))).toEqual({
-      url: photoUrl("BLG Bin 2024 Split 1.png"),
+      url: wikiImageUrl("BLG Bin 2024 Split 1.png", 112),
       year: 2024,
       source: "https://lol.fandom.com/wiki/File:BLG_Bin_2024_Split_1.png",
     });
@@ -186,7 +187,7 @@ test("a player's photo is the one of the period: latest taken by then, else the 
 
 test("a photo URL follows MediaWiki's md5 layout on Fandom's CDN", () => {
   // md5("Faker_Summer_2016.png") starts with 19, as the wiki's own URL for that file.
-  expect(photoUrl("Faker Summer 2016.png", 200)).toBe(
+  expect(wikiImageUrl("Faker Summer 2016.png", 200)).toBe(
     "https://static.wikia.nocookie.net/lolesports_gamepedia_en/images/1/19/Faker_Summer_2016.png/revision/latest/scale-to-width-down/200",
   );
 });

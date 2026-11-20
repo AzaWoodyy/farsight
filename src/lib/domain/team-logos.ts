@@ -1,5 +1,6 @@
 import { z } from "zod";
 import files from "./team-logos.json";
+import { displayTeam } from "./teams";
 import { wikiImageUrl } from "./wiki-images";
 
 /**
@@ -20,10 +21,7 @@ export type LogoTone = NonNullable<z.infer<typeof Logo>["tone"]>;
 
 const LOGOS = new Map(Object.entries(z.record(z.string(), Logo).parse(files)));
 
-/** The same team as the answers name it: without Leaguepedia's disambiguation ("Griffin (Korean Team)"). */
-const display = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
-
-const BY_DISPLAY = new Map([...LOGOS].map(([name, logo]) => [display(name), logo]));
+const BY_DISPLAY = new Map([...LOGOS].map(([name, logo]) => [displayTeam(name), logo]));
 
 /** Width served: twice the largest logo shown (32 px), for high-density screens. */
 const WIDTH = 64;

@@ -1,5 +1,7 @@
 "use client";
 
+import { displayTeam } from "@/lib/domain/teams";
+
 import "./zod-client";
 import { Fragment, useMemo, useState } from "react";
 import type { Answer, ResultRow, TableCell } from "@/lib/agent/types";
@@ -29,8 +31,6 @@ const CHIP =
   "press inline-flex min-h-11 items-center border border-dashed border-line px-3 text-left text-muted hover:border-accent hover:text-accent disabled:opacity-40 sm:pointer-fine:min-h-8";
 
 type SortKey = "year" | "team" | "place" | "record" | "winrate";
-
-const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 
 export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => void }) {
   const ui = useUi();
