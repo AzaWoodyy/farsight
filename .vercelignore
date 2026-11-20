@@ -12,3 +12,5 @@ next-env.d.ts
 # Local only: the CI snapshot cache (scripts/ci/data.ts) and working notes.
 /.ci-data/
 /plans/
+# Local link of the neon CLI (neon init).
+/.neon/
