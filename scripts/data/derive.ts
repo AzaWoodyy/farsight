@@ -15,6 +15,7 @@ import { playerIdentity } from "./identity";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch, type PlayerSummary } from "./ingame";
 import { loadIngame } from "./riot";
 import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
+import { type ScoreboardMatch, scheduleOnly, scheduledSeries } from "./schedule";
 import { type Classification, type Dataset, IngestRun, LEAGUES, classifyTournament, datasetFile } from "./scope";
 
 /** A value of a row, as both writers take it. */
@@ -299,6 +300,9 @@ export function deriveDataset() {
   const insDraft = store.insert("game_draft", ["game_id", "side", "kind", "slot", "champion_id"], { ignore: true });
   let skippedGames = 0;
 
+  /** Every scoreboard game, to tell the schedule's series that have one from those that have none. */
+  const scoreboardMatches: ScoreboardMatch[] = [];
+
   for (const g of load("games", Rows)) {
     const page = String(g.Page);
     const tid = tournamentId.get(page);
@@ -313,9 +317,11 @@ export function deriveDataset() {
     gameId.set(key, id);
     const date = text(g.Date);
     const slot = gameSlot(page, key);
+    const playedAt = date ? Math.floor(Date.parse(`${date.replace(" ", "T")}Z`) / 1000) : null;
+    scoreboardMatches.push({ page, tab: slot?.tab ?? null, n: slot?.match ?? null, team1: text(g.Team1), team2: text(g.Team2), playedAt });
     insGame.run(
       id, tid, slot?.tab ?? null, slot?.match ?? null, slot?.game ?? null, team(g.Team1), team(g.Team2), int(g.Winner), seconds(g.Len), text(g.Patch),
-      date ? Math.floor(Date.parse(`${date.replace(" ", "T")}Z`) / 1000) : null,
+      playedAt,
       int(g.D1), int(g.D2), int(g.Ba1), int(g.Ba2), int(g.To1), int(g.To2),
       int(g.H1), int(g.H2), int(g.V1), int(g.V2), int(g.I1), int(g.I2),
     );
@@ -838,6 +844,32 @@ export function deriveDataset() {
     runeCounts[d ? "ddragon" : retired ? "tree_retired" : voted ? "tree_from_lines" : "shard_or_unknown"]++;
   }
 
+  // Series without a scoreboard ----------------------------------------------------
+  // The decided matches of Leaguepedia's schedule that no scoreboard game covers: their result, without any game
+  // statistic. Team names are the schedule's, the same page names as the scoreboards'. Absent from an older raw cache.
+  const scheduleFile = datasetFile("schedule");
+  const insSeries = store.insert("series_results", ["id", "tournament_id", "tab", "match_n", "team1_id", "team2_id", "winner_side", "team1_score", "team2_score", "forfeit", "played_at"]);
+  const seriesCounts = { decided: 0, outside_scope: 0, with_scoreboard: 0, kept: 0, forfeits: 0 };
+
+  if (existsSync(scheduleFile)) {
+    const matches = load("schedule", Rows).flatMap((r) => scheduledSeries(r) ?? []);
+    const decided = matches.filter((s) => s.winner != null);
+    seriesCounts.decided = decided.length;
+    seriesCounts.outside_scope = decided.filter((s) => !tournamentId.has(s.page)).length;
+    // Every match of the scope claims its scoreboards, a draw included; only the decided ones are kept.
+    const kept = scheduleOnly(matches.filter((s) => tournamentId.has(s.page)), scoreboardMatches);
+    seriesCounts.with_scoreboard = decided.length - seriesCounts.outside_scope - kept.length;
+
+    kept.forEach((s, i) => {
+      insSeries.run(i + 1, tournamentId.get(s.page)!, s.tab, s.n, team(s.team1), team(s.team2), s.winner!, s.score1, s.score2, s.forfeit, s.playedAt);
+      seriesCounts.kept++;
+
+      if (s.forfeit) seriesCounts.forfeits++;
+    });
+  } else {
+    console.warn(`  ${scheduleFile} is missing: no series without a scoreboard (run \`bun run data:fetch\`)`);
+  }
+
   // Team abbreviations ------------------------------------------------------------
   // Teams.Short of the team's page ("Karmine Corp Blue Stars" -> "KCBS"), or of the page an older name redirects to
   // ("Afreeca Freecs" -> "DN SOOPers" -> "DNS"). Absent from an older raw cache: the teams then have no abbreviation.
@@ -890,6 +922,6 @@ export function deriveDataset() {
     tables: new Map([...store.tables].map(([name, t]) => [name, { columns: t.columns, rows: t.rows }])),
     runs,
     ddragonVersion: dd.version,
-    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts },
+    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts, schedule_series: seriesCounts },
   };
 }

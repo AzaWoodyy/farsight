@@ -7661,6 +7661,134 @@
           "à l'EWC (2025)"
         ]
       }
+    },
+    {
+      "id": "schedule-h2h-geng-brion-2022",
+      "question": "Gen.G contre Fredit BRION en LCK 2022",
+      "tags": [
+        "team",
+        "h2h",
+        "schedule"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "Gen.G",
+          "HANJIN BRION"
+        ],
+        "totals": {
+          "series": 4,
+          "series_a": 4,
+          "series_b": 0,
+          "schedule_series": 1,
+          "wins_a": 6,
+          "wins_b": 0
+        },
+        "notes": [
+          "calendrier de Leaguepedia",
+          "Un forfait"
+        ]
+      }
+    },
+    {
+      "id": "schedule-history-t1-rookies-2020",
+      "question": "Historique de T1 Rookies en LCK AS 2020",
+      "tags": [
+        "team",
+        "history",
+        "schedule"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "T1 Rookies"
+        ],
+        "rows": 2,
+        "totals": {
+          "events": 2,
+          "wins": 16,
+          "losses": 1,
+          "schedule_series": 8
+        },
+        "notes": [
+          "8 séries n'ont que leur résultat"
+        ]
+      }
+    },
+    {
+      "id": "schedule-finals-lck-as-2020",
+      "question": "Finales LCK AS 2020",
+      "tags": [
+        "series",
+        "schedule"
+      ],
+      "expect": {
+        "route": "series",
+        "league": "LCK Academy Series",
+        "totals": {
+          "series": 5,
+          "schedule_series": 4
+        },
+        "notes": [
+          "4 séries n'ont que leur résultat"
+        ]
+      }
+    },
+    {
+      "id": "schedule-h2h-en",
+      "question": "Gen.G vs Fredit BRION in LCK 2022",
+      "locale": "en",
+      "tags": [
+        "team",
+        "h2h",
+        "schedule",
+        "english"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "Gen.G",
+          "HANJIN BRION"
+        ],
+        "totals": {
+          "series": 4,
+          "series_a": 4,
+          "schedule_series": 1,
+          "wins_a": 6,
+          "wins_b": 0
+        },
+        "notes": [
+          "Leaguepedia's match schedule",
+          "One forfeit"
+        ]
+      }
+    },
+    {
+      "id": "schedule-history-en",
+      "question": "T1 Rookies history in LCK AS",
+      "locale": "en",
+      "tags": [
+        "team",
+        "history",
+        "schedule",
+        "english"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "T1 Rookies"
+        ],
+        "totals": {
+          "events": 18,
+          "wins": 124,
+          "losses": 101,
+          "schedule_series": 29
+        },
+        "notes": [
+          "29 series have only their result",
+          "2 forfeits"
+        ]
+      }
     }
   ]
 }

@@ -110,4 +110,6 @@ console.log("filled from the Riot JSON (Leaguepedia had none):", fromRiot);
 
 console.log("player links:", identity);
 
+console.log("series without a scoreboard:", derived.report.schedule_series);
+
 console.table(byLeague);

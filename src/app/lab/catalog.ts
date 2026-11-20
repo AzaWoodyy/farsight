@@ -92,6 +92,7 @@ export const LAB_GROUPS: LabGroup[] = [
     variants: [
       { id: "team-history", label: "une compétition", question: "historique de T1 aux Worlds" },
       { id: "team-history-all", label: "toutes compétitions", question: "palmarès de KC" },
+      { id: "team-history-schedule", label: "séries du calendrier seul", question: "Historique de T1 Rookies en LCK AS 2020" },
     ],
   },
   {
@@ -101,6 +102,7 @@ export const LAB_GROUPS: LabGroup[] = [
       { id: "h2h", label: "toutes compétitions", question: "KC contre MKOI" },
       { id: "h2h-long", label: "longue rivalité", question: "T1 contre Gen.G en LCK" },
       { id: "h2h-short", label: "peu de séries", question: "T1 vs Anyone's Legend" },
+      { id: "h2h-schedule", label: "forfait du calendrier seul", question: "Gen.G contre Fredit BRION en LCK 2022" },
     ],
   },
   {
@@ -177,6 +179,7 @@ export const LAB_GROUPS: LabGroup[] = [
       { id: "series-final", label: "une finale", question: "Finale des Worlds 2025" },
       { id: "series-phase", label: "une phase entière", question: "quarts de finale des Worlds 2025" },
       { id: "series-teams", label: "deux équipes", question: "T1 vs Gen.G finale LCK 2024" },
+      { id: "series-schedule", label: "séries du calendrier seul", question: "Finales LCK AS 2020" },
     ],
   },
   {

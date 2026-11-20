@@ -150,6 +150,13 @@ const fr = {
     picksUnknown: "picks n/d",
   },
 
+  /** A series Leaguepedia only lists on its match schedule: its result, without any game. */
+  schedule: {
+    only: "calendrier seul",
+    detail: "Résultat tiré du calendrier de Leaguepedia : aucune stat de partie pour cette série.",
+    forfeit: (team: string) => `forfait de ${team}`,
+  },
+
   teams: {
     summary: (count: number, scope: string) => `${count} série${frPlural(count)} ${scope} · séries gagnées, puis parties gagnées`,
     meetings: "leurs rencontres",
@@ -409,6 +416,12 @@ const en: Ui = {
     picksOf: (team) => `${team} picks`,
     bansOf: (team) => `${team} bans`,
     picksUnknown: "picks n/a",
+  },
+
+  schedule: {
+    only: "schedule only",
+    detail: "Result from Leaguepedia's match schedule: no game statistic for this series.",
+    forfeit: (team) => `${team} forfeited`,
   },
 
   teams: {

@@ -115,15 +115,27 @@ function Side({ name, logo, tone, leagues, series, games, lead, align }: { name:
 function SeriesRow({ s, logos, tones }: { s: TeamSeries; logos: Logos; tones: Tones }) {
   const ui = useUi();
   const date = dateFormat(useLocale(), { day: "2-digit", month: "short", year: "numeric" });
-  const winner = s.winsA === s.winsB ? null : s.winsA > s.winsB ? s.teamA : s.teamB;
+  const winner = s.winner;
 
   return (
     <tr className="border-b border-dashed border-line align-middle last:border-0">
       <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted">{s.playedAt ? date.format(new Date(s.playedAt * 1000)) : ui.noData}</td>
-      <td className="px-3 py-1.5">{s.label}</td>
+      <td className="px-3 py-1.5">
+        {s.label}
+        {s.scheduleOnly && <ScheduleTag />}
+      </td>
       <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">
-        <span translate="no">{s.teamA}</span> <span className={s.winsA > s.winsB ? "text-accent" : ""}>{s.winsA}</span>–
-        <span className={s.winsB > s.winsA ? "text-accent" : ""}>{s.winsB}</span> <span translate="no">{s.teamB}</span>
+        {s.forfeitedBy ? (
+          <span title={ui.schedule.forfeit(s.forfeitedBy)}>
+            <span translate="no">{s.teamA}</span> <span className={winner === s.teamA ? "text-accent" : ""}>{winner === s.teamA ? "W" : "FF"}</span>–
+            <span className={winner === s.teamB ? "text-accent" : ""}>{winner === s.teamB ? "W" : "FF"}</span> <span translate="no">{s.teamB}</span>
+          </span>
+        ) : (
+          <>
+            <span translate="no">{s.teamA}</span> <span className={winner === s.teamA ? "text-accent" : ""}>{s.winsA}</span>–
+            <span className={winner === s.teamB ? "text-accent" : ""}>{s.winsB}</span> <span translate="no">{s.teamB}</span>
+          </>
+        )}
       </td>
       <td className="whitespace-nowrap px-3 py-1.5">{winner ? (
           <span className="inline-flex items-center gap-2 align-middle text-accent">
@@ -139,5 +151,17 @@ function SeriesRow({ s, logos, tones }: { s: TeamSeries; logos: Logos; tones: To
         </a>
       </td>
     </tr>
+  );
+}
+
+/** A series known only from Leaguepedia's match schedule: the tag says so, its title why there are no stats. */
+function ScheduleTag() {
+  const ui = useUi();
+
+  return (
+    <span title={ui.schedule.detail} className="ml-2 whitespace-nowrap border border-dashed border-line px-1 text-[10px] text-muted">
+      {ui.schedule.only}
+      <span className="sr-only"> {ui.schedule.detail}</span>
+    </span>
   );
 }

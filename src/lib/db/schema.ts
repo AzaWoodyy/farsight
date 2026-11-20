@@ -1,13 +1,13 @@
 /** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /**
  * Newest Postgres migration the code reads (db/migrations/NNNN_*.sql): the same tables and views as SCHEMA_VERSION.
  * A migration that changes a table or a view bumps both.
  */
-export const PG_MIGRATION = 1;
+export const PG_MIGRATION = 2;
 
 export const TABLE_DDL = `
 CREATE TABLE leagues (
@@ -103,6 +103,13 @@ CREATE TABLE game_player_runes (
 CREATE TABLE game_player_items (
   game_id INT NOT NULL, player_id INT NOT NULL, slot INT NOT NULL, item_id INT NOT NULL,
   PRIMARY KEY (game_id, player_id, slot)) WITHOUT ROWID;
+-- Series Leaguepedia lists on its match schedule (MatchSchedule) without any scoreboard game: the result alone, no game
+-- statistic (scripts/data/schedule.ts). winner_side is 1 (team1) or 2 (team2); forfeit is the side that forfeited, NULL
+-- when the series was played; the scores are NULL when the schedule has none.
+CREATE TABLE series_results (
+  id INTEGER PRIMARY KEY, tournament_id INT NOT NULL, tab TEXT, match_n INT,
+  team1_id INT NOT NULL, team2_id INT NOT NULL, winner_side INT NOT NULL, team1_score INT, team2_score INT, forfeit INT,
+  played_at INT);
 CREATE TABLE ingest_runs (
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL,
   schema_version INT NOT NULL, row_counts TEXT NOT NULL, details TEXT);
@@ -192,6 +199,15 @@ CREATE VIEW v_game_dragons AS
   FROM game_dragons d JOIN games g ON g.id = d.game_id
   JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
   LEFT JOIN teams b ON b.id = g.blue_team_id LEFT JOIN teams r ON r.id = g.red_team_id;
+-- Series without a scoreboard game (series_results): count them with the series of v_games, never as games with statistics.
+CREATE VIEW v_series_results AS
+  SELECT s.id AS series_id, t.page AS tournament_page, t.event_page, t.stage, t.name AS tournament,
+         l.name AS league, l.short_name AS league_short, t.year, s.tab, s.match_n, s.played_at,
+         a.name AS team1, b.name AS team2, CASE s.winner_side WHEN 1 THEN a.name ELSE b.name END AS winner,
+         s.team1_score, s.team2_score,
+         CASE s.forfeit WHEN 1 THEN a.name WHEN 2 THEN b.name END AS forfeited_by
+  FROM series_results s JOIN tournaments t ON t.id = s.tournament_id JOIN leagues l ON l.id = t.league_id
+  JOIN teams a ON a.id = s.team1_id JOIN teams b ON b.id = s.team2_id;
 CREATE VIEW v_ingame_coverage AS
   SELECT l.name AS league, l.short_name AS league_short, t.year,
          COUNT(*) AS games, COUNT(gr.game_id) AS ingame_games

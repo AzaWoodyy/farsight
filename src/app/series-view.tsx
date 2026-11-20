@@ -56,17 +56,19 @@ export function SeriesView({ list, table }: { list: SeriesList; table: ReactNode
 function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
   const ui = useUi();
   const date = dateFormat(useLocale(), { day: "numeric", month: "short", year: "numeric" });
-  const lead = s.winsA === s.winsB ? null : s.winsA > s.winsB ? "a" : "b";
+  // A series known only from the schedule lists its declared winner first, whatever the score it wrote.
+  const lead = s.scheduleOnly ? "a" : s.winsA === s.winsB ? null : s.winsA > s.winsB ? "a" : "b";
 
   const header = (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-3">
       <span className={`truncate text-right text-sm font-semibold ${lead === "a" ? "text-accent" : ""}`} translate="no">
         {s.teamA}
       </span>
-      <span className="text-2xl tabular-nums">
-        <span className={lead === "a" ? "text-accent" : ""}>{s.winsA}</span>
+      <span className="text-2xl tabular-nums" title={s.forfeitedBy ? ui.schedule.forfeit(s.forfeitedBy) : undefined}>
+        {/* The series winner comes first: a forfeit reads W – FF. */}
+        <span className={lead === "a" ? "text-accent" : ""}>{s.forfeitedBy ? "W" : s.winsA}</span>
         <span className="px-1 text-muted">–</span>
-        <span className={lead === "b" ? "text-accent" : ""}>{s.winsB}</span>
+        <span className={lead === "b" ? "text-accent" : ""}>{s.forfeitedBy ? "FF" : s.winsB}</span>
       </span>
       <span className={`truncate text-sm font-semibold ${lead === "b" ? "text-accent" : ""}`} translate="no">
         {s.teamB}
@@ -78,7 +80,7 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
     <p className="flex flex-wrap items-center gap-x-2 border-t border-dashed border-line px-3 py-2 text-xs text-muted">
       <span>{s.label}</span>
       <span aria-hidden>·</span>
-      <span>{s.bestOf ? `BO${s.bestOf}` : ui.series.formatUnknown}</span>
+      <span>{s.forfeitedBy ? ui.schedule.forfeit(s.forfeitedBy) : s.bestOf ? `BO${s.bestOf}` : ui.series.formatUnknown}</span>
       {s.playedAt != null && (
         <>
           <span aria-hidden>·</span>
@@ -97,6 +99,11 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
       <section aria-label={`${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`} className="border border-line">
         {header}
         {meta}
+        {s.scheduleOnly && (
+          <p className="border-t border-dashed border-line px-3 py-1.5 text-[11px] text-muted">
+            {ui.schedule.detail}
+          </p>
+        )}
       </section>
     );
 

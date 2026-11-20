@@ -154,6 +154,12 @@ if (problems.length === 0) {
     if (checkOnly) console.warn("package: no team abbreviation (raw cache without teams.json); a release refuses this");
     else problems.push("no team abbreviation: data:fetch did not save teams.json");
   }
+
+  // Same for the series known only from the schedule (schema v11): several hundred in the scope.
+  if (!facts.counts.schedule_series) {
+    if (checkOnly) console.warn("package: no series without a scoreboard (raw cache without schedule.json); a release refuses this");
+    else problems.push("no series without a scoreboard: data:fetch did not save schedule.json");
+  }
 }
 
 db.close();
@@ -218,6 +224,7 @@ writeFileSync(
     `- ${manifest.counts.ingame_games ?? 0} games with in-game stats (Riot data on Leaguepedia; none for the LPL)`,
     `- ${manifest.counts.players_with_photo ?? 0} players with a photo: Leaguepedia file names and dates only, the images (fair use, Riot Games and the leagues) are not included`,
     `- ${manifest.counts.teams_with_short ?? 0} teams with their Leaguepedia abbreviation`,
+    `- ${manifest.counts.schedule_series ?? 0} series known only from Leaguepedia's match schedule (result, no game statistic)`,
     `- \`${INGAME_ASSET}\`: in-game summaries (${ingameLines} lines), read back by the next weekly run`,
     `- \`${DB_ASSET}\`: ${mb(manifest.asset.size)} (zstd), ${mb(size)} uncompressed`,
     `- sha256 (uncompressed): \`${manifest.database.sha256}\``,

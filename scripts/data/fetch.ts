@@ -18,7 +18,8 @@
  * and resumes where it stopped.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
- * league with 5000-row pages. Every raw response is kept under data/raw/cargo,
+ * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: `data:build` keeps the
+ * series it lists without any scoreboard game (scripts/data/schedule.ts). Every raw response is kept under data/raw/cargo,
  * and the merged datasets under data/raw/*.json feed `data:build`.
  */
 import { createHash } from "node:crypto";
@@ -42,6 +43,7 @@ import {
 } from "../../src/lib/sources/leaguepedia";
 import { remoteStoreFromEnv } from "../../src/lib/storage";
 import { fetchRiotGameList, fetchRiotGames } from "./riot";
+import { scheduleQuery } from "./schedule";
 import {
   CARGO_CACHE_DIR,
   DDRAGON_CACHE_DIR,
@@ -382,14 +384,17 @@ async function full() {
 
   const games: CargoRow[] = [];
   const lines: CargoRow[] = [];
+  const schedule: CargoRow[] = [];
 
   for (const league of LEAGUES) {
     const where = `T.League=${cargoString(league.name)}`;
     const g = await cargoQuery(gamesQuery(where, true), cached);
     const l = await cargoQuery(linesQuery(where, true), cached);
+    const s = await cargoQuery(scheduleQuery(where, true), cached);
     games.push(...g);
     lines.push(...l);
-    console.log(`${league.name}: ${g.length} games, ${l.length} player lines (${progress()})`);
+    schedule.push(...s);
+    console.log(`${league.name}: ${g.length} games, ${l.length} player lines, ${s.length} scheduled matches (${progress()})`);
   }
 
   const links = [...new Set(lines.flatMap((l) => linkOf(l) || []))];
@@ -414,6 +419,7 @@ async function full() {
   save("player_images", images);
   save("teams", teams.teams);
   save("team_redirects", teams.redirects);
+  save("schedule", schedule);
   save("ddragon", dd);
 
   const riotCounts = await riot(cached);
@@ -427,6 +433,7 @@ async function full() {
     players: players.length,
     redirects: redirects.length,
     teams: teams.teams.length,
+    schedule: schedule.length,
   };
 }
 
@@ -441,6 +448,8 @@ async function incrementalFetch() {
     lines: load("lines"),
     players: load("players"),
     redirects: load("redirects"),
+    // Absent from a raw cache fetched before the schedule was: the refreshed pages only, until the next full fetch.
+    schedule: existsSync(datasetFile("schedule")) ? load("schedule") : [],
   };
 
   // The tournament list is one request: always refresh it.
@@ -467,6 +476,7 @@ async function incrementalFetch() {
   const results: CargoRow[] = [];
   const games: CargoRow[] = [];
   const lines: CargoRow[] = [];
+  const schedule: CargoRow[] = [];
 
   for (const batch of chunks([...standingPages], 40)) {
     results.push(
@@ -485,9 +495,10 @@ async function incrementalFetch() {
   for (const batch of chunks(recent, 40)) {
     games.push(...(await cargoQuery(gamesQuery(cargoIn("SG.OverviewPage", batch), false), fresh)));
     lines.push(...(await cargoQuery(linesQuery(cargoIn("SP.OverviewPage", batch), false), fresh)));
+    schedule.push(...(await cargoQuery(scheduleQuery(cargoIn("MS.OverviewPage", batch), false), fresh)));
   }
 
-  console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines`);
+  console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines, ${schedule.length} scheduled matches`);
 
   // Links to look up: spellings never seen before, and older links that no
   // player page or redirect name covers (fetched before links were resolved by name).
@@ -524,11 +535,12 @@ async function incrementalFetch() {
     results: merge(previous.results, results, standingPages),
     games: merge(previous.games, games, pages),
     lines: merge(previous.lines, lines, pages),
+    schedule: merge(previous.schedule, schedule, pages),
     players: [...previous.players, ...players],
     redirects: [...previous.redirects, ...redirects],
   };
 
-  for (const name of ["tournaments", "results", "games", "lines", "players", "redirects"] as const) save(name, merged[name]);
+  for (const name of ["tournaments", "results", "games", "lines", "schedule", "players", "redirects"] as const) save(name, merged[name]);
   save("player_images", images);
   save("teams", teams.teams);
   save("team_redirects", teams.redirects);
@@ -542,6 +554,7 @@ async function incrementalFetch() {
     results: results.length,
     games: games.length,
     lines: lines.length,
+    schedule: schedule.length,
     new_players: newLinks.length,
     player_images: images.length,
     teams: teams.teams.length,
