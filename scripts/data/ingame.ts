@@ -28,7 +28,7 @@
  * - `runes`: the rune ids in Leaguepedia's order, keystone, three primary runes, two secondary runes, then the stat
  *   shards offense, flex, defense (six ids before the shards, patch 8.23); `primary_tree` / `secondary_tree`: the
  *   two tree ids. Null before Runes Reforged or when a slot is missing.
- * - `heralds`: Rift Heralds a team killed, from Riot's end-of-game count.
+ * - `heralds`: Rift Heralds a team killed, from Riot's end-of-game count; null before the Herald (patch 5.22).
  * - `gameVersion`: Riot's full game version ("9.11.276.3025").
  */
 import { z } from "zod";
@@ -238,6 +238,13 @@ function hasPlates(version: string | undefined): boolean {
   return major > 9 || (major === 9 && minor >= 2);
 }
 
+/** Patch 5.22 introduced the Rift Herald. */
+function hasHeralds(version: string | undefined): boolean {
+  const [major, minor] = (version ?? "").split(".").map(Number);
+
+  return major > 5 || (major === 5 && minor >= 22);
+}
+
 /** Patch 9.23 introduced the dragon soul. */
 function hasSouls(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
@@ -426,7 +433,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
       elder_dragons: dragons ? dragons.filter((d) => d.teamId === t.teamId && d.kind === "elder").length : null,
       dragon_soul: soulKnown ? (soul?.teamId === t.teamId ? 1 : 0) : null,
       soul: soul?.teamId === t.teamId ? soul.kind : null,
-      heralds: o?.riftHerald?.kills ?? t.riftHeraldKills ?? null,
+      heralds: hasHeralds(stats.gameVersion) ? (o?.riftHerald?.kills ?? t.riftHeraldKills ?? null) : null,
     };
   });
 

@@ -169,6 +169,13 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
     expect(s.players[1]).toMatchObject({ runes: null, primary_tree: null, secondary_tree: null });
   });
 
+  test("no Herald before patch 5.22: null, not 0", () => {
+    const g = statsOnly("ESPORTSTMNT01_1130750");
+    const s = summarizeGame({ ...g, stats: { ...V4Game.parse(g.stats), gameVersion: "4.20.0.315" } });
+
+    expect(s.teams.map((t) => t.heralds)).toEqual([null, null]);
+  });
+
   test("damage and vision that nobody in the game has are not tracked: null, not 0", () => {
     const g = statsOnly("ESPORTSTMNT01_1130750");
     const stats = V4Game.parse(g.stats);
