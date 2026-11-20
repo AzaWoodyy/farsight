@@ -19,14 +19,14 @@ function seed() {
     INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (1,'LFL D2 2025','LFL D2 2025','LFL D2 2025','season',1,2025);
     INSERT INTO teams(id,name,short) VALUES (1,'Karmine Corp','KC'),(2,'Karmine Corp Blue','KCB'),(3,'Karmine Corp Blue Stars','KCBS'),
       (4,'RED Canids','RED'),(5,'Gamers Two','GT'),(6,'Other',NULL),
-      (7,'Wizards','WIZ'),(8,'Splyce Vipers','SVP'),(11,'For The Win Esports','FTW'),(12,'Taipei Snipers','TPS'),(9,'DRX',NULL),(10,'Kiwoom DRX','KRX');
+      (7,'Wizards','WIZ'),(8,'Splyce Vipers','SVP'),(11,'For The Win Esports','FTW'),(12,'Taipei Snipers','TPS'),(13,'Project Conquerors','PCS'),(14,'Percent Esports','PER'),(9,'DRX',NULL),(10,'Kiwoom DRX','KRX');
     INSERT INTO players(id,page,ign) VALUES (1,'Blue (Player)','Blue'),(2,'Wiz','Wiz');
     INSERT INTO player_aliases VALUES ('blue','Blue',1),('wiz','Wiz',2);
   `);
   const game = db.prepare("INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (?,1,?,6,1,?)");
   let id = 0;
 
-  for (const [team, games] of [[1, 5], [2, 4], [3, 3], [4, 2], [5, 2], [7, 3], [8, 2], [9, 2], [10, 2], [11, 2], [12, 2]]) for (let i = 0; i < games; i++) game.run(++id, team, id);
+  for (const [team, games] of [[1, 5], [2, 4], [3, 3], [4, 2], [5, 2], [7, 3], [8, 2], [9, 2], [10, 2], [11, 2], [12, 2], [13, 2], [14, 2]]) for (let i = 0; i < games; i++) game.run(++id, team, id);
   const line = db.prepare("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (?,1,6,'Mid',2,0)");
 
   for (let g = 1; g <= id; g++) line.run(g);
@@ -76,6 +76,8 @@ describe("team abbreviations from Leaguepedia", () => {
     expect((await teamsOf(db, "Combien de tps dure une partie en LFL ?")).teams).toEqual([]);
     expect((await teamsOf(db, "Historique de TPS")).teams).toEqual(["Taipei Snipers"]);
     expect((await teamsOf(db, "KC ftw")).teams).toEqual(["Karmine Corp"]);
+    expect((await teamsOf(db, "Champions with the most deaths per game at Worlds 2026")).teams).toEqual([]);
+    expect((await teamsOf(db, "PCS 2023 winners")).teams).toEqual([]);
   });
 
   test("an abbreviation that is also a player's handle names the player, unless written in capitals", async () => {

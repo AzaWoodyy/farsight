@@ -1,4 +1,4 @@
-import { detectLeague, eraLeague, leagueMembers } from "../domain/leagues";
+import { detectLeague, eraLeague, LEAGUES, leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
@@ -405,19 +405,30 @@ type Indexes = { teams: TeamIndex; champions: Map<string, string> };
 
 const indexes = new WeakMap<DatabaseSync, Indexes>();
 
-/** Three-letter abbreviations that are everyday words or chat shorthands ("svp", "pts"), too short for the common word list. */
+/** Three-letter words and chat shorthands ("per", "svp", "pts"), English and French, too short for the common word list: an abbreviation among them is read in capitals only. */
 const SHORT_WORDS = new Set(
-  "all ate ban bar big bis bot col cow cry dan dia dig dmg exp fac fly fox ftw fun fur gen god img inf jgl lev los lvl mad mec mid mil nip one par pig pro pts pty rec red ren rud sam sat sha sin sly spy std sto sup svp tap the tip top tps use ver vip war way win".split(" "),
+  `ace afk all and ans any are art ask ate bad ban bar bed bet big bis bit bon bot box boy bus but buy can car cat
+   col cop cow cry cup cut dan day des dia did die dig dmg dog dry due ear eat egg elo end era est eux exp eye fac
+   fan far fat few fit fix fly for fox ftw fun fur gap gas gen get ggs god got gun guy had has hat her hey hid him
+   his hit hot how ice ici ill img inf its jet jeu jgl job joy kda key kid lab law lay led leg les let lev lie lip
+   lol los lot low lui lvl mad man map max may mec men mes met mid mil min mix moi mom mvp net new nip non nor nos
+   not now nul odd off oil old omg one ont oui our out own par pas pay per pet peu pig pop pot pro pts pty put que
+   qui ran raw rec red ren rid row rud run sad sam sat saw say sea see ses set sha she shy sin sit six sky sly son
+   spy std sto stp sum sun sup sur svp tap tax tea ten tes the tie tip toi too top toy tps try two une use ver via
+   vie vip vos war was way who why win won yes yet you`.split(/\s+/),
 );
+
+/** A league's short name ("PCS") names the league, never the team that shares it (Project Conquerors). */
+const LEAGUE_SHORTS = new Set(LEAGUES.map((l) => normalizeAlias(l.short)));
 
 /**
  * A team's Leaguepedia abbreviation as an alias ("KCB"): null when it is too short to mean the team (two letters without a
- * digit: "AT", "GO"), or a role or grammar word; `caps` when it is also an everyday word.
+ * digit: "AT", "GO"), a role or grammar word, or a league's short name; `caps` when it is also an everyday word.
  */
 function abbreviation(short: string): { caps: boolean } | null {
   const norm = normalizeAlias(short);
 
-  if (norm.length < 2 || (norm.length === 2 && !/\d/.test(norm)) || STOPWORDS.has(norm) || ROLE_NAMES.has(norm)) return null;
+  if (norm.length < 2 || (norm.length === 2 && !/\d/.test(norm)) || STOPWORDS.has(norm) || ROLE_NAMES.has(norm) || LEAGUE_SHORTS.has(norm)) return null;
 
   return { caps: COMMON_WORDS.has(norm) || SHORT_WORDS.has(norm) };
 }

@@ -19,7 +19,7 @@ beforeAll(() => {
   tournaments.forEach(([short, year], i) =>
     db.prepare("INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (?,?,?,?,?,?,?)").run(i + 1, `T${i}`, `T${i}`, `${short} ${year}`, "season", league(short), year),
   );
-  db.exec(`INSERT INTO teams VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted')`);
+  db.exec(`INSERT INTO teams(id,name) VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted')`);
 
   let id = 0;
 
