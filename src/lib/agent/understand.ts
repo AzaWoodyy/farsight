@@ -405,9 +405,9 @@ type Indexes = { teams: TeamIndex; champions: Map<string, string> };
 
 const indexes = new WeakMap<DatabaseSync, Indexes>();
 
-/** Three-letter abbreviations that are everyday words, too short for the common word list. */
+/** Three-letter abbreviations that are everyday words or chat shorthands ("svp", "pts"), too short for the common word list. */
 const SHORT_WORDS = new Set(
-  "all ban bar big bot cow dan dia dig exp fly fox fun fur gen god inf jgl los lvl mad mid mil nip one par pig pro pty rec red ren rud sam sat sha sin sly spy std sto sup the tip top use ver vip war way win".split(" "),
+  "all ate ban bar big bis bot col cow cry dan dia dig dmg exp fac fly fox ftw fun fur gen god img inf jgl lev los lvl mad mec mid mil nip one par pig pro pts pty rec red ren rud sam sat sha sin sly spy std sto sup svp tap the tip top tps use ver vip war way win".split(" "),
 );
 
 /**
@@ -487,11 +487,16 @@ function getIndexes(db: DatabaseSync): Indexes {
   // "Karmine Corp Blue Stars" is also "KCBS", "KC Blue Stars", "KCB Stars", and "Blue Star" in the singular.
   const abbreviations = new Map<string, string[]>();
 
+  // A member of a curated franchise keeps the franchise's names: "KRX" (Kiwoom DRX) counts every DRX game, like "DRX".
+  const franchiseOf = new Map<string, ResolvedTeam>();
+
+  for (const f of FRANCHISES) for (const m of f.members) if (gamesOf.has(m)) franchiseOf.set(m, { mention: "", team: f.team, members: f.members.filter((x) => gamesOf.has(x)) });
+
   for (const { name, short } of rows) {
     const abbr = short ? abbreviation(short) : null;
 
     if (short && abbr) {
-      add(short, single(name), "alias", abbr.caps);
+      add(short, franchiseOf.get(name) ?? single(name), "alias", abbr.caps);
       abbreviations.set(name, [short]);
     }
   }
@@ -705,7 +710,10 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       const team = hit?.caps && mention !== mention.toUpperCase() ? undefined : hit;
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
 
-      if (team && (team.curated || !players.length || team.games >= players[0].games)) {
+      // An abbreviation that is also a player's handle names the player, unless written in capitals ("Wiz", "WIZ").
+      const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
+
+      if (team && !abbreviationOfPlayer && (team.curated || !players.length || team.games >= players[0].games)) {
         if (!found.teams.some((t) => t.team === team.team)) {
           found.teams.push({ mention, team: team.team, members: team.members });
           at.set(mention, i);

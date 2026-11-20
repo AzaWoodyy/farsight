@@ -693,11 +693,16 @@ if (existsSync(teamsFile)) {
   }
 
   const setShort = db.prepare("UPDATE teams SET short = ? WHERE id = ?");
+  const teamRows = selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM teams");
+  // An abbreviation a team holds on its own page is not lent to an older name through a redirect: "DNS.C" is
+  // DN SOOPers Challengers, not Kwangdong Freecs Challengers, which redirects there and has more games.
+  const heldDirectly = new Set(teamRows.flatMap((t) => shortOf.get(t.name.toLowerCase()) ?? []));
 
-  for (const { id, name } of selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM teams")) {
+  for (const { id, name } of teamRows) {
     const key = name.toLowerCase();
     const direct = shortOf.get(key);
-    const viaRedirect = redirectTo.has(key) ? shortOf.get(redirectTo.get(key)!) : undefined;
+    const redirected = redirectTo.has(key) ? shortOf.get(redirectTo.get(key)!) : undefined;
+    const viaRedirect = redirected && !heldDirectly.has(redirected) ? redirected : undefined;
     const short = direct ?? viaRedirect;
 
     if (short) setShort.run(short, id);
