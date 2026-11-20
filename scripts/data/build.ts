@@ -666,6 +666,52 @@ for (const line of ingame.values()) {
   });
 }
 
+// Team abbreviations ------------------------------------------------------------
+// Teams.Short of the team's page ("Karmine Corp Blue Stars" -> "KCBS"), or of the page an older name redirects to
+// ("Afreeca Freecs" -> "DN SOOPers" -> "DNS"). Absent from an older raw cache: the teams then have no abbreviation.
+const teamsFile = datasetFile("teams");
+const redirectsFile = datasetFile("team_redirects");
+const shortCounts = { page: 0, redirect: 0, none: 0 };
+
+if (existsSync(teamsFile)) {
+  const shortOf = new Map<string, string>();
+
+  for (const r of load("teams", Rows)) {
+    const page = text(r.Page);
+    const short = text(r.Short)?.trim();
+
+    if (page && short) shortOf.set(page.toLowerCase(), short);
+  }
+
+  const redirectTo = new Map<string, string>();
+
+  for (const r of existsSync(redirectsFile) ? load("team_redirects", Rows) : []) {
+    const name = text(r.AllName);
+    const page = text(r.Page);
+
+    if (name && page) redirectTo.set(name.toLowerCase(), page.toLowerCase());
+  }
+
+  const setShort = db.prepare("UPDATE teams SET short = ? WHERE id = ?");
+  const teamRows = selectAll(db, z.object({ id: z.number(), name: z.string() }), "SELECT id, name FROM teams");
+  // An abbreviation a team holds on its own page is not lent to an older name through a redirect: "DNS.C" is
+  // DN SOOPers Challengers, not Kwangdong Freecs Challengers, which redirects there and has more games.
+  const heldDirectly = new Set(teamRows.flatMap((t) => shortOf.get(t.name.toLowerCase()) ?? []));
+
+  for (const { id, name } of teamRows) {
+    const key = name.toLowerCase();
+    const direct = shortOf.get(key);
+    const redirected = redirectTo.has(key) ? shortOf.get(redirectTo.get(key)!) : undefined;
+    const viaRedirect = redirected && !heldDirectly.has(redirected) ? redirected : undefined;
+    const short = direct ?? viaRedirect;
+
+    if (short) setShort.run(short, id);
+    shortCounts[direct ? "page" : viaRedirect ? "redirect" : "none"]++;
+  }
+} else {
+  console.warn(`  ${teamsFile} is missing: no team abbreviation (run \`bun run data:fetch\`)`);
+}
+
 // Indexes and views -------------------------------------------------------------
 createQuerySchema(db);
 
@@ -685,7 +731,7 @@ for (const r of load("runs", z.array(IngestRun)))
 
 insRun.run(
   "build", startedAt, new Date().toISOString(), SCHEMA_VERSION, JSON.stringify(rowCounts),
-  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity, player_images: photoCounts }),
+  JSON.stringify({ derive_version: DERIVE_VERSION, ddragon_version: dd.version, skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity, player_images: photoCounts, team_shorts: shortCounts }),
 );
 
 db.exec("COMMIT");

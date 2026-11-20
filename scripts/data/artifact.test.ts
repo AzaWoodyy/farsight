@@ -140,7 +140,7 @@ describe("readFacts", () => {
     expect(readFacts(path)).toEqual({
       schemaVersion: SCHEMA_VERSION,
       journalMode: "delete",
-      counts: { games: 0, leagues: 0, tournaments: 0, players: 0, teams: 0, ingame_games: 0, players_with_photo: 0 },
+      counts: { games: 0, leagues: 0, tournaments: 0, players: 0, teams: 0, ingame_games: 0, players_with_photo: 0, teams_with_short: 0 },
       ddragonVersion: "16.1.1",
       deriveVersion: 2,
       staleDerive: 3,

@@ -225,6 +225,25 @@ function fetchPlayerImages(opts: CargoOptions) {
   );
 }
 
+/**
+ * Every team page with its abbreviation (Teams.Short, "KCB"), and every name that redirects to a team page
+ * (TeamRedirects, an older name such as "Afreeca Freecs" -> "DN SOOPers"): a few requests for the whole tables.
+ * `data:build` gives each scoreboard team its abbreviation, and `understand` reads it as an alias.
+ */
+async function fetchTeams(opts: CargoOptions) {
+  const teams = await cargoQuery(
+    { tables: "Teams", fields: ["Teams.OverviewPage=Page", "Teams.Name=Name", "Teams.Short=Short"], orderBy: "Teams.OverviewPage" },
+    opts,
+  );
+
+  const redirects = await cargoQuery(
+    { tables: "TeamRedirects", fields: ["TeamRedirects.AllName=AllName", "TeamRedirects._pageName=Page"], orderBy: "TeamRedirects.AllName" },
+    opts,
+  );
+
+  return { teams, redirects };
+}
+
 const linkOf = (l: CargoRow) => String(l.Link ?? l.Name ?? "");
 const asText = (v: CargoValue | undefined) => (v == null || v === "" ? null : String(v));
 
@@ -380,6 +399,9 @@ async function full() {
   const images = await fetchPlayerImages(cached);
   console.log(`player images: ${images.length}`);
 
+  const teams = await fetchTeams(cached);
+  console.log(`teams: ${teams.teams.length}, team redirects: ${teams.redirects.length}`);
+
   const dd = await fetchDdragon(refresh);
   console.log(`ddragon: ${dd.version} (+${dd.legacyItems.length} older patches for retired items)`);
 
@@ -390,6 +412,8 @@ async function full() {
   save("players", players);
   save("redirects", redirects);
   save("player_images", images);
+  save("teams", teams.teams);
+  save("team_redirects", teams.redirects);
   save("ddragon", dd);
 
   const riotCounts = await riot(cached);
@@ -402,6 +426,7 @@ async function full() {
     lines: lines.length,
     players: players.length,
     redirects: redirects.length,
+    teams: teams.teams.length,
   };
 }
 
@@ -489,6 +514,9 @@ async function incrementalFetch() {
   const images = await fetchPlayerImages(fresh);
   console.log(`player images: ${images.length}`);
 
+  const teams = await fetchTeams(fresh);
+  console.log(`teams: ${teams.teams.length}, team redirects: ${teams.redirects.length}`);
+
   const dd = await fetchDdragon(false);
 
   const merged = {
@@ -502,6 +530,8 @@ async function incrementalFetch() {
 
   for (const name of ["tournaments", "results", "games", "lines", "players", "redirects"] as const) save(name, merged[name]);
   save("player_images", images);
+  save("teams", teams.teams);
+  save("team_redirects", teams.redirects);
   save("ddragon", dd);
 
   const riotCounts = await riot(fresh);
@@ -514,6 +544,7 @@ async function incrementalFetch() {
     lines: lines.length,
     new_players: newLinks.length,
     player_images: images.length,
+    teams: teams.teams.length,
     total_games: merged.games.length,
   };
 }

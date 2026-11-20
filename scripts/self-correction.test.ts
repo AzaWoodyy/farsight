@@ -30,7 +30,7 @@ function seed(db: DatabaseSync) {
   db.prepare("INSERT INTO leagues VALUES(1,?,?,?,?)").run(league.name, league.short, league.region, +league.international);
   db.exec(`
     INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year) VALUES(1,'2023 Season World Championship/Main Event','2023 Season World Championship','main_event','Worlds 2023',1,2023);
-    INSERT INTO teams VALUES(1,'T1'),(2,'Gen.G');
+    INSERT INTO teams(id,name) VALUES(1,'T1'),(2,'Gen.G');
     INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES(1,1,1,2,1,1800,1697800000);
     INSERT INTO game_riot VALUES(1,'riot-1','V5 data:test',5,0,0);
     INSERT INTO game_team_stats(game_id,side,first_blood,first_tower,first_dragon,first_herald,first_baron,plates,gold_diff_15,kills_10)

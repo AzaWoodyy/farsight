@@ -172,7 +172,7 @@ function seed(db: DatabaseSync) {
     "INSERT INTO tournaments(id,page,event_page,stage,league_id,year,split) VALUES (1,'LEC25/Spring','LEC25 Spring','season',?,2025,'Spring'),(2,'LEC25/Summer','LEC25 Summer','season',?,2025,'Summer')",
   ).run(lec, lec);
   db.exec(`
-    INSERT INTO teams VALUES (1,'G2 Esports'),(2,'Fnatic');
+    INSERT INTO teams(id,name) VALUES (1,'G2 Esports'),(2,'Fnatic');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade');
     INSERT INTO champions VALUES (1,'Azir','https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Azir.png'),(2,'Orianna',NULL),(3,'Gnar',NULL);
     INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at)

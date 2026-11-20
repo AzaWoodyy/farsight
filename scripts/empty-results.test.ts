@@ -31,7 +31,7 @@ function fresh() {
     INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year) VALUES
       (1,'LCK/2024 Season/Regional Finals','LCK/2024 Season/Regional Finals','qualifier','LCK 2024 Regional Finals',1,2024),
       (2,'2024 Season World Championship/Main Event','2024 Season World Championship','main_event','Worlds 2024',1,2024);
-    INSERT INTO teams VALUES(1,'T1'),(2,'Gen.G');
+    INSERT INTO teams(id,name) VALUES(1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES(1,'Faker'),(2,'Chovy');
     INSERT INTO champions(id,name) VALUES(1,'Azir'),(2,'Orianna'),(3,'Ahri');
     INSERT INTO runes(id,name) VALUES(1,'Conqueror');
@@ -169,7 +169,7 @@ test("a team whose games are all in qualifiers gets one row per game", () => {
 
   try {
     db.exec(`
-      INSERT INTO teams VALUES(3,'Dplus KIA');
+      INSERT INTO teams(id,name) VALUES(3,'Dplus KIA');
       INSERT INTO players(id,page) VALUES(3,'ShowMaker'),(4,'Canyon');
       INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES(4,1,3,1,2,1800,1726380000);
       INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win) VALUES(4,3,3,1,'Mid',3,0),(4,4,3,1,'Jungle',2,0),(4,1,1,2,'Mid',1,1);

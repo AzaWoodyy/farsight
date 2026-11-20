@@ -250,6 +250,26 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Première release v10
+
+Le schéma v10 ajoute `teams.short`, le sigle Leaguepedia de chaque équipe
+(« KCB » pour Karmine Corp Blue, « KCBS » pour Karmine Corp Blue Stars).
+`data:fetch` lit en entier les tables Cargo `Teams` (environ 3 600 pages, une
+requête) et `TeamRedirects` (environ 5 800 noms, deux requêtes) dans
+`data/raw/teams.json` et `data/raw/team_redirects.json`, à chaque exécution,
+incrémentale comprise. `data:build` donne à chaque équipe le sigle de sa page,
+ou de la page vers laquelle son nom redirige (un ancien nom prend le sigle
+actuel de l'organisation). `understand` en fait des alias : « KCB », « KC Blue
+Stars », « Karmine Corp Blue Star ».
+
+Une seule **Data release** sur `main`, une fois le code v10 fusionné et avant le
+premier déploiement v10 (les résumés in-game sont relus sur R2, environ 6 min).
+`data:package` refuse une release sans aucun sigle ; `--check-only` se contente
+d'un avertissement. `ci/data.json` épingle encore `data-20261120-2` (v9), et
+`ci/raw.tar.zst` contient déjà `teams.json` et `team_redirects.json` : la CI
+reconstruit la base v10 hors ligne, avec les sigles, jusqu'au ré-épinglage sur
+la première release v10.
+
 ### Première release v9
 
 Le schéma v9 ajoute les photos des joueurs : `player_images` (joueur, nom du

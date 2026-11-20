@@ -98,7 +98,7 @@ function seed(db: DatabaseSync) {
      (3,'2024 Mid-Season Invitational','2024 Mid-Season Invitational','main_event','MSI 2024',?,2024)`,
   ).run(id(WORLDS), id(WORLDS), id("Mid-Season Invitational"));
   db.exec(`
-    INSERT INTO teams VALUES (1,'Top Esports'),(2,'Invictus Gaming'),(3,'T1'),(4,'KT Rolster'),(5,'Gen.G'),(6,'Bilibili Gaming'),(7,'G2 Esports');
+    INSERT INTO teams(id,name) VALUES (1,'Top Esports'),(2,'Invictus Gaming'),(3,'T1'),(4,'KT Rolster'),(5,'Gen.G'),(6,'Bilibili Gaming'),(7,'G2 Esports');
     INSERT INTO champions VALUES (1,'Ryze','https://ddragon/Ryze.png'),(2,'Taliyah','https://ddragon/Taliyah.png'),(3,'Azir',NULL);
     INSERT INTO players(id,page,ign) VALUES (1,'Bdd','Bdd'),(2,'Faker','Faker'),(3,'Doran (Choi Hyeon-jun)','Doran');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,length_s,patch,played_at) VALUES

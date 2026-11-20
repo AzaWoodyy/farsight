@@ -13,7 +13,7 @@
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "11f59c7188345461f99960e727c5a03f72ae3a073ec30808e4834abf77428467",
+    "sha256": "f11bd72f84684fb69a1cfff40b813cfd7cae2d6e86d4019255bba49b551191c0",
     "files": {
       "tournaments.json": "692f94a129fe8ff00572f987ae3d8d1637db40c8db6523194bb09b7ffc385d31",
       "results.json": "d11bd2563f079a5a6832a4121801c99fed6d62a668b944e92b1e1f23eb71f505",
@@ -24,7 +24,9 @@
       "player_images.json": "a9b6b98dc154f9f0e8cf5b9a20efb605f85761c040bd45b41aa4b6a533071f7b",
       "ddragon.json": "e945a32e0b277111faa5df68d92ac05a33be9c298deb6716e59a04696ed8ab77",
       "riot_games.json": "ae79ff6090b4529f480aef986ed06d360b45dc66ae1b82e02d933c6d346030a6",
-      "runs.json": "113ee1c4c853adea799b8aef87878cdf80f6f5fc27e0f75dd469e391308e0822"
+      "runs.json": "113ee1c4c853adea799b8aef87878cdf80f6f5fc27e0f75dd469e391308e0822",
+      "teams.json": "626dd34461dd773e4e8f23824fabd21fe4381f3981c1c9dba94be6d9e6a22350",
+      "team_redirects.json": "63adbf0d6f9af7db99271bbfc93c7880cfb27d51f33bf99886a59084a9cab0f8"
     }
   }
 }

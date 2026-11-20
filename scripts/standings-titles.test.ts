@@ -39,7 +39,7 @@ function seed(db: DatabaseSync) {
       split,
     );
   db.exec(`
-    INSERT INTO teams VALUES (1,'Alpha'),(2,'Beta'),(3,'Gamma'),(4,'Delta'),(5,'Echo');
+    INSERT INTO teams(id,name) VALUES (1,'Alpha'),(2,'Beta'),(3,'Gamma'),(4,'Delta'),(5,'Echo');
     INSERT INTO players(id,page) VALUES (1,'Pilot');
     INSERT INTO champions VALUES (1,'Ahri',NULL);
     INSERT INTO tournament_results VALUES
