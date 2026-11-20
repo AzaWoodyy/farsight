@@ -1,0 +1,782 @@
+[
+ {
+  "key": "ESPORTSTMNT01_1130750",
+  "version": 4,
+  "stats": {
+   "gameVersion": "9.11.276.3025",
+   "gameDuration": 1871,
+   "participants": [
+    {
+     "participantId": 1,
+     "teamId": 100,
+     "championId": 13,
+     "stats": {
+      "kills": 1,
+      "deaths": 4,
+      "assists": 1,
+      "totalDamageDealtToChampions": 12265,
+      "visionScore": 29,
+      "perk0": 8230,
+      "perk1": 8226,
+      "perk2": 8210,
+      "perk3": 8236,
+      "perk4": 8139,
+      "perk5": 8135,
+      "perkPrimaryStyle": 8200,
+      "perkSubStyle": 8100,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5002
+     }
+    },
+    {
+     "participantId": 2,
+     "teamId": 100,
+     "championId": 2,
+     "stats": {
+      "kills": 1,
+      "deaths": 3,
+      "assists": 0,
+      "totalDamageDealtToChampions": 4923,
+      "visionScore": 57,
+      "perk0": 8010,
+      "perk1": 9111,
+      "perk2": 9104,
+      "perk3": 8014,
+      "perk4": 8473,
+      "perk5": 8451,
+      "perkPrimaryStyle": 8000,
+      "perkSubStyle": 8400,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5001
+     }
+    },
+    {
+     "participantId": 3,
+     "teamId": 100,
+     "championId": 163,
+     "stats": {
+      "kills": 0,
+      "deaths": 3,
+      "assists": 1,
+      "totalDamageDealtToChampions": 11729,
+      "visionScore": 26,
+      "perk0": 8112,
+      "perk1": 8139,
+      "perk2": 8120,
+      "perk3": 8135,
+      "perk4": 8345,
+      "perk5": 8352,
+      "perkPrimaryStyle": 8100,
+      "perkSubStyle": 8300,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5003
+     }
+    },
+    {
+     "participantId": 4,
+     "teamId": 100,
+     "championId": 81,
+     "stats": {
+      "kills": 1,
+      "deaths": 3,
+      "assists": 1,
+      "totalDamageDealtToChampions": 15451,
+      "visionScore": 39,
+      "perk0": 8359,
+      "perk1": 8304,
+      "perk2": 8345,
+      "perk3": 8347,
+      "perk4": 8226,
+      "perk5": 8210,
+      "perkPrimaryStyle": 8300,
+      "perkSubStyle": 8200,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5002
+     }
+    },
+    {
+     "participantId": 5,
+     "teamId": 100,
+     "championId": 223,
+     "stats": {
+      "kills": 0,
+      "deaths": 3,
+      "assists": 2,
+      "totalDamageDealtToChampions": 1954,
+      "visionScore": 55,
+      "perk0": 8465,
+      "perk1": 8463,
+      "perk2": 8473,
+      "perk3": 8242,
+      "perk4": 8316,
+      "perk5": 8410,
+      "perkPrimaryStyle": 8400,
+      "perkSubStyle": 8300,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5002
+     }
+    },
+    {
+     "participantId": 6,
+     "teamId": 200,
+     "championId": 555,
+     "stats": {
+      "kills": 5,
+      "deaths": 1,
+      "assists": 4,
+      "totalDamageDealtToChampions": 10532,
+      "visionScore": 34,
+      "perk0": 8112,
+      "perk1": 8143,
+      "perk2": 8138,
+      "perk3": 8105,
+      "perk4": 8009,
+      "perk5": 9105,
+      "perkPrimaryStyle": 8100,
+      "perkSubStyle": 8000,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5003
+     }
+    },
+    {
+     "participantId": 7,
+     "teamId": 200,
+     "championId": 64,
+     "stats": {
+      "kills": 2,
+      "deaths": 0,
+      "assists": 9,
+      "totalDamageDealtToChampions": 7658,
+      "visionScore": 51,
+      "perk0": 8010,
+      "perk1": 9111,
+      "perk2": 9105,
+      "perk3": 8017,
+      "perk4": 8313,
+      "perk5": 8321,
+      "perkPrimaryStyle": 8000,
+      "perkSubStyle": 8300,
+      "statPerk0": 5005,
+      "statPerk1": 5008,
+      "statPerk2": 5002
+     }
+    },
+    {
+     "participantId": 8,
+     "teamId": 200,
+     "championId": 84,
+     "stats": {
+      "kills": 5,
+      "deaths": 0,
+      "assists": 5,
+      "totalDamageDealtToChampions": 11430,
+      "visionScore": 46,
+      "perk0": 8112,
+      "perk1": 8139,
+      "perk2": 8136,
+      "perk3": 8135,
+      "perk4": 8304,
+      "perk5": 8316,
+      "perkPrimaryStyle": 8100,
+      "perkSubStyle": 8300,
+      "statPerk0": 5008,
+      "statPerk1": 5008,
+      "statPerk2": 5003
+     }
+    },
+    {
+     "participantId": 9,
+     "teamId": 200,
+     "championId": 429,
+     "stats": {
+      "kills": 4,
+      "deaths": 1,
+      "assists": 11,
+      "totalDamageDealtToChampions": 11370,
+      "visionScore": 71,
+      "perk0": 9923,
+      "perk1": 8139,
+      "perk2": 8120,
+      "perk3": 8135,
+      "perk4": 8313,
+      "perk5": 8345,
+      "perkPrimaryStyle": 8100,
+      "perkSubStyle": 8300,
+      "statPerk0": 5005,
+      "statPerk1": 5008,
+      "statPerk2": 5002
+     }
+    },
+    {
+     "participantId": 10,
+     "teamId": 200,
+     "championId": 111,
+     "stats": {
+      "kills": 0,
+      "deaths": 1,
+      "assists": 15,
+      "totalDamageDealtToChampions": 5504,
+      "visionScore": 77,
+      "perk0": 8439,
+      "perk1": 8446,
+      "perk2": 8473,
+      "perk3": 8451,
+      "perk4": 8313,
+      "perk5": 8345,
+      "perkPrimaryStyle": 8400,
+      "perkSubStyle": 8300,
+      "statPerk0": 5008,
+      "statPerk1": 5002,
+      "statPerk2": 5003
+     }
+    }
+   ],
+   "teams": [
+    {
+     "teamId": 100,
+     "riftHeraldKills": 0
+    },
+    {
+     "teamId": 200,
+     "riftHeraldKills": 1
+    }
+   ]
+  }
+ },
+ {
+  "key": "LOLTMNT05_84144",
+  "version": 5,
+  "stats": {
+   "gameVersion": "14.18.617.4123",
+   "gameDuration": 1863,
+   "participants": [
+    {
+     "participantId": 1,
+     "teamId": 100,
+     "championId": 68,
+     "championName": "Rumble",
+     "kills": 5,
+     "deaths": 3,
+     "assists": 9,
+     "totalDamageDealtToChampions": 21994,
+     "visionScore": 45,
+     "perks": {
+      "statPerks": {
+       "defense": 5001,
+       "flex": 5008,
+       "offense": 5007
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8200,
+        "selections": [
+         {
+          "perk": 8229
+         },
+         {
+          "perk": 8275
+         },
+         {
+          "perk": 8210
+         },
+         {
+          "perk": 8237
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 9105
+         },
+         {
+          "perk": 8017
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 2,
+     "teamId": 100,
+     "championId": 113,
+     "championName": "Sejuani",
+     "kills": 4,
+     "deaths": 0,
+     "assists": 12,
+     "totalDamageDealtToChampions": 13675,
+     "visionScore": 62,
+     "perks": {
+      "statPerks": {
+       "defense": 5001,
+       "flex": 5001,
+       "offense": 5005
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8439
+         },
+         {
+          "perk": 8463
+         },
+         {
+          "perk": 8429
+         },
+         {
+          "perk": 8451
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8300,
+        "selections": [
+         {
+          "perk": 8304
+         },
+         {
+          "perk": 8347
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 3,
+     "teamId": 100,
+     "championId": 777,
+     "championName": "Yone",
+     "kills": 2,
+     "deaths": 2,
+     "assists": 8,
+     "totalDamageDealtToChampions": 20488,
+     "visionScore": 45,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5005
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8437
+         },
+         {
+          "perk": 8446
+         },
+         {
+          "perk": 8473
+         },
+         {
+          "perk": 8451
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 9104
+         },
+         {
+          "perk": 8017
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 4,
+     "teamId": 100,
+     "championId": 81,
+     "championName": "Ezreal",
+     "kills": 9,
+     "deaths": 1,
+     "assists": 6,
+     "totalDamageDealtToChampions": 30856,
+     "visionScore": 39,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5005
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 8005
+         },
+         {
+          "perk": 8009
+         },
+         {
+          "perk": 9105
+         },
+         {
+          "perk": 8017
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8300,
+        "selections": [
+         {
+          "perk": 8345
+         },
+         {
+          "perk": 8316
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 5,
+     "teamId": 100,
+     "championId": 12,
+     "championName": "Alistar",
+     "kills": 1,
+     "deaths": 3,
+     "assists": 16,
+     "totalDamageDealtToChampions": 5573,
+     "visionScore": 100,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5010,
+       "offense": 5007
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8439
+         },
+         {
+          "perk": 8463
+         },
+         {
+          "perk": 8473
+         },
+         {
+          "perk": 8451
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8200,
+        "selections": [
+         {
+          "perk": 8275
+         },
+         {
+          "perk": 8234
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 6,
+     "teamId": 200,
+     "championId": 266,
+     "championName": "Aatrox",
+     "kills": 4,
+     "deaths": 4,
+     "assists": 4,
+     "totalDamageDealtToChampions": 13104,
+     "visionScore": 37,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5008
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 8010
+         },
+         {
+          "perk": 9111
+         },
+         {
+          "perk": 9105
+         },
+         {
+          "perk": 8299
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8446
+         },
+         {
+          "perk": 8444
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 7,
+     "teamId": 200,
+     "championId": 876,
+     "championName": "Lillia",
+     "kills": 0,
+     "deaths": 4,
+     "assists": 4,
+     "totalDamageDealtToChampions": 10862,
+     "visionScore": 45,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5008
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 8010
+         },
+         {
+          "perk": 9111
+         },
+         {
+          "perk": 9105
+         },
+         {
+          "perk": 8017
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8300,
+        "selections": [
+         {
+          "perk": 8304
+         },
+         {
+          "perk": 8347
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 8,
+     "teamId": 200,
+     "championId": 58,
+     "championName": "Renekton",
+     "kills": 1,
+     "deaths": 4,
+     "assists": 4,
+     "totalDamageDealtToChampions": 13894,
+     "visionScore": 44,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5008
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8000,
+        "selections": [
+         {
+          "perk": 8010
+         },
+         {
+          "perk": 9101
+         },
+         {
+          "perk": 9104
+         },
+         {
+          "perk": 8017
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8444
+         },
+         {
+          "perk": 8446
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 9,
+     "teamId": 200,
+     "championId": 115,
+     "championName": "Ziggs",
+     "kills": 4,
+     "deaths": 2,
+     "assists": 3,
+     "totalDamageDealtToChampions": 24836,
+     "visionScore": 18,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5008,
+       "offense": 5005
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8200,
+        "selections": [
+         {
+          "perk": 8229
+         },
+         {
+          "perk": 8226
+         },
+         {
+          "perk": 8233
+         },
+         {
+          "perk": 8236
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8300,
+        "selections": [
+         {
+          "perk": 8304
+         },
+         {
+          "perk": 8345
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "participantId": 10,
+     "teamId": 200,
+     "championId": 526,
+     "championName": "Rell",
+     "kills": 0,
+     "deaths": 7,
+     "assists": 6,
+     "totalDamageDealtToChampions": 3551,
+     "visionScore": 124,
+     "perks": {
+      "statPerks": {
+       "defense": 5011,
+       "flex": 5010,
+       "offense": 5007
+      },
+      "styles": [
+       {
+        "description": "primaryStyle",
+        "style": 8400,
+        "selections": [
+         {
+          "perk": 8439
+         },
+         {
+          "perk": 8446
+         },
+         {
+          "perk": 8473
+         },
+         {
+          "perk": 8451
+         }
+        ]
+       },
+       {
+        "description": "subStyle",
+        "style": 8300,
+        "selections": [
+         {
+          "perk": 8347
+         },
+         {
+          "perk": 8306
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "teams": [
+    {
+     "teamId": 100,
+     "objectives": {
+      "riftHerald": {
+       "first": true,
+       "kills": 1
+      }
+     }
+    },
+    {
+     "teamId": 200,
+     "objectives": {
+      "riftHerald": {
+       "first": false,
+       "kills": 0
+      }
+     }
+    }
+   ]
+  }
+ }
+]

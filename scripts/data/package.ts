@@ -104,7 +104,7 @@ if (facts.schemaVersion !== SCHEMA_VERSION) problems.push(`user_version is ${fac
 problems.push(...derivationProblems(facts, DERIVE_VERSION, { allowOlder: checkOnly }));
 
 if (checkOnly && facts.olderDerive > 0)
-  console.warn(`package: ${facts.olderDerive} in-game summaries predate DERIVE_VERSION ${DERIVE_VERSION} (no dragons or souls for them); a release refuses them`);
+  console.warn(`package: ${facts.olderDerive} in-game summaries predate DERIVE_VERSION ${DERIVE_VERSION} (without the fields later versions added); a release refuses them`);
 
 if (facts.journalMode !== "delete") problems.push(`journal_mode=${facts.journalMode}, expected delete`);
 
