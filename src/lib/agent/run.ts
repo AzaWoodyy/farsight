@@ -577,8 +577,9 @@ async function format(
 
   const call = plan.tool.call;
   const profiles = answerProfiles(db, call);
-  // The period the tool ran on (a relaxation may have widened the one asked), else the question's.
-  const period = PeriodInput.safeParse(input).data ?? entities;
+  // The period the answer covers: the one the tool chose, else the one it ran on (a relaxation may have widened
+  // the one asked), else the question's.
+  const period = out.period ?? PeriodInput.safeParse(input).data ?? entities;
   const badges = teamBadges(db, teamNames(out, meta.teams), period, out.roster ? { [out.roster.team]: out.roster.names } : {});
 
   return {

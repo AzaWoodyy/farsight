@@ -322,7 +322,7 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
   // (Under a champion profile the line is its per-tournament detail: it stays a table.)
   // A line without any figure (a generated aggregate that came back empty) has nothing for a card: the table shows its n/d.
   const card = table.rows.length === 1 && !answer.champion && table.rows[0].some((v, i) => asNumber(v) != null && !YEAR_COLUMN.test(table.columns[i]));
-  const body = card ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} />;
+  const body = card ? <RowCard table={table} icons={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} />;
   // An answer about one team (its in-game stats, its history, its dragons) is headed by that team and its logo.
   // (Not under a player's header: the answer is then about the player, in that team.)
   const [team] = answer.meta.teams.length === 1 && answer.profiles.length !== 1 ? answer.meta.teams : [];
@@ -385,7 +385,7 @@ const TOGGLE =
  * question asks about as the large figure, every other column as a labelled tile. The plain table stays one
  * click away.
  */
-function RowCard({ table }: { table: Table }) {
+function RowCard({ table, icons, tones, leagues }: { table: Table; icons: Answer["icons"]; tones: Answer["iconTones"]; leagues: Answer["teamLeagues"] }) {
   const ui = useUi();
   const { cellText, labels } = useCells();
   const [asTable, setAsTable] = useState(false);
@@ -408,7 +408,7 @@ function RowCard({ table }: { table: Table }) {
       </div>
       {asTable ? (
         <div className="[&>div]:mt-0">
-          <GenericTable table={table} />
+          <GenericTable table={table} icons={icons} tones={tones} leagues={leagues} />
         </div>
       ) : (
         <div className="overflow-hidden border border-line">
