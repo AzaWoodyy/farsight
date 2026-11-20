@@ -18,12 +18,31 @@ concurrency:
 env:
   CI: "true"
   NEXT_TELEMETRY_DISABLED: "1"
+  # The service container below: a throwaway server, its password is no secret. The app connects as the read-only
+  # role of db/roles.sql, the loader and the tests as the owner.
+  DATABASE_URL: postgres://farsight_app:ci-app@localhost:5432/postgres
+  DATABASE_OWNER_URL: postgres://postgres:postgres@localhost:5432/postgres
+  TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/farsight_test
 
 jobs:
   checks:
     name: PR checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
+    # Tests, eval and build read Postgres: the same server Neon runs, loaded from the pinned snapshot below.
+    services:
+      postgres:
+        image: postgres:18.7@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: --locale=C.UTF-8 --encoding=UTF8
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,22 +66,19 @@ jobs:
       # Direct install measured at 2s; caching the 100MB dependency cache costs more.
       - if: steps.changes.outputs.any == 'true'
         run: bun install --frozen-lockfile
-      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true'
+      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: snapshot
         with:
           path: .ci-data
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
+      # Postgres is always loaded from the raw data: the database is derived, so the same inputs give the same rows.
       - name: Restore and verify the pinned snapshot
-        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true'
+        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          REBUILD: ${{ steps.changes.outputs.database }}
-        run: |
-          args=()
-          if [ "$REBUILD" = true ]; then args+=(--raw); fi
-          bun scripts/ci/data.ts "${args[@]}"
-      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true')
+        run: bun scripts/ci/data.ts --raw
+      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-data
@@ -72,6 +88,12 @@ jobs:
         run: |
           bun run data:build
           bun run data:package --check-only
+      - name: Load Postgres from the snapshot (roles, migrations, rows)
+        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'
+        run: |
+          psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE farsight_test"
+          psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v app_password="'ci-app'" -f db/roles.sql
+          bun run db:load
       # Complete type checking before Next rewrites generated route types.
       - name: Typecheck
         if: steps.changes.outputs.typecheck == 'true'

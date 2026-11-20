@@ -1,6 +1,6 @@
 # The Vercel CLI does not read .gitignore: list here what `vercel deploy`
-# must never upload. Secrets first, then the local data (the build downloads
-# the database with data:pull).
+# must never upload. Secrets first, then the local data (the app reads
+# Postgres; data/ only holds the ingestion cache and the Data release file).
 .env
 .env.*
 !.env.example
@@ -12,3 +12,5 @@ next-env.d.ts
 # Local only: the CI snapshot cache (scripts/ci/data.ts) and working notes.
 /.ci-data/
 /plans/
+# Local link of the neon CLI (neon init).
+/.neon/

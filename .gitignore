@@ -48,3 +48,4 @@ next-env.d.ts
 
 # display lab fixtures (bun run lab:build)
 /public/lab-fixtures/
+.neon

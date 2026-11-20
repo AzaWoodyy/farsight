@@ -6,9 +6,8 @@
  * entities, never from the generated SQL, so a wrong filter in that SQL
  * cannot make an empty scope look like a real zero.
  */
-import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { selectAll } from "../db";
+import { type Db, selectAll, selectOne } from "../db";
 import { leagueMembers } from "../domain/leagues";
 import { PLAYER_METRIC_DEFS, TEAM_METRIC_DEFS } from "./metrics";
 import { say } from "./messages";
@@ -151,7 +150,7 @@ function countedColumns(sql: string): { view: "v_game_player_stats" | "v_game_te
  * came back empty: a generated one may sum a count column that is zero.
  * Returns null when the question names no scope at all, or several players or teams.
  */
-export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string): EmptyExplanation | null {
+export async function explainEmpty(db: Db, entities: Entities, sql: string): Promise<EmptyExplanation | null> {
   const hasScope = entities.players.length || entities.teams.length || entities.champion || entities.league || entities.yearFrom != null || entities.yearTo != null;
 
   // Several players or teams: their games together, or each one's own? The question does not say, so nothing is concluded.
@@ -161,10 +160,10 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
   const filter = scopeFilter(entities, "gp", "player");
   const clause = filter.where.length ? `WHERE ${filter.where.join(" AND ")}` : "";
 
-  const stages = selectAll(
+  const stages = await selectAll(
     db,
     Stage,
-    `SELECT gp.stage = 'qualifier' AS qualifier, COUNT(DISTINCT gp.game_id) AS games FROM v_game_players gp ${clause} GROUP BY 1`,
+    `SELECT (gp.stage = 'qualifier')::integer AS qualifier, COUNT(DISTINCT gp.game_id) AS games FROM v_game_players gp ${clause} GROUP BY 1`,
     filter.params,
   );
 
@@ -187,7 +186,7 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
 
     // A player or a champion: their row of each game. A team or a league alone: one row per game.
     if (entities.players.length || entities.champion) {
-      const games = selectAll(
+      const games = await selectAll(
         db,
         QualifierGame,
         `SELECT gp.played_at, gp.tournament, gp.tournament_page, gp.player, gp.team, gp.champion, gp.win, gp.kills, gp.deaths, gp.assists, gp.keystone
@@ -210,7 +209,7 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
         ]),
       };
     } else {
-      const games = selectAll(
+      const games = await selectAll(
         db,
         QualifierMatch,
         `SELECT g.played_at, g.tournament, g.tournament_page, g.blue_team, g.red_team, g.winner FROM v_games g
@@ -255,13 +254,12 @@ export function explainEmpty(db: DatabaseSync, entities: Entities, sql: string):
       .map((c, i) => `COALESCE(SUM(s.${c.column}), 0) AS c${i}, COUNT(DISTINCT CASE WHEN s.${c.column} IS NOT NULL THEN s.game_id END) AS m${i}`)
       .join(", ");
 
-    const row = z
-      .record(z.string(), z.number())
-      .parse(
-        db
-          .prepare(`SELECT COUNT(DISTINCT s.game_id) AS games, ${sums} FROM ${counted.view} s WHERE ${[...stats.where, "s.stage <> 'qualifier'"].join(" AND ")}`)
-          .get(stats.params),
-      );
+    const row = (await selectOne(
+      db,
+      z.record(z.string(), z.number()),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, ${sums} FROM ${counted.view} s WHERE ${[...stats.where, "s.stage <> 'qualifier'"].join(" AND ")}`,
+      stats.params,
+    ))!;
 
     const { games } = row;
     // The fewest games that measure one of the columns: the sample every zero holds on.

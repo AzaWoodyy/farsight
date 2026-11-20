@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { bindTool, type ToolCall } from "../src/lib/agent/tools";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const LCK = "LoL Champions Korea";
 
@@ -13,11 +12,9 @@ const LCK = "LoL Champions Korea";
  * playoffs carry another split, the playoffs, and a page without games that has a winner (a monthly academy page).
  * Alpha wins the Cup and leads Rounds 1-2; Gamma leads Rounds 3-5; Delta wins the playoffs; Echo the academy page.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const league = Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(LCK)!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const league = Number((await db.query("SELECT id FROM leagues WHERE name = ?", [LCK]))[0]!.id);
 
   const pages = [
     [1, "X/2025 Season/Cup", "Cup", "2025-01-15"],
@@ -28,17 +25,15 @@ function seed(db: DatabaseSync) {
   ] as const;
 
   for (const [id, page, split, start] of pages)
-    db.prepare("INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year,date_start,split) VALUES (?,?,?,?,?,?,2025,?,?)").run(
-      id,
+    await db.run("INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year,date_start,split) VALUES (?,?,?,?,?,?,2025,?,?)", id,
       page,
       page,
       id === 4 ? "playoffs" : "season",
       page,
       league,
       start,
-      split,
-    );
-  db.exec(`
+      split,);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'Alpha'),(2,'Beta'),(3,'Gamma'),(4,'Delta'),(5,'Echo');
     INSERT INTO players(id,page) VALUES (1,'Pilot');
     INSERT INTO champions VALUES (1,'Ahri',NULL);
@@ -58,16 +53,19 @@ function seed(db: DatabaseSync) {
 }
 
 describe("which season pages carry a title", () => {
-  const db = new DatabaseSync(":memory:");
+  let db: TestDb;
 
-  beforeAll(() => seed(db));
+  beforeAll(async () => {
+    db = await testDb();
+    await seed(db);
+  });
   afterAll(() => db.close());
 
   const run = async (call: ToolCall) => {
-    const tool = bindTool(db, call);
+    const tool = await bindTool(db, call);
 
-    expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
-    const rows = db.prepare(tool.sql).all(tool.params);
+    expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
+    const rows = (await db.query(tool.sql, tool.params));
 
     return { rows, out: await tool.format(db, rows) };
   };

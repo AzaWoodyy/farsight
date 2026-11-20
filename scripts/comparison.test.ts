@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer } from "../src/lib/agent/types";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const player = (mention: string, page = mention): ResolvedPlayer => ({
   mention, player: page, matchedAlias: mention.toLowerCase(), realName: null, nativeName: null, otherCandidates: [], ambiguity: null,
@@ -29,8 +28,8 @@ test.each([
   ["Caps contre Humanoid en LEC", entities([player("Caps"), player("Humanoid")], ...LEC), "Caps", "Humanoid"],
   ["Kyeahoo or Saken who is better", entities([player("Kyeahoo"), player("Saken", "SAKEN")]), "Kyeahoo", "SAKEN"],
   ["Faker face à face avec Chovy, qui est le meilleur ?", FAKER_CHOVY, "Faker", "Chovy"],
-])("%s → comparison, decided by the rules", (question, e, a, b) => {
-  const route = routeQuestion(question, e, SCHEMA, NO_COVERAGE);
+])("%s → comparison, decided by the rules", async (question, e, a, b) => {
+  const route = await routeQuestion(question, e, SCHEMA, NO_COVERAGE);
 
   // At or above the build threshold (0.8): neither the LLM router nor text-to-SQL is asked.
   expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison", input: { playerA: a, playerB: b, league: e.league } } });
@@ -59,21 +58,21 @@ test.each([
   "Faker contre Chovy",
   "Faker or Chovy",
   "Faker ou Chovy, le meilleur ?",
-])("%s → the same comparison, decided by the rules", (question) => {
-  const route = routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+])("%s → the same comparison, decided by the rules", async (question) => {
+  const route = await routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
 
   expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison", input: { playerA: "Faker", playerB: "Chovy" } } });
   expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
 });
 
-test("two teams still route to their head-to-head; a metric keeps two opposed players on the comparison", () => {
+test("two teams still route to their head-to-head; a metric keeps two opposed players on the comparison", async () => {
   const teams = { ...entities([]), teams: [{ mention: "T1", team: "T1", members: ["T1"] }, { mention: "Gen.G", team: "Gen.G", members: ["Gen.G"] }] };
 
-  expect(routeQuestion("T1 contre Gen.G", teams, SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head", input: { kind: "team" } } });
+  expect(await routeQuestion("T1 contre Gen.G", teams, SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head", input: { kind: "team" } } });
 
   // A metric does not take two opposed players away from the comparison, in-game ones included.
   for (const q of ["compare les dégâts de Chovy et Faker", "Faker vs Chovy KDA", "compare les solo kills de Faker et Chovy"])
-    expect(routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE)).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
+    expect(await routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE)).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison" } });
 });
 
 test.each([
@@ -86,8 +85,8 @@ test.each([
   ["compare les dégâts de Chovy et Faker", "damage", null],
   ["Faker vs Chovy KDA", null, null],
   ["Faker vs Chovy kills et morts", null, null],
-])("%s → the comparison puts %s first", (question, metric, minute) => {
-  const route = routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+])("%s → the comparison puts %s first", async (question, metric, minute) => {
+  const route = await routeQuestion(question, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
 
   // The metric is read: no unread word puts the comparison in doubt, and no note says it is missing.
   expect(route).toMatchObject({ kind: "tool", forced: true, call: { tool: "player_comparison", input: { metric, minute } } });
@@ -95,12 +94,12 @@ test.each([
   expect(route.kind === "tool" && route.notes).toEqual([]);
 });
 
-test("a metric the comparison cannot put first is said in a note", () => {
+test("a metric the comparison cannot put first is said in a note", async () => {
   for (const [q, note] of [
     ["Faker vs Chovy first tower", "statistique d'équipe"],
     ["Faker vs Chovy gold à 25 min", "qu'à 10, 15 et 20 min"],
   ]) {
-    const route = routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
+    const route = await routeQuestion(q, FAKER_CHOVY, SCHEMA, NO_COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", call: { tool: "player_comparison", input: { metric: null } } });
     expect(route.kind === "tool" && route.notes.some((n) => n.includes(note))).toBe(true);
@@ -108,15 +107,13 @@ test("a metric the comparison cannot put first is said in a note", () => {
 });
 
 /** LEC 2024: Caps (G2) and Humanoid (Fnatic) meet twice; Caps also plays MAD Lions (Elyoya) once, and once in the LCK. */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
-  const lck = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL Champions Korea'").get()!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
+  const lck = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL Champions Korea'"))[0]!.id);
 
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024), (2,'LCK24','LCK24','season',?,2024)").run(lec, lck);
-  db.exec(`
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024), (2,'LCK24','LCK24','season',?,2024)", lec, lck);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'G2 Esports'),(2,'Fnatic'),(3,'MAD Lions');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'Elyoya');
     INSERT INTO champions VALUES (1,'Azir','https://ddragon.leagueoflegends.com/cdn/img/Azir.png'),(2,'Orianna',NULL);
@@ -137,20 +134,19 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-const compare = (db: DatabaseSync, playerA: string, playerB: string, metric: "penta_kills" | "deaths" | null = null) =>
-  bindTool(db, { tool: "player_comparison", input: { playerA, playerB, league: "LoL EMEA Championship", yearFrom: null, yearTo: null, metric, minute: null } });
+const compare = async (db: TestDb, playerA: string, playerB: string, metric: "penta_kills" | "deaths" | null = null) => bindTool(db, { tool: "player_comparison", input: { playerA, playerB, league: "LoL EMEA Championship", yearFrom: null, yearTo: null, metric, minute: null } });
 
 test("two players who met: their games against each other first, the scope's statistics, and the list of games", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
-    const tool = compare(db, "Caps", "Humanoid");
-    const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+    await seed(db);
+    const tool = await compare(db, "Caps", "Humanoid");
+    const out = await tool.format(db, (await db.query(tool.sql, tool.params)));
     const v = out.versus!;
 
     // Typed queries go through the same guard as generated ones.
-    expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+    expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
     // Face to face: games 1 and 2 only.
     expect(v.h2h!.rows.map((r) => r.slice(0, 5))).toEqual([["Caps", 2, 1, 3, 2], ["Humanoid", 2, 1, 3, 2]]);
@@ -183,17 +179,17 @@ test("two players who met: their games against each other first, the scope's sta
     expect(out.facts).toContain("face à face, Caps 2 parties, 1 victoires (50 %), KDA 3,3, 1 solo kill ;");
     expect(out.facts).toContain("Sur toutes leurs parties : Caps 3 parties, 2 victoires (67 %), KDA 6,3, 3 solo kills ;");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
 test("two players who never met: the scope's statistics only, and a sentence saying so", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
-    const tool = compare(db, "Humanoid", "Elyoya");
-    const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+    await seed(db);
+    const tool = await compare(db, "Humanoid", "Elyoya");
+    const out = await tool.format(db, (await db.query(tool.sql, tool.params)));
 
     expect(out.versus).toMatchObject({ h2h: null, games: [] });
     expect(out.versus!.global.rows.map((r) => r.slice(0, 3))).toEqual([["Humanoid", 2, 1], ["Elyoya", 1, 0]]);
@@ -202,47 +198,47 @@ test("two players who never met: the scope's statistics only, and a sentence say
     expect(out.totals).toMatchObject({ h2h_games: 0, h2h_listed: 0, solo_kills_a: 0, solo_kills_b: 0 });
     expect(out.facts).toContain("Humanoid et Elyoya en LEC ne se sont jamais affrontés.");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
 test("the closing sentence on Riot data: partial coverage is said, no coverage at all reads n/d", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
+    await seed(db);
 
     const run = async () => {
-      const tool = compare(db, "Caps", "Humanoid");
+      const tool = await compare(db, "Caps", "Humanoid");
 
-      return (await tool.format(db, db.prepare(tool.sql).all(tool.params))).facts;
+      return (await tool.format(db, (await db.query(tool.sql, tool.params)))).facts;
     };
 
     expect(await run()).toEndWith(" Écarts à 15 min et solo kills calculés sur les parties avec données Riot seulement.");
 
     // No game of the scope has Riot data (an LPL comparison): nothing is computed "on the games with Riot data".
-    db.exec("DELETE FROM game_riot");
+    await db.exec("DELETE FROM game_riot");
     const facts = await run();
 
     expect(facts).toEndWith(" Écarts à 15 min et solo kills : n/d, aucune partie avec données Riot dans ce périmètre.");
     expect(facts).not.toContain("données Riot seulement");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
 test("a metric the question names comes first: in the facts, the tables and the totals, on the games with Riot data", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
+    await seed(db);
 
     const run = async (metric: "penta_kills" | "deaths") => {
-      const tool = compare(db, "Caps", "Humanoid", metric);
+      const tool = await compare(db, "Caps", "Humanoid", metric);
 
-      expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+      expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
-      return tool.format(db, db.prepare(tool.sql).all(tool.params));
+      return tool.format(db, (await db.query(tool.sql, tool.params)));
     };
 
     const penta = await run("penta_kills");
@@ -268,13 +264,13 @@ test("a metric the question names comes first: in the facts, the tables and the 
     expect(deaths.versus!.global.columns.filter((c) => c === "avg_deaths")).toHaveLength(1);
 
     // No Riot data in the scope (an LPL comparison): the in-game figure is n/d, never 0.
-    db.exec("DELETE FROM game_riot");
+    await db.exec("DELETE FROM game_riot");
     const none = await run("penta_kills");
 
     expect(none.facts).toStartWith("Caps et Humanoid en LEC, pentakills : n/d, aucune partie avec données Riot dans ce périmètre. ");
     expect(none.versus!.global.rows.map((r) => r.slice(3, 5))).toEqual([[null, 0], [null, 0]]);
     expect(none.totals).toMatchObject({ metric_a: "n/d", metric_b: "n/d" });
   } finally {
-    db.close();
+    await db.close();
   }
 });

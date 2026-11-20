@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { PlayerPhoto } from "../agent/types";
-import { selectOne } from "../db";
+import { type Db, selectOne } from "../db";
 
 /**
  * Leaguepedia headshots (table player_images), dated by the tournament they were taken for. The images are
@@ -30,10 +29,10 @@ const PHOTOS = "SELECT i.file, i.taken_at FROM player_images i JOIN players p ON
  * The player's photo of the period: the latest one taken on or before `at` (unix seconds), the earliest when
  * every photo is later, the latest when `at` is null. Null when Leaguepedia has none.
  */
-export function playerPhoto(db: DatabaseSync, player: string, at: number | null): PlayerPhoto | null {
+export async function playerPhoto(db: Db, player: string, at: number | null): Promise<PlayerPhoto | null> {
   const row =
-    (at == null ? null : selectOne(db, Photo, `${PHOTOS} AND i.taken_at <= :at ORDER BY i.taken_at DESC, i.file LIMIT 1`, { player, at })) ??
-    selectOne(db, Photo, `${PHOTOS} ORDER BY i.taken_at ${at == null ? "DESC" : "ASC"}, i.file LIMIT 1`, { player });
+    (at == null ? null : await selectOne(db, Photo, `${PHOTOS} AND i.taken_at <= :at ORDER BY i.taken_at DESC, i.file LIMIT 1`, { player, at })) ??
+    (await selectOne(db, Photo, `${PHOTOS} ORDER BY i.taken_at ${at == null ? "DESC" : "ASC"}, i.file LIMIT 1`, { player }));
 
   if (!row) return null;
 

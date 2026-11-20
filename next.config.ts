@@ -1,43 +1,40 @@
-import { existsSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
+import pg from "pg";
 
-// data/ is not committed: `bun run build` downloads it first (data:pull). A
-// Vercel build that skipped that step would deploy an agent that cannot open
-// its database, so fail the build instead.
-if (process.env.VERCEL === "1" && !existsSync("data/lol.sqlite"))
-  throw new Error("data/lol.sqlite is missing: the build command must run `bun run data:pull` first (see docs/deploy.md).");
+// The app reads Postgres at DATABASE_URL (docs/postgres.md). A Vercel build without it would deploy an agent with no
+// database, and the "how it works" pages without their figures: fail the build instead.
+if (process.env.VERCEL === "1" && !process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set for the build (see docs/postgres.md).");
 
 /**
- * The figures of the "how it works" pages (src/app/how/facts.ts), read once when Next starts and inlined in
- * the bundle. Those pages are prerendered, but Next renders them again at request time for some crawlers, in a
- * function that does not ship the database: they must not open it. Empty without a database (a fresh clone).
+ * The figures of the "how it works" pages (src/app/how/facts.ts), read once when Next starts and inlined in the bundle.
+ * Those pages are prerendered, but Next renders them again at request time for some crawlers: they must not open the
+ * database. Empty without a database (a fresh clone).
  */
-function howFacts(): string {
-  if (!existsSync("data/lol.sqlite")) return "";
-  const db = new DatabaseSync("data/lol.sqlite", { readOnly: true });
+async function howFacts(): Promise<string> {
+  if (!process.env.DATABASE_URL) return "";
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+
+  await client.connect();
 
   try {
-    const built = db.prepare("SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1").get()?.finished_at ?? null;
+    const built = (await client.query("SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1")).rows[0]?.finished_at ?? null;
 
-    const leagues = db
-      .prepare("SELECT league, SUM(games) AS games, SUM(ingame_games) AS ingame, MIN(CASE WHEN ingame_games > 0 THEN year END) AS first_ingame FROM v_ingame_coverage GROUP BY league")
-      .all();
+    const leagues = (await client.query(
+      `SELECT league, SUM(games)::integer AS games, SUM(ingame_games)::integer AS ingame, MIN(CASE WHEN ingame_games > 0 THEN year END) AS first_ingame
+       FROM v_ingame_coverage GROUP BY league`,
+    )).rows;
 
     return JSON.stringify({ built, leagues });
   } finally {
-    db.close();
+    await client.end();
   }
 }
-
-const DATABASE = "./data/lol.sqlite";
 
 // The functions that answer a link's preview without the model: the image, and the two pages a link opens.
 const CARD_ROUTES = ["/api/card", "/q", "/en/q"];
 
 const nextConfig: NextConfig = {
-  env: { HOW_FACTS: howFacts() },
   // Static rendering needs inline bootstrap scripts. Keep this explicit policy
   // compatible with Next and BotID's same-origin challenge rewrites.
   headers() {
@@ -88,18 +85,10 @@ const nextConfig: NextConfig = {
   experimental: { globalNotFound: true },
   cacheComponents: true,
   partialPrefetching: true,
-  // The database is opened at runtime from a computed path, so the tracer
-  // cannot see it: ship it inside every function that reads it (read-only).
-  // scripts/size.ts measures each of them.
-  outputFileTracingIncludes: {
-    "/api/ask": [DATABASE, "./src/lib/db/sql-child.mjs"],
-    ...Object.fromEntries(CARD_ROUTES.map((route) => [route, [DATABASE]])),
-  },
-  // The ingestion cache (data/raw: Cargo responses, Riot game JSON) and release
-  // assets are never read at runtime, but the tracer picks up the cache files a
-  // shared module can write: keep them out, or a local `vercel build` with a
-  // full cache would ship gigabytes.
-  outputFileTracingExcludes: Object.fromEntries(["/api/ask", ...CARD_ROUTES].map((route) => [route, ["./data/raw/**", "./data/release/**", "./data/previous/**", "./data/*.log"]])),
+  // Nothing under data/ is read at runtime (the app reads Postgres), but the tracer picks up the cache files a shared
+  // module can write: keep them out, or a local `vercel build` with a full cache would ship gigabytes, or the SQLite
+  // file of the Data release. scripts/size.ts checks it.
+  outputFileTracingExcludes: Object.fromEntries(["/api/ask", ...CARD_ROUTES].map((route) => [route, ["./data/**"]])),
   turbopack: {
     rules: {
       "*.css": {
@@ -111,4 +100,4 @@ const nextConfig: NextConfig = {
 };
 
 // BotID proxies its challenge script through rewrites added here.
-export default withBotId(nextConfig);
+export default withBotId(async () => ({ ...nextConfig, env: { HOW_FACTS: await howFacts() } }));

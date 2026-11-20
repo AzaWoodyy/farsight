@@ -1,8 +1,9 @@
 /**
  * size: measures what each function that reads the database ships (/api/ask,
  * and the functions of a link's preview: /api/card, /q, /en/q) and fails the
- * build above the limits, so a deployment never hits Vercel's 250 MB cap. Runs
- * after `next build` (see the `build` script).
+ * build above the limits, so a deployment never hits Vercel's 250 MB cap, or
+ * when one of them ships the SQLite file (the app reads Postgres). Runs after
+ * `next build` (see the `build` script).
  *
  *   bun run size
  *
@@ -16,25 +17,23 @@
  *   the minimal server instead (next-minimal-server.js.nft.json).
  *
  * The Vercel cloud build writes neither server trace before the build command
- * ends: the function is then measured from the route trace alone, which holds
- * the database and nearly all of the size (the minimal server adds under
- * 1 MB). Without the route trace there is nothing to measure: a warning, and
- * the build goes on.
+ * ends: the function is then measured from the route trace alone (the minimal
+ * server adds under 1 MB). Without the route trace there is nothing to measure:
+ * a warning, and the build goes on.
  *
- * Budget: database under 190 MB (warning from 170 MB), function under 250 MB
- * uncompressed (warning from 225 MB).
+ * Budget: function under 250 MB uncompressed (warning from 225 MB), and no
+ * data/*.sqlite in it.
  */
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { DB_MAX_BYTES, DB_WARN_BYTES } from "./data/artifact";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const NEXT = resolve(ROOT, ".next");
 const FUNCTION_MAX_BYTES = 250e6;
 const FUNCTION_WARN_BYTES = 225e6;
 
-/** A function that ships the database: its route, and the trace `next build` writes for it. */
+/** A function that reads the database: its route, and the trace `next build` writes for it. */
 const FUNCTIONS = [
   { route: "/api/ask", trace: "server/app/api/ask/route.js.nft.json" },
   { route: "/api/card", trace: "server/app/api/card/route.js.nft.json" },
@@ -102,7 +101,6 @@ function traces(fn: Fn): Measure | null {
 }
 
 const problems: string[] = [];
-let database = 0;
 
 for (const fn of FUNCTIONS) {
   const measured = vercelOutput(fn) ?? traces(fn);
@@ -124,23 +122,18 @@ for (const fn of FUNCTIONS) {
     const group = rel.startsWith("node_modules/") ? rel.split("/").slice(0, rel.split("/")[1].startsWith("@") ? 3 : 2).join("/") : rel.split("/").slice(0, 2).join("/");
     groups.set(group, (groups.get(group) ?? 0) + st.size);
 
-    if (rel === "data/lol.sqlite") db = st.size;
+    if (/^data\/.*\.sqlite$/.test(rel)) db += st.size;
   }
 
-  console.log(`size: ${fn.route} function ${mb(total)} uncompressed (${files.size} files, from ${measured.source}), database ${mb(db)}`);
+  console.log(`size: ${fn.route} function ${mb(total)} uncompressed (${files.size} files, from ${measured.source})`);
 
   for (const [group, bytes] of [...groups].sort((a, b) => b[1] - a[1]).slice(0, 8)) console.log(`  ${mb(bytes).padStart(9)}  ${group}`);
 
-  if (db === 0) problems.push(`data/lol.sqlite is not in the ${fn.route} function (outputFileTracingIncludes)`);
+  if (db > 0) problems.push(`the ${fn.route} function ships a SQLite file (${mb(db)}): the app reads Postgres`);
 
   if (total > FUNCTION_MAX_BYTES) problems.push(`${fn.route} function ${mb(total)} over Vercel's ${mb(FUNCTION_MAX_BYTES)} limit`);
   else if (total > FUNCTION_WARN_BYTES) console.warn(`size: warning, ${fn.route} function ${mb(total)} close to Vercel's ${mb(FUNCTION_MAX_BYTES)} limit`);
-
-  database = Math.max(database, db);
 }
-
-if (database > DB_MAX_BYTES) problems.push(`database ${mb(database)} over the ${mb(DB_MAX_BYTES)} budget`);
-else if (database > DB_WARN_BYTES) console.warn(`size: warning, database ${mb(database)} close to the ${mb(DB_MAX_BYTES)} budget`);
 
 if (problems.length) {
   console.error(`size: ${problems.join("; ")}`);

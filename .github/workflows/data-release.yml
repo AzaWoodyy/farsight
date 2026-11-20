@@ -16,9 +16,9 @@ name: Data release
 #
 # Only the 4 newest data releases are kept (and the 4 newest prereleases).
 #
-# On main, a successful release then redeploys production (deploy.yml), whose
-# build downloads the release just published. A failed check, publication or
-# clean-up skips the deployment.
+# The app reads Postgres (Neon), updated daily by the Postgres update workflow:
+# a release no longer redeploys production. It stays the versioned snapshot of
+# the data (and its in-game summaries, which Postgres update restores).
 
 on:
   workflow_dispatch:
@@ -29,8 +29,9 @@ on:
 permissions:
   contents: read
 
+# Shared with Postgres update: one Leaguepedia ingestion at a time.
 concurrency:
-  group: data-release
+  group: leaguepedia-ingestion
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +41,20 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       pinned: ${{ steps.meta.outputs.pinned }}
+    # The agent reads Postgres: the reference question below runs on a throwaway server loaded with the new data.
+    services:
+      postgres:
+        image: postgres:18.7@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: --locale=C.UTF-8 --encoding=UTF8
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       # One request at a time, 3 s apart, cached in data/raw.
       LEAGUEPEDIA_DELAY_MS: "3000"
@@ -107,10 +122,17 @@ jobs:
           PREVIOUS: ${{ steps.meta.outputs.previous }}
         run: bun run data:package --tag="$TAG" ${PREVIOUS:+--previous="$PREVIOUS"} --out=data/release
 
-      # The agent itself reads the new file (rules level, no LLM key) before anything is published.
-      # Closed editions only: a game played since the CI snapshot must not block the release.
+      # The agent itself reads the new data (rules level, no LLM key) before anything is published: the same rows as
+      # the file, loaded into the service container. Closed editions only: a game played since the CI snapshot must not
+      # block the release.
       - name: Ask the reference question on the new database
-        run: bun run eval --only=worlds-chovy-closed --deterministic --strict
+        env:
+          DATABASE_URL: postgres://farsight_app:ci-app@localhost:5432/postgres
+          DATABASE_OWNER_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v app_password="'ci-app'" -f db/roles.sql
+          bun run db:load
+          bun run eval --only=worlds-chovy-closed --deterministic --strict
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -158,18 +180,3 @@ jobs:
             echo "deleting $old"
             gh release delete "$old" --cleanup-tag --yes
           done
-
-  deploy:
-    needs: [release, publish]
-    # A branch run publishes a prerelease, which production never reads.
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/deploy.yml
-    with:
-      data-tag: ${{ needs.release.outputs.tag }}
-    secrets:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

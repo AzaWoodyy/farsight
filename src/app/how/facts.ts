@@ -28,7 +28,7 @@ export type Facts = {
 };
 
 export function readFacts(inlined = process.env.HOW_FACTS): Facts {
-  if (!inlined) throw new Error("HOW_FACTS is empty: data/lol.sqlite was missing when Next started. Run `bun run data:pull`, then restart.");
+  if (!inlined) throw new Error("HOW_FACTS is empty: DATABASE_URL was not set when Next started. Set it (docs/postgres.md), then restart.");
 
   const { built, leagues: rows } = Inlined.parse(JSON.parse(inlined));
   const byName = new Map(rows.map((r) => [r.league, r]));

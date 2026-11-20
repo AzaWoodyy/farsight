@@ -1,6 +1,5 @@
-import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { selectAll } from "../db";
+import { type Db, selectAll } from "../db";
 import { CUP_LEAGUES } from "../domain/leagues";
 import { teamLogo } from "../domain/team-logos";
 import type { ToolOutput } from "./tools";
@@ -41,7 +40,7 @@ const LEAGUES_SHOWN = 2;
  * Logo, logo tone and league of each team name. `aliases`: the other names a shown name stands for (a roster's
  * team counts every name it played under), whose games count for its league.
  */
-export function teamBadges(db: DatabaseSync, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
+export async function teamBadges(db: Db, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
   const logos = names.flatMap((name) => {
     const logo = teamLogo(name);
 
@@ -51,7 +50,7 @@ export function teamBadges(db: DatabaseSync, names: string[], period: Period, al
   return {
     icons: Object.fromEntries(logos.map((l) => [l.name, l.url])),
     tones: Object.fromEntries(logos.flatMap((l) => (l.tone ? [[l.name, l.tone]] : []))),
-    leagues: teamLeagues(db, names, period, aliases),
+    leagues: await teamLeagues(db, names, period, aliases),
   };
 }
 
@@ -64,8 +63,8 @@ type Period = { yearFrom: number | null; yearTo: number | null };
  * league it last played in, from its latest season that has one. A name is matched as stored or as displayed,
  * without Leaguepedia's disambiguation ("Griffin (Korean Team)").
  */
-export function teamLeagues(db: DatabaseSync, names: string[], period: Period, aliases: Record<string, string[]>): Record<string, string[]> {
-  const inPeriod = new Map([...seasonGames(db, names, period, aliases)].flatMap(([team, rows]) => {
+export async function teamLeagues(db: Db, names: string[], period: Period, aliases: Record<string, string[]>): Promise<Record<string, string[]>> {
+  const inPeriod = new Map([...(await seasonGames(db, names, period, aliases))].flatMap(([team, rows]) => {
     const leagues = ownLeagues(rows);
 
     return leagues.length ? [[team, leagues.toSorted((a, b) => a.first - b.first).slice(-LEAGUES_SHOWN).map((l) => l.league)]] : [];
@@ -73,7 +72,7 @@ export function teamLeagues(db: DatabaseSync, names: string[], period: Period, a
 
   const missing = names.filter((n) => !inPeriod.has(n));
 
-  const latest = [...seasonGames(db, missing, { yearFrom: null, yearTo: null }, aliases)].flatMap(([team, rows]) => {
+  const latest = [...(await seasonGames(db, missing, { yearFrom: null, yearTo: null }, aliases))].flatMap(([team, rows]) => {
     const years = [...new Set(rows.map((r) => r.year))].toSorted((a, b) => b - a);
 
     for (const year of years) {
@@ -106,36 +105,38 @@ function ownLeagues(rows: SeasonGames[]): LeagueGames[] {
 }
 
 /** Games of each team over the period, by season and competition. */
-function seasonGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Map<string, SeasonGames[]> {
+async function seasonGames(db: Db, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Promise<Map<string, SeasonGames[]>> {
   if (!names.length) return new Map();
 
   const asked = names.flatMap((team) => [...new Set([team, ...(aliases[team] ?? [])])].map((name) => [team, name]));
 
-  // Two queries: given the shown names as a joined list, SQLite walks it again for every game.
-  const ids = selectAll(
+  // Two queries: the team ids first, so the games are read by id.
+  const ids = await selectAll(
     db,
     z.object({ team: z.string(), id: z.number() }),
-    `WITH asked(team, name) AS (SELECT value ->> 0, value ->> 1 FROM json_each(?))
+    `WITH asked(team, name) AS (VALUES ${asked.map(() => "(?, ?)").join(", ")})
      SELECT DISTINCT a.team, tm.id FROM asked a JOIN teams tm
-       ON tm.name = a.name OR (tm.name LIKE a.name || ' (%)' AND NOT EXISTS (SELECT 1 FROM teams x WHERE x.name = a.name))`,
-    [JSON.stringify(asked)],
+       ON tm.name = a.name OR (tm.name ILIKE a.name || ' (%)' AND NOT EXISTS (SELECT 1 FROM teams x WHERE x.name = a.name))`,
+    asked.flat(),
   );
 
   if (!ids.length) return new Map();
 
-  const rows = selectAll(
+  const teamIds = [...new Set(ids.map((i) => i.id))];
+  const marks = (n: number) => Array.from({ length: n }, () => "?").join(", ");
+
+  const rows = await selectAll(
     db,
     z.object({ id: z.number(), year: z.number(), league: z.string(), own: z.number(), games: z.number(), first: z.number(), last: z.number() }),
-    `WITH ids(id) AS (SELECT value FROM json_each(?)),
-       sides AS (
-         SELECT blue_team_id AS id, tournament_id, played_at FROM games WHERE blue_team_id IN ids
-         UNION ALL SELECT red_team_id, tournament_id, played_at FROM games WHERE red_team_id IN ids)
-     SELECT s.id, t.year, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (SELECT value FROM json_each(?))) AS own,
+    `WITH sides AS (
+         SELECT blue_team_id AS id, tournament_id, played_at FROM games WHERE blue_team_id IN (${marks(teamIds.length)})
+         UNION ALL SELECT red_team_id, tournament_id, played_at FROM games WHERE red_team_id IN (${marks(teamIds.length)}))
+     SELECT s.id, t.year, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (${marks(CUP_LEAGUES.size)}))::integer AS own,
             COUNT(*) AS games, MIN(s.played_at) AS first, MAX(s.played_at) AS last
      FROM sides s JOIN tournaments t ON t.id = s.tournament_id JOIN leagues l ON l.id = t.league_id
-     WHERE t.year IS NOT NULL AND (? IS NULL OR t.year >= ?) AND (? IS NULL OR t.year <= ?)
+     WHERE t.year IS NOT NULL AND (CAST(? AS integer) IS NULL OR t.year >= ?) AND (CAST(? AS integer) IS NULL OR t.year <= ?)
      GROUP BY s.id, t.year, l.id`,
-    [JSON.stringify([...new Set(ids.map((i) => i.id))]), JSON.stringify([...CUP_LEAGUES]), yearFrom, yearFrom, yearTo, yearTo],
+    [...teamIds, ...teamIds, ...CUP_LEAGUES, yearFrom, yearFrom, yearTo, yearTo],
   );
 
   const byId = Map.groupBy(rows, (r) => r.id);

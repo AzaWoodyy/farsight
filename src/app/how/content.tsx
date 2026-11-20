@@ -174,17 +174,14 @@ function fr(facts: Facts): How {
               reconnus et du schéma de la base. C&apos;est le chemin le moins sûr, donc le plus encadré :
             </p>
             <List>
-              <li>une seule instruction, en lecture seule, sur une base elle-même ouverte en lecture seule ;</li>
+              <li>une seule instruction, en lecture seule, dans une transaction elle-même en lecture seule ;</li>
               <li>
-                seulement les vues prévues pour ça et leurs colonnes connues : SQLite refuse lui-même toute lecture
-                d&apos;une autre table ;
+                seulement les vues prévues pour ça et leurs colonnes connues : la requête tourne sous un rôle de la base
+                qui ne peut lire que ces vues, si bien que Postgres refuse lui-même toute lecture d&apos;une autre table ;
               </li>
-              <li>une limite de {MAX_ROWS} lignes, ajoutée d&apos;office ;</li>
-              <li>une compilation par SQLite avant toute exécution, qui rejette ce que les contrôles précédents auraient laissé passer ;</li>
-              <li>
-                une exécution dans un processus à part, sans accès aux secrets de l&apos;application, arrêté au bout de{" "}
-                {SQL_TIMEOUT_S} secondes.
-              </li>
+              <li>une limite de {MAX_ROWS} lignes, ajoutée d&apos;office, et une taille de réponse bornée par le serveur ;</li>
+              <li>aucune fonction du serveur (fichiers, réglages, attente) ;</li>
+              <li>une exécution arrêtée par la base au bout de {SQL_TIMEOUT_S} secondes.</li>
             </List>
             <p>
               Les requêtes des outils typés passent par le même contrôle. Le modèle a aussi pour consigne de signaler
@@ -193,7 +190,7 @@ function fr(facts: Facts): How {
             </p>
             <Step>3. Exécuter et se corriger</Step>
             <p>
-              La requête tourne sur un fichier SQLite livré avec le site. Si elle est refusée, échoue ou ne renvoie
+              La requête tourne sur une base Postgres hébergée chez Neon. Si elle est refusée, échoue ou ne renvoie
               rien, Farsight réessaie autrement, un nombre limité de fois. Un outil typé élargit sa recherche par des
               assouplissements prévus d&apos;avance, par exemple baisser le nombre minimum de parties d&apos;un
               classement, et chacun est signalé par une note dans la réponse. Une requête générée est renvoyée au modèle
@@ -335,13 +332,13 @@ function fr(facts: Facts): How {
         body: (
           <>
             <p>
-              Chaque lundi, un traitement automatique relit Leaguepedia, télécharge les fichiers Riot des nouvelles
-              parties, reconstruit la base et la publie dans les <Ext href={RELEASES_URL}>releases du dépôt</Ext>. Le
-              site est ensuite redéployé avec cette base.
+              Un traitement relit Leaguepedia, télécharge les fichiers Riot des nouvelles parties et recharge la base,
+              que le site lit aussitôt, sans redéploiement. Chaque lundi, la base est aussi publiée dans les{" "}
+              <Ext href={RELEASES_URL}>releases du dépôt</Ext>.
             </p>
             {released && (
               <p>
-                La version que tu consultes embarque les données du {released} : {count("fr", facts.games)} parties,
+                La base date du {released} : {count("fr", facts.games)} parties,
                 dont {count("fr", facts.ingame)} avec leur détail Riot.
               </p>
             )}
@@ -415,17 +412,14 @@ function en(facts: Facts): How {
               schema of the database. This is the least reliable path, so it is the most guarded:
             </p>
             <List>
-              <li>a single read-only statement, on a database that is itself opened read-only;</li>
+              <li>a single read-only statement, in a transaction that is itself read-only;</li>
               <li>
-                only the views meant for it, and only their known columns: SQLite itself refuses any read of another
-                table;
+                only the views meant for it, and only their known columns: the query runs as a database role that can
+                read nothing else, so Postgres itself refuses any read of another table;
               </li>
-              <li>a limit of {MAX_ROWS} rows, added whatever the query says;</li>
-              <li>compiled by SQLite before anything runs, which rejects what the earlier checks might have missed;</li>
-              <li>
-                run in a separate process with no access to the application&apos;s secrets, killed after{" "}
-                {SQL_TIMEOUT_S} seconds.
-              </li>
+              <li>a limit of {MAX_ROWS} rows, added whatever the query says, and a response size capped by the server;</li>
+              <li>no server function (files, settings, sleeping);</li>
+              <li>stopped by the database after {SQL_TIMEOUT_S} seconds.</li>
             </List>
             <p>
               The typed tools&apos; queries go through the same guard. The model is also told to report missing data
@@ -434,7 +428,7 @@ function en(facts: Facts): How {
             </p>
             <Step>3. Execute and self-correct</Step>
             <p>
-              The query runs on a SQLite file shipped with the site. If it is rejected, fails or returns nothing,
+              The query runs on a Postgres database hosted by Neon. If it is rejected, fails or returns nothing,
               Farsight tries another way, a limited number of times. A typed tool widens its search through relaxations
               planned in advance, such as lowering the minimum number of games in a ranking, and each one is flagged by
               a note in the answer. A generated query goes back to the model with the error message; its fix goes
@@ -570,13 +564,13 @@ function en(facts: Facts): How {
         body: (
           <>
             <p>
-              Every Monday, an automated job rereads Leaguepedia, downloads the Riot files of the new games, rebuilds
-              the database and publishes it in the <Ext href={RELEASES_URL}>repository&apos;s releases</Ext>. The site
-              is then redeployed with that database.
+              A job rereads Leaguepedia, downloads the Riot files of the new games and reloads the database, which the
+              site reads at once, without a redeployment. Every Monday, the database is also published in the{" "}
+              <Ext href={RELEASES_URL}>repository&apos;s releases</Ext>.
             </p>
             {released && (
               <p>
-                The version you are reading ships the data of {released}: {count("en", facts.games)} games, of which{" "}
+                The database dates from {released}: {count("en", facts.games)} games, of which{" "}
                 {count("en", facts.ingame)} have their Riot detail.
               </p>
             )}

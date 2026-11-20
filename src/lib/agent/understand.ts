@@ -1,9 +1,8 @@
 import { detectLeague, eraLeague, LEAGUES, leagueMembers } from "../domain/leagues";
-import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { normalizeAlias } from "../aliases";
-import { selectAll, selectOne } from "../db";
+import { cachedRead, type Db, selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { msg } from "./messages";
@@ -153,50 +152,66 @@ const NICKNAMES = new Map([
   ["claps", "Caps"],
 ]);
 
-function lookupAlias(db: DatabaseSync, mention: string): AliasHit[] {
-  const alias = normalizeAlias(mention);
+const ALIAS_HIT = `p.id, p.page AS player, p.ign, p.real_name, p.native_name,
+       (SELECT COUNT(*) FROM game_players g WHERE g.player_id = p.id) AS games`;
 
-  const hits = selectAll(
+/**
+ * The players behind each mention, in one query for every mention of a question: each alias, or the page of a
+ * nickname for a mention no alias matches. Most played first.
+ */
+async function lookupAliases(db: Db, mentions: string[]): Promise<Map<string, AliasHit[]>> {
+  const found = new Map<string, AliasHit[]>(mentions.map((m) => [m, []]));
+  const aliases = [...new Set(mentions.map(normalizeAlias))];
+  const nicknames = [...new Set(aliases.flatMap((a) => NICKNAMES.get(a) ?? []))];
+
+  if (!aliases.length) return found;
+  const params: Record<string, string> = {};
+  const marks = (prefix: string, values: string[]) => values.map((v, i) => ((params[`${prefix}${i}`] = v), `:${prefix}${i}`)).join(", ");
+
+  const rows = await selectAll(
     db,
-    AliasHit,
-    `SELECT p.id, p.page AS player, a.raw, p.ign, p.real_name, p.native_name,
-            (SELECT COUNT(*) FROM game_players g WHERE g.player_id = p.id) AS games
+    AliasHit.extend({ alias: z.string().nullable(), page: z.string() }),
+    `SELECT a.alias, p.page, a.raw, ${ALIAS_HIT}
      FROM player_aliases a JOIN players p ON p.id = a.player_id
-     WHERE a.alias = ?
-     ORDER BY games DESC`,
-    [alias],
+     WHERE a.alias IN (${marks("a", aliases)})
+     ${nicknames.length ? `UNION ALL SELECT NULL AS alias, p.page, p.page AS raw, ${ALIAS_HIT} FROM players p WHERE p.page IN (${marks("n", nicknames)})` : ""}
+     ORDER BY games DESC, id`,
+    params,
   );
 
-  const nickname = NICKNAMES.get(alias);
+  const byAlias = Map.groupBy(rows.filter((r) => r.alias != null), (r) => r.alias!);
+  const byPage = new Map(rows.filter((r) => r.alias == null).map((r) => [r.page, r]));
+  const hit = ({ alias: _alias, page: _page, ...h }: (typeof rows)[number]): AliasHit => h;
 
-  if (hits.length || !nickname) return hits;
+  for (const mention of mentions) {
+    const alias = normalizeAlias(mention);
+    const hits = (byAlias.get(alias) ?? []).map(hit);
+    const nickname = NICKNAMES.get(alias);
+    const page = nickname ? byPage.get(nickname) : undefined;
 
-  return selectAll(
-    db,
-    AliasHit,
-    `SELECT p.id, p.page AS player, ? AS raw, p.ign, p.real_name, p.native_name,
-            (SELECT COUNT(*) FROM game_players g WHERE g.player_id = p.id) AS games
-     FROM players p WHERE p.page = ?`,
-    [mention, nickname],
-  );
+    // A nickname names its player only when no alias of the database matches.
+    found.set(mention, hits.length || !page ? hits : [{ ...hit(page), raw: mention }]);
+  }
+
+  return found;
 }
 
 type Context = { league: string | null; yearFrom: number | null; yearTo: number | null };
 
-function contextGames(db: DatabaseSync, playerId: number, ctx: Context): number {
+async function contextGames(db: Db, playerId: number, ctx: Context): Promise<number> {
   const members = ctx.league ? leagueMembers(ctx.league, ctx.yearFrom, ctx.yearTo) : [];
 
-  const row = selectOne(
+  const row = await selectOne(
     db,
     CountRow,
     `SELECT COUNT(*) AS n FROM game_players gp
      JOIN games g ON g.id = gp.game_id JOIN tournaments t ON t.id = g.tournament_id
      JOIN leagues l ON l.id = t.league_id
      WHERE gp.player_id = :id AND t.stage <> 'qualifier'
-       AND (:league IS NULL OR l.name IN (SELECT value FROM json_each(:members)))
-       AND (:yearFrom IS NULL OR t.year >= :yearFrom)
-       AND (:yearTo IS NULL OR t.year <= :yearTo)`,
-    { id: playerId, members: JSON.stringify(members), league: ctx.league, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo },
+       ${members.length ? `AND l.name IN (${members.map((_, i) => `:m${i}`).join(", ")})` : ""}
+       AND (CAST(:yearFrom AS integer) IS NULL OR t.year >= :yearFrom)
+       AND (CAST(:yearTo AS integer) IS NULL OR t.year <= :yearTo)`,
+    { id: playerId, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo, ...Object.fromEntries(members.map((m, i) => [`m${i}`, m])) },
   );
 
   return row?.n ?? 0;
@@ -211,20 +226,25 @@ const CLEAR_MARGIN = 3;
  * the competition / period of the question, then total games. Never silent: the ambiguity is returned so the
  * answer can say who was picked and offer the others.
  */
-export function resolvePlayer(db: DatabaseSync, mention: string, ctx: Context = { league: null, yearFrom: null, yearTo: null }): ResolvedPlayer | null {
-  const hits = lookupAlias(db, mention);
+export async function resolvePlayer(
+  db: Db,
+  mention: string,
+  ctx: Context = { league: null, yearFrom: null, yearTo: null },
+  known?: AliasHit[],
+): Promise<ResolvedPlayer | null> {
+  const hits = known ?? (await lookupAliases(db, [mention])).get(mention)!;
 
   if (hits.length === 0) return null;
   const byPlayer = [...new Map(hits.map((h) => [h.player, h])).values()];
   const hasContext = ctx.league != null || ctx.yearFrom != null || ctx.yearTo != null;
 
-  const candidates: (PlayerCandidate & { hit: AliasHit })[] = byPlayer.map((h) => ({
+  const candidates: (PlayerCandidate & { hit: AliasHit })[] = await Promise.all(byPlayer.map(async (h) => ({
     player: h.player,
     games: h.games,
-    contextGames: byPlayer.length > 1 && hasContext ? contextGames(db, h.id, ctx) : h.games,
+    contextGames: byPlayer.length > 1 && hasContext ? await contextGames(db, h.id, ctx) : h.games,
     exactCase: h.player === mention || h.ign === mention || (h.raw === mention && h.raw !== h.raw.toLowerCase()),
     hit: h,
-  }));
+  })));
 
   let ambiguity: Ambiguity | null = null;
 
@@ -403,7 +423,6 @@ type TeamIndex = Map<string, TeamEntry>;
 
 type Indexes = { teams: TeamIndex; champions: Map<string, string> };
 
-const indexes = new WeakMap<DatabaseSync, Indexes>();
 
 /** Three-letter words and chat shorthands ("per", "svp", "pts"), English and French, too short for the common word list: an abbreviation among them is read in capitals only. */
 const SHORT_WORDS = new Set(
@@ -440,12 +459,11 @@ function singular(name: string): string | null {
   return m ? m[1] : null;
 }
 
-function getIndexes(db: DatabaseSync): Indexes {
-  const cached = indexes.get(db);
+/** Team and champion aliases, read once per database handle and kept for CACHE_MS. */
+const getIndexes = cachedRead(readIndexes);
 
-  if (cached) return cached;
-
-  const rows = selectAll(
+async function readIndexes(db: Db): Promise<Indexes> {
+  const rows = await selectAll(
     db,
     z.object({ name: z.string(), short: z.string().nullable(), games: z.number() }),
     `SELECT t.name, t.short, x.games FROM (
@@ -534,20 +552,17 @@ function getIndexes(db: DatabaseSync): Indexes {
 
   const champions = new Map<string, string>();
 
-  for (const { name } of selectAll(db, z.object({ name: z.string() }), "SELECT name FROM champions"))
+  for (const { name } of await selectAll(db, z.object({ name: z.string() }), "SELECT name FROM champions"))
     if (!name.includes("&amp;")) champions.set(normalizeAlias(name), name);
 
   for (const [alias, name] of Object.entries(CHAMPION_SHORTHANDS))
     if ([...champions.values()].includes(name)) champions.set(normalizeAlias(alias), name);
 
-  const result = { teams, champions };
-  indexes.set(db, result);
-
-  return result;
+  return { teams, champions };
 }
 
-export function resolveTeam(db: DatabaseSync, mention: string): ResolvedTeam | null {
-  const { teams } = getIndexes(db);
+export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam | null> {
+  const { teams } = await getIndexes(db);
   const hit = teams.get(normalizeAlias(mention)) ?? teamByEnd(teams, mention);
 
   return hit ? { mention, team: hit.team, members: hit.members } : null;
@@ -572,16 +587,14 @@ function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
 }
 
 /** Franchises with several names that have games in the database, under their current name. */
-export function renamedTeams(db: DatabaseSync): { team: string; members: string[] }[] {
-  return FRANCHISES.flatMap((f) => {
-    const t = resolveTeam(db, f.team);
+export async function renamedTeams(db: Db): Promise<{ team: string; members: string[] }[]> {
+  const teams = await Promise.all(FRANCHISES.map((f) => resolveTeam(db, f.team)));
 
-    return t && t.members.length > 1 ? [{ team: t.team, members: t.members }] : [];
-  });
+  return teams.flatMap((t) => (t && t.members.length > 1 ? [{ team: t.team, members: t.members }] : []));
 }
 
-export function resolveChampion(db: DatabaseSync, mention: string): ResolvedChampion | null {
-  const name = getIndexes(db).champions.get(normalizeAlias(mention));
+export async function resolveChampion(db: Db, mention: string): Promise<ResolvedChampion | null> {
+  const name = (await getIndexes(db)).champions.get(normalizeAlias(mention));
 
   return name ? { mention, champion: name } : null;
 }
@@ -608,14 +621,14 @@ function oneEditApart(a: string, b: string): boolean {
  * A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close.
  * `opponent` reads the champion set against one already named: four letters and an everyday word are enough there ("lock").
  */
-function resolveChampionTypo(db: DatabaseSync, mention: string, opponent = false): ResolvedChampion | null {
+function resolveChampionTypo(champions: Map<string, string>, mention: string, opponent = false): ResolvedChampion | null {
   const norm = normalizeAlias(mention);
   const min = opponent ? OPPONENT_TYPO_MIN : CHAMPION_TYPO_MIN;
 
   if (norm.length < min || (opponent && !/^[a-z]+$/.test(norm)) || STOPWORDS.has(norm) || (opponent ? NOT_OPPONENTS : COMMON_WORDS).has(norm)) return null;
   const names = new Set<string>();
 
-  for (const [alias, name] of getIndexes(db).champions) if (alias.length >= min && oneEditApart(norm, alias)) names.add(name);
+  for (const [alias, name] of champions) if (alias.length >= min && oneEditApart(norm, alias)) names.add(name);
 
   return names.size === 1 ? { mention, champion: [...names][0] } : null;
 }
@@ -649,14 +662,35 @@ function isCommonHandle(mention: string): boolean {
   return /^[a-z0-9]{1,3}$/.test(alias) || COMMON_WORDS.has(alias);
 }
 
-type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null; opponentChampion?: ResolvedChampion | null };
+/** `hits`: the players behind each mention, when the rules already looked them up. */
+type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null; opponentChampion?: ResolvedChampion | null; hits?: Map<string, AliasHit[]> };
+
+/**
+ * Every span of up to four tokens detectMentions may look up as a player alias, so their aliases are read in one query:
+ * the same filters as the detection, before it knows which tokens a longer name takes.
+ */
+function aliasCandidates(tokens: string[]): string[] {
+  const out = new Set<string>();
+
+  for (let size = 4; size >= 1; size--)
+    for (let i = 0; i + size <= tokens.length; i++) {
+      const words = tokens.slice(i, i + size);
+
+      if (words.every((w) => STOPWORDS.has(w.toLowerCase())) || (size === 1 && STOPWORDS.has(words[0].toLowerCase())) || /^\d+$/.test(words.join(""))) continue;
+      const mention = words.join(" ");
+
+      if (normalizeAlias(mention).length >= (/[\p{Script=Hangul}\p{Script=Han}]/u.test(mention) ? 2 : 3)) out.add(mention);
+    }
+
+  return [...out];
+}
 
 /**
  * Rule-based detection: longest n-gram that matches a known champion, team or
  * player alias, outside stat and game terms. On the same words a champion wins over a player ("Ahri"), and
  * a team wins over a player when it is a known shorthand or has more games.
  */
-function detectMentions(db: DatabaseSync, question: string): Mentions {
+async function detectMentions(db: Db, question: string): Promise<Mentions> {
   const { league, mention: leagueMention } = detectLeague(question);
 
   // A league written by its full name ("Liga Española de League of Legends") is no player or team: its words are set aside.
@@ -668,13 +702,14 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
     .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
     .filter(Boolean);
 
-  const found: Mentions = { players: [], teams: [], champion: null };
+  const { teams, champions } = await getIndexes(db);
+  const hits = await lookupAliases(db, aliasCandidates(tokens));
+  const found: Mentions = { players: [], teams: [], champion: null, hits };
   const used = new Set<number>();
   // Where each mention starts, in tokens: the order of the question.
   const at = new Map<string, number>();
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
-  const { teams } = getIndexes(db);
 
   // Four words: the longest names of the scope ("Royal Never Give Up").
   for (let size = 4; size >= 1; size--) {
@@ -695,7 +730,8 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
       if (norm.length < 2) continue;
 
-      const champion = norm.length >= 3 || mention === "Vi" ? resolveChampion(db, mention) : null;
+      const championName = norm.length >= 3 || mention === "Vi" ? champions.get(norm) : undefined;
+      const champion = championName ? { mention, champion: championName } : null;
 
       if (champion && !found.champion) {
         found.champion = champion;
@@ -719,7 +755,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       const hit = teams.get(norm);
       // "mad" in a sentence is the word; "MAD" is the team.
       const team = hit?.caps && mention !== mention.toUpperCase() ? undefined : hit;
-      const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
+      const players = norm.length >= (isHangulOrHan ? 2 : 3) ? hits.get(mention) ?? [] : [];
 
       // An abbreviation that is also a player's handle names the player, unless written in capitals ("Wiz", "WIZ").
       const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
@@ -746,7 +782,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   // A word left over that is one letter away from a champion ("oriana"): not a player, a team or an everyday word.
   for (let i = 0; i < tokens.length && !(found.champion && found.opponentChampion); i++) {
     if (used.has(i) || /\d/.test(tokens[i])) continue;
-    const champion = resolveChampionTypo(db, tokens[i]);
+    const champion = resolveChampionTypo(champions, tokens[i]);
 
     if (!champion || champion.champion === found.champion?.champion) continue;
 
@@ -774,7 +810,7 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
 
     for (let i = 0; i < tokens.length && !found.opponentChampion; i++) {
       if (used.has(i) || !(next(i, -1) || next(i, 1))) continue;
-      const champion = resolveChampionTypo(db, tokens[i], true);
+      const champion = resolveChampionTypo(champions, tokens[i], true);
 
       if (!champion || champion.champion === found.champion.champion) continue;
       found.opponentChampion = champion;
@@ -856,19 +892,19 @@ function detectPeriod(question: string, now: Date) {
 }
 
 
-function leagueShort(db: DatabaseSync, league: string | null): string | null {
+async function leagueShort(db: Db, league: string | null): Promise<string | null> {
   if (!league) return null;
 
-  return selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league])?.short_name ?? null;
+  return (await selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league]))?.short_name ?? null;
 }
 
-function buildEntities(
-  db: DatabaseSync,
+async function buildEntities(
+  db: Db,
   question: string,
   now: Date,
   mentions: Mentions,
   overrides: Partial<Pick<Entities, "league" | "yearFrom" | "yearTo">> = {},
-): Entities {
+): Promise<Entities> {
   const rulesLeague = detectLeague(question);
   const rulesPeriod = detectPeriod(question, now);
   // A period the rules read (written years, or a relative season resolved against `now`) is kept: the LLM does not know today's date.
@@ -880,7 +916,7 @@ function buildEntities(
   const unresolved: string[] = [];
 
   for (const m of mentions.players) {
-    const p = resolvePlayer(db, m, { league, yearFrom, yearTo });
+    const p = await resolvePlayer(db, m, { league, yearFrom, yearTo }, mentions.hits?.get(m));
 
     if (p && !players.some((x) => x.player === p.player)) players.push(p);
     else if (!p) unresolved.push(m);
@@ -895,7 +931,7 @@ function buildEntities(
     opponentChampion: mentions.opponentChampion ?? null,
     unresolved,
     league,
-    leagueShort: leagueShort(db, league),
+    leagueShort: await leagueShort(db, league),
     leagueMention: rulesLeague.mention,
     yearFrom,
     yearTo,
@@ -904,14 +940,14 @@ function buildEntities(
   };
 }
 
-type Input = { db: DatabaseSync; question: string; now: Date };
+type Input = { db: Db; question: string; now: Date };
 
 /** Level 1: regex + alias tables. Confident when every entity is found without doubt. */
 const rulesDecider: Decider<Input, Entities> = {
   level: "rules",
   name: "regex + alias",
-  run: ({ db, question, now }) => {
-    const entities = buildEntities(db, question, now, detectMentions(db, question));
+  run: async ({ db, question, now }) => {
+    const entities = await buildEntities(db, question, now, await detectMentions(db, question));
     const n = entities.players.length + entities.teams.length + (entities.champion ? 1 : 0);
     let confidence = entities.outOfScope ? 0.9 : n === 0 ? (entities.league ? 0.8 : 0.2) : n <= 2 ? 0.9 : 0.6;
 
@@ -969,14 +1005,14 @@ const llmDecider: Decider<Input, Entities> = {
       abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
-    const teams = output.teams.map((t) => resolveTeam(db, t)).filter((t): t is ResolvedTeam => t != null);
+    const teams = (await Promise.all(output.teams.map((t) => resolveTeam(db, t)))).filter((t): t is ResolvedTeam => t != null);
 
-    const entities = buildEntities(
+    const entities = await buildEntities(
       db,
       question,
       now,
       // The LLM may still copy a term's word as a name ("solo" in "solo kills").
-      { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, champion: output.champion ? resolveChampion(db, output.champion) : null },
+      { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, champion: output.champion ? await resolveChampion(db, output.champion) : null },
       { league: output.league, yearFrom: output.yearFrom, yearTo: output.yearTo },
     );
 
@@ -992,7 +1028,7 @@ const llmDecider: Decider<Input, Entities> = {
 };
 
 /** `now` dates the relative seasons of the question ("l'an dernier"); tests pass a fixed date. */
-export function understandQuestion(db: DatabaseSync, question: string, now: Date = new Date()) {
+export function understandQuestion(db: Db, question: string, now: Date = new Date()) {
   return decide({ db, question, now }, [rulesDecider, llmDecider], { threshold: 0.8 });
 }
 

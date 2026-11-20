@@ -301,7 +301,7 @@ const entities = (over: Partial<Entities>): Entities => ({
 const SCHEMA = { v_games: ["game_id", "game_n", "blue_dragons"], v_game_player_stats: ["penta_kills"] };
 const NO_COVERAGE = { league: () => ({ games: 0, ingame: 0 }), player: () => ({ games: 0, ingame: 0 }), team: () => ({ games: 0, ingame: 0 }) };
 
-test("timeline questions route to game_timeline before the in-game statistics", () => {
+test("timeline questions route to game_timeline before the in-game statistics", async () => {
   const worlds = { league: "World Championship" as const, leagueShort: "Worlds", yearFrom: 2024, yearTo: 2024 };
 
   const teams = [
@@ -309,17 +309,17 @@ test("timeline questions route to game_timeline before the in-game statistics", 
     { mention: "Gen.G", team: "Gen.G", members: ["Gen.G"] },
   ];
 
-  expect(routeQuestion("timeline de T1 vs Gen.G finale Worlds 2024 game 3", entities({ ...worlds, teams }), SCHEMA, NO_COVERAGE)).toMatchObject({
+  expect(await routeQuestion("timeline de T1 vs Gen.G finale Worlds 2024 game 3", entities({ ...worlds, teams }), SCHEMA, NO_COVERAGE)).toMatchObject({
     kind: "tool",
     call: { tool: "game_timeline", input: { teamA: "T1", teamB: "Gen.G", league: "World Championship", year: 2024, phase: "final", game: 3 } },
   });
 
   const msi = entities({ league: "Mid-Season Invitational", leagueShort: "MSI", yearFrom: 2023, yearTo: 2023 });
 
-  expect(routeQuestion("courbe d'or de la game 5 de la finale MSI 2023", msi, SCHEMA, NO_COVERAGE)).toMatchObject({
+  expect(await routeQuestion("courbe d'or de la game 5 de la finale MSI 2023", msi, SCHEMA, NO_COVERAGE)).toMatchObject({
     call: { tool: "game_timeline", input: { teamA: null, phase: "final", game: 5 } },
   });
 
   // Not a single game: the usual routes.
-  expect(routeQuestion("T1 contre Gen.G aux Worlds 2024", entities({ ...worlds, teams }), SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head" } });
+  expect(await routeQuestion("T1 contre Gen.G aux Worlds 2024", entities({ ...worlds, teams }), SCHEMA, NO_COVERAGE)).toMatchObject({ call: { tool: "head_to_head" } });
 });

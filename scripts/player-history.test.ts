@@ -1,31 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { bindTool } from "../src/lib/agent/tools";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 /**
  * Faker (T1) against Gen.G. LCK 2024: Spring Season (games at 100 and 110), then Spring Playoffs (game at 200),
  * pages whose names sort the other way round. Worlds: one page in 2023 (no game date) and one in 2024.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const id = (name: string) => Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(name)!.id);
-  const lck = id("LoL Champions Korea");
-  const worlds = id("World Championship");
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
+  const lck = await id("LoL Champions Korea");
+  const worlds = await id("World Championship");
 
-  db.prepare(
+  await db.run(
     `INSERT INTO tournaments(id,page,event_page,stage,league_id,year,split) VALUES
       (1,'LCK/2024 Season/Spring Season','LCK/2024 Season/Spring Season','season',?,2024,'Spring'),
       (2,'LCK/2024 Season/Spring Playoffs','LCK/2024 Season/Spring Playoffs','playoffs',?,2024,'Spring'),
       (3,'2023 Season World Championship/Main Event','2023 Season World Championship','main_event',?,2023,NULL),
       (4,'2024 Season World Championship/Main Event','2024 Season World Championship','main_event',?,2024,NULL)`,
-  ).run(lck, lck, worlds, worlds);
-  db.exec(`
+  lck, lck, worlds, worlds);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES (1,'Faker'),(2,'Chovy');
     INSERT INTO champions VALUES (1,'Azir',NULL),(2,'Orianna',NULL);
@@ -49,18 +46,18 @@ function seed(db: DatabaseSync) {
 }
 
 async function history(input: { league: "LoL Champions Korea" | "World Championship"; yearFrom: number | null; yearTo: number | null }) {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
-    const tool = bindTool(db, { tool: "player_event_history", input: { player: "Faker", ...input } });
+    await seed(db);
+    const tool = await bindTool(db, { tool: "player_event_history", input: { player: "Faker", ...input } });
 
     // Typed queries go through the same guard as generated ones.
-    expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+    expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
-    return await tool.format(db, db.prepare(tool.sql).all(tool.params));
+    return await tool.format(db, (await db.query(tool.sql, tool.params)));
   } finally {
-    db.close();
+    await db.close();
   }
 }
 

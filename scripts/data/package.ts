@@ -20,7 +20,7 @@ import { basename, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { constants, zstdCompressSync } from "node:zlib";
 import { z } from "zod";
-import { selectAll } from "../../src/lib/db";
+import { sqliteAll as selectAll } from "./sqlite";
 import {
   DB_ASSET,
   DB_MAX_BYTES,

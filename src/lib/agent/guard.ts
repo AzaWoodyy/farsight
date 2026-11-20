@@ -1,19 +1,18 @@
-import { constants, type DatabaseSync } from "node:sqlite";
 import { SCHEMA_VIEWS } from "../db/schema";
 
 /**
- * Schema guard for pipeline plans (typed or generated). Trusted, parameterized
- * helper queries inside tools do not need this guard:
+ * Schema guard for pipeline plans (typed or generated), a static pass that needs no database round trip. Trusted,
+ * parameterized helper queries inside tools do not need this guard:
  *
  * - read-only: SELECT / WITH only, no write or admin keyword, and the database
  *   itself is opened read-only;
  * - a single statement;
- * - only allow-listed tables and views, and only their known columns;
- * - a forced LIMIT (the query is wrapped);
- * - `prepare()` as the final schema validator: it compiles the statement
- *   without running it, so anything the static pass misses still fails here,
- *   and SQLite's authorizer rejects any read of a table outside the allow-list
- *   (comma joins, subqueries, CTEs over base tables).
+ * - only allow-listed tables and views (every table of a comma list too), and only their known columns;
+ * - no function that reads files or loads code;
+ * - a forced LIMIT (the query is wrapped).
+ *
+ * The database that runs a generated query is the last check: it refuses any read outside the views
+ * (src/lib/db/generated-query.ts), including what the static pass cannot see.
  */
 export type GuardResult = { ok: true; sql: string } | { ok: false; issues: string[] };
 
@@ -25,8 +24,24 @@ export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "play
 
 export const MAX_ROWS = 200;
 
+/** Statements and clauses a read-only query never needs (a SELECT … INTO creates a table, FOR UPDATE locks rows). */
 const FORBIDDEN =
-  /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint)\b/i;
+  /\b(insert|update|delete|merge|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint|grant|revoke|copy|lock|listen|notify|unlisten|set|reset|discard|call|do|execute|prepare|deallocate|refresh|cluster|comment|security|into|import|load|checkpoint)\b/i;
+
+/**
+ * Functions that read files, run SQL of their own, sleep, signal the server or read its settings: never in a generated
+ * query, whatever the role allows (the role of generated queries holds none of the privileges they need anyway).
+ * SQLite's file functions are refused too: a model may still write that dialect.
+ */
+const DENIED_NAMES =
+  "pg_\\w+|set_config|current_setting|query_to_xml\\w*|query_to_xmlschema|cursor_to_xml\\w*|table_to_xml\\w*|schema_to_xml\\w*|database_to_xml\\w*|" +
+  "dblink\\w*|lo_\\w+|txid_\\w+|has_\\w+_privilege|inet_\\w+|version|" +
+  "load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system";
+
+const DENIED_FUNCTION = new RegExp(`(?:"(${DENIED_NAMES})"|\\b(${DENIED_NAMES}))\\s*\\(`, "i");
+
+/** Words that end the table list of a FROM clause. */
+const CLAUSE_END = /^(?:where|group|order|limit|having|window|union|except|intersect|on|using|join|left|right|inner|outer|full|cross|natural|offset|fetch|for)$/i;
 
 const NOT_ALIAS = /^(on|where|group|order|left|inner|outer|join|limit|cross|using|natural|union|except|intersect|having|window)$/i;
 
@@ -38,7 +53,6 @@ export function allowedSchema(
 }
 
 export function guardQuery(
-  db: DatabaseSync,
   schema: Record<string, string[]>,
   sql: string,
   { maxRows = MAX_ROWS, objects = ALLOWED_OBJECTS }: { maxRows?: number; objects?: readonly string[] } = {},
@@ -67,23 +81,29 @@ export function guardQuery(
 
   const aliases = new Map<string, string>(); // alias -> table
 
-  for (const m of trimmed.matchAll(/\b(?:from|join)\s+(\w+)(?:\s+(?:as\s+)?(\w+))?/gi)) {
-    const name = m[1].toLowerCase();
+  for (const { name: table, alias: rawAlias } of referencedTables(trimmed)) {
+    const name = table.toLowerCase();
 
     if (!allowed.has(name) && !ctes.has(name)) {
       issues.push(
-        schema[m[1]] || schema[m[1].toLowerCase()]
-          ? `Table not allowed: ${m[1]} (use the v_* views).`
-          : `Unknown table: ${m[1]}.`,
+        schema[table] || schema[name]
+          ? `Table not allowed: ${table} (use the v_* views).`
+          : `Unknown table: ${table}.`,
       );
       continue;
     }
 
-    const alias = m[2]?.toLowerCase();
+    const alias = rawAlias?.toLowerCase();
 
     if (alias && !NOT_ALIAS.test(alias)) aliases.set(alias, name);
     aliases.set(name, name);
   }
+
+  // U&"set_confi\0067": an escaped name the static checks cannot read. No question needs one.
+  if (/\bu&["']/i.test(trimmed)) issues.push("Unicode-escaped identifiers and strings (U&) are not allowed.");
+  const denied = DENIED_FUNCTION.exec(trimmed);
+
+  if (denied) issues.push(`Function not allowed: ${denied[1] ?? denied[2]}.`);
 
   for (const m of trimmed.matchAll(/\b([A-Za-z_]\w*)\.(\w+)\b/g)) {
     const table = aliases.get(m[1].toLowerCase());
@@ -105,62 +125,60 @@ export function guardQuery(
 
   if (issues.length) return { ok: false, issues: [...new Set(issues)] };
 
-  const limited = `SELECT * FROM (\n${sql.trim().replace(/;\s*$/, "")}\n) LIMIT ${maxRows}`;
-  const denied = new Set<string>();
-  const objectSet = new Set(objects.map((o) => o.toLowerCase()));
-  // SQLite's authorizer sees every table the compiled statement reads, including
-  // the ones the static pass cannot spot (comma joins, nested subqueries).
-  db.setAuthorizer((action, table, column, dbName, view) => {
-    if (action === constants.SQLITE_FUNCTION) {
-      const name = column ?? table ?? "";
-
-      if (/^(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)$/i.test(name)) {
-        denied.add(`function ${name}`);
-
-        return constants.SQLITE_DENY;
-      }
-
-      return constants.SQLITE_OK;
-    }
-
-    if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;
-
-    if (action !== constants.SQLITE_READ) {
-      denied.add(`action ${action}`);
-
-      return constants.SQLITE_DENY;
-    }
-
-    const name = table?.toLowerCase() ?? "";
-
-    // Reads made by an allow-listed view on its base tables are fine.
-    if (objectSet.has(name) || (view != null && objectSet.has(view.toLowerCase()))) return constants.SQLITE_OK;
-
-    // Joins inside a view read a base table with no column; SQLite then reports
-    // the schema name but not always the view. A direct reference has no schema
-    // name, and reading any column still needs an allow-listed view.
-    if (column === "" && dbName != null) return constants.SQLITE_OK;
-    denied.add(table ?? "?");
-
-    return constants.SQLITE_DENY;
-  });
-
-  try {
-    db.prepare(limited);
-  } catch (err) {
-    if (denied.size)
-      return { ok: false, issues: [...denied].map((t) => `Table not allowed: ${t} (use the v_* views).`) };
-
-    return { ok: false, issues: [`SQLite rejected the query: ${err instanceof Error ? err.message : String(err)}`] };
-  } finally {
-    db.setAuthorizer(null);
-  }
+  const limited = `SELECT * FROM (\n${sql.trim().replace(/;\s*$/, "")}\n) AS guarded LIMIT ${maxRows}`;
 
   return { ok: true, sql: limited };
 }
 
+/**
+ * Every table a query names after FROM (each one of a comma list) or JOIN, with its alias. Subqueries are read by their own
+ * FROM; `EXTRACT(… FROM x)` and `IS DISTINCT FROM x` read a value, not a table.
+ */
+function referencedTables(code: string): { name: string; alias: string | undefined }[] {
+  const masked = code.replace(/\bextract\s*\(\s*\w+\s+from\b/gi, (m) => m.replace(/from$/i, "    ")).replace(/\bdistinct\s+from\b/gi, (m) => m.replace(/from$/i, "    "));
+  // In the order of the text: a later alias wins, as the static pass always read them.
+  const found: { name: string; alias: string | undefined; at: number }[] = [];
+
+  for (const m of masked.matchAll(/\bjoin\s+"?(\w+)"?(?:\s+(?:as\s+)?(\w+))?/gi)) found.push({ name: m[1], alias: m[2], at: m.index });
+
+  for (const m of masked.matchAll(/\bfrom\b/gi)) {
+    // The FROM list runs to the first clause word or closing parenthesis of its own level.
+    let depth = 0;
+    let item = "";
+    const items: string[] = [];
+
+    for (const token of masked.slice(m.index + 4).match(/\(|\)|,|[^\s(),]+|\s+/g) ?? []) {
+      if (token === "(") depth++;
+      else if (token === ")") {
+        if (depth === 0) break;
+        depth--;
+      } else if (depth === 0 && token === ",") {
+        items.push(item);
+        item = "";
+        continue;
+      } else if (depth === 0 && CLAUSE_END.test(token)) break;
+      item += token;
+    }
+
+    items.push(item);
+
+    for (const [i, it] of items.entries()) {
+      const t = /^\s*"?(\w+)"?(?:\s+(?:as\s+)?(\w+))?/i.exec(it);
+
+      // A subquery or a parenthesized join: its own FROM and JOIN are read on their own.
+      if (t && !it.trimStart().startsWith("(")) found.push({ name: t[1], alias: t[2], at: m.index + i });
+    }
+  }
+
+  return found.toSorted((a, b) => a.at - b.at);
+}
+
 /** Strip literals/comments for the static pass and reject an unfinished token.
- * A trailing /* would otherwise swallow the forced LIMIT added by the wrapper.
+ * A trailing comment would otherwise swallow the forced LIMIT added by the wrapper.
+ *
+ * The pass reads plain strings ('' doubles a quote) and line comments as Postgres does. The forms it would read
+ * otherwise are refused, since Postgres could then run what the pass took for text: escape strings (E'\'' ends
+ * after the second quote), dollar-quoted strings and block comments (Postgres nests them). No question needs them.
  */
 function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: string } {
   let code = "";
@@ -169,8 +187,15 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
   for (let i = 0; i < sql.length; i++) {
     const char = sql[i];
 
-    if (char === "'" || char === '"' || char === "`" || char === "[") {
-      const close = char === "[" ? "]" : char;
+    if (char === "'" && /[eE]/.test(sql[i - 1] ?? "") && !/[\w$]/.test(sql[i - 2] ?? "")) return { ok: false, issue: "Escape strings (E'…') are not allowed." };
+
+    if (char === "$") return { ok: false, issue: "Dollar signs (dollar-quoted strings, parameters) are not allowed." };
+
+    if (char === "/" && sql[i + 1] === "*") return { ok: false, issue: "Block comments (/* … */) are not allowed." };
+
+    // Only Postgres' own quotes: brackets are arrays and subscripts there, read as code.
+    if (char === "'" || char === '"') {
+      const close = char;
       let token = char;
       let closed = false;
 
@@ -179,7 +204,7 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
 
         if (sql[i] !== close) continue;
 
-        if (sql[i + 1] === close && close !== "]") {
+        if (sql[i + 1] === close) {
           token += sql[++i];
           continue;
         }
@@ -191,7 +216,8 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
       if (!closed) return { ok: false, issue: "Unclosed SQL literal or identifier." };
       code += char === "'" ? "''" : token;
     } else if (char === "-" && sql[i + 1] === "-") {
-      for (i += 2; i < sql.length && sql[i] !== "\n"; i++) { /* line comment */ }
+      // Postgres ends a line comment at a carriage return too: code after a lone CR still runs.
+      for (i += 2; i < sql.length && sql[i] !== "\n" && sql[i] !== "\r"; i++) { /* line comment */ }
 
       code += "\n";
     } else if (char === "/" && sql[i + 1] === "*") {

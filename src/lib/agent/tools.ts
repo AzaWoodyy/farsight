@@ -6,10 +6,9 @@ import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
 import { LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
-import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
-import { selectAll, selectOne, type SqlRow } from "../db";
+import { type Db, selectAll, selectOne, type SqlRow } from "../db";
 import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
 import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
@@ -73,6 +72,18 @@ import {
  */
 const COMPETITION_STAGES = "'main_event', 'play_in', 'season', 'playoffs'";
 
+/**
+ * `MAX(n, expr)` as SQLite reads it: at least `n`, and NULL when `expr` is NULL (Postgres' GREATEST would skip the
+ * NULL and give `n`, turning a missing figure into a value).
+ */
+const atLeast = (n: number, expr: string) => `(CASE WHEN (${expr}) IS NULL THEN NULL ELSE GREATEST(${n}, ${expr}) END)`;
+
+/**
+ * A column read beside `MAX(at)` without being grouped: SQLite gives the value of the row that holds the maximum
+ * (the team of a player's latest game), which Postgres says explicitly.
+ */
+const latest = (column: string, at: string) => `(ARRAY_AGG(${column} ORDER BY ${at} DESC NULLS LAST))[1]`;
+
 /** Pages that carry final standings. */
 const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
 
@@ -83,11 +94,11 @@ const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
  */
 const regularSeason = (t: string) =>
   `(${t}.stage = 'season'
-    AND NOT EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = ${t}.tournament_page AND f.tab LIKE '%final%')
+    AND NOT EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = ${t}.tournament_page AND f.tab ILIKE '%final%')
     AND (EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = ${t}.league AND p.year = ${t}.year AND p.stage = 'playoffs' AND COALESCE(p.split, '') = COALESCE(${t}.split, ''))
-      OR (EXISTS (SELECT 1 FROM v_games w WHERE w.tournament_page = ${t}.tournament_page AND w.tab LIKE 'Week %')
+      OR (EXISTS (SELECT 1 FROM v_games w WHERE w.tournament_page = ${t}.tournament_page AND w.tab ILIKE 'Week %')
         AND EXISTS (SELECT 1 FROM v_tournaments p WHERE p.league = ${t}.league AND p.year = ${t}.year AND p.tournament_page <> ${t}.tournament_page
-              AND (p.stage = 'playoffs' OR (p.stage = 'season' AND EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = p.tournament_page AND f.tab LIKE '%final%')))))))`;
+              AND (p.stage = 'playoffs' OR (p.stage = 'season' AND EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = p.tournament_page AND f.tab ILIKE '%final%')))))))`;
 
 const League = z.enum(LEAGUE_NAMES).describe("Leaguepedia League value. Worlds = World Championship, LCK = LoL Champions Korea.");
 const Year = z.number().int().min(YEAR_MIN).nullable();
@@ -462,12 +473,12 @@ type ToolDef<I> = {
   /** What the tool answers, shown in the trace. */
   label: Phrase;
   description: string;
-  plan: (db: DatabaseSync, input: I) => Plan;
+  plan: (db: Db, input: I) => Plan | Promise<Plan>;
   /** Deterministic corrections when the result is empty, most conservative first. */
   relaxations: (input: I, entities: Entities) => Relaxation<I>[];
-  format: (db: DatabaseSync, input: I, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
+  format: (db: Db, input: I, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
   /** Maps names written by the LLM onto database names. */
-  normalize: (db: DatabaseSync, input: I) => I | null;
+  normalize: (db: Db, input: I) => I | null | Promise<I | null>;
 };
 
 /** A tool bound to its input: the plan to run, its corrections and its formatting. */
@@ -476,13 +487,16 @@ export type BoundTool = {
   label: string;
   sql: string;
   params: Params;
-  relaxations: (entities: Entities) => { key: string; note: string; reason: string; next: () => BoundTool }[];
-  format: (db: DatabaseSync, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
+  relaxations: (entities: Entities) => { key: string; note: string; reason: string; next: () => Promise<BoundTool> }[];
+  format: (db: Db, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
 };
 
 // Helpers -------------------------------------------------------------------------
 
+/** `:prefix0, :prefix1…` for an IN list; no value gives `NULL`, so `x IN (NULL)` matches nothing, as an empty list did. */
 function inList(prefix: string, values: string[], params: Params): string {
+  if (!values.length) return "NULL";
+
   return values
     .map((v, i) => {
       params[`${prefix}${i}`] = v;
@@ -536,8 +550,8 @@ const sideLabel = (side: MapSide | null) => (side ? say(` côté ${side === "blu
 /** The league and period of an input, without the role its own tool filters on. */
 const leagueAndPeriod = (input: { league: string | null } & Period) => ({ league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
-/** A JSON text column (json_group_array...) parsed with its own schema. */
-const jsonColumn = <S extends z.ZodType>(schema: S) => z.string().transform((text) => schema.parse(JSON.parse(text)));
+/** An aggregated JSON column (json_agg…): the driver hands it over parsed, so its own schema reads it. */
+const jsonColumn = <S extends z.ZodType>(schema: S) => schema;
 
 /** SQLite integers come back as numbers; a missing year sorts first. */
 const YearColumn = z.number().catch(0);
@@ -597,10 +611,10 @@ export const allCompetitions = () => say("toutes compétitions", "all competitio
 /** A day as the answers write it: "2 novembre 2024", "November 2, 2024". */
 const dayFormat = () => dateFormat(answerLocale(), { day: "numeric", month: "long", year: "numeric" });
 
-function leagueShortName(db: DatabaseSync, league: string | null): string {
+async function leagueShortName(db: Db, league: string | null): Promise<string> {
   if (!league) return allCompetitions();
 
-  return selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league])?.short_name ?? league;
+  return (await selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league]))?.short_name ?? league;
 }
 
 /** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
@@ -613,15 +627,15 @@ function eventSources(pages: string[], max = 12): Source[] {
   return unique.slice(-max).map((page) => ({ label: `Leaguepedia — ${page}`, url: wikiUrl(page) }));
 }
 
-function teamMembers(db: DatabaseSync, team: string): { team: string; members: string[] } {
-  const t = resolveTeam(db, team);
+async function teamMembers(db: Db, team: string): Promise<{ team: string; members: string[] }> {
+  const t = await resolveTeam(db, team);
 
   return t ? { team: t.team, members: t.members } : { team, members: [team] };
 }
 
 /** SQL for a team name with a franchise's former names folded into its current one. */
-function franchiseName(db: DatabaseSync, column: string, params: Params): string {
-  const whens = renamedTeams(db).map((f, i) => {
+async function franchiseName(db: Db, column: string, params: Params): Promise<string> {
+  const whens = (await renamedTeams(db)).map((f, i) => {
     params[`fr${i}`] = f.team;
 
     return `WHEN ${column} IN (${inList(`fr${i}_`, f.members, params)}) THEN :fr${i}`;
@@ -635,8 +649,8 @@ function franchiseName(db: DatabaseSync, column: string, params: Params): string
 const Text = z.string();
 const NullableText = z.string().nullable();
 
-/** Pages listed in a json_group_array column. */
-const pageList = z.string().nullable().transform((v) => (v ? z.array(z.string()).parse(JSON.parse(v)) : []));
+/** Pages listed in a json_agg column. */
+const pageList = jsonColumn(z.array(z.string()).nullable()).transform((v) => v ?? []);
 
 const PlayerHistoryRow = z.object({
   year: YearColumn,
@@ -709,7 +723,7 @@ const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   label: phrase("historique joueur × compétition", "player history × competition"),
   description:
     "A player's results in one competition, edition by edition: team, final place, game record (W-L) and champions played.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     Object.assign(params, { player: input.player });
@@ -734,11 +748,11 @@ champ_counts AS (
 SELECT pg.year, pg.event_page, pg.team, MIN(pg.stage) AS stage,
        SUM(pg.win) AS wins,
        COUNT(*) - SUM(pg.win) AS losses,
-       tr.place, tr.place_number,
+       ANY_VALUE(tr.place) AS place, ANY_VALUE(tr.place_number) AS place_number,
        MAX(CASE WHEN ${regularSeason("t")} THEN 1 ELSE 0 END) AS regular_season,
-       (SELECT json_group_array(json_object('name', c.champion, 'games', c.games, 'wins', c.wins,
+       (SELECT COALESCE(json_agg(json_build_object('name', c.champion, 'games', c.games, 'wins', c.wins,
                                             'icon', ch.icon_url)
-                ORDER BY c.games DESC, c.wins DESC, c.champion)
+                ORDER BY c.games DESC, c.wins DESC, c.champion), '[]'::json)
           FROM champ_counts c LEFT JOIN champions ch ON ch.name = c.champion
          WHERE c.event_page = pg.event_page AND c.team = pg.team) AS champions
 FROM player_games pg
@@ -746,7 +760,7 @@ LEFT JOIN v_tournament_results tr
   ON tr.event_page = pg.event_page AND tr.team = pg.team
 LEFT JOIN v_tournaments t ON t.tournament_page = pg.event_page
 GROUP BY pg.year, pg.event_page, pg.team
-ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
+ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
     };
   },
   relaxations: (input, entities) => {
@@ -766,8 +780,8 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
 
     return out;
   },
-  format: (db, input, raw): ToolOutput => {
-    const league = leagueShortName(db, input.league);
+  format: async (db, input, raw): Promise<ToolOutput> => {
+    const league = await leagueShortName(db, input.league);
 
     const rows: ResultRow[] = z.array(PlayerHistoryRow).parse(raw).map((r) => ({
       year: r.year,
@@ -812,14 +826,14 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
     // Follow-ups stay within what the agent supports: teammates of the latest run.
     const latest = rows[rows.length - 1];
 
-    const teammates = selectAll(
+    const teammates = (await selectAll(
       db,
       z.object({ player: z.string() }),
       `SELECT player, COUNT(*) AS n FROM v_game_players
        WHERE event_page = ? AND team = ? AND player <> ? AND stage <> 'qualifier'
-       GROUP BY player ORDER BY n DESC LIMIT 2`,
+       GROUP BY player ORDER BY n DESC, player LIMIT 2`,
       [latest.event, latest.team, input.player],
-    ).map((r) => r.player);
+    )).map((r) => r.player);
 
     return {
       title: `${input.player} — ${[league, titlePeriod(input)].filter(Boolean).join(" ")}`,
@@ -837,8 +851,8 @@ ORDER BY pg.year, MIN(pg.played_at), pg.event_page`),
       totals: { events, wins, losses, titles, best_place: bestRows[0]?.place ?? "" },
     };
   },
-  normalize: (db, input) => {
-    const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+  normalize: async (db, input) => {
+    const p = await resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
     return p ? { ...input, player: p.player } : null;
   },
@@ -851,8 +865,8 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
   label: phrase("historique d'équipe", "team history"),
   description:
     "A team's history tournament by tournament (all competitions or one): final place and game record. Renamed teams are merged (SK Telecom T1 → T1).",
-  plan: (db, input) => {
-    const { members } = teamMembers(db, input.team);
+  plan: async (db, input) => {
+    const { members } = await teamMembers(db, input.team);
     const params: Params = {};
     const t = inList("t", members, params);
     let league = "";
@@ -874,16 +888,16 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
     ${league}
     ${periodFilter("g.year", input, params)}
 )
-SELECT tg.year, tg.league_short, tg.event_page, MIN(tg.stage) AS stage,
-       COALESCE(tr.tournament, MIN(tg.tournament)) AS tournament, tg.team,
+SELECT tg.year, ANY_VALUE(tg.league_short) AS league_short, tg.event_page, MIN(tg.stage) AS stage,
+       COALESCE(ANY_VALUE(tr.tournament), MIN(tg.tournament)) AS tournament, tg.team,
        SUM(tg.win) AS wins, COUNT(*) - SUM(tg.win) AS losses,
-       tr.place, tr.place_number,
+       ANY_VALUE(tr.place) AS place, ANY_VALUE(tr.place_number) AS place_number,
        MAX(CASE WHEN ${regularSeason("t")} THEN 1 ELSE 0 END) AS regular_season
 FROM team_games tg
 LEFT JOIN v_tournament_results tr ON tr.event_page = tg.event_page AND tr.team = tg.team
 LEFT JOIN v_tournaments t ON t.tournament_page = tg.event_page
 GROUP BY tg.year, tg.event_page, tg.team
-ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
+ORDER BY tg.year NULLS FIRST, MIN(tg.played_at) NULLS FIRST, tg.event_page`),
     };
   },
   relaxations: (input) => {
@@ -901,10 +915,10 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const raw = z.array(TeamHistoryRow).parse(sqlRows);
-    const { team, members } = teamMembers(db, input.team);
-    const league = leagueShortName(db, input.league);
+    const { team, members } = await teamMembers(db, input.team);
+    const league = await leagueShortName(db, input.league);
     const wins = raw.reduce((n, r) => n + Number(r.wins), 0);
     const losses = raw.reduce((n, r) => n + Number(r.losses), 0);
     const titles = raw.filter((r) => r.place === "1" && r.regular_season !== 1);
@@ -948,8 +962,8 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
       totals: { events: raw.length, wins, losses, titles: titles.length },
     };
   },
-  normalize: (db, input) => {
-    const t = resolveTeam(db, input.team);
+  normalize: async (db, input) => {
+    const t = await resolveTeam(db, input.team);
 
     return t ? { ...input, team: t.team } : null;
   },
@@ -987,8 +1001,8 @@ function splitFilter(column: string, input: { split: string | null }, params: Pa
 }
 
 /** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league, the period and the split. */
-function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): string {
-  const t = inList("t", teamMembers(db, input.team).members, params);
+async function rosterScope(db: Db, input: TeamRosterInput, params: Params): Promise<string> {
+  const t = inList("t", (await teamMembers(db, input.team)).members, params);
   const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
 
   return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
@@ -998,30 +1012,30 @@ function rosterScope(db: DatabaseSync, input: TeamRosterInput, params: Params): 
  * Without a period, the roster is the current one: the team's latest season in the scope, competition and split
  * included (in the database, so a team that stopped playing gets its last season). A period given by the question stays as is.
  */
-function rosterSeason(db: DatabaseSync, input: TeamRosterInput): TeamRosterInput & { latest: boolean } {
+async function rosterSeason(db: Db, input: TeamRosterInput): Promise<TeamRosterInput & { latest: boolean }> {
   if (input.yearFrom != null || input.yearTo != null) return { ...input, latest: false };
   const params: Params = {};
-  const t = inList("t", teamMembers(db, input.team).members, params);
+  const t = inList("t", (await teamMembers(db, input.team)).members, params);
   const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
 
-  const year = selectOne(
+  const year = (await selectOne(
     db,
     z.object({ year: z.number().nullable() }),
     `SELECT MAX(g.year) AS year FROM v_games g
      WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league} ${splitFilter("g.tournament_page", input, params)}`,
     params,
-  )?.year;
+  ))?.year;
 
   return year == null ? { ...input, latest: false } : { ...input, yearFrom: year, yearTo: year, latest: true };
 }
 
 /** The team's tournaments of the scope, in play order, with its games and wins in each (a trusted helper query). */
-function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
+async function rosterTournaments(db: Db, input: TeamRosterInput) {
   const params: Params = {};
-  const t = inList("t", teamMembers(db, input.team).members, params);
+  const t = inList("t", (await teamMembers(db, input.team)).members, params);
   const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
 
-  return selectAll(
+  return await selectAll(
     db,
     RosterTournamentRow,
     `SELECT g.event_page, MIN(g.tournament) AS tournament, COUNT(*) AS games,
@@ -1030,7 +1044,7 @@ function rosterTournaments(db: DatabaseSync, input: TeamRosterInput) {
      WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t})) AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
        ${splitFilter("g.tournament_page", input, params)}
      GROUP BY g.event_page
-     ORDER BY MIN(g.played_at), g.event_page`,
+     ORDER BY MIN(g.played_at) NULLS FIRST, g.event_page`,
     params,
   );
 }
@@ -1041,9 +1055,9 @@ const teamRoster: ToolDef<TeamRosterInput> = {
   description:
     "A team's roster over a period or a competition: every player who played for it, by role (Top, Jungle, Mid, Bot, Support), " +
     "with their games and the tournaments they played. Renamed teams are merged (Samsung Ozone → Samsung White, SK Telecom T1 → T1).",
-  plan: (db, asked) => {
+  plan: async (db, asked) => {
     const params: Params = {};
-    const input = rosterSeason(db, asked);
+    const input = await rosterSeason(db, asked);
 
     return {
       params,
@@ -1051,11 +1065,11 @@ const teamRoster: ToolDef<TeamRosterInput> = {
   SELECT gp.player, gp.role, gp.event_page, MIN(gp.tournament) AS tournament, MIN(gp.team) AS team,
          COUNT(*) AS games, SUM(gp.win) AS wins, MIN(gp.played_at) AS first_played, MAX(gp.played_at) AS last_played
   FROM v_game_players gp
-  WHERE ${rosterScope(db, input, params)}
+  WHERE ${await rosterScope(db, input, params)}
   GROUP BY gp.player, gp.role, gp.event_page
 )
 SELECT player, role, SUM(games) AS games, SUM(wins) AS wins, MIN(first_played) AS first_played, MAX(last_played) AS last_played,
-       json_group_array(json_object('event', event_page, 'tournament', tournament, 'team', team, 'games', games, 'at', first_played) ORDER BY first_played) AS events
+       COALESCE(json_agg(json_build_object('event', event_page, 'tournament', tournament, 'team', team, 'games', games, 'at', first_played) ORDER BY first_played NULLS FIRST), '[]'::json) AS events
 FROM lines
 GROUP BY player, role
 ORDER BY role, SUM(games) DESC, player`),
@@ -1079,13 +1093,13 @@ ORDER BY role, SUM(games) DESC, player`),
 
     return out;
   },
-  format: (db, asked, sqlRows): ToolOutput => {
-    const input = rosterSeason(db, asked);
+  format: async (db, asked, sqlRows): Promise<ToolOutput> => {
+    const input = await rosterSeason(db, asked);
     const raw = z.array(RosterRow).parse(sqlRows);
-    const { team, members } = teamMembers(db, input.team);
-    const league = leagueShortName(db, input.league);
+    const { team, members } = await teamMembers(db, input.team);
+    const league = await leagueShortName(db, input.league);
     const scope = [input.split ? say(`au split ${input.split}`, `in the ${input.split} split`) : "", scopeLabel(league, input)].filter(Boolean).join(" ");
-    const events = rosterTournaments(db, input);
+    const events = await rosterTournaments(db, input);
     const games = events.reduce((n, e) => n + e.games, 0);
     const wins = events.reduce((n, e) => n + e.wins, 0);
     const names = [...new Set(raw.flatMap((r) => r.events.map((e) => e.team)))].map(displayTeam);
@@ -1095,8 +1109,10 @@ ORDER BY role, SUM(games) DESC, player`),
 
     for (const r of raw) top.set(r.role, Math.max(top.get(r.role) ?? 0, r.games));
 
+    const photos = await Promise.all(raw.map((r) => playerPhoto(db, r.player, r.last_played)));
+
     const players = raw
-      .map((r): RosterPlayer => ({
+      .map((r, i): RosterPlayer => ({
         player: r.player,
         role: r.role,
         games: r.games,
@@ -1105,7 +1121,7 @@ ORDER BY role, SUM(games) DESC, player`),
         tournaments: r.events.map(label),
         firstPlayed: r.first_played,
         lastPlayed: r.last_played,
-        photo: playerPhoto(db, r.player, r.last_played),
+        photo: photos[i],
         source: { label: `Leaguepedia — ${r.player}`, url: wikiUrl(r.player) },
       }))
       .sort((a, b) => roleRank(a.role) - roleRank(b.role) || b.games - a.games || a.player.localeCompare(b.player));
@@ -1165,8 +1181,8 @@ ORDER BY role, SUM(games) DESC, player`),
       totals: { season: input.latest ? (input.yearFrom ?? nd()) : "asked", players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
     };
   },
-  normalize: (db, input) => {
-    const t = resolveTeam(db, input.team);
+  normalize: async (db, input) => {
+    const t = await resolveTeam(db, input.team);
 
     return t ? { ...input, team: t.team } : null;
   },
@@ -1190,13 +1206,13 @@ const SeriesRow = z.object({
 const MAX_SERIES = 100;
 
 /** Every series (one tab's match of one tournament page) the two teams played in the scope, newest first. */
-function teamSeries(db: DatabaseSync, input: HeadToHeadInput) {
+async function teamSeries(db: Db, input: HeadToHeadInput) {
   const params: Params = {};
-  const A = inList("a", teamMembers(db, input.sideA).members, params);
-  const B = inList("b", teamMembers(db, input.sideB).members, params);
+  const A = inList("a", (await teamMembers(db, input.sideA)).members, params);
+  const B = inList("b", (await teamMembers(db, input.sideB)).members, params);
   const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
 
-  const rows = selectAll(
+  const rows = await selectAll(
     db,
     SeriesRow,
     `SELECT g.tournament_page, g.tab, MIN(g.league_short) AS league_short, MIN(g.year) AS year, MIN(g.played_at) AS played_at,
@@ -1208,7 +1224,7 @@ function teamSeries(db: DatabaseSync, input: HeadToHeadInput) {
      WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}) AND g.red_team IN (${A})))
        AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
      GROUP BY g.tournament_page, g.tab, g.match_n
-     ORDER BY MIN(g.played_at) DESC`,
+     ORDER BY MIN(g.played_at) DESC NULLS LAST`,
     params,
   );
 
@@ -1233,12 +1249,12 @@ const headToHead: ToolDef<HeadToHeadInput> = {
   label: phrase("confrontations", "head-to-head"),
   description:
     "Games between two teams, tournament by tournament (wins of each side). For two players, use player_comparison.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
     const filters: string[] = [];
 
-    const A = inList("a", teamMembers(db, input.sideA).members, params);
-    const B = inList("b", teamMembers(db, input.sideB).members, params);
+    const A = inList("a", (await teamMembers(db, input.sideA)).members, params);
+    const B = inList("b", (await teamMembers(db, input.sideB)).members, params);
 
     if (input.league) {
       filters.push(`AND ${leagueFilter("g.league", input, params)}`);
@@ -1247,7 +1263,7 @@ const headToHead: ToolDef<HeadToHeadInput> = {
 
     return {
       params,
-      sql: tidy(`SELECT g.year, g.league_short, g.event_page, MIN(g.tournament) AS tournament,
+      sql: tidy(`SELECT g.year, ANY_VALUE(g.league_short) AS league_short, g.event_page, MIN(g.tournament) AS tournament,
        SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END) AS wins_a,
        SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END) AS wins_b
 FROM v_games g
@@ -1256,7 +1272,7 @@ WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}
   ${filters.join(" ")}
   ${periodFilter("g.year", input, params)}
 GROUP BY g.year, g.event_page
-ORDER BY g.year, MIN(g.played_at), g.event_page`),
+ORDER BY g.year NULLS FIRST, MIN(g.played_at) NULLS FIRST, g.event_page`),
     };
   },
   relaxations: (input) => {
@@ -1274,17 +1290,17 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const raw = z.array(HeadToHeadRow).parse(sqlRows);
-    const a = teamMembers(db, input.sideA);
-    const b = teamMembers(db, input.sideB);
+    const a = await teamMembers(db, input.sideA);
+    const b = await teamMembers(db, input.sideB);
     const winsA = raw.reduce((n, r) => n + Number(r.wins_a), 0);
     const winsB = raw.reduce((n, r) => n + Number(r.wins_b), 0);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const last = raw[raw.length - 1];
     const leader = winsA === winsB ? say("à égalité", "tied") : say(`avantage ${winsA > winsB ? a.team : b.team}`, `${winsA > winsB ? a.team : b.team} ahead`);
 
-    const series = teamSeries(db, input);
+    const series = await teamSeries(db, input);
     const latest = series.series[0];
     const seriesLeader = series.seriesA === series.seriesB ? say("à égalité", "tied") : say(`avantage ${series.seriesA > series.seriesB ? a.team : b.team}`, `${series.seriesA > series.seriesB ? a.team : b.team} ahead`);
 
@@ -1323,9 +1339,9 @@ ORDER BY g.year, MIN(g.played_at), g.event_page`),
     };
   },
   // The model may write a franchise's old name ("MAD Lions KOI"): the input carries the franchise's current one.
-  normalize: (db, input) => {
-    const a = resolveTeam(db, input.sideA);
-    const b = resolveTeam(db, input.sideB);
+  normalize: async (db, input) => {
+    const a = await resolveTeam(db, input.sideA);
+    const b = await resolveTeam(db, input.sideB);
 
     return a && b ? { ...input, sideA: a.team, sideB: b.team } : null;
   },
@@ -1460,13 +1476,13 @@ const FACED = `EXISTS (SELECT 1 FROM v_game_players o
  */
 function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
   const focus = comparisonFocus(input);
-  const focusSql = focus == null ? "NULL" : focus.ingame ? "st.focus" : `p.${focus.stat}`;
+  const focusSql = focus == null ? "NULL::integer" : focus.ingame ? "st.focus" : `p.${focus.stat}`;
 
   return tidy(`WITH st AS (
   SELECT game_id, player, gold_diff_15, cs_diff_15, solo_kills${focus?.ingame ? `, ${focus.stat} AS focus` : ""} FROM v_game_player_stats WHERE player IN (:a, :b)
 ), g AS (
   SELECT p.player, p.event_page, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision,
-         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL) AS ingame, ${focusSql} AS focus
+         st.gold_diff_15, st.cs_diff_15, st.solo_kills, (st.game_id IS NOT NULL)::integer AS ingame, ${focusSql} AS focus
   FROM v_game_players p
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
   WHERE p.player IN (:a, :b) AND ${competitionScope("p", input, params)}${faced ? `\n    AND ${FACED}` : ""}
@@ -1477,7 +1493,7 @@ SELECT player, COUNT(*) AS games, SUM(win) AS wins,
        ROUND(AVG(gold_diff_15), 0) AS avg_gold_diff_15, ROUND(AVG(cs_diff_15), 1) AS avg_cs_diff_15,
        ROUND(AVG(solo_kills), 2) AS avg_solo_kills, SUM(solo_kills) AS solo_kills,
        SUM(ingame) AS ingame_games, SUM(focus) AS focus_total, ROUND(AVG(focus), 2) AS focus_avg, COUNT(focus) AS focus_games,
-       json_group_array(DISTINCT event_page) AS pages
+       COALESCE(json_agg(DISTINCT event_page), '[]'::json) AS pages
 FROM g GROUP BY player
 ORDER BY player = :a DESC`);
 }
@@ -1519,27 +1535,33 @@ export function scopeLabel(league: string, input: Period): string {
   return [inLeague(league), period].filter(Boolean).join(" ");
 }
 
+/**
+ * Player A's games of the scope (`p`) and player B's games (`o`), each read once on its own: joined directly, the
+ * planner reckons a player has the average number of games and walks B's games again for every game of A.
+ */
+const pairGames = (scope: string) => `WITH p AS MATERIALIZED (SELECT * FROM v_game_players p WHERE p.player = :a AND ${scope}),
+     o AS MATERIALIZED (SELECT * FROM v_game_players WHERE player = :b)`;
+
 /** Their games against each other, newest first, with each player's champion and K/D/A. */
-function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame[] {
+async function versusGames(db: Db, input: PlayerComparisonInput): Promise<VersusGame[]> {
   const params: Params = {};
 
   Object.assign(params, { a: input.playerA, b: input.playerB });
 
-  const rows = selectAll(
+  const rows = await selectAll(
     db,
     VersusGameRow,
-    `SELECT g.played_at, g.league_short, g.year, g.tab, g.game_n, g.tournament_page, r.stats_page,
+    `${pairGames(competitionScope("p", input, params))}
+     SELECT g.played_at, g.league_short, g.year, g.tab, g.game_n, g.tournament_page, r.stats_page,
             p.team AS team_a, o.team AS team_b, p.role AS role_a, o.role AS role_b, p.win AS win_a,
             p.champion AS champion_a, ca.icon_url AS icon_a, p.kills AS kills_a, p.deaths AS deaths_a, p.assists AS assists_a,
             o.champion AS champion_b, cb.icon_url AS icon_b, o.kills AS kills_b, o.deaths AS deaths_b, o.assists AS assists_b
-     FROM v_game_players p
-     JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team AND o.player = :b
+     FROM p JOIN o ON o.game_id = p.game_id AND o.team <> p.team
      JOIN v_games g ON g.game_id = p.game_id
      LEFT JOIN game_riot r ON r.game_id = p.game_id
      LEFT JOIN champions ca ON ca.name = p.champion
      LEFT JOIN champions cb ON cb.name = o.champion
-     WHERE p.player = :a AND ${competitionScope("p", input, params)}
-     ORDER BY g.played_at DESC
+     ORDER BY g.played_at DESC NULLS LAST
      LIMIT ${MAX_VERSUS_GAMES}`,
     params,
   );
@@ -1560,17 +1582,17 @@ function versusGames(db: DatabaseSync, input: PlayerComparisonInput): VersusGame
 }
 
 /** Of their games against each other, those they played in the same role (a lane face-off), by role. */
-function sameLane(db: DatabaseSync, input: PlayerComparisonInput): VersusView["lanes"] {
+async function sameLane(db: Db, input: PlayerComparisonInput): Promise<VersusView["lanes"]> {
   const params: Params = {};
 
   Object.assign(params, { a: input.playerA, b: input.playerB });
 
-  const roles = selectAll(
+  const roles = await selectAll(
     db,
     z.object({ role: Text, games: z.number() }),
-    `SELECT p.role, COUNT(*) AS games FROM v_game_players p
-     JOIN v_game_players o ON o.game_id = p.game_id AND o.team <> p.team AND o.player = :b AND o.role = p.role
-     WHERE p.player = :a AND p.role IS NOT NULL AND ${competitionScope("p", input, params)}
+    `${pairGames(competitionScope("p", input, params))}
+     SELECT p.role, COUNT(*) AS games FROM p JOIN o ON o.game_id = p.game_id AND o.team <> p.team AND o.role = p.role
+     WHERE p.role IS NOT NULL
      GROUP BY p.role ORDER BY games DESC, p.role`,
     params,
   );
@@ -1600,7 +1622,7 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     "and their statistics over every game of the scope. When the question names a statistic (pentakills, solo kills, first bloods, deaths, " +
     "gold difference at 10 min...), set metric: it is shown first. Use it for any question opposing two players: 'compare X and Y', 'X vs Y', " +
     "'X contre Y', 'X or Y who is better', 'head to head', 'h2h', 'confrontations'.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     Object.assign(params, { a: input.playerA, b: input.playerB });
@@ -1623,19 +1645,19 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(ComparisonRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input);
     const params: Params = {};
 
     Object.assign(params, { a: input.playerA, b: input.playerB });
 
-    const faced = selectAll(db, ComparisonRow, comparisonSql(input, params, true), params);
-    const games = faced.length ? versusGames(db, input) : [];
+    const faced = await selectAll(db, ComparisonRow, comparisonSql(input, params, true), params);
+    const games = faced.length ? await versusGames(db, input) : [];
     const met = faced.find((r) => r.player === input.playerA)?.games ?? 0;
     const winsA = faced.find((r) => r.player === input.playerA)?.wins ?? 0;
-    const lanes = met ? sameLane(db, input) : { same: 0, roles: [] };
+    const lanes = met ? await sameLane(db, input) : { same: 0, roles: [] };
     const mainRole = (player: string) => games.find((g) => g.a.role)?.[player === input.playerA ? "a" : "b"].role ?? null;
 
     const line = (r: ComparisonRow) => {
@@ -1712,10 +1734,10 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
       },
     };
   },
-  normalize: (db, input) => {
+  normalize: async (db, input) => {
     const scope = { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo };
-    const a = resolvePlayer(db, input.playerA, scope);
-    const b = resolvePlayer(db, input.playerB, scope);
+    const a = await resolvePlayer(db, input.playerA, scope);
+    const b = await resolvePlayer(db, input.playerB, scope);
 
     return a && b && a.player !== b.player ? { ...input, playerA: a.player, playerB: b.player } : null;
   },
@@ -1792,22 +1814,24 @@ const itemsSource = (): Source => ({
 const ChampionItemRow = z.object({ item: Text, icon: Text, kind: z.enum(ITEM_KINDS).nullable(), games: z.number(), wins: z.number() });
 
 /** A champion's end-of-game items in the scope (`gp` is v_game_players), and what the inventories leave out. */
-function championItems(db: DatabaseSync, input: ChampionStatsInput, picks: number): ChampionItems {
+async function championItems(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionItems> {
   const params: Params = {};
   const where = championScope(input, params);
   const owned = "pi.game_id = gp.game_id AND pi.player = gp.player";
+  // The champion's few games drive the lookups (LATERAL, and OFFSET 0 so the planner keeps it): joined whole, the item
+  // and rune views would be computed for every game first (2.8 million item rows, 4.6 million rune slots).
 
-  const items = selectAll(
+  const items = await selectAll(
     db,
     ChampionItemRow,
-    `SELECT pi.item, pi.icon_url AS icon, pi.kind, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
-     FROM v_game_players gp JOIN v_player_items pi ON ${owned}
+    `SELECT pi.item, ANY_VALUE(pi.icon_url) AS icon, ANY_VALUE(pi.kind) AS kind, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
+     FROM v_game_players gp CROSS JOIN LATERAL (SELECT * FROM v_player_items pi WHERE ${owned} OFFSET 0) pi
      WHERE ${where}
      GROUP BY pi.item ORDER BY games DESC, pi.item`,
     params,
   );
 
-  const counts = selectOne(
+  const counts = await selectOne(
     db,
     z.object({ games: z.number(), bot_slot: z.number() }),
     `SELECT COUNT(CASE WHEN EXISTS (SELECT 1 FROM v_player_items pi WHERE ${owned}) THEN 1 END) AS games,
@@ -1849,14 +1873,14 @@ const ChampionSpellsRow = z.object({ spell1: Text, spell2: NullableText, icon1: 
 const ChampionRuneRow = z.object({ rune: Text, kind: z.enum(RUNE_KINDS), tree: NullableText, icon: NullableText, games: z.number(), wins: z.number() });
 
 /** A champion's summoner spell pairs and runes in the scope (`gp` is v_game_players), and the games that have them. */
-function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: number): ChampionSetups {
+async function championSetups(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionSetups> {
   const params: Params = {};
   const where = championScope(input, params);
 
-  const spells = selectAll(
+  const spells = await selectAll(
     db,
     ChampionSpellsRow,
-    `SELECT gp.spell1, gp.spell2, s1.icon_url AS icon1, s2.icon_url AS icon2, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
+    `SELECT gp.spell1, gp.spell2, ANY_VALUE(s1.icon_url) AS icon1, ANY_VALUE(s2.icon_url) AS icon2, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
      FROM v_game_players gp LEFT JOIN summoner_spells s1 ON s1.name = gp.spell1 LEFT JOIN summoner_spells s2 ON s2.name = gp.spell2
      WHERE ${where} AND gp.spell1 IS NOT NULL
      GROUP BY gp.spell1, gp.spell2 ORDER BY games DESC, gp.spell1, gp.spell2`,
@@ -1864,17 +1888,17 @@ function championSetups(db: DatabaseSync, input: ChampionStatsInput, picks: numb
   );
 
   // A stat shard taken twice on a page counts once, as two copies of an item do.
-  const runes = selectAll(
+  const runes = await selectAll(
     db,
     ChampionRuneRow,
-    `SELECT r.rune, r.kind, r.tree, r.icon_url AS icon, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
-     FROM v_game_players gp JOIN v_player_runes r ON r.game_id = gp.game_id AND r.player = gp.player
+    `SELECT r.rune, r.kind, ANY_VALUE(r.tree) AS tree, ANY_VALUE(r.icon_url) AS icon, COUNT(DISTINCT gp.game_id) AS games, COUNT(DISTINCT CASE WHEN gp.win = 1 THEN gp.game_id END) AS wins
+     FROM v_game_players gp CROSS JOIN LATERAL (SELECT * FROM v_player_runes r WHERE r.game_id = gp.game_id AND r.player = gp.player OFFSET 0) r
      WHERE ${where}
      GROUP BY r.kind, r.rune ORDER BY games DESC, MIN(r.slot), r.rune`,
     params,
   );
 
-  const counts = selectOne(
+  const counts = await selectOne(
     db,
     z.object({ keystones: z.number(), pages: z.number() }),
     `SELECT COUNT(gp.keystone) AS keystones,
@@ -1923,12 +1947,12 @@ function setupsFacts(p: ChampionProfile): string {
 }
 
 /** Averages, players and roles of a champion in the scope of the question. */
-function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): ChampionProfile {
+async function championProfile(db: Db, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): Promise<ChampionProfile> {
   const params: Params = {};
   const where = championScope(input, params);
   const ends = CHAMPION_AVERAGES.map((a) => `AVG(gp.${a.key}) AS ${a.key}, COUNT(gp.${a.key}) AS n_${a.key}`).join(", ");
 
-  const totals = selectOne(
+  const totals = await selectOne(
     db,
     Averages,
     `SELECT COUNT(*) AS picks, COALESCE(SUM(gp.win), 0) AS wins,
@@ -1940,7 +1964,7 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
 
   const ingameParams: Params = {};
 
-  const ingame = selectOne(
+  const ingame = await selectOne(
     db,
     Averages,
     `SELECT ${CHAMPION_INGAME.map((a) => `AVG(gp.${a.key}) AS ${a.key}, COUNT(gp.${a.key}) AS n_${a.key}`).join(", ")}
@@ -1948,10 +1972,10 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     ingameParams,
   ) ?? {};
 
-  const players = selectAll(
+  const players = await selectAll(
     db,
     ChampionPlayerRow,
-    `SELECT gp.player, gp.team, MAX(gp.played_at) AS last_game, COUNT(*) AS games, SUM(gp.win) AS wins,
+    `SELECT gp.player, ${latest("gp.team", "gp.played_at")} AS team, MAX(gp.played_at) AS last_game, COUNT(*) AS games, SUM(gp.win) AS wins,
             ${kaSum("gp")} AS ka,
             ${deathsSum("gp")} AS deaths
      FROM v_game_players gp WHERE ${where}
@@ -1959,7 +1983,7 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     params,
   );
 
-  const roles = selectAll(
+  const roles = await selectAll(
     db,
     z.object({ role: Text, games: z.number() }),
     `SELECT gp.role, COUNT(*) AS games FROM v_game_players gp WHERE ${where} AND gp.role IS NOT NULL GROUP BY gp.role ORDER BY games DESC, gp.role`,
@@ -1984,8 +2008,8 @@ function championProfile(db: DatabaseSync, input: ChampionStatsInput, scope: str
     players: players.map((p) => ({ player: p.player, team: p.team && displayTeam(p.team), games: p.games, wins: p.wins, kda: kdaOf(p.ka, p.deaths) })),
     roles,
     focus: input.focus,
-    items: championItems(db, input, picks),
-    setups: championSetups(db, input, picks),
+    items: await championItems(db, input, picks),
+    setups: await championSetups(db, input, picks),
   };
 }
 
@@ -2009,7 +2033,7 @@ const championEventStats: ToolDef<ChampionStatsInput> = {
     "One champion in one competition and period: picks, bans, presence, win rate, KDA, average kills/deaths/assists, gold, CS, damage, vision " +
     "and gold/CS difference at 15 min, the players who played it most (games, win rate, KDA), the roles it was played in, its most built items, " +
     "its summoner spells and runes (keystones, primary and secondary runes, shards), and its editions one by one.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     Object.assign(params, { champion: input.champion });
@@ -2035,17 +2059,17 @@ player_counts AS (
   FROM picks p JOIN ev ON ev.game_id = p.game_id
   GROUP BY ev.event_page, p.player
 )
-SELECT ev.year, ev.league_short, ev.event_page, MIN(ev.tournament) AS tournament,
+SELECT ev.year, ANY_VALUE(ev.league_short) AS league_short, ev.event_page, MIN(ev.tournament) AS tournament,
        COUNT(*) AS games, COUNT(p.game_id) AS picks, COALESCE(SUM(p.win), 0) AS wins, COUNT(b.game_id) AS bans,
        (SELECT COUNT(*) FROM ev) AS scope_games, (SELECT MIN(year) FROM ev) AS scope_from, (SELECT MAX(year) FROM ev) AS scope_to,
-       (SELECT json_group_array(json_object('player', pc.player, 'games', pc.n) ORDER BY pc.n DESC, pc.player)
+       (SELECT COALESCE(json_agg(json_build_object('player', pc.player, 'games', pc.n) ORDER BY pc.n DESC, pc.player), '[]'::json)
           FROM player_counts pc WHERE pc.event_page = ev.event_page) AS players
 FROM ev
 LEFT JOIN picks p ON p.game_id = ev.game_id
 LEFT JOIN bans b ON b.game_id = ev.game_id
 GROUP BY ev.year, ev.event_page
 HAVING COUNT(p.game_id) + COUNT(b.game_id) > 0
-ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
+ORDER BY ev.year NULLS FIRST, MIN(ev.played_at) NULLS FIRST, ev.event_page`),
     };
   },
   relaxations: (input) => {
@@ -2055,9 +2079,9 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
 
     return [{ ...noPeriod(input, say("toutes les éditions", "every edition")), note: say(`${input.champion} n'a été ni pické ni banni ${when} dans cette compétition (qualifications exclues) : affichage de toutes les éditions.`, `${input.champion} was neither picked nor banned ${when} in this competition (qualifiers excluded): showing every edition.`) }];
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const raw = z.array(ChampionStatsRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const sum = (k: "picks" | "bans" | "wins") => raw.reduce((n, r) => n + r[k], 0);
     const picks = sum("picks");
     const bans = sum("bans");
@@ -2073,12 +2097,12 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
         ? `, ${yearSpan([first.scope_from, first.scope_to])}`
         : "";
 
-    const icon = selectOne(db, z.object({ icon_url: z.string().nullable() }), "SELECT icon_url FROM champions WHERE name = ?", [
+    const icon = (await selectOne(db, z.object({ icon_url: z.string().nullable() }), "SELECT icon_url FROM champions WHERE name = ?", [
       input.champion,
-    ])?.icon_url ?? null;
+    ]))?.icon_url ?? null;
 
     const scope = scopeLabel(league, input);
-    const profile = championProfile(db, input, scope, games, bans, icon);
+    const profile = await championProfile(db, input, scope, games, bans, icon);
     const playerLine = (p: ChampionPlayer) => say(`${p.player} (${p.games} partie${p.games > 1 ? "s" : ""}, ${pct(p.wins, p.games)} % de victoires, KDA ${frNumber(p.kda)})`, `${p.player} (${p.games} game${p.games === 1 ? "" : "s"}, ${pct(p.wins, p.games)}% wins, KDA ${frNumber(p.kda)})`);
 
     const facts =
@@ -2144,8 +2168,8 @@ ORDER BY ev.year, MIN(ev.played_at), ev.event_page`),
       },
     };
   },
-  normalize: (db, input) => {
-    const c = resolveChampion(db, input.champion);
+  normalize: async (db, input) => {
+    const c = await resolveChampion(db, input.champion);
 
     return c ? { ...input, champion: c.champion } : null;
   },
@@ -2317,10 +2341,10 @@ const ChampionRankingRow = z.object({
 });
 
 /** Winrate and KDA need enough picks to mean something: 2 % of the scope's games, at least 3. */
-const DEFAULT_MIN_PICKS = "MAX(3, (n.games + 49) / 50)";
+const DEFAULT_MIN_PICKS = atLeast(3, "(n.games + 49) / 50");
 
 /** A per-game average swings more on a few games: at least 5 picks, the cut Riot's own Worlds stats page applies. */
-const DEFAULT_MIN_PICKS_AVERAGE = "MAX(5, (n.games + 49) / 50)";
+const DEFAULT_MIN_PICKS_AVERAGE = atLeast(5, "(n.games + 49) / 50");
 
 /** A total needs no minimum: more picks is what makes it. A minimum the question sets still applies. */
 const needsMinPicks = (input: Pick<ChampionRankingInput, "sort" | "total">) => !["picks", "bans", "presence", "players"].includes(input.sort) && !totalSortOf(input);
@@ -2338,13 +2362,13 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     "Optionally one role only ('champions les plus joués en mid') or one side of the map ('côté bleu'). " +
     "Use it for 'most played / banned / picked champions', 'meta', 'priority picks', 'champion avec le plus de morts par partie', " +
     "'champion avec le plus de morts' (total), 'quel champion a le plus de pentakills'.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
     // The picks the figures are about: one role, one side of the map, or every pick.
-    const mine = (alias: string) => [input.role ? `${alias}.role = :role` : "", input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : ""].filter(Boolean).join(" AND ") || "1";
+    const mine = (alias: string) => [input.role ? `${alias}.role = :role` : "", input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : ""].filter(Boolean).join(" AND ") || "TRUE";
     const role = mine("gp");
     // Bans and presence follow the side asked; a ban has no role.
-    const side = (alias: string) => (input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : "1");
+    const side = (alias: string) => (input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : "TRUE");
 
     const perMinuteOf = (column: string) =>
       `60.0 * SUM(CASE WHEN ${role} AND ev.length_s > 0 THEN gp.${column} END) / SUM(CASE WHEN ${role} AND ev.length_s > 0 AND gp.${column} IS NOT NULL THEN ev.length_s END)`;
@@ -2367,7 +2391,7 @@ const championRanking: ToolDef<ChampionRankingInput> = {
 ),
 n AS (SELECT COUNT(*) AS games FROM ev),
 picks AS (
-  SELECT gp.champion, SUM(${side("gp")}) AS all_picks, SUM(${role}) AS picks,
+  SELECT gp.champion, SUM((${side("gp")})::integer) AS all_picks, SUM((${role})::integer) AS picks,
          SUM(CASE WHEN ${role} THEN gp.win END) AS wins,
          SUM(CASE WHEN ${role} AND gp.deaths IS NOT NULL THEN gp.kills + gp.assists END) AS ka,
          SUM(CASE WHEN ${role} AND gp.kills IS NOT NULL AND gp.assists IS NOT NULL THEN gp.deaths END) AS deaths,
@@ -2379,7 +2403,7 @@ picks AS (
   GROUP BY gp.champion
 ),
 ig AS (
-  SELECT s.champion, SUM(${mine("s")}) AS ingame_picks,
+  SELECT s.champion, SUM((${mine("s")})::integer) AS ingame_picks,
          AVG(CASE WHEN ${mine("s")} THEN s.gold_diff_15 END) AS gold_diff_15, AVG(CASE WHEN ${mine("s")} THEN s.cs_diff_15 END) AS cs_diff_15,
          AVG(CASE WHEN ${mine("s")} THEN s.xp_diff_15 END) AS xp_diff_15, 100.0 * AVG(CASE WHEN ${mine("s")} THEN s.first_blood_kill END) AS first_blood,
          AVG(CASE WHEN ${mine("s")} THEN s.solo_kills END) AS solo_kills,
@@ -2394,9 +2418,9 @@ bans AS (
 lines AS (
   SELECT c.name AS champion, c.icon_url AS icon, COALESCE(p.picks, 0) AS picks, COALESCE(p.all_picks, 0) AS all_picks,
          COALESCE(b.bans, 0) AS bans, n.games, COALESCE(p.wins, 0) AS wins,
-         ROUND(100.0 * (COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0)) / MAX(1, n.games), 1) AS presence,
+         ROUND(100.0 * (COALESCE(p.all_picks, 0) + COALESCE(b.bans, 0)) / ${atLeast(1, `n.games`)}, 1) AS presence,
          CASE WHEN p.picks > 0 THEN ROUND(100.0 * p.wins / p.picks, 1) END AS winrate,
-         CASE WHEN p.picks > 0 AND p.ka IS NOT NULL THEN ROUND(1.0 * p.ka / MAX(1, p.deaths), 2) END AS kda,
+         CASE WHEN p.picks > 0 AND p.ka IS NOT NULL THEN ROUND(1.0 * p.ka / ${atLeast(1, `p.deaths`)}, 2) END AS kda,
          ${average ? `ROUND(p.average, ${CHAMPION_AVERAGE_UNIT[average].digits})` : "NULL"} AS average,
          ${total ? (total.ingame ? "i.total" : "p.total") : "NULL"} AS total,
          ROUND(p.dpm, 0) AS dpm, ROUND(p.gpm, 0) AS gpm, ROUND(p.cspm, 2) AS cspm,
@@ -2426,9 +2450,9 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const all = z.array(ChampionRankingRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input);
     const totalSort = totalSortOf(input);
     const label = totalSort ? { title: CHAMPION_TOTAL[totalSort].title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL[input.sort];
@@ -2449,15 +2473,15 @@ LIMIT 20`),
     const counted =
       totalSort && CHAMPION_TOTAL[totalSort].ingame ? say(`${ingameGames}${ingameGames < games ? ` sur ${games}` : ""} parties avec données Riot`, `${ingameGames}${ingameGames < games ? ` out of ${games}` : ""} games with Riot data`) : say(`${games} parties`, `${games} games`);
 
-    const pages = selectAll(
+    const pages = (await selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT DISTINCT g.event_page FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)} ORDER BY g.played_at DESC LIMIT 12`,
+      `SELECT g.event_page FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)} GROUP BY g.event_page ORDER BY MAX(g.played_at) DESC NULLS LAST LIMIT 12`,
       params,
-    ).map((r) => r.event_page);
+    )).map((r) => r.event_page);
 
     const ongoingParams: Params = {};
-    const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
+    const ongoing = await inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
       `${i + 1}. ${r.champion} (${totalSort ? `${totalText(totalSort, r.total)}, ` : ""}` +
@@ -2555,11 +2579,11 @@ const ChampionPoolRow = z.object({
 });
 
 /** The picks of a pool's scope: the player's or the team's games in the competition, period and split. */
-function poolScope(db: DatabaseSync, input: ChampionPoolInput, params: Params): string {
+async function poolScope(db: Db, input: ChampionPoolInput, params: Params): Promise<string> {
   const who =
     input.subject === "player"
       ? ((params.player = input.name), "gp.player = :player")
-      : `gp.team IN (${inList("team", teamMembers(db, input.name).members, params)})`;
+      : `gp.team IN (${inList("team", (await teamMembers(db, input.name)).members, params)})`;
 
   const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
   const split = input.split ? ((params.split = input.split), "AND gp.tournament_page IN (SELECT t.tournament_page FROM v_tournaments t WHERE t.split = :split)") : "";
@@ -2574,7 +2598,7 @@ const championPool: ToolDef<ChampionPoolInput> = {
     "The champion pool of one player, or of one team (every champion its players picked), in a competition, period and split: games, " +
     "W-L, win rate and KDA on each champion, its share of the pool, and the pool's diversity (distinct champions, share of the three most played). " +
     "Use it for 'champion pool de Faker', 'quels champions joue Keria', 'champions joués par T1 aux Worlds 2023'.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
 
     // Who played each champion is aggregated once and joined: a correlated subquery rescanned every pick per champion (10 s for T1).
@@ -2583,7 +2607,7 @@ const championPool: ToolDef<ChampionPoolInput> = {
       sql: tidy(`WITH picks AS (
   SELECT gp.game_id, gp.champion, gp.player, gp.win, gp.kills, gp.deaths, gp.assists
   FROM v_game_players gp
-  WHERE ${poolScope(db, input, params)}
+  WHERE ${await poolScope(db, input, params)}
 ),
 tot AS (
   SELECT COUNT(DISTINCT game_id) AS total_games, COUNT(DISTINCT CASE WHEN win = 1 THEN game_id END) AS total_wins,
@@ -2592,13 +2616,14 @@ tot AS (
 ),
 by_player AS (SELECT champion, player, COUNT(*) AS games FROM picks GROUP BY champion, player),
 pool_players AS (
-  SELECT b.champion, json_group_array(json_object('player', b.player, 'games', b.games) ORDER BY b.games DESC, b.player) AS players
+  SELECT b.champion, COALESCE(json_agg(json_build_object('player', b.player, 'games', b.games) ORDER BY b.games DESC, b.player), '[]'::json) AS players
   FROM by_player b GROUP BY b.champion
 )
-SELECT p.champion, c.icon_url AS icon, COUNT(*) AS games, SUM(p.win) AS wins,
+SELECT p.champion, ANY_VALUE(c.icon_url) AS icon, COUNT(*) AS games, SUM(p.win) AS wins,
        ROUND(1.0 * ${kaSum("p")}
-             / MAX(1, ${deathsSum("p")}), 2) AS kda,
-       pp.players, tot.total_games, tot.total_wins, tot.total_picks, tot.unique_champions
+             / ${atLeast(1, deathsSum("p"))}, 2) AS kda,
+       ANY_VALUE(pp.players) AS players, ANY_VALUE(tot.total_games) AS total_games, ANY_VALUE(tot.total_wins) AS total_wins,
+       ANY_VALUE(tot.total_picks) AS total_picks, ANY_VALUE(tot.unique_champions) AS unique_champions
 FROM picks p JOIN pool_players pp ON pp.champion = p.champion CROSS JOIN tot
 LEFT JOIN champions c ON c.name = p.champion
 GROUP BY p.champion
@@ -2627,10 +2652,10 @@ LIMIT 200`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(ChampionPoolRow).parse(sqlRows);
     const first = rows[0];
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = [scopeLabel(league, input), input.split ? `(${input.split})` : ""].filter(Boolean).join(" ");
     const team = input.subject === "team";
     const name = team ? displayTeam(input.name) : input.name;
@@ -2665,12 +2690,12 @@ LIMIT 200`),
 
     const params: Params = {};
 
-    const pages = selectAll(
+    const pages = (await selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT DISTINCT gp.event_page FROM v_game_players gp WHERE ${poolScope(db, input, params)} ORDER BY gp.played_at DESC LIMIT 12`,
+      `SELECT gp.event_page FROM v_game_players gp WHERE ${await poolScope(db, input, params)} GROUP BY gp.event_page ORDER BY MAX(gp.played_at) DESC NULLS LAST LIMIT 12`,
       params,
-    ).map((r) => r.event_page);
+    )).map((r) => r.event_page);
 
     const line = (l: ChampionPoolLine) =>
       say(`${l.champion} (${l.games} partie${l.games > 1 ? "s" : ""}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)} % de victoires, KDA ${frNumber(l.kda)}`, `${l.champion} (${l.games} game${l.games === 1 ? "" : "s"}, ${l.wins}-${l.losses}, ${frNumber(l.winrate)}% wins, KDA ${frNumber(l.kda)}`) +
@@ -2683,7 +2708,7 @@ LIMIT 200`),
       say(`Les ${Math.min(3, lines.length)} premiers font ${frNumber(top3Share)} % du pool.`, `The top ${Math.min(3, lines.length)} make up ${frNumber(top3Share)}% of the pool.`);
 
     const ongoingParams: Params = {};
-    const ongoing = inProgressNote(db, `g.game_id IN (SELECT gp.game_id FROM v_game_players gp WHERE ${poolScope(db, input, ongoingParams)})`, ongoingParams);
+    const ongoing = await inProgressNote(db, `g.game_id IN (SELECT gp.game_id FROM v_game_players gp WHERE ${await poolScope(db, input, ongoingParams)})`, ongoingParams);
     const period = input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : "";
     const where = inLeague(league);
 
@@ -2725,14 +2750,14 @@ LIMIT 200`),
       },
     };
   },
-  normalize: (db, input) => {
+  normalize: async (db, input) => {
     if (input.subject === "team") {
-      const t = resolveTeam(db, input.name);
+      const t = await resolveTeam(db, input.name);
 
       return t ? { ...input, name: t.team } : null;
     }
 
-    const p = resolvePlayer(db, input.name, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+    const p = await resolvePlayer(db, input.name, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
     return p ? { ...input, name: p.player } : null;
   },
@@ -2745,7 +2770,7 @@ const tournamentStandings: ToolDef<StandingsInput> = {
   label: phrase("palmarès / classement", "winners / standings"),
   description:
     "Final standings of a competition: every placement of one edition (full), or the champion and finalist of each edition (roll of honour).",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     
@@ -2773,16 +2798,16 @@ WHERE ${leagueFilter("tr.league", input, params)}
   AND t.stage IN (${STANDINGS_STAGES})
   ${periodFilter("tr.year", input, params)}
   ${filters.join("\n  ")}
-ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, tr.team`),
+ORDER BY t.date_start NULLS FIRST, tr.event_page, tr.place_number IS NULL, tr.place_number, tr.team`),
     };
   },
   relaxations: (input) =>
     input.split
       ? [{ key: "split", input: { ...input, split: null }, note: say(`Aucun classement pour le split ${input.split} : affichage de toute l'année.`, `No standings for the ${input.split} split: showing the whole year.`), reason: say("filtre de split retiré", "split filter removed") }]
       : [],
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const raw = z.array(StandingsRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const pages = [...new Set(raw.map((r) => String(r.event_page)))];
     const winnerOf = (page: string) => raw.find((r) => r.event_page === page && r.place_number === 1);
     const nameOf = (page: string) => raw.find((r) => r.event_page === page)?.tournament ?? page;
@@ -2902,8 +2927,8 @@ function ingameScope(input: { league: string | null } & Period, params: Params):
 }
 
 /** Games of the scope, and how many of them have Riot data. */
-function coverage(db: DatabaseSync, sql: string, params: Params) {
-  return selectOne(db, z.object({ games: z.number(), ingame: z.number() }), sql, params) ?? { games: 0, ingame: 0 };
+async function coverage(db: Db, sql: string, params: Params) {
+  return await selectOne(db, z.object({ games: z.number(), ingame: z.number() }), sql, params) ?? { games: 0, ingame: 0 };
 }
 
 const coverageNote = (c: { games: number; ingame: number }) =>
@@ -2950,7 +2975,7 @@ const playerIngameStats: ToolDef<PlayerIngameInput> = {
   description:
     "A player's in-game stats from the Riot game data, season by season: solo kills, multi-kills, first bloods, kills before 10 min, " +
     "gold/CS/XP and their difference with the lane opponent at 10/15/20 min, wards, plates. Not available for the LPL.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     Object.assign(params, { player: input.player });
@@ -2969,7 +2994,7 @@ const playerIngameStats: ToolDef<PlayerIngameInput> = {
 )
 SELECT 0 AS is_total, s.year, s.league_short, MIN(s.played_at) AS first_game, COUNT(*) AS games, SUM(s.win) AS wins,
        ${cols},
-       json_group_array(DISTINCT s.event_page) AS pages, MAX(s.stats_page) AS stats_page
+       COALESCE(json_agg(DISTINCT s.event_page), '[]'::json) AS pages, MAX(s.stats_page) AS stats_page
 FROM base s GROUP BY s.year, s.league_short
 UNION ALL
 SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
@@ -2977,7 +3002,7 @@ SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
        NULL, NULL
 FROM base s
 HAVING COUNT(*) > 0
-ORDER BY is_total, first_game`),
+ORDER BY is_total, first_game NULLS FIRST`),
     };
   },
   relaxations: (input, entities) => {
@@ -3000,18 +3025,18 @@ ORDER BY is_total, first_game`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const all = z.array(IngameRow).parse(sqlRows);
     const total = all[all.length - 1];
     const rows = all.slice(0, -1);
     const metrics = playerMetricsOf(input);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const num = (r: z.infer<typeof IngameRow>, m: PlayerMetric) => (r[m] == null ? null : Number(r[m]));
     const params: Params = {};
 
     Object.assign(params, { player: input.player });
 
-    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_game_players s JOIN v_games g USING (game_id) WHERE s.player = :player AND ${ingameScope(input, params)}`, params);
+    const cov = await coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_game_players s JOIN v_games g USING (game_id) WHERE s.player = :player AND ${ingameScope(input, params)}`, params);
     const minute = input.minute ?? 15;
     const val = (m: PlayerMetric) => num(total, m);
     const fb = val("first_bloods");
@@ -3071,8 +3096,8 @@ ORDER BY is_total, first_game`),
       },
     };
   },
-  normalize: (db, input) => {
-    const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+  normalize: async (db, input) => {
+    const p = await resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
     return p ? { ...input, player: p.player } : null;
   },
@@ -3117,7 +3142,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
     "kills before 10 min, gold/CS/XP difference at 10/15/20 min, wards, plates; teams: first blood/tower/dragon/herald/baron rate, gold difference, " +
     "dragon soul rate, elder dragons. " +
     "Optionally on one side of the map only. Not available for the LPL.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
 
     Object.assign(params, { minGames: minGamesOf(input) });
@@ -3125,7 +3150,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
     const { def } = leaderboardMetric(input);
     const column = `s.${metricColumn(def, input.minute)}`;
     const view = input.subject === "team" ? "v_game_team_stats" : "v_game_player_stats";
-    const name = input.subject === "team" ? franchiseName(db, "s.team", params) : "s.player";
+    const name = input.subject === "team" ? await franchiseName(db, "s.team", params) : "s.player";
     const filters = [ingameScope(input, params)];
 
     if (input.subject === "player" && input.role) {
@@ -3140,7 +3165,7 @@ const ingameLeaderboard: ToolDef<LeaderboardInput> = {
 
     return {
       params,
-      sql: tidy(`SELECT ${name} AS name, ${input.subject === "team" ? "NULL" : "s.team"} AS team, MAX(s.played_at) AS last_game,
+      sql: tidy(`SELECT ${name} AS name, ${input.subject === "team" ? "NULL" : latest("s.team", "s.played_at")} AS team, MAX(s.played_at) AS last_game,
        COUNT(*) AS games, COUNT(${column}) AS counted, SUM(${column}) AS total, ROUND(${average}, 2) AS average
 FROM ${view} s
 WHERE ${filters.join(" ")}
@@ -3160,20 +3185,20 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(LeaderRow).parse(sqlRows);
     const { def } = leaderboardMetric(input);
     const label = metricLabel(def, input.minute);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const params: Params = {};
     const scope = ingameScope(input, params);
-    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${scope}`, params);
-    const pages = selectAll(db, z.object({ event_page: z.string() }), `SELECT DISTINCT s.event_page FROM v_games s WHERE ${scope} AND s.has_ingame ORDER BY s.played_at DESC LIMIT 12`, params).map((r) => r.event_page);
+    const cov = await coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${scope}`, params);
+    const pages = (await selectAll(db, z.object({ event_page: z.string() }), `SELECT s.event_page FROM v_games s WHERE ${scope} AND s.has_ingame = 1 GROUP BY s.event_page ORDER BY MAX(s.played_at) DESC NULLS LAST LIMIT 12`, params)).map((r) => r.event_page);
     const value = (r: z.infer<typeof LeaderRow>) => (def.aggregate === "sum" ? (r.total ?? 0) : round1(r.average));
     const unit = def.aggregate === "rate" ? say(" %", "%") : "";
     const who = input.subject === "team" ? say("Équipe", "Team") : say("Joueur", "Player");
     const minGames = minGamesOf(input);
-    const years = selectAll(db, z.object({ year: z.number().nullable() }), `SELECT DISTINCT s.year FROM v_games s WHERE ${scope} AND s.has_ingame`, params).flatMap((r) => (r.year == null ? [] : [r.year]));
+    const years = (await selectAll(db, z.object({ year: z.number().nullable() }), `SELECT DISTINCT s.year FROM v_games s WHERE ${scope} AND s.has_ingame = 1`, params)).flatMap((r) => (r.year == null ? [] : [r.year]));
     const scopeLabel = [inLeague(league), years.length ? `(${yearSpan(years)})` : ""].filter(Boolean).join(" ");
     const roleLabel = say(`${input.role ? ` (rôle ${input.role})` : ""}${sideLabel(input.side)}`, `${input.role ? ` (${input.role} role)` : ""}${sideLabel(input.side)}`);
 
@@ -3220,7 +3245,7 @@ LIMIT 20`),
       totals,
     };
   },
-  normalize: (_db, input) => {
+  normalize: async (_db, input) => {
     const valid = input.subject === "team" ? TEAM_METRICS.some((m) => m === input.metric) : PLAYER_METRICS.some((m) => m === input.metric);
 
     return valid ? input : null;
@@ -3236,8 +3261,8 @@ const IN_PROGRESS_DAYS = 30;
  * IN_PROGRESS_DAYS of the newest game of the database (an old group stage without a winner is not one).
  * The answer then says its figures are those of the games played so far.
  */
-function inProgressNote(db: DatabaseSync, scope: string, params: Params): string | null {
-  const rows = selectAll(
+async function inProgressNote(db: Db, scope: string, params: Params): Promise<string | null> {
+  const rows = await selectAll(
     db,
     z.object({ tournament: NullableText, event_page: Text, games: z.number(), last: z.number() }),
     `SELECT MIN(g.tournament) AS tournament, g.event_page, COUNT(*) AS games, MAX(g.played_at) AS last FROM v_games g
@@ -3280,7 +3305,7 @@ const teamShare = (column: string) =>
   `ROUND(100.0 * SUM(CASE WHEN b.team_${column} > 0 THEN b.${column} END) / SUM(CASE WHEN b.team_${column} > 0 AND b.${column} IS NOT NULL THEN b.team_${column} END), 1)`;
 
 export const PLAYER_CRITERION_DEFS: Record<PlayerCriterion, CriterionDef> = {
-  kda: { en: { label: "KDA", definition: "(kills + assists) / deaths, over all their games" }, label: "KDA", definition: "(kills + assists) / morts, sur toutes leurs parties", sql: `ROUND(1.0 * ${kaSum("b")} / MAX(1, ${deathsSum("b")}), 2)` },
+  kda: { en: { label: "KDA", definition: "(kills + assists) / deaths, over all their games" }, label: "KDA", definition: "(kills + assists) / morts, sur toutes leurs parties", sql: `ROUND(1.0 * ${kaSum("b")} / ${atLeast(1, deathsSum("b"))}, 2)` },
   winrate: { en: { label: "win %", definition: "wins / games" }, label: "% victoires", definition: "victoires / parties", sql: "ROUND(100.0 * SUM(b.win) / COUNT(*), 1)", unit: " %" },
   games: { en: { label: "games", definition: "number of games played" }, label: "parties", definition: "nombre de parties jouées", sql: "COUNT(*)", total: true },
   kills: { en: { label: "kills", definition: "total kills" }, label: "kills", definition: "total des kills", sql: "SUM(b.kills)", total: true },
@@ -3331,7 +3356,7 @@ const playerLeaderboard: ToolDef<PlayerLeaderboardInput> = {
     "damage, CS, gold or vision per minute. Optionally on one side of the map only ('côté bleu', 'red side'). " +
     "A minimum of games applies to rates and averages. Use it for 'best mids LEC 2025', 'meilleur jungler', 'top 5 ADC', 'quel support a le meilleur KDA'. " +
     "For in-game metrics (gold difference at 15, solo kills, first bloods, wards) use ingame_leaderboard.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     Object.assign(params, { minGames: minGamesOfLeaderboard(input) });
@@ -3358,7 +3383,7 @@ b AS (
   LEFT JOIN lengths l ON l.game_id = p.game_id
   LEFT JOIN st ON st.game_id = p.game_id AND st.player = p.player
 )
-SELECT b.player, b.team, MAX(b.played_at) AS last_game, COUNT(*) AS games, SUM(b.win) AS wins,
+SELECT b.player, ${latest("b.team", "b.played_at")} AS team, MAX(b.played_at) AS last_game, COUNT(*) AS games, SUM(b.win) AS wins,
        ${stats.map((c) => `${PLAYER_CRITERION_DEFS[c].sql} AS ${c}`).join(",\n       ")},
        ROUND(AVG(b.gold_diff_15), 0) AS gold_diff_15, COUNT(b.gold_diff_15) AS ingame_games
 FROM b
@@ -3378,9 +3403,9 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(PlayerLeaderRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input);
     const def = PLAYER_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfLeaderboard(input);
@@ -3393,15 +3418,15 @@ LIMIT 20`),
     const all = rows.reduce((n, r) => n + r.games, 0);
     const params: Params = {};
 
-    const pages = selectAll(
+    const pages = (await selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT DISTINCT p.event_page FROM v_game_players p WHERE ${competitionScope("p", input, params)} ORDER BY p.played_at DESC LIMIT 12`,
+      `SELECT p.event_page FROM v_game_players p WHERE ${competitionScope("p", input, params)} GROUP BY p.event_page ORDER BY MAX(p.played_at) DESC NULLS LAST LIMIT 12`,
       params,
-    ).map((r) => r.event_page);
+    )).map((r) => r.event_page);
 
     const gameParams: Params = {};
-    const ongoing = inProgressNote(db, competitionScope("g", leagueAndPeriod(input), gameParams), gameParams);
+    const ongoing = await inProgressNote(db, competitionScope("g", leagueAndPeriod(input), gameParams), gameParams);
 
     const line = (r: z.infer<typeof PlayerLeaderRow>, i: number) =>
       say(`${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`, `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""}: ${frNumber(value(r, input.criterion))}${unitEn(def.unit)}${input.criterion === "games" ? " games" : `, ${r.games} games`}`);
@@ -3473,9 +3498,9 @@ const teamIngameStats: ToolDef<TeamIngameInput> = {
   description:
     "A team's in-game profile from the Riot game data, season by season: first blood, first tower, dragon, herald and baron rates, dragon soul rate, " +
     "team gold difference at 10/15/20 min, turret plates. Renamed teams are merged. Not available for the LPL.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
-    const t = inList("t", teamMembers(db, input.team).members, params);
+    const t = inList("t", (await teamMembers(db, input.team)).members, params);
     const cols = TEAM_OVERVIEW.map((m) => `${aggregateSql(TEAM_METRIC_DEFS[m].aggregate, `s.${metricColumn(TEAM_METRIC_DEFS[m], input.minute)}`)} AS ${m}`).join(",\n         ");
     const scope = ingameScope(input, params);
 
@@ -3486,7 +3511,7 @@ const teamIngameStats: ToolDef<TeamIngameInput> = {
 )
 SELECT 0 AS is_total, s.year, s.league_short, MIN(s.played_at) AS first_game, COUNT(*) AS games, SUM(s.win) AS wins,
        ${cols},
-       json_group_array(DISTINCT s.event_page) AS pages, MAX(s.stats_page) AS stats_page
+       COALESCE(json_agg(DISTINCT s.event_page), '[]'::json) AS pages, MAX(s.stats_page) AS stats_page
 FROM base s GROUP BY s.year, s.league_short
 UNION ALL
 SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
@@ -3494,7 +3519,7 @@ SELECT 1, NULL, NULL, NULL, COUNT(*), SUM(s.win),
        NULL, NULL
 FROM base s
 HAVING COUNT(*) > 0
-ORDER BY is_total, first_game`),
+ORDER BY is_total, first_game NULLS FIRST`),
     };
   },
   relaxations: (input) => {
@@ -3507,17 +3532,17 @@ ORDER BY is_total, first_game`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const all = z.array(IngameRow).parse(sqlRows);
     const total = all[all.length - 1];
     const rows = all.slice(0, -1);
-    const { team, members } = teamMembers(db, input.team);
-    const league = leagueShortName(db, input.league);
+    const { team, members } = await teamMembers(db, input.team);
+    const league = await leagueShortName(db, input.league);
     const minute = input.minute ?? 15;
     const val = (m: TeamMetric) => (total[m] == null ? null : Number(total[m]));
     const params: Params = {};
     const t = inList("t", members, params);
-    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE (s.blue_team IN (${t}) OR s.red_team IN (${t})) AND ${ingameScope(input, params)}`, params);
+    const cov = await coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE (s.blue_team IN (${t}) OR s.red_team IN (${t})) AND ${ingameScope(input, params)}`, params);
 
     const facts =
       say(`${team}${league === allCompetitions() ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), sur ${total.games} parties avec données in-game `, `${team}${league === allCompetitions() ? "" : ` ${inLeague(league)}`} (${yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year])))}), over ${total.games} games with in-game data `) +
@@ -3545,8 +3570,8 @@ ORDER BY is_total, first_game`),
       totals: { games: total.games, wins: total.wins, ...Object.fromEntries(TEAM_OVERVIEW.map((m) => [m, val(m) ?? nd()])) },
     };
   },
-  normalize: (db, input) => {
-    const t = resolveTeam(db, input.team);
+  normalize: async (db, input) => {
+    const t = await resolveTeam(db, input.team);
 
     return t ? { ...input, team: t.team } : null;
   },
@@ -3559,8 +3584,8 @@ const DragonRow = z.object({ kind: z.string().nullable(), dragons: z.number(), s
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** `AND <alias>.team IN (...)` for the names of a franchise, or nothing when every team counts. */
-const dragonTeams = (db: DatabaseSync, alias: string, team: string | null, params: Params) =>
-  team ? `AND ${alias}.team IN (${inList("t", teamMembers(db, team).members, params)})` : "";
+const dragonTeams = async (db: Db, alias: string, team: string | null, params: Params) =>
+  team ? `AND ${alias}.team IN (${inList("t", (await teamMembers(db, team)).members, params)})` : "";
 
 const dragonStats: ToolDef<DragonStatsInput> = {
   name: "dragon_stats",
@@ -3569,7 +3594,7 @@ const dragonStats: ToolDef<DragonStatsInput> = {
     "Dragons killed by element (infernal, ocean, mountain, cloud, hextech, chemtech, elder) and dragon souls taken, with the win rate of the teams " +
     "that got each soul, in a competition and period, for every team or for one team. From the Riot game data: elements from 2016, souls from 2020. " +
     "Not available for the LPL. For the teams that take the soul most often use ingame_leaderboard (metric dragon_soul).",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
     const scope = leagueAndPeriod(input);
 
@@ -3578,13 +3603,13 @@ const dragonStats: ToolDef<DragonStatsInput> = {
       sql: tidy(`WITH kills AS (
   SELECT d.dragon AS kind, COUNT(*) AS dragons
   FROM v_game_dragons d
-  WHERE ${competitionScope("d", scope, params)} ${dragonTeams(db, "d", input.team, params)}
+  WHERE ${competitionScope("d", scope, params)} ${await dragonTeams(db, "d", input.team, params)}
   GROUP BY d.dragon
 ),
 souls AS (
   SELECT s.soul AS kind, COUNT(*) AS souls, SUM(s.win) AS soul_wins
   FROM v_game_team_stats s
-  WHERE s.soul IS NOT NULL AND ${competitionScope("s", scope, params)} ${dragonTeams(db, "s", input.team, params)}
+  WHERE s.soul IS NOT NULL AND ${competitionScope("s", scope, params)} ${await dragonTeams(db, "s", input.team, params)}
   GROUP BY s.soul
 )
 SELECT k.kind, k.dragons, COALESCE(s.souls, 0) AS souls, COALESCE(s.soul_wins, 0) AS soul_wins
@@ -3602,16 +3627,16 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(DragonRow).parse(sqlRows);
-    const team = input.team ? teamMembers(db, input.team) : null;
-    const league = leagueShortName(db, input.league);
+    const team = input.team ? await teamMembers(db, input.team) : null;
+    const league = await leagueShortName(db, input.league);
     const params: Params = {};
     const scope = competitionScope("s", leagueAndPeriod(input), params);
-    const own = dragonTeams(db, "s", input.team, params);
+    const own = await dragonTeams(db, "s", input.team, params);
 
     // Games where a soul could be taken and the timeline says who took it: one row per team, so one game counts once for every team.
-    const known = selectOne(
+    const known = await selectOne(
       db,
       z.object({ games: z.number(), souls: z.number().nullable() }),
       `SELECT COUNT(DISTINCT s.game_id) AS games, SUM(s.dragon_soul) AS souls
@@ -3619,18 +3644,18 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
       params,
     );
 
-    const games = selectOne(
+    const games = await selectOne(
       db,
-      z.object({ games: z.number(), pages: z.string(), years: z.string() }),
-      `SELECT COUNT(DISTINCT s.game_id) AS games, json_group_array(DISTINCT s.event_page) AS pages, json_group_array(DISTINCT s.year) AS years FROM v_game_dragons s WHERE ${scope} ${own}`,
+      z.object({ games: z.number(), pages: jsonColumn(z.array(z.string())), years: jsonColumn(z.array(z.number().nullable())) }),
+      `SELECT COUNT(DISTINCT s.game_id) AS games, COALESCE(json_agg(DISTINCT s.event_page), '[]'::json) AS pages, COALESCE(json_agg(DISTINCT s.year), '[]'::json) AS years FROM v_game_dragons s WHERE ${scope} ${own}`,
       params,
     );
 
     const covParams: Params = {};
     const covTeam = team ? `AND (s.blue_team IN (${inList("t", team.members, covParams)}) OR s.red_team IN (${inList("t", team.members, covParams)}))` : "";
-    const cov = coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${competitionScope("s", leagueAndPeriod(input), covParams)} ${covTeam}`, covParams);
-    const years = z.array(z.number().nullable()).parse(JSON.parse(games?.years ?? "[]")).flatMap((y) => (y == null ? [] : [y]));
-    const pages = z.array(z.string()).parse(JSON.parse(games?.pages ?? "[]"));
+    const cov = await coverage(db, `SELECT COUNT(*) AS games, SUM(has_ingame) AS ingame FROM v_games s WHERE ${competitionScope("s", leagueAndPeriod(input), covParams)} ${covTeam}`, covParams);
+    const years = (games?.years ?? []).flatMap((y) => (y == null ? [] : [y]));
+    const pages = games?.pages ?? [];
     const total = rows.reduce((n, r) => n + r.dragons, 0);
     const elder = rows.find((r) => r.kind === "elder")?.dragons ?? 0;
     const elemental = rows.filter((r) => r.kind != null && r.kind !== "elder");
@@ -3686,9 +3711,9 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
       },
     };
   },
-  normalize: (db, input) => {
+  normalize: async (db, input) => {
     if (!input.team) return { ...input, team: null };
-    const t = resolveTeam(db, input.team);
+    const t = await resolveTeam(db, input.team);
 
     return t ? { ...input, team: t.team } : null;
   },
@@ -3700,9 +3725,9 @@ const PHASE_SQL: Record<GamePhase, string> = {
   final: "g.tab IN ('Finals', 'Final', 'Grand Finals', 'Grand Final')",
   semifinal: "g.tab IN ('Semifinals', 'Semifinal')",
   quarterfinal: "g.tab IN ('Quarterfinals', 'Quarterfinal')",
-  third_place: "g.tab LIKE 'Third-Place%'",
-  groups: "(g.tab LIKE 'Group%' OR g.tab LIKE 'Swiss%' OR (g.stage = 'main_event' AND (g.tab LIKE 'Day %' OR g.tab GLOB 'Round [0-9]*')))",
-  play_in: "(g.stage = 'play_in' OR g.tab LIKE 'Play-In%')",
+  third_place: "g.tab ILIKE 'Third-Place%'",
+  groups: "(g.tab ILIKE 'Group%' OR g.tab ILIKE 'Swiss%' OR (g.stage = 'main_event' AND (g.tab ILIKE 'Day %' OR g.tab ~ '^Round [0-9]')))",
+  play_in: "(g.stage = 'play_in' OR g.tab ILIKE 'Play-In%')",
 };
 
 const PHASE_LABEL: Record<GamePhase, string> = {
@@ -3957,8 +3982,8 @@ const teamSum = (players: ScoreboardPlayer[], key: "kills" | "gold") =>
  * End-of-game recap of one game, from Leaguepedia's scoreboard tables only (no Riot JSON needed, so
  * it also covers the LPL). Champion, item, spell and rune icons are stored.
  */
-function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | null {
-  const game = selectOne(
+async function gameScoreboard(db: Db, r: TimelineGameRow): Promise<GameScoreboard | null> {
+  const game = await selectOne(
     db,
     ScoreboardGameRow,
     `SELECT patch, winner_side, blue_towers, red_towers, blue_inhibitors, red_inhibitors, blue_dragons, red_dragons,
@@ -3967,7 +3992,7 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
     { game: r.game_id },
   );
 
-  const rows = selectAll(
+  const rows = await selectAll(
     db,
     ScoreboardPlayerRow,
     `SELECT p.side, p.role, p.player, p.champion, c.icon_url AS champion_icon,
@@ -3975,28 +4000,31 @@ function gameScoreboard(db: DatabaseSync, r: TimelineGameRow): GameScoreboard | 
             p.spell1, p.spell2, s1.icon_url AS spell1_icon, s2.icon_url AS spell2_icon
      FROM v_game_players p LEFT JOIN champions c ON c.name = p.champion
      LEFT JOIN summoner_spells s1 ON s1.name = p.spell1 LEFT JOIN summoner_spells s2 ON s2.name = p.spell2
-     WHERE p.game_id = :game`,
+     WHERE p.game_id = :game
+     ORDER BY p.side NULLS FIRST, p.player`,
     { game: r.game_id },
   );
 
   if (!game || !rows.length) return null;
 
-  const items = selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
-  const runes = selectAll(db, ScoreboardRuneRow, "SELECT player, slot, kind, rune, icon_url FROM v_player_runes WHERE game_id = :game ORDER BY slot", { game: r.game_id });
+  const items = await selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
+  const runes = await selectAll(db, ScoreboardRuneRow, "SELECT player, slot, kind, rune, icon_url FROM v_player_runes WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
   // Riot timeline only: empty for the LPL and the games without one, whose dragon count still comes from the scoreboard.
-  const dragons = selectAll(db, z.object({ side: z.number().nullable(), dragon: NullableText }), "SELECT side, dragon FROM v_game_dragons WHERE game_id = :game ORDER BY seq", { game: r.game_id });
-  const souls = selectAll(db, z.object({ side: z.number(), soul: z.string() }), "SELECT side, soul FROM v_game_team_stats WHERE game_id = :game AND soul IS NOT NULL", { game: r.game_id });
+  const dragons = await selectAll(db, z.object({ side: z.number().nullable(), dragon: NullableText }), "SELECT side, dragon FROM v_game_dragons WHERE game_id = :game ORDER BY seq", { game: r.game_id });
+  const souls = await selectAll(db, z.object({ side: z.number(), soul: z.string() }), "SELECT side, soul FROM v_game_team_stats WHERE game_id = :game AND soul IS NOT NULL", { game: r.game_id });
+
+  const photos = await Promise.all(rows.map((p) => (p.side === 1 || p.side === 2 ? playerPhoto(db, p.player, r.played_at) : null)));
 
   const players: ScoreboardPlayer[] = rows
-    .flatMap((p): ScoreboardPlayer[] =>
+    .flatMap((p, i): ScoreboardPlayer[] =>
       p.side === 1 || p.side === 2
         ? [
             {
               side: p.side === 1 ? "blue" : "red",
               role: p.role,
               player: p.player,
-              photo: playerPhoto(db, p.player, r.played_at),
+              photo: photos[i],
               champion: p.champion,
               championIcon: p.champion_icon,
               kills: p.kills,
@@ -4056,15 +4084,15 @@ const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.n
  * Teams (by games) and main role of each player, in one competition and period: the scope the answer was computed on.
  * Shown by the comparison layouts next to the table, which rarely selects them.
  */
-export function playerProfiles(db: DatabaseSync, players: string[], scope: { league: string | null } & Period): PlayerProfile[] {
-  return players.map((player) => {
+export async function playerProfiles(db: Db, players: string[], scope: { league: string | null } & Period): Promise<PlayerProfile[]> {
+  return Promise.all(players.map(async (player) => {
     const params: Params = {};
 
     Object.assign(params, { player });
 
     const league = scope.league ? `AND ${leagueFilter("league", { league: scope.league, yearFrom: scope.yearFrom, yearTo: scope.yearTo }, params)}` : "";
 
-    const rows = selectAll(
+    const rows = await selectAll(
       db,
       ProfileRow,
       `SELECT team, role, COUNT(*) AS games, MAX(played_at) AS last FROM v_game_players
@@ -4083,8 +4111,8 @@ export function playerProfiles(db: DatabaseSync, players: string[], scope: { lea
 
     const last = rows.reduce<number | null>((m, r) => (r.last != null && (m == null || r.last > m) ? r.last : m), null);
 
-    return { player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null, photo: rows.length ? playerPhoto(db, player, last) : null };
-  });
+    return { player, teams: total("team").map(displayTeam), role: total("role")[0] ?? null, photo: rows.length ? await playerPhoto(db, player, last) : null };
+  }));
 }
 
 const SOURCE_LABEL = { cache: "Runtime Cache", r2: "R2", local: "cache local (data/raw/riot)" } as const;
@@ -4098,11 +4126,11 @@ const gameTimeline: ToolDef<GameTimelineInput> = {
     "The minute-by-minute story of one game: gold difference at every minute and the key events (first blood, towers, dragons, heralds, " +
     "barons, inhibitors, aces) with their time and team. The game is found by its teams, competition, season, stage of the series " +
     "(final, semifinal...) and game number. Not available for the LPL (no Riot data).",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
     const where = [`g.stage IN (${COMPETITION_STAGES})`];
-    const a = input.teamA ? inList("a", teamMembers(db, input.teamA).members, params) : null;
-    const b = input.teamB ? inList("b", teamMembers(db, input.teamB).members, params) : null;
+    const a = input.teamA ? inList("a", (await teamMembers(db, input.teamA)).members, params) : null;
+    const b = input.teamB ? inList("b", (await teamMembers(db, input.teamB)).members, params) : null;
 
     if (a && b) where.push(`((g.blue_team IN (${a}) AND g.red_team IN (${b})) OR (g.blue_team IN (${b}) AND g.red_team IN (${a})))`);
     else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
@@ -4127,7 +4155,7 @@ const gameTimeline: ToolDef<GameTimelineInput> = {
        r.riot_key, r.stats_page, r.has_timeline, r.side_swapped
 FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
 WHERE ${where.join("\n  AND ")}
-ORDER BY g.played_at DESC, g.game_n`,
+ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
     };
   },
   relaxations: (input) => {
@@ -4197,7 +4225,7 @@ ORDER BY g.played_at DESC, g.game_n`,
     const title = `${displayTeam(pick.blue_team ?? "?")} – ${displayTeam(pick.red_team ?? "?")} — ${seriesLabel(pick)}${pick.game_n ? ` · game ${pick.game_n}` : ""}`;
     const result = say(`${displayTeam(pick.winner ?? "?")} gagne${pick.length_s ? ` en ${clock(pick.length_s)}` : ""}`, `${displayTeam(pick.winner ?? "?")} wins${pick.length_s ? ` in ${clock(pick.length_s)}` : ""}`);
     // The recap comes from the scoreboard tables: shown whether or not the Riot timeline exists.
-    const scoreboard = gameScoreboard(db, pick) ?? undefined;
+    const scoreboard = await gameScoreboard(db, pick) ?? undefined;
 
     if (!pick.riot_key || pick.has_timeline !== 1)
       return {
@@ -4267,9 +4295,9 @@ ORDER BY g.played_at DESC, g.game_n`,
       notes,
     };
   },
-  normalize: (db, input) => {
-    const a = input.teamA ? resolveTeam(db, input.teamA) : null;
-    const b = input.teamB ? resolveTeam(db, input.teamB) : null;
+  normalize: async (db, input) => {
+    const a = input.teamA ? await resolveTeam(db, input.teamA) : null;
+    const b = input.teamB ? await resolveTeam(db, input.teamB) : null;
 
     if ((input.teamA && !a) || (input.teamB && !b)) return null;
 
@@ -4299,15 +4327,15 @@ type PhaseTab = { page: string; tab: string; before: string | null };
  * named "Semifinals": its semifinal is the last round before the final, the round that decides both finalists.
  * Qualifier stages are out of scope (COMPETITION_STAGES): "LPL Regional Finals" is not the Worlds final.
  */
-function phaseTabs(db: DatabaseSync, input: SeriesInput & { phase: GamePhase }): PhaseTab[] {
+async function phaseTabs(db: Db, input: SeriesInput & { phase: GamePhase }): Promise<PhaseTab[]> {
   const params: Params = {};
   const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
 
-  const rows = selectAll(
+  const rows = await selectAll(
     db,
     PhaseTabRow,
     `SELECT g.tournament_page, g.tab, MIN(g.played_at) AS start, MAX(g.played_at) AS end,
-            MAX(${PHASE_SQL[input.phase]}) AS named, MAX(${PHASE_SQL.final}) AS final, MAX(${PHASE_SQL.play_in}) AS play_in
+            MAX((${PHASE_SQL[input.phase]})::integer) AS named, MAX((${PHASE_SQL.final})::integer) AS final, MAX((${PHASE_SQL.play_in})::integer) AS play_in
      FROM v_games g
      WHERE g.stage IN (${COMPETITION_STAGES}) AND g.tab IS NOT NULL ${league} ${periodFilter("g.year", input, params)} ${splitFilter("g.tournament_page", input, params)}
      GROUP BY g.tournament_page, g.tab`,
@@ -4374,12 +4402,12 @@ const gameSource = (r: SeriesGameRow): Source =>
 const bestOfScore = (a: number, b: number) => (a === b ? null : 2 * Math.max(a, b) - 1);
 
 /** Picks (Top → Support) and bans of the detailed games, from Leaguepedia's scoreboards. */
-function seriesDrafts(db: DatabaseSync, ids: number[]) {
+async function seriesDrafts(db: Db, ids: number[]) {
   const params: Params = {};
   const list = ids.map((id, i) => ((params[`g${i}`] = id), `:g${i}`)).join(", ");
 
   const picks = ids.length
-    ? selectAll(
+    ? await selectAll(
         db,
         SeriesPickRow,
         `SELECT p.game_id, p.side, p.role, p.player, p.champion, c.icon_url AS icon
@@ -4389,7 +4417,7 @@ function seriesDrafts(db: DatabaseSync, ids: number[]) {
     : [];
 
   const bans = ids.length
-    ? selectAll(
+    ? await selectAll(
         db,
         SeriesBanRow,
         `SELECT d.game_id, d.side, d.champion, c.icon_url AS icon
@@ -4450,11 +4478,11 @@ const series: ToolDef<SeriesInput> = {
     "For a final, a semifinal, a quarterfinal or another stage of a competition ('finale des Worlds 2025', 'demi-finales MSI 2024'), " +
     "or a named match between two teams ('T1 vs Gen.G finale LCK 2024'). Regional qualifiers such as 'LPL Regional Finals' are not " +
     "the international event's final. For a team's whole record against another, use head_to_head; for one game's minute-by-minute story, game_timeline.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
     const where = [`g.stage IN (${COMPETITION_STAGES})`];
-    const a = input.teamA ? inList("a", teamMembers(db, input.teamA).members, params) : null;
-    const b = input.teamB ? inList("b", teamMembers(db, input.teamB).members, params) : null;
+    const a = input.teamA ? inList("a", (await teamMembers(db, input.teamA)).members, params) : null;
+    const b = input.teamB ? inList("b", (await teamMembers(db, input.teamB)).members, params) : null;
 
     if (a && b) where.push(`((g.blue_team IN (${a}) AND g.red_team IN (${b})) OR (g.blue_team IN (${b}) AND g.red_team IN (${a})))`);
     else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
@@ -4462,9 +4490,9 @@ const series: ToolDef<SeriesInput> = {
     if (input.league) where.push(leagueFilter("g.league", input, params));
 
     if (input.phase) {
-      const tabs = phaseTabs(db, { ...input, phase: input.phase });
+      const tabs = await phaseTabs(db, { ...input, phase: input.phase });
 
-      where.push(tabs.length ? `(g.tournament_page || '|' || g.tab) IN (${inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params)})` : "0");
+      where.push(tabs.length ? `(g.tournament_page || '|' || g.tab) IN (${inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params)})` : "FALSE");
     }
 
     return {
@@ -4475,7 +4503,7 @@ FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
 WHERE ${where.join("\n  AND ")}
   ${periodFilter("g.year", input, params)}
   ${splitFilter("g.tournament_page", input, params)}
-ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
+ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_n NULLS FIRST, g.game_n NULLS FIRST`,
     };
   },
   relaxations: (input) => {
@@ -4502,14 +4530,14 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(SeriesGameRow).parse(sqlRows);
     const groups = new Map<string, SeriesGameRow[]>();
 
     for (const r of rows) groups.set(seriesKey(r), [...(groups.get(seriesKey(r)) ?? []), r]);
     const seriesGames = [...groups.values()];
     const detailedIds = seriesGames.slice(0, MAX_DETAILED_SERIES).flatMap((g) => g.map((r) => r.game_id));
-    const draftOf = seriesDrafts(db, detailedIds);
+    const draftOf = await seriesDrafts(db, detailedIds);
 
     const list: SeriesDetail[] = seriesGames.map((games, i) => {
       games.sort((x, y) => (x.game_n ?? 0) - (y.game_n ?? 0));
@@ -4552,7 +4580,7 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
     const labels = [...new Set(list.map((s) => s.label))];
     // One competition and season: "MSI 2024"; several: the competition asked, with the period.
     const oneEvent = new Set(rows.map((r) => `${r.league_short}|${r.year}`)).size === 1;
-    const short = leagueShortName(db, input.league);
+    const short = await leagueShortName(db, input.league);
     const span = hasPeriod(input) ? yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year]))) : "";
 
     const event = oneEvent
@@ -4567,7 +4595,7 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
     const notes: string[] = [];
 
     if (input.phase === "semifinal") {
-      const fallback = phaseTabs(db, { ...input, phase: "semifinal" }).filter((t) => t.before && list.some((s) => s.tournamentPage === t.page));
+      const fallback = (await phaseTabs(db, { ...input, phase: "semifinal" })).filter((t) => t.before && list.some((s) => s.tournamentPage === t.page));
 
       for (const t of fallback)
         notes.push(say(`${t.page} : pas de demi-finales nommées sur Leaguepedia (tableau à double élimination) ; séries du dernier tour avant la finale (${t.tab}), qui désigne les deux finalistes.`, `${t.page}: no semifinals named on Leaguepedia (double-elimination bracket); series of the last round before the final (${t.tab}), which decides the two finalists.`));
@@ -4648,9 +4676,9 @@ ORDER BY g.played_at, g.tournament_page, g.tab, g.match_n, g.game_n`,
       totals,
     };
   },
-  normalize: (db, input) => {
-    const a = input.teamA ? resolveTeam(db, input.teamA) : null;
-    const b = input.teamB ? resolveTeam(db, input.teamB) : null;
+  normalize: async (db, input) => {
+    const a = input.teamA ? await resolveTeam(db, input.teamA) : null;
+    const b = input.teamB ? await resolveTeam(db, input.teamB) : null;
 
     if ((input.teamA && !a) || (input.teamB && !b)) return null;
 
@@ -4675,7 +4703,7 @@ export const TEAM_CRITERION_DEFS: Record<TeamCriterion, TeamCriterionDef> = {
   games: { en: { label: "games", definition: "number of games played" }, label: "parties", definition: "nombre de parties jouées", sql: "COUNT(*)", total: true },
   blue_winrate: { en: { label: "blue side %", definition: "wins / games played on blue side" }, label: "% côté bleu", definition: "victoires / parties jouées côté bleu", sql: sideWinrate("blue"), unit: " %" },
   red_winrate: { en: { label: "red side %", definition: "wins / games played on red side" }, label: "% côté rouge", definition: "victoires / parties jouées côté rouge", sql: sideWinrate("red"), unit: " %" },
-  kda: { en: { label: "KDA", definition: "(kills + assists) / deaths of the team" }, label: "KDA", definition: "(kills + assists) / morts de l'équipe", sql: `ROUND(1.0 * ${kaSum("b")} / MAX(1, ${deathsSum("b")}), 2)` },
+  kda: { en: { label: "KDA", definition: "(kills + assists) / deaths of the team" }, label: "KDA", definition: "(kills + assists) / morts de l'équipe", sql: `ROUND(1.0 * ${kaSum("b")} / ${atLeast(1, deathsSum("b"))}, 2)` },
   kills: { en: { label: "kills / game", definition: "team kills per game" }, label: "kills / partie", definition: "kills de l'équipe par partie", sql: teamAverage("kills", 1) },
   deaths: { en: { label: "deaths / game", definition: "team deaths per game" }, label: "morts / partie", definition: "morts de l'équipe par partie", sql: teamAverage("deaths", 1) },
   game_length: { en: { label: "length (min)", definition: "average game length, in minutes" }, label: "durée (min)", definition: "durée moyenne des parties, en minutes", sql: "ROUND(AVG(b.length_s) / 60.0, 1)", unit: " min" },
@@ -4724,7 +4752,7 @@ const teamLeaderboard: ToolDef<TeamLeaderboardInput> = {
     "and, from the Riot game data, first dragon / herald / baron share and gold difference at 15 min. Highest first, or lowest first " +
     "('équipe avec les parties les plus courtes'). Optionally on one side of the map only. Renamed teams are merged. " +
     "For a tournament's final placements use tournament_standings; for first blood, first tower or plates use ingame_leaderboard.",
-  plan: (db, input) => {
+  plan: async (db, input) => {
     const params: Params = {};
 
     Object.assign(params, { minGames: minGamesOfTeams(input) });
@@ -4732,7 +4760,7 @@ const teamLeaderboard: ToolDef<TeamLeaderboardInput> = {
     const side = input.side ? `AND x.side = ${SIDE_ID[input.side]}` : "";
 
     const sideOf = (n: 1 | 2, color: "blue" | "red") =>
-      `SELECT g.game_id, ${n} AS side, g.${color}_team AS team, (g.winner = g.${color}_team) AS win, g.length_s, g.played_at,
+      `SELECT g.game_id, ${n} AS side, g.${color}_team AS team, (g.winner = g.${color}_team)::integer AS win, g.length_s, g.played_at,
          g.${color}_dragons AS dragons, g.${color}_barons AS barons, g.${color}_towers AS towers, g.${color}_heralds AS heralds, g.${color}_void_grubs AS void_grubs
   FROM g`;
 
@@ -4757,14 +4785,14 @@ ig AS (
   SELECT s.game_id, s.side, s.first_dragon, s.first_herald, s.first_baron, s.gold_diff_15 FROM v_game_team_stats s WHERE ${ingameScope(input, params)}
 ),
 b AS (
-  SELECT ${franchiseName(db, "x.team", params)} AS name, x.*, k.kills, k.deaths, k.assists,
+  SELECT ${await franchiseName(db, "x.team", params)} AS name, x.*, k.kills, k.deaths, k.assists,
          i.first_dragon, i.first_herald, i.first_baron, i.gold_diff_15
   FROM sides x LEFT JOIN kda k ON k.game_id = x.game_id AND k.team = x.team
   LEFT JOIN ig i ON i.game_id = x.game_id AND i.side = x.side
   WHERE x.team IS NOT NULL ${side}
 ),
 pool AS (
-  SELECT ${franchiseName(db, "x.team", params)} AS name, COUNT(DISTINCT k.champion) AS champions
+  SELECT ${await franchiseName(db, "x.team", params)} AS name, COUNT(DISTINCT k.champion) AS champions
   FROM sides x JOIN picks k ON k.game_id = x.game_id AND k.team = x.team
   WHERE x.team IS NOT NULL ${side}
   GROUP BY 1
@@ -4773,7 +4801,7 @@ SELECT b.name, COUNT(*) AS games, SUM(b.win) AS wins, COUNT(b.gold_diff_15) AS i
        ${TEAM_CRITERIA.flatMap((c) => (c === "games" ? [] : [`${TEAM_CRITERION_DEFS[c].sql} AS ${c}`])).join(",\n       ")}
 FROM b LEFT JOIN pool ON pool.name = b.name
 GROUP BY b.name
-HAVING COUNT(*) >= :minGames AND ${input.criterion === "games" ? "COUNT(*)" : input.criterion} IS NOT NULL
+HAVING COUNT(*) >= :minGames AND ${TEAM_CRITERION_DEFS[input.criterion].sql} IS NOT NULL
 ORDER BY ${input.criterion === "games" ? "games" : input.criterion} ${input.order === "asc" ? "ASC" : "DESC"}, games DESC, b.name
 LIMIT 20`),
     };
@@ -4788,9 +4816,9 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(TeamLeaderRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = `${scopeLabel(league, input) || allCompetitions()}${sideLabel(input.side)}`;
     const def = TEAM_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfTeams(input);
@@ -4799,8 +4827,8 @@ LIMIT 20`),
     const ingame = rows.reduce((n, r) => n + r.ingame_games, 0);
     const params: Params = {};
     const gameScope = competitionScope("g", leagueAndPeriod(input), params);
-    const pages = selectAll(db, z.object({ event_page: Text }), `SELECT DISTINCT g.event_page FROM v_games g WHERE ${gameScope} ORDER BY g.played_at DESC LIMIT 12`, params).map((r) => r.event_page);
-    const ongoing = inProgressNote(db, gameScope, params);
+    const pages = (await selectAll(db, z.object({ event_page: Text }), `SELECT g.event_page FROM v_games g WHERE ${gameScope} GROUP BY g.event_page ORDER BY MAX(g.played_at) DESC NULLS LAST LIMIT 12`, params)).map((r) => r.event_page);
+    const ongoing = await inProgressNote(db, gameScope, params);
     const lowest = input.order === "asc";
     // English name and definition of the criterion; the French ones are read from `def`.
     const en = def.en ?? def;
@@ -4919,7 +4947,7 @@ const championMatchup: ToolDef<ChampionMatchupInput> = {
     "the win rate, both KDAs and the gold difference at 15 min ('Azir contre Orianna', 'winrate de Jax face à Renekton en top'); " +
     "without one, the champions it faced most with its win rate against each ('matchups d'Azir', 'contre qui Azir perd le plus', 'counters de K'Sante'). " +
     "For one champion's own stats use champion_event_stats.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
     const scope = matchupScope("a", input, params);
     // The lane figure of the champion's player in the same games, where Leaguepedia hosts the Riot data.
@@ -4935,13 +4963,13 @@ const championMatchup: ToolDef<ChampionMatchupInput> = {
        b.player AS player_b, b.team AS team_b, b.kills AS kills_b, b.deaths AS deaths_b, b.assists AS assists_b,
        s.gold_diff_15,
        COUNT(*) OVER () AS total_games, COALESCE(SUM(a.win) OVER (), 0) AS total_wins,
-       ROUND(1.0 * ${kaSum("a")} OVER () / MAX(1, ${deathsSum("a")} OVER ()), 2) AS kda_a,
-       ROUND(1.0 * ${kaSum("b")} OVER () / MAX(1, ${deathsSum("b")} OVER ()), 2) AS kda_b,
+       ROUND(1.0 * ${kaSum("a")} OVER () / ${atLeast(1, `${deathsSum("a")} OVER ()`)}, 2) AS kda_a,
+       ROUND(1.0 * ${kaSum("b")} OVER () / ${atLeast(1, `${deathsSum("b")} OVER ()`)}, 2) AS kda_b,
        ROUND(AVG(s.gold_diff_15) OVER (), 0) AS avg_gold_diff_15, COUNT(s.gold_diff_15) OVER () AS ingame_games
 FROM v_game_players a ${LANE_OPPONENT} AND b.champion = :opponent
 ${ingame}
 WHERE ${scope}
-ORDER BY a.played_at DESC
+ORDER BY a.played_at DESC NULLS LAST
 LIMIT 30`),
       };
     }
@@ -4955,14 +4983,14 @@ LIMIT 30`),
   WHERE ${scope}
 ),
 n AS (SELECT COUNT(*) AS total_games, COALESCE(SUM(m.win), 0) AS total_wins, COUNT(DISTINCT m.opponent) AS opponents FROM m)
-SELECT m.opponent AS champion, c.icon_url AS icon, COUNT(*) AS games, COALESCE(SUM(m.win), 0) AS wins,
+SELECT m.opponent AS champion, ANY_VALUE(c.icon_url) AS icon, COUNT(*) AS games, COALESCE(SUM(m.win), 0) AS wins,
        ROUND(100.0 * SUM(m.win) / COUNT(m.win), 1) AS winrate,
-       ROUND(1.0 * ${kaSum("m")} / MAX(1, ${deathsSum("m")}), 2) AS kda,
+       ROUND(1.0 * ${kaSum("m")} / ${atLeast(1, deathsSum("m"))}, 2) AS kda,
        ROUND(AVG(m.gold_diff_15), 0) AS gold_diff_15,
-       n.total_games, n.total_wins, n.opponents
+       ANY_VALUE(n.total_games) AS total_games, ANY_VALUE(n.total_wins) AS total_wins, ANY_VALUE(n.opponents) AS opponents
 FROM m CROSS JOIN n LEFT JOIN champions c ON c.name = m.opponent
 GROUP BY m.opponent
-ORDER BY games DESC, winrate DESC, champion
+ORDER BY games DESC, winrate DESC NULLS LAST, champion
 LIMIT 20`),
     };
   },
@@ -4978,15 +5006,15 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
-    const league = leagueShortName(db, input.league);
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input) || allCompetitions();
     const role = input.role ? say(` en ${ROLE_LABEL[input.role]}`, ` in ${ROLE_LABEL[input.role]}`) : "";
     const names = [input.champion, ...(input.opponent ? [input.opponent] : [])];
     const iconParams: Params = {};
 
     const icons = Object.fromEntries(
-      selectAll(db, z.object({ name: Text, icon_url: NullableText }), `SELECT name, icon_url FROM champions WHERE name IN (${inList("c", names, iconParams)})`, iconParams).flatMap((c) =>
+      (await selectAll(db, z.object({ name: Text, icon_url: NullableText }), `SELECT name, icon_url FROM champions WHERE name IN (${inList("c", names, iconParams)})`, iconParams)).flatMap((c) =>
         c.icon_url ? [[c.name, c.icon_url]] : [],
       ),
     );
@@ -5080,9 +5108,9 @@ LIMIT 20`),
       },
     };
   },
-  normalize: (db, input) => {
-    const c = resolveChampion(db, input.champion);
-    const o = input.opponent ? resolveChampion(db, input.opponent) : null;
+  normalize: async (db, input) => {
+    const c = await resolveChampion(db, input.champion);
+    const o = input.opponent ? await resolveChampion(db, input.opponent) : null;
 
     if (!c || (input.opponent && !o)) return null;
 
@@ -5151,7 +5179,7 @@ const gameRecords: ToolDef<GameRecordsInput> = {
     "assists, damage, CS, gold or vision in one game, and, from the Riot game data, biggest gold or CS lead at 15 min and most solo kills. " +
     "Each line is one game: player, champion, teams, event, date. Use it for 'record de kills en une partie aux Worlds', " +
     "'most kills in a single game', 'meilleure game de Faker en kills'. For totals or averages over many games use player_leaderboard or ingame_leaderboard.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
     const def = RECORD_DEFS[input.metric];
 
@@ -5163,7 +5191,7 @@ const gameRecords: ToolDef<GameRecordsInput> = {
 FROM ${def.ingame ? "v_game_player_stats" : "v_game_players"} x JOIN v_games g ON g.game_id = x.game_id
 LEFT JOIN champions c ON c.name = x.champion
 WHERE ${recordScope(input, params)} AND x.${def.column} IS NOT NULL
-ORDER BY value DESC, x.played_at, x.player
+ORDER BY value DESC NULLS LAST, x.played_at NULLS FIRST, x.player
 LIMIT 20`),
     };
   },
@@ -5180,17 +5208,17 @@ LIMIT 20`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(GameRecordRow).parse(sqlRows);
     const def = RECORD_DEFS[input.metric];
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input) || allCompetitions();
     const who = say(`${input.player ? ` ${of(input.player)}` : ""}${input.role ? ` (${ROLE_PLAYERS[input.role]})` : ""}`, `${input.player ? ` of ${input.player}` : ""}${input.role ? ` (${ROLE_PLAYERS_EN[input.role]})` : ""}`);
     const day = (s: number | null) => (s == null ? null : dayShort().format(new Date(s * 1000)));
     const event = (r: z.infer<typeof GameRecordRow>) => `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
     const figure = (r: z.infer<typeof GameRecordRow>) => frNumber(r.value, def.signed);
     const params: Params = {};
-    const cov = def.ingame ? coverage(db, `SELECT COUNT(*) AS games, COALESCE(SUM(has_ingame), 0) AS ingame FROM v_games s WHERE ${ingameScope(input, params)}`, params) : null;
+    const cov = def.ingame ? await coverage(db, `SELECT COUNT(*) AS games, COALESCE(SUM(has_ingame), 0) AS ingame FROM v_games s WHERE ${ingameScope(input, params)}`, params) : null;
 
     const line = (r: z.infer<typeof GameRecordRow>, i: number) =>
       say(`${i + 1}. ${r.player} : ${figure(r)} (${[r.champion, r.team && r.opponent ? `${displayTeam(r.team)} contre ${displayTeam(r.opponent)}` : null, event(r), day(r.played_at)].filter(Boolean).join(", ")})`, `${i + 1}. ${r.player}: ${figure(r)} (${[r.champion, r.team && r.opponent ? `${displayTeam(r.team)} vs ${displayTeam(r.opponent)}` : null, event(r), day(r.played_at)].filter(Boolean).join(", ")})`);
@@ -5240,9 +5268,9 @@ LIMIT 20`),
       },
     };
   },
-  normalize: (db, input) => {
+  normalize: async (db, input) => {
     if (!input.player) return input;
-    const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+    const p = await resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
     return p ? { ...input, player: p.player } : null;
   },
@@ -5278,7 +5306,7 @@ const playerRecentGames: ToolDef<PlayerRecentInput> = {
     "A player's latest games, newest first (10 by default): date, event, team, opponent, champion, result, K/D/A, CS, damage and duration, " +
     "with the record, the KDA and the current streak over those games. Use it for 'forme récente de Faker', 'dernières parties de Caps', " +
     "'last 5 games of Chovy', 'comment joue Ruler en ce moment'. For a whole event or career use player_event_history.",
-  plan: (_db, input) => {
+  plan: async (_db, input) => {
     const params: Params = {};
 
     params.player = input.player;
@@ -5292,7 +5320,7 @@ const playerRecentGames: ToolDef<PlayerRecentInput> = {
 FROM v_game_players p JOIN v_games g ON g.game_id = p.game_id
 LEFT JOIN champions c ON c.name = p.champion
 WHERE p.player = :player AND p.stage IN (${COMPETITION_STAGES}) AND p.played_at IS NOT NULL ${league} ${periodFilter("p.year", input, params)}
-ORDER BY p.played_at DESC, p.game_id DESC
+ORDER BY p.played_at DESC NULLS LAST, p.game_id DESC
 LIMIT ${input.count ?? RECENT_DEFAULT}`),
     };
   },
@@ -5311,9 +5339,9 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
 
     return out;
   },
-  format: (db, input, sqlRows): ToolOutput => {
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(RecentGameRow).parse(sqlRows);
-    const league = leagueShortName(db, input.league);
+    const league = await leagueShortName(db, input.league);
     const scope = scopeLabel(league, input);
     const day = (s: number) => dayShort().format(new Date(s * 1000));
     const decided = rows.filter((r) => r.win != null);
@@ -5373,8 +5401,8 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
       },
     };
   },
-  normalize: (db, input) => {
-    const p = resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+  normalize: async (db, input) => {
+    const p = await resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
     return p ? { ...input, player: p.player } : null;
   },
@@ -5385,9 +5413,9 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
 /** Capture each tool's input/implementation relationship once, before indexing the heterogeneous registry. */
 function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the registry parsing boundary.
-  const bind = (db: DatabaseSync, raw: unknown): BoundTool => {
+  const bind = async (db: Db, raw: unknown): Promise<BoundTool> => {
     const value = input.parse(raw);
-    const plan = def.plan(db, value);
+    const plan = await def.plan(db, value);
 
     return {
       // SAFETY: defineTool captures this definition with its own validated schema.
@@ -5402,8 +5430,8 @@ function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
 
   return { input, bind, ai: tool({ description: def.description, inputSchema: input }),
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The schema parses dynamic SDK input here.
-    normalize: (db: DatabaseSync, raw: unknown): ToolCall | null => {
-      const value = def.normalize(db, input.parse(raw));
+    normalize: async (db: Db, raw: unknown): Promise<ToolCall | null> => {
+      const value = await def.normalize(db, input.parse(raw));
 
       // SAFETY: normalize preserves the definition's input type and tool name.
       // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- TypeScript erases the captured heterogeneous pair.
@@ -5435,7 +5463,7 @@ export const TOOLS = {
   player_recent_games: defineTool(PlayerRecentInput, playerRecentGames),
 };
 
-export function bindTool(db: DatabaseSync, call: ToolCall): BoundTool {
+export function bindTool(db: Db, call: ToolCall): Promise<BoundTool> {
   return TOOLS[call.tool].bind(db, call.input);
 }
 
@@ -5444,12 +5472,12 @@ type AiTools = { [K in ToolName]: (typeof TOOLS)[K]["ai"] };
 // SAFETY: entries preserve each registry key and its own AI SDK tool.
 export const aiTools = Object.fromEntries(Object.entries(TOOLS).map(([name, def]) => [name, def.ai])) as AiTools;
 
-export function normalizeToolCall(db: DatabaseSync, call: StaticToolCall<typeof aiTools>): ToolCall | null {
+export function normalizeToolCall(db: Db, call: StaticToolCall<typeof aiTools>): Promise<ToolCall | null> {
   return TOOLS[call.toolName].normalize(db, call.input);
 }
 
 /** The same call on another competition (null for every competition), or null when the tool does not take that value. */
-export function withLeague(db: DatabaseSync, call: ToolCall, league: string | null): ToolCall | null {
+export async function withLeague(db: Db, call: ToolCall, league: string | null): Promise<ToolCall | null> {
   const def = TOOLS[call.tool];
   const raw = { ...call.input, league };
 

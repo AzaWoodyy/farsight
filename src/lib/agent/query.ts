@@ -1,9 +1,8 @@
 import { msg } from "./messages";
 import { leagueMembers } from "../domain/leagues";
-import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { readSchema, selectAll, selectOne } from "../db";
+import { type Db, readSchema, selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
@@ -78,20 +77,23 @@ export function missingConcepts(question: string, schema: Record<string, string[
   return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [msg().route.concepts[c.concept]] : []));
 }
 
+/** A value, or the promise of one: the router awaits both, so a fixed lookup stays a plain function. */
+type Awaitable<T> = T | Promise<T>;
+
 /** Games of a scope and how many have in-game (Riot) data. */
 export type Coverage = { games: number; ingame: number };
 
 /** Coverage lookups for the router, read from v_ingame_coverage and v_games. */
 export type CoverageLookup = {
-  league: (league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
-  player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+  league: (league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
+  player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
   /** Games of a team (every name of the franchise) and how many have Riot data. */
-  team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Coverage;
+  team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
   /**
    * The team a player last played for in the scope, the year of that game, and the other teams they played for there.
    * null when they have no competition game in it. Optional: a lookup without it leaves the player's own routes in place.
    */
-  playerTeam?: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null, split: string | null) => PlayerTeam | null;
+  playerTeam?: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null, split: string | null) => Awaitable<PlayerTeam | null>;
 };
 
 export type PlayerTeam = { team: string; year: number; others: string[] };
@@ -117,9 +119,9 @@ const period = (col: string, yearFrom: number | null, yearTo: number | null, par
 };
 
 /** Coverage read from the database (league and period, or one player's games). */
-export function coverageLookup(db: DatabaseSync): CoverageLookup {
-  const read = (sql: string, params: (string | number)[]): Coverage => {
-    const row = selectOne(db, CoverageRow, sql, params);
+export function coverageLookup(db: Db): CoverageLookup {
+  const read = async (sql: string, params: (string | number)[]): Promise<Coverage> => {
+    const row = await selectOne(db, CoverageRow, sql, params);
 
     return { games: row?.games ?? 0, ingame: row?.ingame ?? 0 };
   };
@@ -155,7 +157,7 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
         params,
       );
     },
-    playerTeam: (player, league, yearFrom, yearTo, split) => {
+    playerTeam: async (player, league, yearFrom, yearTo, split) => {
       const params: (string | number)[] = [player];
       const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
       const inLeague = league ? (params.push(...members), ` AND p.league IN (${members.map(() => "?").join(",")})`) : "";
@@ -163,7 +165,7 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
       const inSplit = split ? (params.push(split), " AND p.tournament_page IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = ?)") : "";
 
       // Latest team first: the stages are the ones the roster counts, so the team found has a roster in the scope.
-      const rows = selectAll(
+      const rows = await selectAll(
         db,
         PlayerTeamRow,
         `SELECT p.team, MAX(p.year) AS year FROM v_game_players p
@@ -175,7 +177,7 @@ export function coverageLookup(db: DatabaseSync): CoverageLookup {
       if (!rows.length) return null;
 
       // The roster merges the names of one franchise (SK Telecom T1 → T1): they are not other teams.
-      const franchise = resolveTeam(db, rows[0].team)?.members ?? [];
+      const franchise = (await resolveTeam(db, rows[0].team))?.members ?? [];
 
       return { team: rows[0].team, year: rows[0].year, others: rows.slice(1).map((r) => r.team).filter((t) => !franchise.includes(t)) };
     },
@@ -478,8 +480,8 @@ function scopeOf(e: Entities): string {
 }
 
 /** The competition asked has no game with Riot data (the LPL, older seasons): the figure is absent, said without widening the scope. */
-function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): Route | null {
-  if (!e.league || coverage.league(e.league, e.yearFrom, e.yearTo).ingame > 0) return null;
+async function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): Promise<Route | null> {
+  if (!e.league || (await coverage.league(e.league, e.yearFrom, e.yearTo)).ingame > 0) return null;
 
   return {
     kind: "missing",
@@ -493,7 +495,7 @@ function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): R
  * In-game questions (Riot data): the typed in-game tools, or "missing" when
  * the scope has no in-game data at all (the LPL, older seasons, some events).
  */
-function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: CoverageLookup): Route | null {
+async function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: CoverageLookup): Promise<Route | null> {
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
   const league = e.league;
   const m = msg().route;
@@ -507,7 +509,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
       reason: m.minuteAbsent(cue.askedMinute),
     };
 
-  const absent = ingameAbsent(e, cue.mention, coverage);
+  const absent = await ingameAbsent(e, cue.mention, coverage);
 
   if (absent) return absent;
 
@@ -518,9 +520,9 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
     const own = e.teams[0];
 
     if (own) {
-      const asked = coverage.team(own.members, league, e.yearFrom, e.yearTo);
+      const asked = await coverage.team(own.members, league, e.yearFrom, e.yearTo);
 
-      if (asked.ingame === 0 && (asked.games > 0 || coverage.team(own.members, null, null, null).ingame === 0))
+      if (asked.ingame === 0 && (asked.games > 0 || (await coverage.team(own.members, null, null, null)).ingame === 0))
         return {
           kind: "missing",
           concepts: [m.ingameOf(what, own.team, league ? `${e.leagueShort}` : null)],
@@ -543,7 +545,7 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
 
     if (!cue.player) return { kind: "sql", reason: m.teamMetricForPlayer(cue.mention) };
 
-    if (coverage.player(p, league, e.yearFrom, e.yearTo).ingame === 0)
+    if ((await coverage.player(p, league, e.yearFrom, e.yearTo)).ingame === 0)
       return {
         kind: "missing",
         concepts: [m.ingameOf(what, p, league ? `${e.leagueShort}` : null)],
@@ -564,11 +566,11 @@ function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: Co
     if (!cue.team) return { kind: "sql", reason: m.playerMetricForTeam(cue.mention) };
 
     const { team, members } = e.teams[0];
-    const asked = coverage.team(members, league, e.yearFrom, e.yearTo);
+    const asked = await coverage.team(members, league, e.yearFrom, e.yearTo);
 
     // Games but no Riot data in the scope asked, or no Riot data at all for this team (an LPL team): the data is absent.
     // A scope where the team did not play at all stays with the tool, whose relaxations widen it.
-    if (asked.ingame === 0 && (asked.games > 0 || coverage.team(members, null, null, null).ingame === 0))
+    if (asked.ingame === 0 && (asked.games > 0 || (await coverage.team(members, null, null, null)).ingame === 0))
       return {
         kind: "missing",
         concepts: [m.ingameOf(what, team, league ? `${e.leagueShort}` : null)],
@@ -1035,7 +1037,7 @@ function championRoute(e: Entities, question: string): Route {
  * Returns a typed tool + input, "sql" when no tool covers the question,
  * "missing" when the data is not in the database, or "out_of_scope".
  */
-function routeByRules(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
+async function routeByRules(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Promise<Route> {
   if (e.outOfScope)
     return { kind: "out_of_scope", reason: msg().route.notInScope(e.outOfScope) };
   const nEntities = e.players.length + e.teams.length + (e.champion ? 1 : 0);
@@ -1069,7 +1071,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
   if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: msg().route.perMinuteRecord };
 
-  if (record) return (recordCue && ingameAbsent(e, recordCue.mention, coverage)) ?? recordsRoute(e, record, roleOf(question));
+  if (record) return (recordCue && (await ingameAbsent(e, recordCue.mention, coverage))) ?? recordsRoute(e, record, roleOf(question));
 
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
@@ -1096,7 +1098,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
     e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
     PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(PLAYS_FOR.test(rest) ? rest.replace(WHICH_TEAM, " ") : rest);
 
-  const playerTeam = asksPlayerTeam ? coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
+  const playerTeam = asksPlayerTeam ? await coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
   const ofPlayerTeam = playerTeam ? playerTeamRoute(e, rest, playerTeam) : null;
 
   // Only when the roster reads every word: "did Faker's team qualify" or "which team was Faker facing" ask something else about the team.
@@ -1129,10 +1131,10 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
 
     // "champion avec le plus de morts aux Worlds", "quel champion a le plus de pentakills": a total over the scope.
     // A figure of the Riot data where the scope has none (the LPL) is absent, not zero.
-    if (total && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, total, true);
+    if (total && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? championRankingRoute(question, e, total, true);
 
     // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
-    if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && ingameAbsent(e, cue.mention, coverage)) ?? championRankingRoute(question, e, extra);
+    if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? championRankingRoute(question, e, extra);
 
     // "champion avec le plus de morts par game": an average the ranking sorts by, with its minimum of picks.
     if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);
@@ -1157,7 +1159,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   )
     return playerLeaderboardRoute(question, e);
 
-  const ingame = cue ? routeIngame(question, e, cue, coverage) : null;
+  const ingame = cue ? await routeIngame(question, e, cue, coverage) : null;
 
   if (ingame) return ingame;
 
@@ -1432,8 +1434,8 @@ const UNSURE = 0.5;
  * tool picked while too many words stay unread is put in doubt: the LLM
  * router then decides, with those words, between a tool and text-to-SQL.
  */
-export function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Route {
-  const route = routeByRules(question, e, schema, coverage);
+export async function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Promise<Route> {
+  const route = await routeByRules(question, e, schema, coverage);
 
   if (route.kind === "sql" && route.open) {
     const { words } = unreadWords(question, e, null);
@@ -1465,15 +1467,17 @@ export function toolPlan(tool: BoundTool, attempt: number, relaxed: string[] = [
 
 
 /** Schema summary given to the LLM: the v_* views only (generated SQL may read nothing else). */
-export function schemaPrompt(db: DatabaseSync): string {
-  return Object.entries(allowedSchema(readSchema(db), VIEWS))
+export async function schemaPrompt(db: Db): Promise<string> {
+  return Object.entries(allowedSchema(await readSchema(db), VIEWS))
     .map(([t, cols]) => `${t}(${cols.join(", ")})`)
     .join("\n");
 }
 
 /** `language`: the one the model names the missing data in, as the answer shows it. */
 const sqlRules = (language: string) =>
-  "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
+  "PostgreSQL dialect. One read-only SELECT statement, no trailing semicolon, no server function (pg_*, set_config...). " +
+  "Text matches exactly: use ILIKE for a case-insensitive match. Flags (win, has_ingame, first_*) are 0/1 integers: compare them with = 1 and SUM them. " +
+  "Every column selected beside an aggregate is in the GROUP BY. Order a column that can be NULL with NULLS LAST. " +
   "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
   "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
   "first_blood_kill/assist/victim, double to penta kills, wards, control_wards, plates) and v_game_team_stats (one row per team and game: first_* objectives as 0/1, " +
@@ -1511,7 +1515,7 @@ function generatedGaps(reply: { sql: string; missing: string[] }): string[] {
 }
 
 /** `functionId` names the call in the trace: generating a query, or repairing one. */
-async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sql" | "repair-sql") {
+async function askSql(db: Db, prompt: string, functionId: "generate-sql" | "repair-sql") {
   const llm = getLlm();
 
   if (!llm) return null;
@@ -1519,7 +1523,7 @@ async function askSql(db: DatabaseSync, prompt: string, functionId: "generate-sq
   const { output } = await generateText({
     model: llm.model,
     output: Output.object({ schema: SqlOutput }),
-    instructions: `${sqlRules(msg().route.promptLanguage)}\nSchema:\n${schemaPrompt(db)}`,
+    instructions: `${sqlRules(msg().route.promptLanguage)}\nSchema:\n${await schemaPrompt(db)}`,
     prompt,
     telemetry: { functionId },
     maxOutputTokens: LLM_CALL.maxOutputTokens,
@@ -1542,7 +1546,7 @@ const entitySummary = (e: Entities) =>
 
 // Build step ------------------------------------------------------------------------
 
-type BuildInput = { db: DatabaseSync; question: string; entities: Entities; route: Route };
+type BuildInput = { db: Db; question: string; entities: Entities; route: Route };
 
 /** A query plan, or (text-to-SQL only) the data the database does not hold. */
 export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; missing: string[]; notes: string[] };
@@ -1550,11 +1554,11 @@ export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; m
 const rulesRouter: Decider<BuildInput, BuildResult> = {
   level: "rules",
   name: "outil typé",
-  run: ({ db, route }) => {
+  run: async ({ db, route }) => {
     if (route.kind !== "tool") return null;
 
     return {
-      result: { plan: toolPlan(bindTool(db, route.call), 1), notes: route.notes },
+      result: { plan: toolPlan(await bindTool(db, route.call), 1), notes: route.notes },
       confidence: route.confidence,
       level: "rules",
       reason: route.reason,
@@ -1582,23 +1586,28 @@ export type GroundedCall = { call: ToolCall | null; dropped: string | null };
  * A tool that needs a competition and has none to go back to gives no call: the router's pick is declined.
  * Nobody named, or no game at all over the period: the competition stays, the data does not contradict it.
  */
-export function groundLeague(db: DatabaseSync, call: ToolCall, e: Entities, route: Route, coverage: CoverageLookup): GroundedCall {
+export async function groundLeague(db: Db, call: ToolCall, e: Entities, route: Route, coverage: CoverageLookup): Promise<GroundedCall> {
   const league = "league" in call.input ? call.input.league : null;
   const kept: GroundedCall = { call, dropped: null };
 
   if (!league || e.league || e.players.length + e.teams.length === 0) return kept;
 
-  const games = (inLeague: string | null) =>
-    e.players.reduce((n, p) => n + coverage.player(p.player, inLeague, e.yearFrom, e.yearTo).games, 0) +
-    e.teams.reduce((n, t) => n + coverage.team(t.members, inLeague, e.yearFrom, e.yearTo).games, 0);
+  const games = async (inLeague: string | null) => {
+    const counted = await Promise.all([
+      ...e.players.map((p) => coverage.player(p.player, inLeague, e.yearFrom, e.yearTo)),
+      ...e.teams.map((t) => coverage.team(t.members, inLeague, e.yearFrom, e.yearTo)),
+    ]);
 
-  if (games(league) > 0 || games(null) === 0) return kept;
+    return counted.reduce((n, c) => n + c.games, 0);
+  };
+
+  if ((await games(league)) > 0 || (await games(null)) === 0) return kept;
 
   const rules = route.kind === "tool" && route.call.tool === call.tool && "league" in route.call.input ? route.call.input.league : null;
 
   // The rules' own default (the Worlds for a player's history): nothing the router added, and its note already says so.
   if (rules === league) return kept;
-  const grounded = withLeague(db, call, rules);
+  const grounded = await withLeague(db, call, rules);
 
   return { call: grounded, dropped: league };
 }
@@ -1637,17 +1646,17 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
     const typed = toolCalls.find((c) => !c.dynamic);
 
     if (!typed || typed.dynamic) return null;
-    const picked = normalizeToolCall(db, typed);
+    const picked = await normalizeToolCall(db, typed);
 
     if (!picked) return null;
-    const { call, dropped } = groundLeague(db, picked, entities, route, coverageLookup(db));
+    const { call, dropped } = await groundLeague(db, picked, entities, route, coverageLookup(db));
 
     if (!call) return null;
     const said = msg().route.modelSays(llm.id, `${picked.tool}(${JSON.stringify(picked.input)})`);
 
     return {
       // The rules' notes (a default competition...) still hold when the LLM confirms their tool.
-      result: { plan: toolPlan(bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
+      result: { plan: toolPlan(await bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
       confidence: 0.85,
       level: "llm",
       reason: dropped ? `${said} ; ${msg().route.leagueDropped(dropped)}` : said,
@@ -1682,7 +1691,7 @@ export function buildQuery(input: BuildInput) {
 // Self-correction -------------------------------------------------------------------
 
 export type CorrectInput = {
-  db: DatabaseSync;
+  db: Db;
   question: string;
   entities: Entities;
   plan: QueryPlan;
@@ -1695,14 +1704,14 @@ type Fix = { plan: QueryPlan; note?: string };
 const rulesCorrector: Decider<CorrectInput, Fix> = {
   level: "rules",
   name: "corrections déterministes",
-  run: ({ entities, plan, problem }) => {
+  run: async ({ entities, plan, problem }) => {
     if (!plan.tool || problem.kind !== "empty") return null;
     const next = plan.tool.relaxations(entities).find((r) => !plan.relaxed.includes(r.key));
 
     if (!next) return null;
 
     return {
-      result: { plan: toolPlan(next.next(), plan.attempt + 1, [...plan.relaxed, next.key]), note: next.note },
+      result: { plan: toolPlan(await next.next(), plan.attempt + 1, [...plan.relaxed, next.key]), note: next.note },
       confidence: 0.85,
       level: "rules",
       reason: next.reason,

@@ -1,14 +1,14 @@
 import { say } from "../agent/messages";
-import { spawn } from "node:child_process";
-import { resolve } from "node:path";
 import { z } from "zod";
-import { MAX_ROWS, VIEWS } from "../agent/guard";
-import { DB_PATH, type SqlParams, type SqlRow } from "./index";
-import { SCHEMA_VERSION } from "./schema";
+import { MAX_ROWS } from "../agent/guard";
+import { openDb, type SqlParams, type SqlRow } from "./index";
+import { numberParameters, type PgClient, type PgPool } from "./postgres";
 
 export const SQL_TIMEOUT_MS = 4_000;
-const MAX_RESULT_BYTES = 2_000_000;
-const Result = z.object({ rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))).max(MAX_ROWS) });
+export const MAX_RESULT_BYTES = 2_000_000;
+
+/** The role generated queries run as (db/roles.sql): SELECT on the v_* views only. */
+export const SQL_ROLE = "farsight_sql";
 
 export class SqlTimeoutError extends Error {
   constructor() {
@@ -22,14 +22,12 @@ export class SqlTimeoutError extends Error {
   }
 }
 
-/** Children running at once per instance: each holds its own SQLite page cache
- * and sort buffers for up to SQL_TIMEOUT_MS. Revisit if the function memory changes.
- */
+/** Generated queries running at once per instance: each holds a connection for up to SQL_TIMEOUT_MS. */
 export const MAX_SQL_CHILDREN = 3;
 let running = 0;
 const waiters: (() => void)[] = [];
 
-/** Wait for a child slot, giving up at the query deadline or on abort. */
+/** Wait for a slot, giving up at the query deadline or on abort. */
 function acquire(signal: AbortSignal | undefined, deadline: number): Promise<void> {
   if (running < MAX_SQL_CHILDREN) {
     running++;
@@ -72,96 +70,116 @@ function release() {
   else running--;
 }
 
-/** Execute already guarded generated SQL outside the request-serving process.
- * The child gets neither application credentials nor network clients. Waiting
- * for a slot and running share one SQL_TIMEOUT_MS deadline.
+const Line = z.object({ j: z.string().nullable(), total: z.number() });
+const Row = z.record(z.string(), z.json());
+
+/**
+ * Each row as JSON text with the running byte count, cut by the server past `maxBytes`: a query that would return
+ * more stops there instead of sending it. The last line says whether the cut happened (its total is over the cap).
+ */
+const bounded = (sql: string, maxRows: number) => `WITH r AS (SELECT row_to_json(q)::text AS j FROM (\n${sql}\n) AS q LIMIT ${maxRows}),
+s AS (SELECT j, octet_length(j) AS n, SUM(octet_length(j)) OVER (ROWS UNBOUNDED PRECEDING) AS total FROM r)
+SELECT CASE WHEN total <= ${MAX_RESULT_BYTES} THEN j END AS j, total::bigint AS total FROM s WHERE total - n <= ${MAX_RESULT_BYTES}`;
+
+/**
+ * A connection before the deadline, or SqlTimeoutError (an abort rejects at once). One that arrives too late goes back
+ * to the pool.
+ */
+function connectBy(pool: PgPool, deadline: number, signal: AbortSignal | undefined): Promise<PgClient> {
+  return new Promise((resolveClient, reject) => {
+    let settled = false;
+
+    const finish = (fail?: Error) => {
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+
+      if (fail) reject(fail);
+    };
+
+    const abort = () => finish(new DOMException("Request aborted", "AbortError"));
+    const timer = setTimeout(() => finish(new SqlTimeoutError()), Math.max(1, deadline - Date.now()));
+
+    signal?.addEventListener("abort", abort, { once: true });
+    pool.connect().then(
+      (client) => {
+        if (settled) return client.release();
+        finish();
+        resolveClient(client);
+      },
+      (err: Error) => {
+        if (!settled) finish(err);
+      },
+    );
+  });
+}
+
+/** Less time than this left once a slot is free: the query is not started, the deadline has in effect passed. */
+const MIN_RUN_MS = 100;
+
+/** Postgres error codes the guard and the corrector read. */
+const QUERY_CANCELED = "57014";
+const INSUFFICIENT_PRIVILEGE = "42501";
+
+/**
+ * Execute already guarded generated SQL in a read-only transaction, as the role that can only read the views, under
+ * a 4-second statement timeout: the database itself refuses a write, a base table or a long query, including what
+ * the static guard cannot see. Waiting for a slot and running share one SQL_TIMEOUT_MS deadline.
  */
 export async function executeGeneratedQuery(
   sql: string,
   params: SqlParams,
-  { signal, databasePath = DB_PATH }: { signal?: AbortSignal; databasePath?: string } = {},
+  { signal, pool = openDb().pool }: { signal?: AbortSignal; pool?: PgPool } = {},
 ): Promise<SqlRow[]> {
   signal?.throwIfAborted();
 
   const deadline = Date.now() + SQL_TIMEOUT_MS;
   await acquire(signal, deadline);
+  let client: PgClient | null = null;
+  let broken = false;
 
-  let released = false;
-
-  const releaseOnce = () => {
-    if (released) return;
-
-    released = true;
-    release();
+  const abort = () => {
+    // The connection is dropped: Postgres cancels the statement when it next writes to it, and the timeout bounds it.
+    broken = true;
+    client?.release(true);
+    client = null;
   };
 
-  return new Promise((resolveRows, reject) => {
-    const childPath = resolve(/*turbopackIgnore: true*/ process.cwd(), "src/lib/db/sql-child.mjs");
-    const args = process.versions.bun ? ["--no-env-file", childPath] : [childPath];
-
-    const child = (() => {
-      try {
-        return spawn(process.execPath, args, {
-          env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1" },
-          stdio: ["pipe", "pipe", "ignore"],
-        });
-      } catch (err) {
-        // A synchronous spawn failure rejects the promise; free the slot first.
-        releaseOnce();
-        throw err;
-      }
-    })();
-
-    let output = "";
-    let error: Error | null = null;
-
-    const kill = (reason: Error) => {
-      error ??= reason;
-      child.kill("SIGKILL");
-    };
-
-    const timer = setTimeout(() => kill(new SqlTimeoutError()), Math.max(1, deadline - Date.now()));
-    const abort = () => kill(new DOMException("Request aborted", "AbortError"));
+  try {
+    if (deadline - Date.now() < MIN_RUN_MS) throw new SqlTimeoutError();
+    // An abort while waiting for a slot fired before the listener of connectBy: checked here.
+    signal?.throwIfAborted();
+    client = await connectBy(pool, deadline, signal);
     signal?.addEventListener("abort", abort, { once: true });
+    signal?.throwIfAborted();
+    const remaining = Math.max(1, deadline - Date.now());
+    const { text, values } = numberParameters(bounded(sql, MAX_ROWS), params);
 
-    if (signal?.aborted) abort();
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk;
+    await client.query(`BEGIN READ ONLY; SET LOCAL statement_timeout = ${remaining}; SET LOCAL ROLE ${SQL_ROLE}`);
+    const { rows } = await client.query(text, values);
+    await client.query("ROLLBACK");
+    const lines = z.array(Line).parse(rows);
 
-      if (Buffer.byteLength(output) > MAX_RESULT_BYTES + 10_000) kill(new Error("SQL result exceeds the response size limit."));
-    });
-    // A failed spawn can emit `error` without `close`: free the slot and settle here.
-    child.on("error", (err) => {
-      error ??= err;
-      releaseOnce();
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      reject(error);
-    });
-    child.stdin.on("error", (err) => { error ??= err; });
-    child.on("close", () => {
-      releaseOnce();
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
+    if (lines.some((l) => l.j == null)) throw new Error("SQL result exceeds the response size limit.");
 
-      if (error) return reject(error);
+    return lines.map((l) => Row.parse(JSON.parse(l.j!)));
+  } catch (err) {
+    if (signal?.aborted) throw new DOMException("Request aborted", "AbortError");
 
-      try {
-        const result = Result.safeParse(JSON.parse(output));
+    if (err instanceof SqlTimeoutError) throw err;
+    broken = true;
+    const code = z.object({ code: z.string() }).safeParse(err).data?.code;
 
-        if (!result.success) {
-          // Only return the bounded SQLite error, never child stderr or environment.
-          const failure = z.object({ error: z.string().max(2_000) }).safeParse(JSON.parse(output));
+    if (code === QUERY_CANCELED) throw new SqlTimeoutError();
 
-          return reject(new Error(failure.success ? failure.data.error : "SQL subprocess failed."));
-        }
+    // Only the bounded Postgres message, never the connection's details.
+    const message = err instanceof Error ? err.message.slice(0, 2_000) : "SQL execution failed.";
 
-        resolveRows(result.data.rows);
-      } catch {
-        reject(new Error("SQL subprocess returned an invalid response."));
-      }
-    });
-    child.stdin.end(JSON.stringify({ databasePath, schemaVersion: SCHEMA_VERSION, sql, params, objects: VIEWS, maxRows: MAX_ROWS, maxBytes: MAX_RESULT_BYTES }));
-  });
+    throw new Error(code === INSUFFICIENT_PRIVILEGE ? `Not allowed (generated queries read the v_* views only): ${message}` : message);
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    // A failed transaction is rolled back by dropping its connection rather than reused.
+    client?.release(broken);
+    release();
+  }
 }

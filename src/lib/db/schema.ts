@@ -3,6 +3,12 @@ import type { DatabaseSync } from "node:sqlite";
 
 export const SCHEMA_VERSION = 10;
 
+/**
+ * Newest Postgres migration the code reads (db/migrations/NNNN_*.sql): the same tables and views as SCHEMA_VERSION.
+ * A migration that changes a table or a view bumps both.
+ */
+export const PG_MIGRATION = 1;
+
 export const TABLE_DDL = `
 CREATE TABLE leagues (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, short_name TEXT NOT NULL,

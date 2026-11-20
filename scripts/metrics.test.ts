@@ -66,25 +66,25 @@ describe("routing keeps the minute asked", () => {
     ["cs diff @20 de Chovy en LCK 2024", 20],
     ["xp diff à 20 de Chovy en LCK 2024", 20],
     ["gold diff de Chovy en LCK 2024", null],
-  ])("player: %s → minute %p", (q, minute) => {
-    expect(routeQuestion(q, entities({ players: [player("Chovy")] }), SCHEMA, COVERAGE)).toMatchObject({ kind: "tool", call: { tool: "player_ingame_stats", input: { minute } } });
+  ])("player: %s → minute %p", async (q, minute) => {
+    expect(await routeQuestion(q, entities({ players: [player("Chovy")] }), SCHEMA, COVERAGE)).toMatchObject({ kind: "tool", call: { tool: "player_ingame_stats", input: { minute } } });
   });
 
-  test("team: gold diff à 10 de T1", () => {
-    expect(routeQuestion("gold diff à 10 de T1 en LCK 2024", entities({ teams: [team("T1")] }), SCHEMA, COVERAGE)).toMatchObject({
+  test("team: gold diff à 10 de T1", async () => {
+    expect(await routeQuestion("gold diff à 10 de T1 en LCK 2024", entities({ teams: [team("T1")] }), SCHEMA, COVERAGE)).toMatchObject({
       kind: "tool",
       call: { tool: "team_ingame_stats", input: { minute: 10 } },
     });
   });
 
-  test("leaderboard: écart d'or à 10 des junglers", () => {
-    expect(routeQuestion("meilleur gold diff à 10 des junglers en LCK 2024", entities({}), SCHEMA, COVERAGE)).toMatchObject({
+  test("leaderboard: écart d'or à 10 des junglers", async () => {
+    expect(await routeQuestion("meilleur gold diff à 10 des junglers en LCK 2024", entities({}), SCHEMA, COVERAGE)).toMatchObject({
       kind: "tool",
       call: { tool: "ingame_leaderboard", input: { metric: "gold_diff", minute: 10, role: "Jungle" } },
     });
   });
 
-  test("a minute without snapshots is said missing, not answered at 15", () => {
+  test("a minute without snapshots is said missing, not answered at 15", async () => {
     for (const [q, e] of [
       ["gold diff à 25 min de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
       ["cs diff à 5 minutes de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
@@ -94,7 +94,7 @@ describe("routing keeps the minute asked", () => {
       ["cs à 30 min de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
       ["xp à 5 minutes de Chovy en LCK 2024", entities({ players: [player("Chovy")] })],
     ] as const) {
-      const route = routeQuestion(q, e, SCHEMA, COVERAGE);
+      const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
       expect(route).toMatchObject({ kind: "missing" });
 
@@ -102,15 +102,15 @@ describe("routing keeps the minute asked", () => {
     }
   });
 
-  test("a minute on a metric that has none stays with its tool", () => {
-    expect(routeQuestion("solo kills de Chovy à 25 min en LCK 2024", entities({ players: [player("Chovy")] }), SCHEMA, COVERAGE)).toMatchObject({
+  test("a minute on a metric that has none stays with its tool", async () => {
+    expect(await routeQuestion("solo kills de Chovy à 25 min en LCK 2024", entities({ players: [player("Chovy")] }), SCHEMA, COVERAGE)).toMatchObject({
       kind: "tool",
       call: { tool: "player_ingame_stats", input: { metric: "solo_kills" } },
     });
   });
 
-  test("a comparison at a minute without snapshots says so", () => {
-    const route = routeQuestion("Faker vs Chovy gold diff à 25 min", entities({ players: [player("Faker"), player("Chovy")], league: null, leagueShort: null, leagueMention: null, yearFrom: null, yearTo: null }), SCHEMA, COVERAGE);
+  test("a comparison at a minute without snapshots says so", async () => {
+    const route = await routeQuestion("Faker vs Chovy gold diff à 25 min", entities({ players: [player("Faker"), player("Chovy")], league: null, leagueShort: null, leagueMention: null, yearFrom: null, yearTo: null }), SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", call: { tool: "player_comparison" } });
 
