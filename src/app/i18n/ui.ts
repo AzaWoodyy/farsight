@@ -174,7 +174,7 @@ const fr = {
   },
 
   player: {
-    photo: (year: number) => `photo ${year}, Leaguepedia`,
+    photo: (year: number | null) => (year == null ? "photo Leaguepedia" : `photo ${year}, Leaguepedia`),
     more: (n: number) => ` +${n}`,
   },
 
@@ -434,7 +434,7 @@ const en: Ui = {
   },
 
   player: {
-    photo: (year) => `${year} photo, Leaguepedia`,
+    photo: (year) => (year == null ? "Leaguepedia photo" : `${year} photo, Leaguepedia`),
     more: (n) => ` +${n}`,
   },
 

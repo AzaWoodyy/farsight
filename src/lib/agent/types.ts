@@ -196,7 +196,8 @@ export type PlayerProfile = {
 };
 
 /** A Leaguepedia headshot (fair use, shown from Fandom's CDN), taken for a tournament of `year`. */
-export type PlayerPhoto = { url: string; year: number; source: string };
+/** `year` is null for a photo Leaguepedia does not date. */
+export type PlayerPhoto = { url: string; year: number | null; source: string };
 
 /** One player's line in a game of a two-player comparison. */
 export type VersusSide = {

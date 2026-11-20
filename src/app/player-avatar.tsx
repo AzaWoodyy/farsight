@@ -24,7 +24,7 @@ export function PlayerAvatar({ name, photo, size }: { name: string; photo: Playe
     <img
       src={photo.url}
       alt=""
-      title={`${name} · photo ${photo.year} (Leaguepedia)`}
+      title={`${name} · photo${photo.year == null ? "" : ` ${photo.year}`} (Leaguepedia)`}
       width={size}
       height={size}
       loading="lazy"
