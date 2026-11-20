@@ -3739,9 +3739,9 @@
           "yearTo": 2024
         },
         "unread": [],
-        "rows": 11,
+        "rows": 6,
         "totals": {
-          "games": 171,
+          "games": 166,
           "top": "Zeus",
           "jungle": "Oner",
           "mid": "Faker",
@@ -3770,9 +3770,9 @@
           "yearTo": 2017
         },
         "unread": [],
-        "rows": 9,
+        "rows": 8,
         "totals": {
-          "games": 141,
+          "games": 136,
           "top": "Huni",
           "jungle": "Peanut",
           "mid": "Faker",
@@ -4678,12 +4678,12 @@
           "yearTo": 2015
         },
         "unread": [],
-        "rows": 10,
+        "rows": 9,
         "totals": {
-          "players": 10,
-          "games": 130,
-          "wins": 103,
-          "events": 8,
+          "players": 9,
+          "games": 125,
+          "wins": 101,
+          "events": 7,
           "top": "MaRin",
           "jungle": "Bengi",
           "mid": "Faker",
@@ -4848,9 +4848,9 @@
           "role": null
         },
         "unread": [],
-        "rows": 11,
+        "rows": 6,
         "totals": {
-          "games": 171,
+          "games": 166,
           "top": "Zeus",
           "bot": "Gumayusi"
         }
