@@ -21,6 +21,15 @@
  *   patch 9.23. match-v5 timelines say so (DRAGON_SOUL_GIVEN with a team; the
  *   same event with team 0 only announces the element of the map); the count
  *   is used otherwise. Null without a timeline or before patch 9.23.
+ *
+ * From derive 4, what Leaguepedia's scoreboard lacks on many 2018-2020 games, for `data:build` to fall back on:
+ * - `damage`: damage dealt to champions; `vision`: vision score. Null when no participant of the game has a
+ *   non-zero value (the field was not tracked yet).
+ * - `runes`: the rune ids in Leaguepedia's order, keystone, three primary runes, two secondary runes, then the stat
+ *   shards offense, flex, defense (six ids before the shards, patch 8.23); `primary_tree` / `secondary_tree`: the
+ *   two tree ids. Null before Runes Reforged or when a slot is missing.
+ * - `heralds`: Rift Heralds a team killed, from Riot's end-of-game count.
+ * - `gameVersion`: Riot's full game version ("9.11.276.3025").
  */
 import { z } from "zod";
 import { dragonKind, soulKind } from "../../src/lib/domain/dragons";
@@ -28,11 +37,11 @@ import type { Json } from "../../src/lib/json";
 import type { RawGame } from "../../src/lib/sources/riot";
 
 /** Bump when the computation changes: summaries of an older version are recomputed from the raw JSON. */
-export const DERIVE_VERSION = 3;
+export const DERIVE_VERSION = 4;
 
 /**
  * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
- * (dragons and souls, from 3). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
+ * (dragons and souls from 3, Leaguepedia fallbacks from 4). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
  * it can read the raw JSON, and a published release refuses it.
  */
 export const DERIVE_COMPATIBLE = 2;
@@ -62,6 +71,12 @@ export const PlayerSummary = z.object({
   wards_placed: N, wards_killed: N, control_wards: N,
   plates: N,
   damage_taken: N,
+  // From derive 4: absent from an older summary.
+  damage: N.optional(),
+  vision: N.optional(),
+  runes: z.array(z.number().int()).nullable().optional(),
+  primary_tree: N.optional(),
+  secondary_tree: N.optional(),
 });
 
 export type PlayerSummary = z.infer<typeof PlayerSummary>;
@@ -77,6 +92,8 @@ export const TeamSummary = z.object({
   elder_dragons: N.optional(),
   dragon_soul: N.optional(),
   soul: z.string().nullable().optional(),
+  // From derive 4.
+  heralds: N.optional(),
 });
 
 export type TeamSummary = z.infer<typeof TeamSummary>;
@@ -106,6 +123,8 @@ export const IngameLine = z.discriminatedUnion("status", [
     teams: z.array(TeamSummary),
     /** From derive 3 (absent from an older summary); null without a timeline. */
     dragons: z.array(DragonKill).nullable().optional(),
+    /** From derive 4: Riot's full game version, null when the JSON has none. */
+    gameVersion: z.string().nullable().optional(),
   }),
   z.object({
     status: z.enum(["missing", "invalid"]),
@@ -130,6 +149,17 @@ const V4Stats = z.object({
   firstBloodKill: flag, firstBloodAssist: flag,
   doubleKills: num, tripleKills: num, quadraKills: num, pentaKills: num,
   wardsPlaced: num, wardsKilled: num, visionWardsBoughtInGame: num, totalDamageTaken: num,
+  totalDamageDealtToChampions: num, visionScore: num,
+  // match-v4 rune page.
+  perk0: num, perk1: num, perk2: num, perk3: num, perk4: num, perk5: num,
+  perkPrimaryStyle: num, perkSubStyle: num,
+  statPerk0: num, statPerk1: num, statPerk2: num,
+});
+
+/** match-v5 rune page. */
+const Perks = z.object({
+  statPerks: z.object({ offense: num, flex: num, defense: num }).optional(),
+  styles: z.array(z.object({ description: z.string().optional(), style: num, selections: z.array(z.object({ perk: num })).optional() })).optional(),
 });
 
 const Participant = V4Stats.extend({
@@ -139,6 +169,7 @@ const Participant = V4Stats.extend({
   championName: z.string().optional(),
   summonerName: z.string().optional(),
   riotIdGameName: z.string().optional(),
+  perks: Perks.optional(),
   stats: V4Stats.optional(),
 });
 
@@ -147,6 +178,7 @@ const Objective = z.object({ first: flag, kills: num }).optional();
 const Team = z.object({
   teamId: z.number(),
   firstBlood: flag, firstTower: flag, firstDragon: flag, firstRiftHerald: flag, firstBaron: flag, firstInhibitor: flag,
+  riftHeraldKills: num,
   objectives: z
     .object({ champion: Objective, tower: Objective, dragon: Objective, riftHerald: Objective, baron: Objective, inhibitor: Objective })
     .optional(),
@@ -213,6 +245,40 @@ function hasSouls(version: string | undefined): boolean {
   return major > 9 || (major === 9 && minor >= 23);
 }
 
+/** A Riot id, null when absent or 0 (an empty slot). */
+const id = (n: number | undefined) => (n != null && n > 0 ? n : null);
+
+const known = (ids: (number | null)[]): ids is number[] => ids.every((x) => x != null);
+
+type RunePage = { runes: number[] | null; primary: number | null; secondary: number | null };
+
+/** The rune page of a participant, match-v4 (`perk0`..) or match-v5 (`perks`), in Leaguepedia's order. */
+function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>): RunePage {
+  const styles = p.perks?.styles;
+  const primaryStyle = styles?.find((x) => x.description === "primaryStyle") ?? styles?.[0];
+  const subStyle = styles?.find((x) => x.description === "subStyle") ?? styles?.[1];
+  const shards = p.perks?.statPerks;
+
+  const [runes, shardIds, primary, secondary] = styles
+    ? [
+        [...(primaryStyle?.selections ?? []), ...(subStyle?.selections ?? [])].map((x) => x.perk),
+        [shards?.offense, shards?.flex, shards?.defense],
+        primaryStyle?.style,
+        subStyle?.style,
+      ]
+    : [[s.perk0, s.perk1, s.perk2, s.perk3, s.perk4, s.perk5], [s.statPerk0, s.statPerk1, s.statPerk2], s.perkPrimaryStyle, s.perkSubStyle];
+
+  const page = runes.map(id);
+  const statIds = shardIds.map(id);
+  const complete = page.length === 6 && known(page);
+
+  return {
+    runes: complete ? (known(statIds) ? [...page, ...statIds] : page) : null,
+    primary: complete ? id(primary) : null,
+    secondary: complete ? id(secondary) : null,
+  };
+}
+
 /** Elemental dragons a team needs for the soul. */
 const SOUL_DRAGONS = 4;
 
@@ -274,11 +340,17 @@ export function summarizeGame(raw: RawGame): IngameOk {
   })();
 
   const before10 = kills.filter((k) => k.timestamp < 600_000);
+  const merged = stats.participants.map((p) => ({ ...p, ...p.stats }));
+  /** Null for every participant when none has a non-zero value: the field was not tracked yet. */
+  const tracked = (pick: (s: (typeof merged)[number]) => number | undefined) => merged.some((s) => (pick(s) ?? 0) > 0);
+  const damageTracked = tracked((s) => s.totalDamageDealtToChampions);
+  const visionTracked = tracked((s) => s.visionScore);
   const count = (list: typeof kills, pred: (e: (typeof kills)[number]) => boolean) => (frames ? list.filter(pred).length : null);
 
-  const players = stats.participants.map((p): PlayerSummary => {
-    const s = { ...p, ...p.stats };
+  const players = stats.participants.map((p, i): PlayerSummary => {
+    const s = merged[i];
     const pid = p.participantId;
+    const page = runePage(p, s);
     const [a, b, c] = MINUTES.map((m) => snapshot(pid, m));
 
     return {
@@ -309,6 +381,11 @@ export function summarizeGame(raw: RawGame): IngameOk {
       control_wards: s.visionWardsBoughtInGame ?? null,
       plates: plates ? plates.filter((e) => e.killerId === pid).length : null,
       damage_taken: s.totalDamageTaken ?? null,
+      damage: damageTracked ? (s.totalDamageDealtToChampions ?? null) : null,
+      vision: visionTracked ? (s.visionScore ?? null) : null,
+      runes: page.runes,
+      primary_tree: page.primary,
+      secondary_tree: page.secondary,
     };
   });
 
@@ -349,6 +426,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
       elder_dragons: dragons ? dragons.filter((d) => d.teamId === t.teamId && d.kind === "elder").length : null,
       dragon_soul: soulKnown ? (soul?.teamId === t.teamId ? 1 : 0) : null,
       soul: soul?.teamId === t.teamId ? soul.kind : null,
+      heralds: o?.riftHerald?.kills ?? t.riftHeraldKills ?? null,
     };
   });
 
@@ -367,5 +445,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
     players,
     teams,
     dragons,
+    gameVersion: stats.gameVersion ?? null,
   };
 }

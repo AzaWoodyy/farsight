@@ -242,6 +242,18 @@ Créer le token (à faire par Enzo) : Cloudflare → **R2 Object Storage** →
 buckets only** → `lolesport-games`, TTL un an au plus. Noter l'*Access Key ID*
 et le *Secret Access Key* (affiché une seule fois).
 
+### Dérivation 4 : ce qui manque au scoreboard Leaguepedia
+
+Beaucoup de parties de 2018 à 2020 n'ont ni dégâts, ni score de vision, ni
+runes dans `ScoreboardPlayers`, alors que leur JSON Riot les a. Depuis
+`DERIVE_VERSION` 4, le résumé de chaque partie garde les dégâts aux
+champions, le score de vision, la page de runes (ids Riot dans l'ordre de
+Leaguepedia, et les deux arbres), les hérauts par équipe et `gameVersion`.
+L'ajout ne change aucun chiffre existant : `DERIVE_COMPATIBLE` reste à 2, la
+CI garde les résumés épinglés (dérivation 3) sans ces champs, et une release
+les recalcule tous depuis R2 (environ 6 min) puisqu'elle refuse un résumé
+plus ancien.
+
 ### Première release v4
 
 Le workflow restaure les résumés in-game de la release précédente ; une
