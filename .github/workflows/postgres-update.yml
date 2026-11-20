@@ -1,9 +1,8 @@
 name: Postgres update
 
-# Trial of the Postgres (Neon) database, run by hand only: the schedule below stays commented out until the trial is
-# validated. Same ingestion as Data release (Cargo tables in full, Riot game JSON incremental from the previous
+# Daily update of the Postgres (Neon) database. Same ingestion as Data release (Cargo tables in full, Riot game JSON incremental from the previous
 # release's in-game summaries, R2 first, the wiki time-boxed), then `db:load` into Neon instead of a SQLite release:
-# migrations into a fresh schema, COPY, swap (or in place when two copies would not fit the plan's storage).
+# migrations into a fresh schema, COPY, then a swap in one transaction: no moment without data.
 # The app reads the new data as soon as the load commits, without a redeployment.
 #
 # Secrets: NEON_DATABASE_OWNER_URL (owner role, direct host) for the load, NEON_DATABASE_URL (farsight_app, pooled
@@ -16,9 +15,9 @@ on:
       riot_budget:
         description: Minutes of Riot JSON downloads from the wiki
         default: "30"
-  # schedule:
-  #   # Every day at 05:23 UTC, after the evening's matches.
-  #   - cron: "23 5 * * *"
+  schedule:
+    # Every day at 05:23 UTC, after the evening's matches (Leaguepedia fills its scoreboards within hours).
+    - cron: "23 5 * * *"
 
 permissions:
   contents: read
@@ -34,8 +33,6 @@ jobs:
     env:
       LEAGUEPEDIA_DELAY_MS: "3000"
       LEAGUEPEDIA_USER_AGENT: "farsight/1.0 (+https://askfarsight.com; batch ingestion, one request every 3 s)"
-      # Neon's free plan: 1 GB of storage, the database about 570 MB.
-      DATABASE_SIZE_LIMIT_MB: "1024"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

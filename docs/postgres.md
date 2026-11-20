@@ -34,8 +34,12 @@ Neon, et comment refaire les mesures.
   au démarrage du build : `DATABASE_URL` doit aussi être défini pour le build.
 - **CI** : un Postgres 18 en conteneur de service (la version du projet Neon), chargé depuis le snapshot épinglé (`ci/data.json` : `ci/raw.tar.zst`
   et `ingame.jsonl.zst` de la release épinglée) par `db:load`. Mêmes données à chaque run, sans compte externe.
-- **Mise à jour** : `.github/workflows/postgres-update.yml`, en déclenchement manuel seulement (le cron est commenté) :
-  la même ingestion que la Data release, puis `db:load` dans Neon et la question de référence sur Neon.
+- **Mise à jour** : `.github/workflows/postgres-update.yml`, chaque jour à 05:23 UTC et à la demande : la même
+  ingestion que la Data release, puis `db:load` dans Neon (bascule sans coupure) et la question de référence sur Neon.
+  L'app lit les nouvelles données sans redéploiement, au plus 5 minutes après (durée de ses caches). Un cron GitHub ne
+  part que de `main`, et GitHub le coupe après 60 jours sans activité sur un dépôt public : le relancer depuis Actions.
+- **Neon (plan Launch)** : compute toujours allumé (`suspend_timeout_seconds: -1`), de 0,25 à 2 unités, environ 20 $ par
+  mois.
 
 ### Écarts avec SQLite, mesurés sur les 307 questions de l'éval
 
