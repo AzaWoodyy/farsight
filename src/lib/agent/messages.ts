@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
-import { englishBare, frenchArticle } from "../domain/leagues";
+import { englishBare, englishIn, frenchArticle, frenchIn } from "../domain/leagues";
 import type { LlmStatus } from "./llm";
 
 /**
@@ -146,7 +146,7 @@ const fr = {
     noRiotGames: (league: string, year: number | null) => `aucune partie de ${league} ${year ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
     minuteOnly: (mention: string, asked: number, minutes: readonly number[]) => `${mention} à ${asked} min (relevé seulement à ${minutes.join(", ").replace(/, (\d+)$/, " et $1")} min)`,
     minuteAbsent: (asked: number) => `minute ${asked} absente des données in-game`,
-    ingameOf: (what: string, who: string, league: string | null) => `${what} de ${who}${league ? ` en ${league}` : ""}`,
+    ingameOf: (what: string, who: string, league: string | null) => `${what} de ${who}${league ? ` ${frenchIn(league)}` : ""}`,
     noRiotGamesOf: (who: string) => `aucune partie de ${who} avec données Riot dans ce périmètre`,
     dragons: (mention: string) => `dragons par élément et âmes (« ${mention} »)`,
     teamMetricForPlayer: (mention: string) => `métrique d'équipe (« ${mention} ») demandée pour un joueur`,
@@ -367,7 +367,7 @@ const en: Messages = {
     noRiotGames: (league, year) => `no game of ${league} ${year ?? ""} with Riot data on Leaguepedia`.replace(/\s+/g, " "),
     minuteOnly: (mention, asked, minutes) => `${mention} at ${asked} min (recorded only at ${minutes.join(", ").replace(/, (\d+)$/, " and $1")} min)`,
     minuteAbsent: (asked) => `minute ${asked} is not in the in-game data`,
-    ingameOf: (what, who, league) => `${what} of ${who}${league ? ` in ${league}` : ""}`,
+    ingameOf: (what, who, league) => `${what} of ${who}${league ? ` ${englishIn(league)}` : ""}`,
     noRiotGamesOf: (who) => `no game of ${who} with Riot data in this scope`,
     dragons: (mention) => `dragons by element and souls ("${mention}")`,
     teamMetricForPlayer: (mention) => `team metric ("${mention}") asked for a player`,

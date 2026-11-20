@@ -4,7 +4,7 @@ import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } 
 import { runeIcon } from "../domain/rune-icons";
 import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
-import { englishBare, frenchIn, frenchOf, LEAGUES, leagueMembers } from "../domain/leagues";
+import { englishIn, frenchIn, frenchOf, LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
@@ -619,7 +619,7 @@ async function leagueShortName(db: Db, league: string | null): Promise<string> {
 
 /** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
 const inLeague = (short: string) =>
-  short === allCompetitions() ? "" : say(frenchIn(short), englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : `in ${short}`);
+  short === allCompetitions() ? "" : say(frenchIn(short), englishIn(short));
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
@@ -811,7 +811,7 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
     const what = perYear ? say("éditions", events === 1 ? "edition" : "editions") : say("tournois", events === 1 ? "tournament" : "tournaments");
 
     let facts =
-      say(`${input.player} a disputé ${events} ${what} ${league === "Worlds" ? "des Worlds" : `de ${league}`} (${span(rows.map((r) => r.year))}) `, `${input.player} played ${events} ${what} of ${league} (${span(rows.map((r) => r.year))}) `) +
+      say(`${input.player} a disputé ${events} ${what} ${frenchOf(league)} (${span(rows.map((r) => r.year))}) `, `${input.player} played ${events} ${what} of ${league} (${span(rows.map((r) => r.year))}) `) +
       say(`avec ${teams.length} équipe${teams.length > 1 ? "s" : ""} (${teams.join(", ")}), `, `with ${teams.length} team${teams.length === 1 ? "" : "s"} (${teams.join(", ")}), `) +
       say(`pour un bilan de ${wins} victoires et ${losses} défaites en parties (${pct(wins, wins + losses)} %).`, `for a record of ${wins} wins and ${losses} losses in games (${pct(wins, wins + losses)}%).`);
 

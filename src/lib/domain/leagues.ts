@@ -72,6 +72,9 @@ export function frenchOf(short: string): string {
 /** English names an international event bare ("at Worlds", "at First Stand") and a league with "the". */
 export const englishBare = (short: string) => short === "Worlds" || short === "MSI" || short === "First Stand" || short.endsWith("Masters");
 
+/** "at Worlds", "at First Stand", "in LCK". */
+export const englishIn = (short: string) => (englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : `in ${short}`);
+
 export const SCOPE_LABEL = LEAGUES.map((l) => l.short).join(", ");
 
 /** Only current family names include historical names; explicit old names keep their meaning. */
