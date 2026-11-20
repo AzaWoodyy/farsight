@@ -285,7 +285,7 @@ Stars », « Karmine Corp Blue Star ».
 Une seule **Data release** sur `main`, une fois le code v10 fusionné et avant le
 premier déploiement v10 (les résumés in-game sont relus sur R2, environ 6 min).
 `data:package` refuse une release sans aucun sigle ; `--check-only` se contente
-d'un avertissement. `ci/data.json` épingle `data-20261120-5`, une prerelease
+d'un avertissement. `ci/data.json` épingle `data-20261120-6`, une prerelease
 v10, avec les sigles.
 
 ### Première release v9

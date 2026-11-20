@@ -1,5 +1,5 @@
 import { msg } from "./messages";
-import { LEAGUES, leagueMembers } from "../domain/leagues";
+import { LEAGUES, leagueMembers, ROSTER_EXCLUDED } from "../domain/leagues";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { type Db, readSchema, selectAll, selectOne } from "../db";
@@ -159,8 +159,9 @@ export function coverageLookup(db: Db): CoverageLookup {
     },
     playerTeam: async (player, league, yearFrom, yearTo, split) => {
       const params: (string | number)[] = [player];
-      const members = league ? leagueMembers(league, yearFrom, yearTo) : [];
-      const inLeague = league ? (params.push(...members), ` AND p.league IN (${members.map(() => "?").join(",")})`) : "";
+      // Without a competition asked, those a roster leaves out do not name the player's team (a T1 Academy player at the KeSPA Cup).
+      const members = league ? leagueMembers(league, yearFrom, yearTo) : [...ROSTER_EXCLUDED];
+      const inLeague = (params.push(...members), ` AND p.league ${league ? "IN" : "NOT IN"} (${members.map(() => "?").join(",")})`);
       const inPeriod = period("p.year", yearFrom, yearTo, params);
       const inSplit = split ? (params.push(split), " AND p.tournament_page IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = ?)") : "";
 
@@ -1212,11 +1213,12 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   if (e.league || STANDINGS.test(question)) {
     const league = defaultLeague();
     const oneYear = e.yearFrom != null && e.yearFrom === e.yearTo;
-    const international = LEAGUES.some((l) => l.name === league && l.international);
+    // One edition a year: the international events, and the KeSPA Cup.
+    const oneEdition = league === "KeSPA Cup" || LEAGUES.some((l) => l.name === league && l.international);
 
     return {
       kind: "tool",
-      call: { tool: "tournament_standings", input: { league, ...period, split: e.split, full: oneYear && (international || e.split != null) } },
+      call: { tool: "tournament_standings", input: { league, ...period, split: e.split, full: oneYear && (oneEdition || e.split != null) } },
       confidence: STANDINGS.test(question) || oneYear ? 0.9 : 0.75,
       reason: msg().route.leagueAlone,
       notes,

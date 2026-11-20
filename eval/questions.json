@@ -780,19 +780,19 @@
           "league": null
         },
         "totals": {
-          "games_a": 1560,
-          "wins_a": 1042,
-          "games_b": 1011,
-          "wins_b": 702,
-          "h2h_games": 146,
-          "h2h_wins_a": 70,
-          "h2h_listed": 146,
-          "solo_kills_a": 15,
+          "games_a": 1641,
+          "wins_a": 1091,
+          "games_b": 1073,
+          "wins_b": 742,
+          "h2h_games": 149,
+          "h2h_wins_a": 71,
+          "h2h_listed": 149,
+          "solo_kills_a": 16,
           "solo_kills_b": 30
         },
         "rows": 2,
         "summaryIncludes": [
-          "146 parties"
+          "149 parties"
         ]
       }
     },
@@ -818,9 +818,9 @@
           "minute": null
         },
         "totals": {
-          "h2h_games": 146,
+          "h2h_games": 149,
           "metric_a": 2,
-          "metric_b": 3,
+          "metric_b": 4,
           "h2h_metric_a": 0,
           "h2h_metric_b": 0
         },
@@ -852,8 +852,8 @@
           "metric": "first_bloods"
         },
         "totals": {
-          "metric_a": 124,
-          "metric_b": 80,
+          "metric_a": 129,
+          "metric_b": 88,
           "h2h_metric_a": 16,
           "h2h_metric_b": 11
         },
@@ -886,9 +886,9 @@
         },
         "totals": {
           "metric_a": 32,
-          "metric_b": 145,
-          "h2h_metric_a": -89,
-          "h2h_metric_b": 89
+          "metric_b": 146,
+          "h2h_metric_a": -90,
+          "h2h_metric_b": 90
         },
         "rows": 2,
         "summaryIncludes": [
@@ -916,9 +916,9 @@
           "metric": "deaths"
         },
         "totals": {
-          "metric_a": 2.2,
-          "metric_b": 1.68,
-          "h2h_metric_a": 2.45,
+          "metric_a": 2.24,
+          "metric_b": 1.7,
+          "h2h_metric_a": 2.48,
           "h2h_metric_b": 1.95
         },
         "rows": 2,
@@ -1004,12 +1004,12 @@
         "totals": {
           "games_a": 408,
           "wins_a": 242,
-          "games_b": 400,
-          "wins_b": 215,
+          "games_b": 420,
+          "wins_b": 226,
           "h2h_games": 0,
           "h2h_listed": 0,
           "solo_kills_a": 125,
-          "solo_kills_b": 78
+          "solo_kills_b": 82
         },
         "summaryIncludes": [
           "ne se sont jamais affrontés"
@@ -1084,7 +1084,7 @@
         ],
         "rows": 2,
         "totals": {
-          "games_a": 400,
+          "games_a": 420,
           "games_b": 408
         }
       }
@@ -1108,12 +1108,12 @@
         },
         "rows": 2,
         "totals": {
-          "h2h_games": 146,
-          "solo_kills_a": 15,
+          "h2h_games": 149,
+          "solo_kills_a": 16,
           "solo_kills_b": 30
         },
         "summaryIncludes": [
-          "15 solo kills",
+          "16 solo kills",
           "30 solo kills"
         ]
       }
@@ -1138,11 +1138,11 @@
         },
         "rows": 2,
         "totals": {
-          "games_a": 1560,
-          "games_b": 1011,
-          "h2h_games": 146,
-          "h2h_wins_a": 70,
-          "h2h_listed": 146
+          "games_a": 1641,
+          "games_b": 1073,
+          "h2h_games": 149,
+          "h2h_wins_a": 71,
+          "h2h_listed": 149
         }
       }
     },
@@ -1167,11 +1167,11 @@
         },
         "rows": 2,
         "totals": {
-          "games_a": 1560,
-          "games_b": 1011,
-          "h2h_games": 146,
-          "h2h_wins_a": 70,
-          "h2h_listed": 146
+          "games_a": 1641,
+          "games_b": 1073,
+          "h2h_games": 149,
+          "h2h_wins_a": 71,
+          "h2h_listed": 149
         }
       }
     },
@@ -1987,7 +1987,7 @@
         "route": "team_history",
         "rowsMin": 1,
         "summaryIncludes": [
-          "tournaments (Worlds, OGN Champions, MSI, LCK) between 2013 and 2026",
+          "tournaments (Worlds, OGN Champions, MSI, KeSPA Cup, LCK, EWC) between 2013 and 2026",
           "titles, including Worlds Season 3",
           "Names counted: SK Telecom T1, T1"
         ],
@@ -3741,7 +3741,7 @@
         "unread": [],
         "rows": 6,
         "totals": {
-          "games": 156,
+          "games": 166,
           "top": "Zeus",
           "jungle": "Oner",
           "mid": "Faker",
@@ -4579,9 +4579,9 @@
           "league": null
         },
         "totals": {
-          "events": 36,
-          "wins": 315,
-          "losses": 194,
+          "events": 37,
+          "wins": 323,
+          "losses": 200,
           "titles": 7
         }
       }
@@ -4850,7 +4850,7 @@
         "unread": [],
         "rows": 6,
         "totals": {
-          "games": 156,
+          "games": 166,
           "top": "Zeus",
           "bot": "Gumayusi"
         }
@@ -4877,12 +4877,12 @@
           "toutes compétitions confondues"
         ],
         "totals": {
-          "games": 1560,
-          "wins": 1042,
-          "unique": 87,
+          "games": 1641,
+          "wins": 1091,
+          "unique": 88,
           "top": "Azir",
-          "top_games": 194,
-          "top_wins": 139
+          "top_games": 202,
+          "top_wins": 145
         },
         "sources": 3
       }
@@ -4960,11 +4960,11 @@
           "league": null
         },
         "totals": {
-          "games": 978,
-          "wins": 630,
-          "unique": 61,
-          "top": "Nautilus",
-          "top_games": 68
+          "games": 1041,
+          "wins": 669,
+          "unique": 62,
+          "top": "Rakan",
+          "top_games": 71
         }
       }
     },
@@ -5039,11 +5039,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5067,11 +5067,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5095,11 +5095,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5123,11 +5123,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5151,11 +5151,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5179,11 +5179,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 917,
-          "wins": 586,
+          "games": 928,
+          "wins": 591,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 108
+          "top_games": 109
         }
       }
     },
@@ -5206,11 +5206,11 @@
           "league": null
         },
         "totals": {
-          "games": 1560,
-          "wins": 1042,
-          "unique": 87,
+          "games": 1641,
+          "wins": 1091,
+          "unique": 88,
           "top": "Azir",
-          "top_games": 194
+          "top_games": 202
         }
       }
     },
@@ -6601,9 +6601,9 @@
         },
         "totals": {
           "leader": "Faker",
-          "leader_value": 16,
-          "leader_champion": "Ahri",
-          "leader_event": "LCK 2025"
+          "leader_value": 20,
+          "leader_champion": "Sylas",
+          "leader_event": "EWC 2026"
         }
       }
     },
@@ -7489,6 +7489,163 @@
         ],
         "summaryIncludes": [
           "dont First Stand 2025"
+        ]
+      }
+    },
+    {
+      "id": "ewc-2025-winner",
+      "question": "EWC 2025 vainqueur",
+      "tags": [
+        "ewc",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Esports World Cup",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "full": true
+        },
+        "rows": 12,
+        "totals": {
+          "champion": "Gen.G"
+        },
+        "sources": 1
+      }
+    },
+    {
+      "id": "en-ewc-2024-winner",
+      "question": "who won the Esports World Cup 2024",
+      "locale": "en",
+      "tags": [
+        "ewc",
+        "standings",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Esports World Cup",
+        "input": {
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "full": true
+        },
+        "rows": 8,
+        "totals": {
+          "champion": "T1"
+        },
+        "summaryIncludes": [
+          "Esports World Cup 2024: T1 champion, Top Esports runner-up"
+        ]
+      }
+    },
+    {
+      "id": "ewc-not-worlds",
+      "question": "qui a gagné les Worlds 2024",
+      "tags": [
+        "ewc",
+        "worlds",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "full": true
+        },
+        "totals": {
+          "champion": "T1"
+        }
+      }
+    },
+    {
+      "id": "kespa-cup-2025",
+      "question": "KeSPA Cup 2025",
+      "tags": [
+        "kespa",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "KeSPA Cup",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "full": true
+        },
+        "rows": 14,
+        "totals": {
+          "champion": "T1",
+          "events": 1
+        }
+      }
+    },
+    {
+      "id": "kespa-cup-winners",
+      "question": "palmarès KeSPA Cup",
+      "tags": [
+        "kespa",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "KeSPA Cup",
+        "rows": 10,
+        "totals": {
+          "events": 10,
+          "latest_champion": "DN SOOPers"
+        },
+        "summaryIncludes": [
+          "Palmarès de la KeSPA Cup"
+        ]
+      }
+    },
+    {
+      "id": "t1-history-2024-titles",
+      "question": "historique de T1 en 2024",
+      "tags": [
+        "ewc",
+        "kespa",
+        "team",
+        "history"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "T1"
+        ],
+        "summaryIncludes": [
+          "dont Esports World Cup 2024, Worlds 2024"
+        ]
+      }
+    },
+    {
+      "id": "ewc-ingame-first-dragon",
+      "question": "Qui prend le plus souvent le premier dragon à l'EWC 2025 ?",
+      "tags": [
+        "ewc",
+        "ingame",
+        "leaderboard",
+        "team"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "Esports World Cup",
+        "input": {
+          "subject": "team",
+          "metric": "first_dragon",
+          "yearFrom": 2025
+        },
+        "totals": {
+          "leader": "Hanwha Life Esports",
+          "leader_value": 60,
+          "leader_count": 3
+        },
+        "summaryIncludes": [
+          "à l'EWC (2025)"
         ]
       }
     }

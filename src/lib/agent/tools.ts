@@ -4,7 +4,7 @@ import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } 
 import { runeIcon } from "../domain/rune-icons";
 import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
-import { englishIn, frenchIn, frenchOf, LEAGUES, leagueMembers } from "../domain/leagues";
+import { englishIn, frenchIn, frenchOf, LEAGUES, leagueMembers, ROSTER_EXCLUDED } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
 import { type StaticToolCall, tool } from "ai";
 import { z } from "zod";
@@ -1000,10 +1000,14 @@ function splitFilter(column: string, input: { split: string | null }, params: Pa
   return `AND ${column} IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = :split)`;
 }
 
+/** The roster's competition: the one asked, otherwise every competition but those a roster leaves out (ROSTER_EXCLUDED). */
+const rosterLeague = (column: string, input: TeamRosterInput, params: Params) =>
+  input.league ? `AND ${leagueFilter(column, input, params)}` : `AND ${column} NOT IN (${inList("rosterExcluded", [...ROSTER_EXCLUDED], params)})`;
+
 /** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league, the period and the split. */
 async function rosterScope(db: Db, input: TeamRosterInput, params: Params): Promise<string> {
   const t = inList("t", (await teamMembers(db, input.team)).members, params);
-  const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
+  const league = rosterLeague("gp.league", input, params);
 
   return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
 }
@@ -1016,7 +1020,7 @@ async function rosterSeason(db: Db, input: TeamRosterInput): Promise<TeamRosterI
   if (input.yearFrom != null || input.yearTo != null) return { ...input, latest: false };
   const params: Params = {};
   const t = inList("t", (await teamMembers(db, input.team)).members, params);
-  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+  const league = rosterLeague("g.league", input, params);
 
   const year = (await selectOne(
     db,
@@ -1033,7 +1037,7 @@ async function rosterSeason(db: Db, input: TeamRosterInput): Promise<TeamRosterI
 async function rosterTournaments(db: Db, input: TeamRosterInput) {
   const params: Params = {};
   const t = inList("t", (await teamMembers(db, input.team)).members, params);
-  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+  const league = rosterLeague("g.league", input, params);
 
   return await selectAll(
     db,
