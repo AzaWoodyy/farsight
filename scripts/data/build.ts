@@ -32,7 +32,7 @@ db.exec("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;");
 createSchema(db);
 
 const derived = deriveDataset();
-const { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity } = derived.report;
+const { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity } = derived.report;
 
 db.exec("BEGIN");
 
@@ -105,6 +105,8 @@ console.log("runes:", runeCounts);
 console.log(`rune pages of an unexpected length, left out: ${oddRunePages}`);
 
 console.log("in-game:", ingameCounts);
+
+console.log("filled from the Riot JSON (Leaguepedia had none):", fromRiot);
 
 console.log("player links:", identity);
 
