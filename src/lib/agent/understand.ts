@@ -552,7 +552,12 @@ type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedCh
  * a team wins over a player when it is a known shorthand or has more games.
  */
 function detectMentions(db: DatabaseSync, question: string): Mentions {
-  const tokens = maskTerms(question)
+  const { league, mention: leagueMention } = detectLeague(question);
+
+  // A league written by its full name ("Liga Española de League of Legends") is no player or team: its words are set aside.
+  const asked = leagueMention?.includes(" ") ? question.replace(leagueMention, " ".repeat(leagueMention.length)) : question;
+
+  const tokens = maskTerms(asked)
     .replace(/[’']/g, " ")
     .split(/[^\p{L}\p{N}.\-&]+/u)
     .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
@@ -565,7 +570,6 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
   const { teams } = getIndexes(db);
-  const { league } = detectLeague(question);
 
   // Four words: the longest names of the scope ("Royal Never Give Up").
   for (let size = 4; size >= 1; size--) {

@@ -7157,6 +7157,180 @@
           "âmes du dragon"
         ]
       }
+    },
+    {
+      "id": "superliga-winners",
+      "question": "palmarès SuperLiga",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga",
+        "rowsMin": 12
+      }
+    },
+    {
+      "id": "superliga-standings-2024",
+      "question": "classement de la SuperLiga 2024",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga",
+        "rows": 2
+      }
+    },
+    {
+      "id": "superliga-champions-2025",
+      "question": "champions les plus joués en SuperLiga 2025",
+      "tags": [
+        "superliga",
+        "champion",
+        "ranking"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LVP SuperLiga",
+        "rows": 20
+      }
+    },
+    {
+      "id": "sl-orange-2019",
+      "question": "classement superliga orange 2019",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga Orange",
+        "rows": 2
+      }
+    },
+    {
+      "id": "sl-2nd-div-cue",
+      "question": "classement SuperLiga 2nd Division 2024",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga 2nd Division",
+        "rows": 2
+      }
+    },
+    {
+      "id": "h2h-riders-tokiers",
+      "question": "Movistar Riders contre UCAM Tokiers",
+      "tags": [
+        "superliga",
+        "team",
+        "h2h"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "Movistar Riders",
+          "UCAM Tokiers"
+        ],
+        "rowsMin": 4
+      }
+    },
+    {
+      "id": "en-superliga-standings",
+      "question": "SuperLiga 2023 standings",
+      "locale": "en",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga",
+        "rows": 2
+      }
+    },
+    {
+      "id": "les-standings-2026",
+      "question": "classement LES 2026",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Liga Española de League of Legends",
+        "rows": 4
+      }
+    },
+    {
+      "id": "les-roster-fenix-2026",
+      "question": "roster de Movistar KOI Fénix en 2026",
+      "tags": [
+        "superliga",
+        "team",
+        "roster"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Movistar KOI Fénix"
+        ],
+        "rows": 6
+      }
+    },
+    {
+      "id": "les-full-name",
+      "question": "classement Liga Española de League of Legends 2026",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Liga Española de League of Legends",
+        "rows": 4
+      }
+    },
+    {
+      "id": "sl-division-2-cue",
+      "question": "classement SuperLiga Division 2 2024",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga 2nd Division",
+        "rows": 2
+      }
+    },
+    {
+      "id": "les-sentence-start",
+      "question": "En LES, résultats de Fresskowy",
+      "tags": [
+        "superliga",
+        "player"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "league": "Liga Española de League of Legends",
+        "rows": 6
+      }
     }
   ]
 }
