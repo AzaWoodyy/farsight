@@ -25,7 +25,9 @@ Neon, et comment refaire les mesures.
 - **SQL généré** (`src/lib/db/generated-query.ts`) : transaction `READ ONLY`, `SET LOCAL ROLE farsight_sql`,
   `statement_timeout` de 4 s, au plus 200 lignes et 2 Mo, coupés côté serveur. C'est la base qui refuse une table de
   base, une écriture ou une fonction serveur, y compris ce que la passe statique du garde-fou ne voit pas. Le
-  processus enfant SQLite disparaît.
+  processus enfant SQLite disparaît. Limite connue : la session reste celle de `farsight_app`, qu'une fonction
+  exécutant du SQL dynamique pourrait rétablir ; la passe statique refuse ces fonctions et les noms échappés (`U&"…"`).
+  Durcissement possible si l'essai est retenu : une connexion dédiée, ouverte directement comme `farsight_sql`.
 - **Runtime** : plus de base dans les fonctions (35 à 39 Mo au lieu d'environ 175 Mo), région `fra1` (Francfort, comme
   la région Neon `aws-eu-central-1`). `next.config.ts` lit les chiffres de la page « comment ça marche » dans Postgres
   au démarrage du build : `DATABASE_URL` doit aussi être défini pour le build.

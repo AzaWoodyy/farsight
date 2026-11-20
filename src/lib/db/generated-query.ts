@@ -81,6 +81,39 @@ const bounded = (sql: string, maxRows: number) => `WITH r AS (SELECT row_to_json
 s AS (SELECT j, octet_length(j) AS n, SUM(octet_length(j)) OVER (ROWS UNBOUNDED PRECEDING) AS total FROM r)
 SELECT CASE WHEN total <= ${MAX_RESULT_BYTES} THEN j END AS j, total::bigint AS total FROM s WHERE total - n <= ${MAX_RESULT_BYTES}`;
 
+/**
+ * A connection before the deadline, or SqlTimeoutError (an abort rejects at once). One that arrives too late goes back
+ * to the pool.
+ */
+function connectBy(pool: PgPool, deadline: number, signal: AbortSignal | undefined): Promise<PgClient> {
+  return new Promise((resolveClient, reject) => {
+    let settled = false;
+
+    const finish = (fail?: Error) => {
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+
+      if (fail) reject(fail);
+    };
+
+    const abort = () => finish(new DOMException("Request aborted", "AbortError"));
+    const timer = setTimeout(() => finish(new SqlTimeoutError()), Math.max(1, deadline - Date.now()));
+
+    signal?.addEventListener("abort", abort, { once: true });
+    pool.connect().then(
+      (client) => {
+        if (settled) return client.release();
+        finish();
+        resolveClient(client);
+      },
+      (err: Error) => {
+        if (!settled) finish(err);
+      },
+    );
+  });
+}
+
 /** Less time than this left once a slot is free: the query is not started, the deadline has in effect passed. */
 const MIN_RUN_MS = 100;
 
@@ -114,7 +147,7 @@ export async function executeGeneratedQuery(
 
   try {
     if (deadline - Date.now() < MIN_RUN_MS) throw new SqlTimeoutError();
-    client = await pool.connect();
+    client = await connectBy(pool, deadline, signal);
     signal?.addEventListener("abort", abort, { once: true });
     signal?.throwIfAborted();
     const remaining = Math.max(1, deadline - Date.now());

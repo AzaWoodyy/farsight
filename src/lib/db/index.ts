@@ -66,24 +66,31 @@ export async function selectOne<S extends z.ZodType>(db: Db, schema: S, sql: str
 
 const ColumnRow = z.object({ name: z.string(), column: z.string() });
 
-const schemas = new WeakMap<Db, Promise<Record<string, string[]>>>();
+/** How long a value read once per handle is kept: db:load replaces the data without a redeployment. */
+export const CACHE_MS = 5 * 60_000;
 
 /**
- * Table or view -> columns, read from the database once per handle: the schema of a deployment does not change
- * under it (a new schema is a new load or migration, and the version check above). Used by the guard and the router.
+ * `read(db)`, kept per handle for CACHE_MS, so a warm instance reads a reloaded database within minutes. A failed read
+ * is not kept: the next question tries again.
  */
-export function readSchema(db: Db): Promise<Record<string, string[]>> {
-  let schema = schemas.get(db);
+export function cachedRead<T>(read: (db: Db) => Promise<T>): (db: Db) => Promise<T> {
+  const cache = new WeakMap<Db, { value: Promise<T>; at: number }>();
 
-  if (!schema) {
-    schema = introspect(db);
-    // A failed read is not kept: the next question tries again.
-    schema.catch(() => schemas.delete(db));
-    schemas.set(db, schema);
-  }
+  return (db) => {
+    const hit = cache.get(db);
 
-  return schema;
+    if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+    const value = read(db);
+
+    value.catch(() => cache.delete(db));
+    cache.set(db, { value, at: Date.now() });
+
+    return value;
+  };
 }
+
+/** Table or view -> columns, read once per handle and kept for CACHE_MS. Used by the guard and the router. */
+export const readSchema = cachedRead(introspect);
 
 /** One query for every table and view of the schema on the search path, columns in their order. */
 async function introspect(db: Db): Promise<Record<string, string[]>> {

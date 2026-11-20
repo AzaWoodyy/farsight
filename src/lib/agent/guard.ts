@@ -99,6 +99,8 @@ export function guardQuery(
     aliases.set(name, name);
   }
 
+  // U&"set_confi\0067": an escaped name the static checks cannot read. No question needs one.
+  if (/\bu&["']/i.test(trimmed)) issues.push("Unicode-escaped identifiers and strings (U&) are not allowed.");
   const denied = DENIED_FUNCTION.exec(trimmed);
 
   if (denied) issues.push(`Function not allowed: ${denied[1] ?? denied[2]}.`);

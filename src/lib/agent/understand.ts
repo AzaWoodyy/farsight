@@ -2,7 +2,7 @@ import { detectLeague, eraLeague, LEAGUES, leagueMembers } from "../domain/leagu
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { normalizeAlias } from "../aliases";
-import { type Db, selectAll, selectOne } from "../db";
+import { cachedRead, type Db, selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
 import { msg } from "./messages";
@@ -423,7 +423,6 @@ type TeamIndex = Map<string, TeamEntry>;
 
 type Indexes = { teams: TeamIndex; champions: Map<string, string> };
 
-const indexes = new WeakMap<Db, Promise<Indexes>>();
 
 /** Three-letter words and chat shorthands ("per", "svp", "pts"), English and French, too short for the common word list: an abbreviation among them is read in capitals only. */
 const SHORT_WORDS = new Set(
@@ -460,18 +459,8 @@ function singular(name: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Team and champion aliases, read once per database handle (a failed read is tried again on the next question). */
-function getIndexes(db: Db): Promise<Indexes> {
-  let cached = indexes.get(db);
-
-  if (!cached) {
-    cached = readIndexes(db);
-    cached.catch(() => indexes.delete(db));
-    indexes.set(db, cached);
-  }
-
-  return cached;
-}
+/** Team and champion aliases, read once per database handle and kept for CACHE_MS. */
+const getIndexes = cachedRead(readIndexes);
 
 async function readIndexes(db: Db): Promise<Indexes> {
   const rows = await selectAll(
