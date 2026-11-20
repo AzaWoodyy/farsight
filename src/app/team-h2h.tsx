@@ -5,6 +5,7 @@ import type { TeamHeadToHead as View, TeamSeries } from "@/lib/agent/types";
 import { dateFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
 import { EntityIcon } from "./entity-icon";
+import { LeagueTag } from "./league-tag";
 
 /** Team name → logo, for the names the answer has one for. */
 type Logos = Record<string, string>;
@@ -18,7 +19,7 @@ const FIRST_SERIES = 10;
  * Two teams' meetings: their record in series and in games, then every series with its date, competition,
  * score, winner and Leaguepedia page. The per-tournament table stays below, sortable.
  */
-export function TeamHeadToHead({ v, logos, tones, byTournament }: { v: View; logos: Logos; tones: Tones; byTournament: ReactNode }) {
+export function TeamHeadToHead({ v, logos, tones, leagues, byTournament }: { v: View; logos: Logos; tones: Tones; leagues: Record<string, string[]>; byTournament: ReactNode }) {
   const ui = useUi();
   const [all, setAll] = useState(false);
   const list = all ? v.series : v.series.slice(0, FIRST_SERIES);
@@ -28,9 +29,9 @@ export function TeamHeadToHead({ v, logos, tones, byTournament }: { v: View; log
     <div className="mt-4">
       <div className="border border-line">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-3">
-          <Side name={v.teamA} logo={logos[v.teamA]} tone={tones[v.teamA]} series={v.seriesA} games={v.gamesA} lead={lead === 0} align="right" />
+          <Side name={v.teamA} logo={logos[v.teamA]} tone={tones[v.teamA]} leagues={leagues[v.teamA]} series={v.seriesA} games={v.gamesA} lead={lead === 0} align="right" />
           <span className="text-xs text-muted">vs</span>
-          <Side name={v.teamB} logo={logos[v.teamB]} tone={tones[v.teamB]} series={v.seriesB} games={v.gamesB} lead={lead === 1} align="left" />
+          <Side name={v.teamB} logo={logos[v.teamB]} tone={tones[v.teamB]} leagues={leagues[v.teamB]} series={v.seriesB} games={v.gamesB} lead={lead === 1} align="left" />
         </div>
         <p className="border-t border-dashed border-line px-3 py-2 text-xs text-muted">
           {ui.teams.summary(v.seriesCount, v.scope || ui.allCompetitions)}
@@ -87,7 +88,7 @@ export function TeamHeadToHead({ v, logos, tones, byTournament }: { v: View; log
   );
 }
 
-function Side({ name, logo, tone, series, games, lead, align }: { name: string; logo?: string; tone?: "dark" | "light"; series: number; games: number; lead: boolean; align: "left" | "right" }) {
+function Side({ name, logo, tone, leagues, series, games, lead, align }: { name: string; logo?: string; tone?: "dark" | "light"; leagues?: string[]; series: number; games: number; lead: boolean; align: "left" | "right" }) {
   const ui = useUi();
 
   return (
@@ -99,6 +100,12 @@ function Side({ name, logo, tone, series, games, lead, align }: { name: string; 
           {name}
         </span>
       </div>
+      {/* Under the name, so a long name keeps the room it has beside the "vs". */}
+      {leagues && (
+        <div className="mt-1">
+          <LeagueTag leagues={leagues} />
+        </div>
+      )}
       <div className={`text-2xl tabular-nums ${lead ? "text-accent" : ""}`}>{series}</div>
       <div className="text-[11px] text-muted tabular-nums">{ui.games(games)}</div>
     </div>

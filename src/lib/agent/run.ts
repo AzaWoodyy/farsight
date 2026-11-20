@@ -17,8 +17,8 @@ import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
-import { playerProfiles, type ToolCall, type ToolOutput } from "./tools";
-import { teamLogo } from "../domain/team-logos";
+import { playerProfiles, type ToolCall } from "./tools";
+import { teamBadges, teamNames } from "./team-badges";
 import { understandQuestion } from "./understand";
 
 const MAX_ATTEMPTS = 3;
@@ -430,6 +430,7 @@ const EMPTY_VIEWS = {
   series: null,
   icons: {},
   iconTones: {},
+  teamLeagues: {},
   profiles: [],
   sources: [],
 } satisfies Partial<Answer>;
@@ -525,6 +526,8 @@ async function format(
   // Text-to-SQL result: generic table.
   if (!plan.tool) {
     const columns = Object.keys(raw[0]);
+    const table = { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) };
+    const badges = teamBadges(db, teamNames({ table }, meta.teams), entities);
     step.add(entry({ status: "ok", title: m.genericTable(raw.length, columns.length) }));
     step.done("ok", m.rowCount(raw.length));
     const pages = [...new Set(raw.flatMap((r) => PageColumns.parse(r).flatMap((v) => v ?? [])))];
@@ -533,10 +536,11 @@ async function format(
       ...EMPTY_VIEWS,
       title: question,
       summary: m.generatedSummary(raw.length),
-      table: { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) },
+      table,
       // A column of champion names gets the champion layout, with their icons.
-      icons: championIcons(db, columns, raw),
-      iconTones: {},
+      icons: { ...badges.icons, ...championIcons(db, columns, raw) },
+      iconTones: badges.tones,
+      teamLeagues: badges.leagues,
       // The named players: the comparison layouts show their team and role next to the generated table, and one
       // player alone heads the answer with their photo.
       profiles: entities.players.length ? playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
@@ -573,7 +577,10 @@ async function format(
 
   const call = plan.tool.call;
   const profiles = answerProfiles(db, call);
-  const logos = teamLogos(out, meta.teams);
+  // The period the answer covers: the one the tool chose, else the one it ran on (a relaxation may have widened
+  // the one asked), else the question's.
+  const period = out.period ?? PeriodInput.safeParse(input).data ?? entities;
+  const badges = teamBadges(db, teamNames(out, meta.teams), period, out.roster ? { [out.roster.team]: out.roster.names } : {});
 
   return {
     title: out.title,
@@ -588,8 +595,9 @@ async function format(
     champion: out.champion ?? null,
     pool: out.pool ?? null,
     series: out.series ?? null,
-    icons: { ...logos.icons, ...out.icons },
-    iconTones: logos.tones,
+    icons: { ...badges.icons, ...out.icons },
+    iconTones: badges.tones,
+    teamLeagues: badges.leagues,
     profiles,
     sources: out.sources,
     followUps,
@@ -598,35 +606,8 @@ async function format(
   };
 }
 
-/** Headers of the table columns that hold a team name. */
-const TEAM_COLUMN = /^(équipe|team|vainqueur|finaliste|adversaire|bleu|rouge)\b/i;
-
-/**
- * The logo of every team the question or the answer names (the two sides of a confrontation and of its series, a roster's
- * team, the team columns of a table), by the name shown: the views put it beside that name.
- */
-function teamLogos(out: ToolOutput, asked: string[]) {
-  const columns = out.table?.columns.flatMap((c, i) => (TEAM_COLUMN.test(c) ? [i] : [])) ?? [];
-
-  const names = [
-    // The teams the question names: an answer about one team shows its logo even when no cell holds its name.
-    ...asked,
-    ...(out.teams ? [out.teams.teamA, out.teams.teamB, ...out.teams.series.flatMap((s) => [s.teamA, s.teamB])] : []),
-    ...(out.roster ? [out.roster.team, ...out.roster.names] : []),
-    ...(out.table?.rows.flatMap((r) => columns.flatMap((i) => z.string().safeParse(r[i]).data ?? [])) ?? []),
-  ];
-
-  const logos = [...new Set(names)].flatMap((name) => {
-    const logo = teamLogo(name);
-
-    return logo ? [{ name, ...logo }] : [];
-  });
-
-  return {
-    icons: Object.fromEntries(logos.map((l) => [l.name, l.url])),
-    tones: Object.fromEntries(logos.flatMap((l) => (l.tone ? [[l.name, l.tone]] : []))),
-  };
-}
+/** The period of a tool input that has one. */
+const PeriodInput = z.object({ yearFrom: z.number().nullable(), yearTo: z.number().nullable() });
 
 /**
  * Runs the four steps, emitting each step's progress and the final answer.

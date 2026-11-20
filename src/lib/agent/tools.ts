@@ -446,6 +446,8 @@ export type ToolOutput = {
   series?: SeriesList;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
+  /** The period the answer covers when the tool chose it (a roster without a year is the latest season). */
+  period?: { yearFrom: number | null; yearTo: number | null };
   trace?: ToolTrace[];
   /** Notes shown under the answer (the game shown when several match...). */
   notes?: string[];
@@ -1135,6 +1137,7 @@ ORDER BY role, SUM(games) DESC, player`),
 
     return {
       title: `${team} — roster${where}`,
+      period: { yearFrom: input.yearFrom, yearTo: input.yearTo },
       table: {
         columns: [say("Poste", "Role"), say("Joueur", "Player"), say("Statut", "Status"), say("Parties", "Games"), say("V-D", "W-L"), say("Tournois", "Tournaments")],
         rows: players.map((p) => [roleName(p.role), p.player, p.starter ? say("titulaire", "starter") : say("remplaçant", "substitute"), p.games, `${p.wins}-${p.games - p.wins}`, p.tournaments.join(", ")]),

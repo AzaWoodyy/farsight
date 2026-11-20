@@ -54,6 +54,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
     series: null,
     icons: {},
     iconTones: {},
+    teamLeagues: {},
     profiles: [],
     sources: [],
     followUps: [],
