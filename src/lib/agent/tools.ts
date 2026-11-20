@@ -605,7 +605,7 @@ function leagueShortName(db: DatabaseSync, league: string | null): string {
 
 /** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
 const inLeague = (short: string) =>
-  short === allCompetitions() ? "" : say(frenchIn(short), englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : `in ${short}`);
+  short === allCompetitions() ? "" : say(frenchIn(short), englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : short === "EWC" || short.endsWith(" Cup") ? `at the ${short}` : `in ${short}`);
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];

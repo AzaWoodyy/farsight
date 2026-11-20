@@ -270,9 +270,9 @@ function fr(facts: Facts): How {
               équipe. Une requête générée cite les pages que ses lignes nomment ou, à défaut, Leaguepedia.
             </p>
             <p>
-              Le périmètre est fixe : les Worlds, le MSI et le First Stand, les ligues majeures de Corée, de Chine, d&apos;Europe et
+              Le périmètre est fixe : les Worlds, le MSI, le First Stand et l&apos;Esports World Cup, les ligues majeures de Corée, de Chine, d&apos;Europe et
               d&apos;Amérique du Nord sous leurs noms successifs, les ligues du Japon, du Pacifique, du Vietnam, du
-              Brésil et d&apos;Espagne, et quelques ligues de développement et nationales. La base commence en {YEAR_MIN}.
+              Brésil et d&apos;Espagne, la KeSPA Cup, et quelques ligues de développement et nationales. La base commence en {YEAR_MIN}.
             </p>
             <Coverage
               locale="fr"
@@ -506,8 +506,8 @@ function en(facts: Facts): How {
               query cites the pages its rows name or, failing that, Leaguepedia itself.
             </p>
             <p>
-              The scope is fixed: Worlds, MSI and First Stand, the major leagues of Korea, China, Europe and North America under
-              their successive names, the leagues of Japan, the Pacific, Vietnam, Brazil and Spain, and a few development
+              The scope is fixed: Worlds, MSI, First Stand and the Esports World Cup, the major leagues of Korea, China, Europe and North America under
+              their successive names, the leagues of Japan, the Pacific, Vietnam, Brazil and Spain, the KeSPA Cup, and a few development
               and national leagues. The database starts in {YEAR_MIN}.
             </p>
             <Coverage
