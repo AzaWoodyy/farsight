@@ -1,3 +1,10 @@
+/**
+ * The LES by its full name, in any case, or by its acronym in capitals before a year or after "en", "la", "in",
+ * "the" ("classement LES 2026", "Résultats de X en LES"): "les" is a French article. Written without the `i`
+ * flag (a case-sensitive part needs no regex modifier, which older browsers cannot parse).
+ */
+const LES_CUE = /\b[Ll][Ii][Gg][Aa] [Ee][Ss][Pp][Aa][ÑñNn][Oo][Ll][Aa]( [Dd][Ee] [Ll][Ee][Aa][Gg][Uu][Ee] [Oo][Ff] [Ll][Ee][Gg][Ee][Nn][Dd][Ss])?(?![\p{L}])|\bLES(?= \d{4}\b)|(?<=\b(?:en|la|in|the|EN|LA|IN|THE) )LES\b/u;
+
 /** Fixed ingestion and query scope. Cues are matched by longest text, not declaration order. */
 export const LEAGUES = [
   { name: "World Championship", short: "Worlds", region: "International", international: true, cue: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i, family: "", from: 2011, to: null },
@@ -24,11 +31,10 @@ export const LEAGUES = [
   { name: "Circuit Brazilian League of Legends", short: "CBLOL", region: "Brazil", international: false, cue: /\bcblol\b/i, family: "", from: 2011, to: null },
   { name: "La Ligue Française", short: "LFL", region: "France", international: false, cue: /\blfl\b/i, family: "", from: 2011, to: null },
   { name: "La Ligue Française Division 2", short: "LFL D2", region: "France", international: false, cue: /\b(lfl d(iv(ision)?)? ?2|div2)\b/i, family: "", from: 2011, to: null },
-  { name: "LVP SuperLiga Orange", short: "SL Orange", region: "Spain", international: false, cue: /\b(superliga orange|sl orange)\b/i, family: "SuperLiga", from: 2011, to: 2020 },
-  { name: "LVP SuperLiga", short: "SuperLiga", region: "Spain", international: false, cue: /\b(superliga|lvp)\b/i, family: "SuperLiga", from: 2021, to: 2025 },
-  // "les" is a French article: the acronym only in capitals and before a year, else the league's full name.
-  { name: "Liga Española de League of Legends", short: "LES", region: "Spain", international: false, cue: /\b(liga espa[ñn]ola|(?-i:LES)(?= \d{4}\b))/i, family: "SuperLiga", from: 2026, to: null },
-  { name: "LVP SuperLiga 2nd Division", short: "SL 2nd Div", region: "Spain", international: false, cue: /\b(superliga 2(nd)?( div(ision)?)?|sl 2nd|segunda divisi[oó]n)\b/i, family: "", from: 2011, to: null },
+  { name: "LVP SuperLiga Orange", short: "SL Orange", region: "Spain", international: false, cue: /\b((lvp )?superliga orange|sl orange)\b/i, family: "SuperLiga", from: 2011, to: 2020 },
+  { name: "LVP SuperLiga", short: "SuperLiga", region: "Spain", international: false, cue: /\b((lvp )?superliga|lvp)\b/i, family: "SuperLiga", from: 2021, to: 2025 },
+  { name: "Liga Española de League of Legends", short: "LES", region: "Spain", international: false, cue: LES_CUE, family: "SuperLiga", from: 2026, to: null },
+  { name: "LVP SuperLiga 2nd Division", short: "SL 2nd Div", region: "Spain", international: false, cue: /\b((lvp )?superliga (2(nd|e)?|second|segunda)( div(isi[oó]n)?)?|(lvp )?superliga div(isi[oó]n)? ?2|(lvp )?superliga d2|sl 2nd|segunda divisi[oó]n)\b/i, family: "", from: 2011, to: null },
 ] as const;
 
 export type LeagueName = (typeof LEAGUES)[number]["name"];

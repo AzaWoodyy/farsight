@@ -7290,6 +7290,34 @@
         ],
         "rows": 6
       }
+    },
+    {
+      "id": "les-full-name",
+      "question": "classement Liga Española de League of Legends 2026",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Liga Española de League of Legends",
+        "rows": 4
+      }
+    },
+    {
+      "id": "sl-division-2-cue",
+      "question": "classement SuperLiga Division 2 2024",
+      "tags": [
+        "superliga",
+        "team",
+        "ranking"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "LVP SuperLiga 2nd Division",
+        "rows": 2
+      }
     }
   ]
 }
