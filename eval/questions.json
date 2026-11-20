@@ -6229,11 +6229,13 @@
       "question": "champions avec le plus de dragons aux Worlds 2024",
       "tags": [
         "champion",
-        "sql"
+        "missing_data"
       ],
       "expect": {
-        "route": "sql",
-        "league": "World Championship"
+        "route": "missing_data",
+        "league": "World Championship",
+        "noFigure": true,
+        "summaryIncludes": ["seule son équipe est enregistrée"]
       }
     },
     {

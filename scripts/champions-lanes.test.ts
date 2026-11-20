@@ -77,10 +77,16 @@ describe("champion questions route to the champion tools, decided by the rules",
       ["champion avec le moins de morts par partie aux Worlds 2024", WORLDS24],
       ["champions avec le plus de kills et d'assists par partie en LCK 2024", LCK24],
       ["champions avec le plus de kills et d'or par partie en LCK 2024", LCK24],
-      ["champions avec le plus de dragons par partie en LCK 2024", LCK24],
-      ["champions avec le plus de dragons en LCK 2024", LCK24],
+      ["champions with the most dragons taken by their teams in LCK 2024", LCK24],
     ] as const)
       expect((await routeQuestion(q, e, SCHEMA, COVERAGE)).kind).toBe("sql");
+  });
+
+  test.each([
+    "champions avec le plus de dragons par partie en LCK 2024",
+    "which champion killed the most dragons at Worlds 2024?",
+  ])("dragon kills cannot be attributed to a champion: %s", async (q) => {
+    expect(await routeQuestion(q, WORLDS24, SCHEMA, COVERAGE)).toMatchObject({ kind: "missing" });
   });
 
   test("a champion alone gets its profile, even with an end-of-game metric", async () => {
