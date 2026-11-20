@@ -19,9 +19,8 @@ export async function GET(req: Request) {
   const card = question ? await shareCard(question, locale) : null;
   const image = await (card ? answerCard(card, locale) : siteCard(locale, CARD_SIZE));
 
-  // An answer changes with the database, and each data release is a new deployment: the CDN keeps the image for
-  // the life of this one, a browser for an hour.
-  image.headers.set("Cache-Control", "public, max-age=3600, s-maxage=604800");
+  // An answer changes with the database, reloaded without a deployment: kept as long as the app's own caches.
+  image.headers.set("Cache-Control", "public, max-age=300, s-maxage=300");
 
   return image;
 }

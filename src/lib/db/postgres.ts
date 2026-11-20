@@ -15,6 +15,8 @@ export type PgPool = {
   query(text: string, values?: unknown[]): Promise<{ rows: SqlRow[] }>;
   connect(): Promise<PgClient>;
   end(): Promise<void>;
+  on(event: "error", listener: (err: Error) => void): void;
+  on(event: "release", listener: (err: Error | undefined, client?: PgClient) => void): void;
 };
 
 export type PgClient = { query(text: string, values?: unknown[]): Promise<{ rows: SqlRow[] }>; release(destroy?: boolean | Error): void };
@@ -42,9 +44,13 @@ export function createPool(url: string, { schema, max = 5 }: { schema?: string; 
 
   if (schema) config.options = `-c search_path=${schema}`;
 
-  if (usesNeonDriver()) return new NeonPool(config);
+  const pool: PgPool = usesNeonDriver() ? new NeonPool(config) : new pg.Pool(config);
 
-  return new pg.Pool(config);
+  // An idle connection the server or the network drops is an `error` event of the pool, which removes the client:
+  // unheard, Node would end the instance and every request it serves.
+  pool.on("error", (err) => console.error(`Postgres: idle connection lost (${err.message.slice(0, 200)})`));
+
+  return pool;
 }
 
 /**

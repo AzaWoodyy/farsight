@@ -29,8 +29,9 @@ on:
 permissions:
   contents: read
 
+# Shared with Postgres update: one Leaguepedia ingestion at a time.
 concurrency:
-  group: data-release
+  group: leaguepedia-ingestion
   cancel-in-progress: false
 
 jobs:

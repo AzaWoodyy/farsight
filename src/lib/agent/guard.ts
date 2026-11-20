@@ -205,7 +205,8 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
       if (!closed) return { ok: false, issue: "Unclosed SQL literal or identifier." };
       code += char === "'" ? "''" : token;
     } else if (char === "-" && sql[i + 1] === "-") {
-      for (i += 2; i < sql.length && sql[i] !== "\n"; i++) { /* line comment */ }
+      // Postgres ends a line comment at a carriage return too: code after a lone CR still runs.
+      for (i += 2; i < sql.length && sql[i] !== "\n" && sql[i] !== "\r"; i++) { /* line comment */ }
 
       code += "\n";
     } else if (char === "/" && sql[i + 1] === "*") {

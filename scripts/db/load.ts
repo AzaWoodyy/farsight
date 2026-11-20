@@ -100,6 +100,42 @@ try {
   await grantReaders(client, next, SCHEMA_VIEWS);
   const analyzedIn = seconds(analyzeStarted);
 
+  // A partial ingestion (a league missing, a failed source) must not replace complete data: per league, the staged
+  // schema keeps at least the games, player lines and in-game games of the live one. `--allow-shrink` loads anyway.
+  if (!inPlace && !args.includes("--allow-shrink")) {
+    const shrunk = await client.query<{ league: string; what: string; live: number; staged: number }>(
+      `WITH counts AS (
+         SELECT 'live' AS side, l.name AS league, COUNT(DISTINCT g.id) AS games, COUNT(gp.game_id) AS lines, COUNT(DISTINCT gr.game_id) AS ingame
+         FROM ${quoteIdent(schema)}.games g JOIN ${quoteIdent(schema)}.tournaments t ON t.id = g.tournament_id
+         JOIN ${quoteIdent(schema)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(schema)}.game_players gp ON gp.game_id = g.id
+         LEFT JOIN ${quoteIdent(schema)}.game_riot gr ON gr.game_id = g.id GROUP BY l.name
+         UNION ALL
+         SELECT 'staged', l.name, COUNT(DISTINCT g.id), COUNT(gp.game_id), COUNT(DISTINCT gr.game_id)
+         FROM ${quoteIdent(next)}.games g JOIN ${quoteIdent(next)}.tournaments t ON t.id = g.tournament_id
+         JOIN ${quoteIdent(next)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(next)}.game_players gp ON gp.game_id = g.id
+         LEFT JOIN ${quoteIdent(next)}.game_riot gr ON gr.game_id = g.id GROUP BY l.name)
+       SELECT a.league, m.what, m.live::integer AS live, COALESCE(m.staged, 0)::integer AS staged
+       FROM (SELECT league FROM counts WHERE side = 'live') a
+       CROSS JOIN LATERAL (VALUES
+         ('games', (SELECT games FROM counts WHERE side = 'live' AND league = a.league), (SELECT games FROM counts WHERE side = 'staged' AND league = a.league)),
+         ('player lines', (SELECT lines FROM counts WHERE side = 'live' AND league = a.league), (SELECT lines FROM counts WHERE side = 'staged' AND league = a.league)),
+         ('in-game games', (SELECT ingame FROM counts WHERE side = 'live' AND league = a.league), (SELECT ingame FROM counts WHERE side = 'staged' AND league = a.league))
+       ) AS m(what, live, staged)
+       WHERE COALESCE(m.staged, 0) < m.live
+       ORDER BY a.league, m.what`,
+    ).catch((err: Error) => {
+      // No live schema yet (the first load): nothing to compare with.
+      if (/does not exist/.test(err.message)) return { rows: [] };
+      throw err;
+    });
+
+    if (shrunk.rows.length) {
+      for (const r of shrunk.rows) console.error(`  ${r.league}: ${r.what} ${r.live} live, ${r.staged} staged`);
+      await client.query(`DROP SCHEMA ${quoteIdent(next)} CASCADE`);
+      throw new Error(`The staged data has less than the live data (above); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
+    }
+  }
+
   // The swap: two renames in one transaction, then the old schema goes.
   if (!inPlace) {
     await client.query("BEGIN");

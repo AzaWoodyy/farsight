@@ -43,6 +43,8 @@ test("guard rejects writes, unauthorized reads, server functions, recursive CTEs
     "SELECT player FROM v_game_players /* unfinished", "SELECT 'unterminated", "SELECT (1", "SELECT 1)",
     "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<2) SELECT * FROM c",
     "SELECT * FROM generate_series(1, 1000000000)",
+    // A comment Postgres ends at a lone carriage return: the call after it runs.
+    "SELECT 1 AS n -- note\rUNION ALL SELECT length(set_config('role', 'farsight_app', true))",
     // An escaped name hides set_config, which would give the session's own role back.
     `SELECT U&"set_confi\\0067"('role', 'farsight_app', true)`, `SELECT u&"query_to_xm\\006c"('SELECT 1', true, true, '')`,
   ];
