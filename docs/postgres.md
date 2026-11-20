@@ -8,9 +8,10 @@ Neon, et comment refaire les mesures.
 
 - **Accès** : tout le code passe par l'interface asynchrone `Db` (`src/lib/db/index.ts`). Le schéma est lu une fois par
   connexion (une requête sur `information_schema`), les alias d'une question en une seule requête.
-- **Drivers** (`src/lib/db/postgres.ts`) : le driver serverless de Neon (pool WebSocket) pour un hôte `*.neon.tech`,
-  node-postgres (TCP) ailleurs (local, CI, chargement). `DATABASE_DRIVER=neon|pg` force le choix. COUNT/SUM (bigint) et
-  AVG (numeric) sont lus comme des nombres, comme SQLite les donnait.
+- **Driver** (`src/lib/db/postgres.ts`) : node-postgres (TCP) partout, y compris sur Vercel : c'est ce que Neon conseille
+  sur Fluid compute, avec `attachDatabasePool` et l'hôte poolé (`-pooler`). Le driver serverless de Neon (pool WebSocket)
+  reste disponible avec `DATABASE_DRIVER=neon` ; mesuré depuis le Mac, il est un peu plus lent (p50 288 ms contre
+  254 ms). COUNT/SUM (bigint) et AVG (numeric) sont lus comme des nombres, comme SQLite les donnait.
 - **Schéma** : migrations versionnées en SQL (`db/migrations/NNNN_nom.sql`), appliquées dans l'ordre, chacune dans sa
   transaction, avec une somme de contrôle dans `schema_migrations` (`scripts/db/migrations.ts`, sans dépendance).
   L'app refuse une base dont la dernière migration n'est pas `PG_MIGRATION` (`src/lib/db/schema.ts`). Les colonnes
@@ -31,7 +32,7 @@ Neon, et comment refaire les mesures.
 - **Runtime** : plus de base dans les fonctions (35 à 39 Mo au lieu d'environ 175 Mo), région `fra1` (Francfort, comme
   la région Neon `aws-eu-central-1`). `next.config.ts` lit les chiffres de la page « comment ça marche » dans Postgres
   au démarrage du build : `DATABASE_URL` doit aussi être défini pour le build.
-- **CI** : un Postgres 17 en conteneur de service, chargé depuis le snapshot épinglé (`ci/data.json` : `ci/raw.tar.zst`
+- **CI** : un Postgres 18 en conteneur de service (la version du projet Neon), chargé depuis le snapshot épinglé (`ci/data.json` : `ci/raw.tar.zst`
   et `ingame.jsonl.zst` de la release épinglée) par `db:load`. Mêmes données à chaque run, sans compte externe.
 - **Mise à jour** : `.github/workflows/postgres-update.yml`, en déclenchement manuel seulement (le cron est commenté) :
   la même ingestion que la Data release, puis `db:load` dans Neon et la question de référence sur Neon.
@@ -46,20 +47,23 @@ octet ; les 63 autres diffèrent seulement par :
 - 10 arrondis à la demi-unité exacte : Postgres calcule les moyennes en décimal exact (6,145 → 6,15), SQLite en
   flottant (6,14).
 
-## Mesures (Postgres 17 local, Docker, MacBook)
+## Mesures
 
-| | SQLite (main) | Postgres local |
-|---|---|---|
-| Latence par question, p50 | 14 ms | 26 ms |
-| p95 | 73 ms | 120 ms |
-| p99 | 1 282 ms | 198 ms |
-| max | 2 422 ms | 201 ms |
-| Taille de la base | 169 Mo (fichier) | 569 Mo (tables et index) |
-| Chargement complet depuis le cache brut | 11,6 s (`data:build`) | 17,6 s (`db:load` : dérivation 7,8 s, COPY 8,2 s, ANALYZE 1,6 s) |
-| Taille de `/api/ask` | ≈ 175 Mo | 35,5 Mo |
+| | SQLite (main) | Postgres 18 local (Docker) | Neon depuis le Mac (Paris → Francfort) |
+|---|---|---|---|
+| Latence par question, p50 | 14 ms | 23 ms | 254 ms |
+| p95 | 73 ms | 127 ms | 538 ms |
+| p99 | 1 282 ms | 208 ms | 650 ms |
+| max | 2 422 ms | 212 ms | 715 ms |
+| Première question | 78 ms | 101 ms | 703 ms |
+| Taille de la base | 169 Mo (fichier) | 577 Mo | 575 Mo |
+| Chargement complet depuis le cache brut | 11,6 s (`data:build`) | 24,6 s (`db:load`) | 33,7 s (dérivation 11,8 s, COPY 18,6 s) |
+| Taille de `/api/ask` | ≈ 175 Mo | 37 Mo | 37 Mo |
 
 Latence : règles seules (sans LLM), médiane de deux passages après un passage d'échauffement, puis percentiles sur les
-307 questions (`scripts/bench/questions.ts`).
+307 questions (`scripts/bench/questions.ts`). Depuis le Mac, chaque requête paie l'aller-retour vers Francfort (une
+quinzaine par question) : c'est un majorant de ce que voit une fonction en `fra1`. Réponses sur Neon identiques à
+celles du Postgres local, éval 303/303.
 
 **Stockage sur le plan gratuit** : la bascule garde deux copies le temps du chargement (≈ 1,1 Go), plus que le 1 Go du
 plan gratuit. `DATABASE_SIZE_LIMIT_MB=1024` fait alors charger en place (`--in-place`) : le schéma est supprimé, puis
@@ -72,7 +76,7 @@ payant.
 Aucune URL ni clé n'est dans le dépôt. Les chaînes de connexion ne vont que dans `.env` (local), les secrets GitHub et
 les variables Vercel.
 
-1. **Compte et projet** : créer un compte gratuit sur neon.com, puis un projet **Postgres 17** dans la région
+1. **Compte et projet** : créer un compte gratuit sur neon.com, puis un projet **Postgres 18** dans la région
    **AWS Europe Central 1 (Frankfurt)**. Base par défaut `neondb`, rôle propriétaire `neondb_owner`.
 2. **Chaînes de connexion** (bouton *Connect* du projet) : copier
    - la chaîne **directe** (sans `-pooler` dans l'hôte) du propriétaire → `DATABASE_OWNER_URL` ;
@@ -118,7 +122,7 @@ les variables Vercel.
 ## En local
 
 ```sh
-docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:17
+docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
 psql postgres://postgres:postgres@localhost:5432/postgres -v app_password="'local'" -f db/roles.sql
 DATABASE_OWNER_URL=postgres://postgres:postgres@localhost:5432/postgres bun run db:load

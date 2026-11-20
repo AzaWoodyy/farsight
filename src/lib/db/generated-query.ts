@@ -175,7 +175,7 @@ export async function executeGeneratedQuery(
     // Only the bounded Postgres message, never the connection's details.
     const message = err instanceof Error ? err.message.slice(0, 2_000) : "SQL execution failed.";
 
-    throw new Error(code === INSUFFICIENT_PRIVILEGE ? `Table not allowed (use the v_* views): ${message}` : message);
+    throw new Error(code === INSUFFICIENT_PRIVILEGE ? `Not allowed (generated queries read the v_* views only): ${message}` : message);
   } finally {
     signal?.removeEventListener("abort", abort);
     // A failed transaction is rolled back by dropping its connection rather than reused.

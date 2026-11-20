@@ -43,7 +43,7 @@ jobs:
     # The agent reads Postgres: the reference question below runs on a throwaway server loaded with the new data.
     services:
       postgres:
-        image: postgres:17.12@sha256:b60e90042aa6b8dbecd58e224b3e36114dbf8ad754465264c2476ad58a86e45c
+        image: postgres:18.7@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_INITDB_ARGS: --locale=C.UTF-8 --encoding=UTF8

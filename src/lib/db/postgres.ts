@@ -1,8 +1,9 @@
 /**
  * Postgres behind the Db interface. Two drivers, one Pool API:
- * - Neon's serverless driver (a pool of WebSocket connections) for a Neon host, the production case on Vercel;
- * - node-postgres over TCP everywhere else (a local server, the CI service container, the loader).
- * `DATABASE_DRIVER=neon|pg` overrides the choice made from the host name.
+ * - node-postgres over TCP, the default everywhere: on Vercel's Fluid compute an instance serves many requests and
+ *   keeps its pool (attachDatabasePool closes idle connections before it is suspended), which is what Neon advises
+ *   there, through the pooled (`-pooler`) host;
+ * - Neon's serverless driver (a pool of WebSocket connections), for a runtime without TCP: `DATABASE_DRIVER=neon`.
  */
 import { Pool as NeonPool } from "@neondatabase/serverless";
 import { attachDatabasePool } from "@vercel/functions";
@@ -29,14 +30,8 @@ const types = {
   getTypeParser: (oid: number, format?: "text" | "binary") => (oid === INT8 || oid === NUMERIC ? Number : pg.types.getTypeParser(oid, format)),
 };
 
-/** Neon for a Neon host unless DATABASE_DRIVER says otherwise. */
-export function usesNeonDriver(url: string): boolean {
-  const driver = process.env.DATABASE_DRIVER;
-
-  if (driver === "neon" || driver === "pg") return driver === "neon";
-
-  return new URL(url).hostname.endsWith(".neon.tech");
-}
+/** Neon's WebSocket driver only when DATABASE_DRIVER asks for it. */
+export const usesNeonDriver = () => process.env.DATABASE_DRIVER === "neon";
 
 /**
  * A pool for `url`. `schema` sets the search path of every connection (tests and the loader); without it the role's
@@ -47,7 +42,7 @@ export function createPool(url: string, { schema, max = 5 }: { schema?: string; 
 
   if (schema) config.options = `-c search_path=${schema}`;
 
-  if (usesNeonDriver(url)) return new NeonPool(config);
+  if (usesNeonDriver()) return new NeonPool(config);
 
   return new pg.Pool(config);
 }
