@@ -481,6 +481,12 @@ describe("the KeSPA Cup in a roster", () => {
       expect(atKespa.roster).toMatchObject({ games: 1 });
       expect(atKespa.roster!.players.map((p) => p.player)).toEqual(["Rookie Top", "Rookie Jungle", "Rookie Mid", "Rookie Bot", "Rookie Support"]);
 
+      // Nor does it name a player's team: Imp's later KeSPA Cup game for Samsung Blue leaves him at Samsung White.
+      await db.exec("INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (9,6,'Round 1',2,1,3,4,1,510)");
+      await db.run("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (?,?,?,?,?,?)", 9, 4, 3, "Bot", 1, 1);
+      expect(await coverageLookup(db).playerTeam!("Imp", null, null, null, null)).toEqual({ team: "Samsung White", year: 2015, others: [] });
+      expect(await coverageLookup(db).playerTeam!("Imp", "KeSPA Cup", null, null, null)).toMatchObject({ team: "Samsung Blue", year: 2016 });
+
       // Its games still count for the team everywhere else.
       expect(await coverageLookup(db).team(["Samsung Ozone", "Samsung White"], null, 2014, 2014)).toEqual({ games: 6, ingame: 0 });
     } finally {
