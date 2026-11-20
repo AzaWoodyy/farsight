@@ -286,7 +286,7 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
   const statIds = shardIds.map(id);
   // From patch 8.23 a page has its three shards: without them it is incomplete, not a page of six runes. Without a
   // version, only a page with its shards is trusted.
-  const shardsAt = /^\d+\.\d+/.test(version ?? "") ? hasShards(version) : true;
+  const shardsAt = /^\d+\.\d+(?:\.|$)/.test(version ?? "") ? hasShards(version) : true;
   const none = { runes: null, primary: null, secondary: null };
 
   if (page.length !== 6 || !known(page)) return none;

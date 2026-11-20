@@ -181,6 +181,11 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
     expect(s.gameVersion).toBeNull();
     expect(s.players[0].runes).toBeNull();
     expect(s.players[1].runes).toEqual([8010, 9111, 9104, 8014, 8473, 8451, 5008, 5008, 5001]);
+
+    // A version that does not read as major.minor counts as none.
+    const odd = summarizeGame({ ...g, stats: { ...stats, gameVersion: "8.23x" } });
+
+    expect(odd.players[1].runes).toHaveLength(9);
   });
 
   test("no Herald before patch 5.22: null, not 0", () => {
