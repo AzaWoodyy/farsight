@@ -17,6 +17,7 @@ import { PlayerComparison } from "./player-comparison";
 import { PlayerHeader } from "./player-header";
 import { TeamHeadToHead } from "./team-h2h";
 import { TeamRoster } from "./team-roster";
+import { LeagueTag } from "./league-tag";
 import { Versus } from "./versus";
 
 /**
@@ -50,9 +51,9 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (
-        <TeamHeadToHead v={answer.teams} logos={answer.icons} tones={answer.iconTones} byTournament={answer.table && <GenericTable table={answer.table} icons={answer.icons} tones={answer.iconTones} />} />
+        <TeamHeadToHead v={answer.teams} logos={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} byTournament={answer.table && <GenericTable table={answer.table} icons={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} />} />
       ) : answer.roster ? (
-        <TeamRoster r={answer.roster} logos={answer.icons} tones={answer.iconTones} />
+        <TeamRoster r={answer.roster} logos={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} />
       ) : (
         answer.table && <TableAnswer answer={answer} table={answer.table} />
       )}
@@ -321,7 +322,7 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
   // (Under a champion profile the line is its per-tournament detail: it stays a table.)
   // A line without any figure (a generated aggregate that came back empty) has nothing for a card: the table shows its n/d.
   const card = table.rows.length === 1 && !answer.champion && table.rows[0].some((v, i) => asNumber(v) != null && !YEAR_COLUMN.test(table.columns[i]));
-  const body = card ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} />;
+  const body = card ? <RowCard table={table} /> : <GenericTable table={table} icons={answer.icons} tones={answer.iconTones} leagues={answer.teamLeagues} />;
   // An answer about one team (its in-game stats, its history, its dragons) is headed by that team and its logo.
   // (Not under a player's header: the answer is then about the player, in that team.)
   const [team] = answer.meta.teams.length === 1 && answer.profiles.length !== 1 ? answer.meta.teams : [];
@@ -334,6 +335,7 @@ function TableAnswer({ answer, table }: { answer: Answer; table: NonNullable<Ans
       <p className="mt-4 flex items-center gap-2 text-sm font-semibold" translate="no">
         <EntityIcon src={logo} size={32} tone={answer.iconTones[team]} />
         {team}
+        <LeagueTag leagues={answer.teamLeagues[team]} />
       </p>
       <div className="[&>div]:mt-2">{body}</div>
     </>
@@ -434,7 +436,7 @@ function RowCard({ table }: { table: Table }) {
 }
 
 /** Any table, sortable by each column (numbers before text, missing figures last). */
-function GenericTable({ table, icons, tones }: { table: Table; icons?: Answer["icons"]; tones?: Answer["iconTones"] }) {
+function GenericTable({ table, icons, tones, leagues }: { table: Table; icons?: Answer["icons"]; tones?: Answer["iconTones"]; leagues?: Answer["teamLeagues"] }) {
   const locale = useLocale();
   const { cellText, labels } = useCells();
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
@@ -490,15 +492,17 @@ function GenericTable({ table, icons, tones }: { table: Table; icons?: Answer["i
                 // The column the question asks about stands out, as the ranking figure does in the champion lists.
                 const name = z.string().safeParse(v).data ?? "";
                 const icon = icons?.[name];
+                const league = leagues?.[name];
                 const tone = v == null ? "text-muted" : table.columns[j] === table.focus ? "font-semibold text-accent" : "";
 
                 return (
                   <td key={j} className={`px-3 py-2 tabular-nums ${text.length <= SHORT_CELL ? "whitespace-nowrap" : ""} ${tone}`}>
-                    {/* A name the answer has an image for (a team's logo, a dragon, a champion) carries it. */}
-                    {icon ? (
+                    {/* A name the answer has an image for (a team's logo, a dragon, a champion) carries it; a team, its league. */}
+                    {icon || league ? (
                       <span className="inline-flex items-center gap-2 align-middle">
-                        <EntityIcon src={icon} tone={tones?.[name]} />
+                        {icon && <EntityIcon src={icon} tone={tones?.[name]} />}
                         {text}
+                        <LeagueTag leagues={league} />
                       </span>
                     ) : (
                       text

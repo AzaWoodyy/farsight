@@ -24,6 +24,12 @@ export const LEAGUES = [
 export type LeagueName = (typeof LEAGUES)[number]["name"];
 
 export const LEAGUE_NAMES = LEAGUES.map((l) => l.name);
+
+/**
+ * Cross-league competitions of the scope: a team plays them besides its own league (a French team in the
+ * LFL and in the EMEA Masters), so they never name the league a team is in. Worlds and MSI are `international`.
+ */
+export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters"]);
 export const SCOPE_LABEL = LEAGUES.map((l) => l.short).join(", ");
 
 /** Only current family names include historical names; explicit old names keep their meaning. */

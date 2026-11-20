@@ -558,6 +558,12 @@ export type Answer = {
   icons: Record<string, string>;
   /** Names of `icons` whose image is nearly black ("dark") or nearly white ("light") all over: the view sets it on a contrasting plate when the page has the same tone. */
   iconTones: Record<string, "dark" | "light">;
+  /**
+   * Team name → the league it played in over the answer's period (short names, oldest first; two when it moved,
+   * "LFL D2" then "LFL"), for every team the answer shows a name of. International and cross-league
+   * competitions (Worlds, MSI, EMEA Masters) never count: the views show it beside the team's name.
+   */
+  teamLeagues: Record<string, string[]>;
   /** Database profile of each player the question names, for comparison layouts. */
   profiles: PlayerProfile[];
   sources: Source[];

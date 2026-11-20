@@ -21,6 +21,7 @@ function answer(over: Partial<Omit<Answer, "meta">> = {}, meta: Partial<Answer["
     series: null,
     icons: {},
     iconTones: {},
+    teamLeagues: {},
     profiles: [],
     sources: [],
     followUps: [],
