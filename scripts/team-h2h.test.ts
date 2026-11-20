@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool, TOOLS } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedTeam } from "../src/lib/agent/types";
 import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const SCHEMA = { v_games: ["game_id"] };
 const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
@@ -30,8 +29,8 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
     ["compare KC et MKOI", teams([KC, MKOI])],
     ["G2 vs Fnatic", teams([team("G2", "G2 Esports"), team("Fnatic", "Fnatic")])],
     ["T1 contre Gen.G aux Worlds", teams([team("T1", "T1"), team("Gen.G", "Gen.G")], "World Championship", "Worlds")],
-  ])("%s", (q, e) => {
-    const route = routeQuestion(q, e, SCHEMA, COVERAGE);
+  ])("%s", async (q, e) => {
+    const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({
       kind: "tool",
@@ -42,12 +41,10 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
   });
 
   test("a franchise's names over time are one team", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      createSchema(db);
-      createQuerySchema(db);
-      db.exec(`INSERT INTO teams(id,name) VALUES (1,'DragonX'),(2,'DRX'),(3,'Kiwoom DRX'),(4,'HANJIN BRION'),(5,'OKSavingsBank BRION'),(6,'DN SOOPers'),(7,'Kwangdong Freecs');
+      await db.exec(`INSERT INTO teams(id,name) VALUES (1,'DragonX'),(2,'DRX'),(3,'Kiwoom DRX'),(4,'HANJIN BRION'),(5,'OKSavingsBank BRION'),(6,'DN SOOPers'),(7,'Kwangdong Freecs');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id) VALUES (1,1,1,2),(2,1,3,4),(3,1,5,6),(4,1,7,1);`);
       // Members are the names with games in the database.
 
@@ -56,14 +53,14 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
         ["BRO", "HANJIN BRION", ["OKSavingsBank BRION", "HANJIN BRION"]],
         ["KDF", "DN SOOPers", ["Kwangdong Freecs", "DN SOOPers"]],
       ] as const)
-        expect(resolveTeam(db, mention)).toMatchObject({ team: name, members });
+        expect(await resolveTeam(db, mention)).toMatchObject({ team: name, members });
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  test("one team stays its history", () => {
-    expect(routeQuestion("palmarès de KC", teams([KC]), SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "team_history", input: { team: "Karmine Corp" } } });
+  test("one team stays its history", async () => {
+    expect(await routeQuestion("palmarès de KC", teams([KC]), SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "team_history", input: { team: "Karmine Corp" } } });
   });
 });
 
@@ -71,18 +68,14 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
  * LEC: Karmine Corp against MAD Lions KOI (2024, one Bo1) and Movistar KOI (2025, a Bo3 won 2-1 by MKOI);
  * Worlds 2025: KC beats Movistar KOI 1-0. MAD Lions (an old name) also plays Fnatic, who must not count.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const id = (name: string) => Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(name)!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
 
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024),(2,'LEC25','LEC25','playoffs',?,2025),(3,'W25','W25','main_event',?,2025)").run(
-    id("LoL EMEA Championship"),
-    id("LoL EMEA Championship"),
-    id("World Championship"),
-  );
-  db.exec(`
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC24','LEC24','season',?,2024),(2,'LEC25','LEC25','playoffs',?,2025),(3,'W25','W25','main_event',?,2025)", await id("LoL EMEA Championship"),
+    await id("LoL EMEA Championship"),
+    await id("World Championship"),);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'Karmine Corp'),(2,'MAD Lions KOI'),(3,'Movistar KOI'),(4,'MAD Lions'),(5,'Fnatic');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES
       (1,1,'Week 2',3,1,1,2,1,100),
@@ -94,17 +87,17 @@ function seed(db: DatabaseSync) {
 
 describe("head-to-head of two teams on a seeded database", () => {
   test("old names count for the franchise; every series is listed newest first with its score and source", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
-      expect(resolveTeam(db, "mkoi")).toMatchObject({ team: "Movistar KOI", members: ["MAD Lions", "MAD Lions KOI", "Movistar KOI"] });
+      await seed(db);
+      expect(await resolveTeam(db, "mkoi")).toMatchObject({ team: "Movistar KOI", members: ["MAD Lions", "MAD Lions KOI", "Movistar KOI"] });
       expect((await understandQuestion(db, "h2h kc et mkoi en lec", new Date("2026-11-14")))?.result.teams.map((t) => t.team)).toEqual(["Karmine Corp", "Movistar KOI"]);
 
-      const tool = bindTool(db, { tool: "head_to_head", input: { kind: "team", sideA: "Karmine Corp", sideB: "Movistar KOI", league: null, yearFrom: null, yearTo: null } });
+      const tool = await bindTool(db, { tool: "head_to_head", input: { kind: "team", sideA: "Karmine Corp", sideB: "Movistar KOI", league: null, yearFrom: null, yearTo: null } });
 
-      expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
-      const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+      expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
+      const out = await tool.format(db, (await db.query(tool.sql, tool.params)));
 
       expect(out.teams).toMatchObject({ teamA: "Karmine Corp", teamB: "Movistar KOI", seriesA: 2, seriesB: 1, gamesA: 3, gamesB: 2, seriesCount: 3 });
       expect(out.teams!.series.map((s) => [s.label, s.teamA, s.winsA, s.winsB, s.teamB, s.source.url])).toEqual([
@@ -117,28 +110,28 @@ describe("head-to-head of two teams on a seeded database", () => {
       expect(out.facts).toContain("Dernière rencontre : Worlds 2025 · tour 3");
 
       // The router model may write an old name: the input carries the franchise's current one.
-      expect(TOOLS.head_to_head.normalize(db, { kind: "team", sideA: "kc", sideB: "MAD Lions KOI", league: null, yearFrom: null, yearTo: null })).toMatchObject({
+      expect(await TOOLS.head_to_head.normalize(db, { kind: "team", sideA: "kc", sideB: "MAD Lions KOI", league: null, yearFrom: null, yearTo: null })).toMatchObject({
         input: { sideA: "Karmine Corp", sideB: "Movistar KOI" },
       });
-      expect(TOOLS.team_history.normalize(db, { team: "MAD Lions", league: null, yearFrom: null, yearTo: null })).toMatchObject({ input: { team: "Movistar KOI" } });
+      expect(await TOOLS.team_history.normalize(db, { team: "MAD Lions", league: null, yearFrom: null, yearTo: null })).toMatchObject({ input: { team: "Movistar KOI" } });
 
       // A competition restricts the series and the record.
-      const lec = bindTool(db, { tool: "head_to_head", input: { kind: "team", sideA: "Karmine Corp", sideB: "Movistar KOI", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
-      const inLec = await lec.format(db, db.prepare(lec.sql).all(lec.params));
+      const lec = await bindTool(db, { tool: "head_to_head", input: { kind: "team", sideA: "Karmine Corp", sideB: "Movistar KOI", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
+      const inLec = await lec.format(db, (await db.query(lec.sql, lec.params)));
 
       expect(inLec.teams).toMatchObject({ seriesA: 1, seriesB: 1, gamesA: 2, gamesB: 2, seriesCount: 2, scope: "en LEC" });
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("the order of the question holds for a name written with an apostrophe", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       // Before any team is resolved: the team index is cached per database handle.
-      db.exec(`INSERT INTO teams(id,name) VALUES (6,'Anyone''s Legend');
+      await db.exec(`INSERT INTO teams(id,name) VALUES (6,'Anyone''s Legend');
         INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (7,3,'Round 1',1,1,5,6,1,310);`);
       const order = async (q: string) => (await understandQuestion(db, q, new Date("2026-11-14")))?.result.teams.map((t) => t.team);
 
@@ -147,7 +140,7 @@ describe("head-to-head of two teams on a seeded database", () => {
       expect(await order("Fnatic vs Anyone’s Legend")).toEqual(["Fnatic", "Anyone's Legend"]);
       expect(await order("Karmine Corp contre Fnatic")).toEqual(["Karmine Corp", "Fnatic"]);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

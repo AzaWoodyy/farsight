@@ -1,19 +1,18 @@
-import { constants, type DatabaseSync } from "node:sqlite";
 import { SCHEMA_VIEWS } from "../db/schema";
 
 /**
- * Schema guard for pipeline plans (typed or generated). Trusted, parameterized
- * helper queries inside tools do not need this guard:
+ * Schema guard for pipeline plans (typed or generated), a static pass that needs no database round trip. Trusted,
+ * parameterized helper queries inside tools do not need this guard:
  *
  * - read-only: SELECT / WITH only, no write or admin keyword, and the database
  *   itself is opened read-only;
  * - a single statement;
- * - only allow-listed tables and views, and only their known columns;
- * - a forced LIMIT (the query is wrapped);
- * - `prepare()` as the final schema validator: it compiles the statement
- *   without running it, so anything the static pass misses still fails here,
- *   and SQLite's authorizer rejects any read of a table outside the allow-list
- *   (comma joins, subqueries, CTEs over base tables).
+ * - only allow-listed tables and views (every table of a comma list too), and only their known columns;
+ * - no function that reads files or loads code;
+ * - a forced LIMIT (the query is wrapped).
+ *
+ * The database that runs a generated query is the last check: it refuses any read outside the views
+ * (src/lib/db/generated-query.ts), including what the static pass cannot see.
  */
 export type GuardResult = { ok: true; sql: string } | { ok: false; issues: string[] };
 
@@ -28,6 +27,12 @@ export const MAX_ROWS = 200;
 const FORBIDDEN =
   /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint)\b/i;
 
+/** Functions that read files, load code or reach the server: never in a generated query, whatever the database allows. */
+const DENIED_FUNCTION = /(?:"(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)"|\b(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system))\s*\(/i;
+
+/** Words that end the table list of a FROM clause. */
+const CLAUSE_END = /^(?:where|group|order|limit|having|window|union|except|intersect|on|using|join|left|right|inner|outer|full|cross|natural|offset|fetch|for)$/i;
+
 const NOT_ALIAS = /^(on|where|group|order|left|inner|outer|join|limit|cross|using|natural|union|except|intersect|having|window)$/i;
 
 export function allowedSchema(
@@ -38,7 +43,6 @@ export function allowedSchema(
 }
 
 export function guardQuery(
-  db: DatabaseSync,
   schema: Record<string, string[]>,
   sql: string,
   { maxRows = MAX_ROWS, objects = ALLOWED_OBJECTS }: { maxRows?: number; objects?: readonly string[] } = {},
@@ -67,23 +71,27 @@ export function guardQuery(
 
   const aliases = new Map<string, string>(); // alias -> table
 
-  for (const m of trimmed.matchAll(/\b(?:from|join)\s+(\w+)(?:\s+(?:as\s+)?(\w+))?/gi)) {
-    const name = m[1].toLowerCase();
+  for (const { name: table, alias: rawAlias } of referencedTables(trimmed)) {
+    const name = table.toLowerCase();
 
     if (!allowed.has(name) && !ctes.has(name)) {
       issues.push(
-        schema[m[1]] || schema[m[1].toLowerCase()]
-          ? `Table not allowed: ${m[1]} (use the v_* views).`
-          : `Unknown table: ${m[1]}.`,
+        schema[table] || schema[name]
+          ? `Table not allowed: ${table} (use the v_* views).`
+          : `Unknown table: ${table}.`,
       );
       continue;
     }
 
-    const alias = m[2]?.toLowerCase();
+    const alias = rawAlias?.toLowerCase();
 
     if (alias && !NOT_ALIAS.test(alias)) aliases.set(alias, name);
     aliases.set(name, name);
   }
+
+  const denied = DENIED_FUNCTION.exec(trimmed);
+
+  if (denied) issues.push(`Function not allowed: ${denied[1] ?? denied[2]}.`);
 
   for (const m of trimmed.matchAll(/\b([A-Za-z_]\w*)\.(\w+)\b/g)) {
     const table = aliases.get(m[1].toLowerCase());
@@ -105,58 +113,52 @@ export function guardQuery(
 
   if (issues.length) return { ok: false, issues: [...new Set(issues)] };
 
-  const limited = `SELECT * FROM (\n${sql.trim().replace(/;\s*$/, "")}\n) LIMIT ${maxRows}`;
-  const denied = new Set<string>();
-  const objectSet = new Set(objects.map((o) => o.toLowerCase()));
-  // SQLite's authorizer sees every table the compiled statement reads, including
-  // the ones the static pass cannot spot (comma joins, nested subqueries).
-  db.setAuthorizer((action, table, column, dbName, view) => {
-    if (action === constants.SQLITE_FUNCTION) {
-      const name = column ?? table ?? "";
-
-      if (/^(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)$/i.test(name)) {
-        denied.add(`function ${name}`);
-
-        return constants.SQLITE_DENY;
-      }
-
-      return constants.SQLITE_OK;
-    }
-
-    if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;
-
-    if (action !== constants.SQLITE_READ) {
-      denied.add(`action ${action}`);
-
-      return constants.SQLITE_DENY;
-    }
-
-    const name = table?.toLowerCase() ?? "";
-
-    // Reads made by an allow-listed view on its base tables are fine.
-    if (objectSet.has(name) || (view != null && objectSet.has(view.toLowerCase()))) return constants.SQLITE_OK;
-
-    // Joins inside a view read a base table with no column; SQLite then reports
-    // the schema name but not always the view. A direct reference has no schema
-    // name, and reading any column still needs an allow-listed view.
-    if (column === "" && dbName != null) return constants.SQLITE_OK;
-    denied.add(table ?? "?");
-
-    return constants.SQLITE_DENY;
-  });
-
-  try {
-    db.prepare(limited);
-  } catch (err) {
-    if (denied.size)
-      return { ok: false, issues: [...denied].map((t) => `Table not allowed: ${t} (use the v_* views).`) };
-
-    return { ok: false, issues: [`SQLite rejected the query: ${err instanceof Error ? err.message : String(err)}`] };
-  } finally {
-    db.setAuthorizer(null);
-  }
+  const limited = `SELECT * FROM (\n${sql.trim().replace(/;\s*$/, "")}\n) AS guarded LIMIT ${maxRows}`;
 
   return { ok: true, sql: limited };
+}
+
+/**
+ * Every table a query names after FROM (each one of a comma list) or JOIN, with its alias. Subqueries are read by their own
+ * FROM; `EXTRACT(… FROM x)` and `IS DISTINCT FROM x` read a value, not a table.
+ */
+function referencedTables(code: string): { name: string; alias: string | undefined }[] {
+  const masked = code.replace(/\bextract\s*\(\s*\w+\s+from\b/gi, (m) => m.replace(/from$/i, "    ")).replace(/\bdistinct\s+from\b/gi, (m) => m.replace(/from$/i, "    "));
+  // In the order of the text: a later alias wins, as the static pass always read them.
+  const found: { name: string; alias: string | undefined; at: number }[] = [];
+
+  for (const m of masked.matchAll(/\bjoin\s+"?(\w+)"?(?:\s+(?:as\s+)?(\w+))?/gi)) found.push({ name: m[1], alias: m[2], at: m.index });
+
+  for (const m of masked.matchAll(/\bfrom\b/gi)) {
+    // The FROM list runs to the first clause word or closing parenthesis of its own level.
+    let depth = 0;
+    let item = "";
+    const items: string[] = [];
+
+    for (const token of masked.slice(m.index + 4).match(/\(|\)|,|[^\s(),]+|\s+/g) ?? []) {
+      if (token === "(") depth++;
+      else if (token === ")") {
+        if (depth === 0) break;
+        depth--;
+      } else if (depth === 0 && token === ",") {
+        items.push(item);
+        item = "";
+        continue;
+      } else if (depth === 0 && CLAUSE_END.test(token)) break;
+      item += token;
+    }
+
+    items.push(item);
+
+    for (const [i, it] of items.entries()) {
+      const t = /^\s*"?(\w+)"?(?:\s+(?:as\s+)?(\w+))?/i.exec(it);
+
+      // A subquery or a parenthesized join: its own FROM and JOIN are read on their own.
+      if (t && !it.trimStart().startsWith("(")) found.push({ name: t[1], alias: t[2], at: m.index + i });
+    }
+  }
+
+  return found.toSorted((a, b) => a.at - b.at);
 }
 
 /** Strip literals/comments for the static pass and reject an unfinished token.

@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { claimsBeyondFacts } from "../src/lib/agent/summary";
 import { LEAGUES, detectLeague, eraLeague, leagueMembers } from "../src/lib/domain/leagues";
 import { periodProblem } from "../src/lib/domain/years";
-import { createSchema, createQuerySchema } from "../src/lib/db/schema";
 import { readSchema } from "../src/lib/db";
 import { bindTool } from "../src/lib/agent/tools";
 import { routeQuestion } from "../src/lib/agent/query";
 import type { Entities } from "../src/lib/agent/types";
+import { testDb } from "./fixtures/test-db";
 
 describe("summary facts", () => {
   const facts = "T1 : first blood 55.3 % et première tourelle 61.2 %, sur 120 parties dont 80 victoires.";
@@ -45,24 +44,26 @@ test("league cues choose the longest match and preserve all scope names", () => 
 });
 
 test("periods spanning renamings read both leagues in parameterized tool SQL", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    createSchema(db); createQuerySchema(db);
-    db.exec(`INSERT INTO teams(id,name) VALUES(1,'T1'),(2,'Gen.G');`);
-    LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i+1,l.name,l.short,l.region,+l.international));
+    await db.exec(`INSERT INTO teams(id,name) VALUES(1,'T1'),(2,'Gen.G');`);
+
+    for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i+1,l.name,l.short,l.region,+l.international);
     const names = ["North America League Championship Series", "League of Legends Championship Series"];
-    names.forEach((name, i) => {
-      const id = Number(db.prepare("SELECT id FROM leagues WHERE name=?").get(name)!.id);
-      db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(?,?,?,'season',?,?)").run(i+1,`event${i}`,`event${i}`,id,2016+i*4);
-      db.prepare("INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side) VALUES(?,?,1,2,1)").run(i+1,i+1);
-    });
+
+    for (const [i, name] of names.entries()) {
+      const id = Number((await db.query("SELECT id FROM leagues WHERE name=?", [name]))[0]!.id);
+      await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(?,?,?,'season',?,?)", i+1,`event${i}`,`event${i}`,id,2016+i*4);
+      await db.run("INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side) VALUES(?,?,1,2,1)", i+1,i+1);
+    }
+
     const league = "League of Legends Championship Series";
     expect(leagueMembers(league,2015,null)).toEqual(names);
     expect(eraLeague(league,2016,2016)).toBe("North America League Championship Series");
-    const plan = bindTool(db, {tool:"team_history", input:{team:"T1", league, yearFrom:2015,yearTo:null}});
-    expect(db.prepare(plan.sql).all(plan.params).map((r) => r.year)).toEqual([2016,2020]);
-    const standings = bindTool(db, {tool:"tournament_standings", input:{league,yearFrom:2015,yearTo:null,split:null,full:false}});
+    const plan = await bindTool(db, {tool:"team_history", input:{team:"T1", league, yearFrom:2015,yearTo:null}});
+    expect((await db.query(plan.sql, plan.params)).map((r) => r.year)).toEqual([2016,2020]);
+    const standings = await bindTool(db, {tool:"tournament_standings", input:{league,yearFrom:2015,yearTo:null,split:null,full:false}});
 
     const out = await standings.format(db, [
       {year:2016,event_page:"event0",tournament_page:"event0",tournament:"2016",stage:"playoffs",team:"T1",place:"1",place_number:1,prize_usd:null},
@@ -73,16 +74,15 @@ test("periods spanning renamings read both leagues in parameterized tool SQL", a
     expect(leagueMembers("LoL EMEA Championship",2016,2020)).toHaveLength(2);
     expect(leagueMembers("LoL Champions Korea",2014,2020)).toHaveLength(2);
     expect(leagueMembers(league,null,null)).toEqual([league]);
-  } finally { db.close(); }
+  } finally { await db.close(); }
 });
 
 test("an edition without its final placements says the final is not published yet", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    createSchema(db); createQuerySchema(db);
-    LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i+1,l.name,l.short,l.region,+l.international));
-    const standings = bindTool(db, {tool:"tournament_standings", input:{league:"World Championship",yearFrom:2026,yearTo:2026,split:null,full:true}});
+    for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i+1,l.name,l.short,l.region,+l.international);
+    const standings = await bindTool(db, {tool:"tournament_standings", input:{league:"World Championship",yearFrom:2026,yearTo:2026,split:null,full:true}});
 
     const row = (team: string, place: string, place_number: number) =>
       ({year:2026,event_page:"Worlds 2026",tournament:"Worlds 2026",stage:"playoffs",team,place,place_number,prize_usd:null});
@@ -91,15 +91,14 @@ test("an edition without its final placements says the final is not published ye
 
     expect(out.totals).toMatchObject({champion:"", teams:2, events:1});
     expect(out.facts).toContain("Worlds 2026 : finale pas encore publiée sur Leaguepedia.");
-  } finally { db.close(); }
+  } finally { await db.close(); }
 });
 
-test("router prioritizes timeline, missing coverage, unsupported data and tools", () => {
-  const db = new DatabaseSync(":memory:");
+test("router prioritizes timeline, missing coverage, unsupported data and tools", async () => {
+  const db = await testDb();
 
   try {
-    createSchema(db); createQuerySchema(db);
-    const schema = readSchema(db);
+    const schema = await readSchema(db);
     const base: Entities = { players:[],teams:[],champion:null,unresolved:[],league:"World Championship",leagueShort:"Worlds",leagueMention:"Worlds",yearFrom:2024,yearTo:2024,split:null,outOfScope:null };
     const coverage = {league:()=>({games:100,ingame:0}),player:()=>({games:100,ingame:0}),team:()=>({games:100,ingame:0})};
 
@@ -109,8 +108,8 @@ test("router prioritizes timeline, missing coverage, unsupported data and tools"
       ["MVP des Worlds 2024",base,"missing"],
       ["résultats LLA",{...base,outOfScope:"LLA"},"out_of_scope"],
       ["timeline finale Worlds 2024 game 3",base,"tool"],
-    ] as const) expect(routeQuestion(q,entities,schema,coverage).kind).toBe(kind);
-  } finally { db.close(); }
+    ] as const) expect((await routeQuestion(q,entities,schema,coverage)).kind).toBe(kind);
+  } finally { await db.close(); }
 });
 
 test("years outside coverage receive a specific reason", () => {

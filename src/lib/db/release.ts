@@ -7,8 +7,8 @@ import { openDb, selectOne } from "./index";
  * deployment ships, read from the file `data:pull` verified rather than from the clock of the site's build.
  * Null when the file records no build or an unreadable date.
  */
-export function dataReleaseDay(db = openDb()): string | null {
-  const run = selectOne(db, z.object({ finished_at: z.string() }), "SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1");
+export async function dataReleaseDay(db = openDb()): Promise<string | null> {
+  const run = await selectOne(db, z.object({ finished_at: z.string() }), "SELECT finished_at FROM ingest_runs WHERE kind = 'build' ORDER BY id DESC LIMIT 1");
 
   return utcDay(run?.finished_at ?? null);
 }

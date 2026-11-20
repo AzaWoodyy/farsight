@@ -6,14 +6,14 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { guardQuery, MAX_ROWS, VIEWS } from "../src/lib/agent/guard";
 import { executeGeneratedQuery, MAX_SQL_CHILDREN, SqlTimeoutError, SQL_TIMEOUT_MS } from "../src/lib/db/generated-query";
-import { openReadOnlyDb, readSchema } from "../src/lib/db";
+import { openReadOnlyDb, readSchema, sqliteDb } from "../src/lib/db";
 import { SCHEMA_VERSION } from "../src/lib/db/schema";
 
 const temporary: string[] = [];
 
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
-function fixture(count = 300) {
+async function fixture(count = 300) {
   const dir = mkdtempSync(join(tmpdir(), "sql-guard-"));
   temporary.push(dir);
   const path = join(dir, "lol.sqlite");
@@ -28,19 +28,19 @@ function fixture(count = 300) {
 
   db.exec("COMMIT");
 
-  return { path, db, schema: readSchema(db) };
+  return { path, db, schema: await readSchema(sqliteDb(db)) };
 }
 
-test("guard rejects writes, unauthorized reads, recursive CTEs and wrapper escapes", () => {
-  const { db, schema } = fixture();
+test("guard rejects writes, unauthorized reads, recursive CTEs and wrapper escapes", async () => {
+  const { db, schema } = await fixture();
 
   try {
     // macOS SQLite may omit these functions. Harmless stand-ins make this test
     // exercise the authorizer policy rather than platform availability.
     for (const name of ["load_extension", "readfile", "writefile", "fts3_tokenizer", "eval", "edit", "shell", "system"]) {
       db.function(name, (value) => value);
-      expect(guardQuery(db, schema, `SELECT ${name}('x')`, { objects: VIEWS }).ok, name).toBe(false);
-      expect(guardQuery(db, schema, `SELECT "${name}"('x')`, { objects: VIEWS }).ok, name).toBe(false);
+      expect(guardQuery(schema, `SELECT ${name}('x')`, { objects: VIEWS }).ok, name).toBe(false);
+      expect(guardQuery(schema, `SELECT "${name}"('x')`, { objects: VIEWS }).ok, name).toBe(false);
     }
 
     const rejected = [
@@ -55,22 +55,22 @@ test("guard rejects writes, unauthorized reads, recursive CTEs and wrapper escap
       "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<2) SELECT * FROM c",
     ];
 
-    for (const sql of rejected) expect(guardQuery(db, schema, sql, { objects: VIEWS }).ok, sql).toBe(false);
+    for (const sql of rejected) expect(guardQuery(schema, sql, { objects: VIEWS }).ok, sql).toBe(false);
 
     const accepted = [
       "SELECT player FROM v_game_players", "SELECT REPLACE(player, 'a', 'b') AS release FROM v_game_players",
       "WITH c(x) AS (SELECT player FROM v_game_players) SELECT x FROM c", "SELECT '/*' AS value -- comment", "SELECT 'load_extension' AS value",
     ];
 
-    for (const sql of accepted) expect(guardQuery(db, schema, sql, { objects: VIEWS }).ok, sql).toBe(true);
+    for (const sql of accepted) expect(guardQuery(schema, sql, { objects: VIEWS }).ok, sql).toBe(true);
   } finally { db.close(); }
 });
 
 test("generated SQL caps rows and rejects huge allocations inside the child", async () => {
-  const { db, path, schema } = fixture();
+  const { db, path, schema } = await fixture();
 
   try {
-    const guarded = guardQuery(db, schema, "SELECT player FROM v_game_players", { objects: VIEWS });
+    const guarded = guardQuery(schema, "SELECT player FROM v_game_players", { objects: VIEWS });
 
     if (!guarded.ok) throw new Error(guarded.issues.join("; "));
     expect((await executeGeneratedQuery(guarded.sql, [], { databasePath: path })).length).toBe(MAX_ROWS);
@@ -82,7 +82,7 @@ test("generated SQL caps rows and rejects huge allocations inside the child", as
 });
 
 test("an expensive generated query is killed while the serving process stays responsive", async () => {
-  const { db, path } = fixture(1_000);
+  const { db, path } = await fixture(1_000);
   db.close();
   let responsive = false;
   const timer = setTimeout(() => { responsive = true; }, 20);
@@ -95,7 +95,7 @@ test("an expensive generated query is killed while the serving process stays res
 }, SQL_TIMEOUT_MS + 6_000);
 
 test("aborting a generated query kills its child", async () => {
-  const { db, path } = fixture(1_000);
+  const { db, path } = await fixture(1_000);
   db.close();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 40);
@@ -108,7 +108,7 @@ test("aborting a generated query kills its child", async () => {
 const SLOW_SQL = "SELECT count(*) AS n FROM v_game_players a, v_game_players b, v_game_players c, v_game_players d";
 
 test("generated queries beyond the cap wait and share the deadline", async () => {
-  const { db, path } = fixture(1_000);
+  const { db, path } = await fixture(1_000);
   db.close();
   const slow = Array.from({ length: MAX_SQL_CHILDREN }, () => executeGeneratedQuery(SLOW_SQL, [], { databasePath: path }));
   // Trivial, but it waits for a slot until the shared deadline.
@@ -126,7 +126,7 @@ test("generated queries beyond the cap wait and share the deadline", async () =>
 }, SQL_TIMEOUT_MS + 6_000);
 
 test("aborting a queued generated query rejects without waiting", async () => {
-  const { db, path } = fixture(1_000);
+  const { db, path } = await fixture(1_000);
   db.close();
   const slow = Array.from({ length: MAX_SQL_CHILDREN }, () => executeGeneratedQuery(SLOW_SQL, [], { databasePath: path }));
   const controller = new AbortController();
@@ -143,8 +143,8 @@ test("aborting a queued generated query rejects without waiting", async () => {
 }, SQL_TIMEOUT_MS + 6_000);
 
 
-test("read-only opening checks the schema version and enforces SQLite length limits", () => {
-  const { path, db } = fixture();
+test("read-only opening checks the schema version and enforces SQLite length limits", async () => {
+  const { path, db } = await fixture();
   const reader = openReadOnlyDb(path);
 
   try {
@@ -157,8 +157,8 @@ test("read-only opening checks the schema version and enforces SQLite length lim
   expect(() => openReadOnlyDb(path)).toThrow(/schema version/);
 });
 
-test("the SQL child also runs under the Node production runtime", () => {
-  const { db, path } = fixture();
+test("the SQL child also runs under the Node production runtime", async () => {
+  const { db, path } = await fixture();
   db.close();
 
   const result = spawnSync("node", ["src/lib/db/sql-child.mjs"], {

@@ -1,13 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer, ResolvedTeam } from "../src/lib/agent/types";
 import { understandQuestion } from "../src/lib/agent/understand";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const SCHEMA = { v_games: ["game_id"] };
 const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
@@ -38,8 +37,8 @@ describe("champion pool questions route to champion_pool, decided by the rules",
     ["most played champions of G2 in LEC 2025", scope({ teams: [team("G2", "G2 Esports")], ...LEC, year: 2025 }), { subject: "team", name: "G2 Esports" }],
     ["winrate de Faker par champion", scope({ players: ["Faker"] }), { subject: "player" }],
     ["pool de champions de T1", scope({ teams: [team("T1")] }), { subject: "team" }],
-  ] as const)("%s", (q, e, input) => {
-    const route = routeQuestion(q, e, SCHEMA, COVERAGE);
+  ] as const)("%s", async (q, e, input) => {
+    const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_pool", input } });
     // Every word read: the LLM router is not asked to second-guess it.
@@ -63,41 +62,41 @@ describe("champion pool questions route to champion_pool, decided by the rules",
     "champoin pool Bin",
     "champion pol Bin",
     "pool chmapion Bin",
-  ])("%s", (q) => {
-    const route = routeQuestion(q, scope({ players: ["Bin"] }), SCHEMA, COVERAGE);
+  ])("%s", async (q) => {
+    const route = await routeQuestion(q, scope({ players: ["Bin"] }), SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_pool", input: { subject: "player", name: "Bin" } } });
     expect(route.kind === "tool" && route.unread).toBeFalsy();
   });
 
-  test("a team's pool, with the short word and in either order", () => {
+  test("a team's pool, with the short word and in either order", async () => {
     for (const q of ["pool champ T1 aux Worlds 2023", "T1 champs pool aux Worlds 2023"])
-      expect(routeQuestion(q, scope({ teams: [team("T1")], ...WORLDS, year: 2023 }), SCHEMA, COVERAGE)).toMatchObject({
+      expect(await routeQuestion(q, scope({ teams: [team("T1")], ...WORLDS, year: 2023 }), SCHEMA, COVERAGE)).toMatchObject({
         call: { tool: "champion_pool", input: { subject: "team", name: "T1", yearFrom: 2023 } },
       });
   });
 
-  test("without a competition, every competition, said in a note; a team named with the player is ignored, said too", () => {
-    expect(routeQuestion("champion pool de Faker", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).toMatchObject({
+  test("without a competition, every competition, said in a note; a team named with the player is ignored, said too", async () => {
+    expect(await routeQuestion("champion pool de Faker", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).toMatchObject({
       notes: ["Aucune compétition précisée : toutes compétitions confondues."],
     });
-    expect(routeQuestion("champion pool de Faker chez T1 aux Worlds", scope({ players: ["Faker"], teams: [team("T1")], ...WORLDS }), SCHEMA, COVERAGE)).toMatchObject({
+    expect(await routeQuestion("champion pool de Faker chez T1 aux Worlds", scope({ players: ["Faker"], teams: [team("T1")], ...WORLDS }), SCHEMA, COVERAGE)).toMatchObject({
       call: { tool: "champion_pool", input: { subject: "player", name: "Faker" } },
       notes: ["Équipe « T1 » ignorée : champion pool de Faker toutes équipes confondues."],
     });
   });
 
-  test("a role with a team does not make it a roster question: the team's pool, the role said unfiltered", () => {
-    expect(routeQuestion("quels champions joue le mid de T1", scope({ teams: [team("T1")] }), SCHEMA, COVERAGE)).toMatchObject({
+  test("a role with a team does not make it a roster question: the team's pool, the role said unfiltered", async () => {
+    expect(await routeQuestion("quels champions joue le mid de T1", scope({ teams: [team("T1")] }), SCHEMA, COVERAGE)).toMatchObject({
       call: { tool: "champion_pool", input: { subject: "team", name: "T1" } },
       notes: ["Aucune compétition précisée : toutes compétitions confondues.", "Poste non filtré : pool de toute l'équipe, avec le joueur de chaque champion."],
     });
   });
 
-  test("the split asked is kept", () => {
+  test("the split asked is kept", async () => {
     const e = { ...scope({ players: ["Caps"], ...LEC, year: 2025 }), split: "Summer" as const };
 
-    expect(routeQuestion("pool de Caps en LEC Summer 2025", e, SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "champion_pool", input: { split: "Summer" } } });
+    expect(await routeQuestion("pool de Caps en LEC Summer 2025", e, SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "champion_pool", input: { split: "Summer" } } });
   });
 });
 
@@ -119,24 +118,22 @@ describe("the other rules keep their questions", () => {
     ["qui jouait chez Fnatic en 2018", scope({ teams: [team("Fnatic")], year: 2018 }), "team_roster"],
     ["adc de T1", scope({ teams: [team("T1")] }), "team_roster"],
     ["classement LEC 2025", scope({ ...LEC, year: 2025 }), "tournament_standings"],
-  ] as const)("%s → %s", (q, e, tool) => {
-    expect(routeQuestion(q, e, SCHEMA, COVERAGE)).toMatchObject({ kind: "tool", call: { tool } });
+  ] as const)("%s → %s", async (q, e, tool) => {
+    expect(await routeQuestion(q, e, SCHEMA, COVERAGE)).toMatchObject({ kind: "tool", call: { tool } });
   });
 
-  test("a champion named with the player, or an in-game metric, is not a pool", () => {
+  test("a champion named with the player, or an in-game metric, is not a pool", async () => {
     const fakerAzir = { ...scope({ players: ["Faker"] }), champion: { mention: "Azir", champion: "Azir" } };
 
-    expect(routeQuestion("quels champions joue Faker à part Azir", fakerAzir, SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
-    expect(routeQuestion("gold diff at 15 de Faker par champion", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
+    expect(await routeQuestion("quels champions joue Faker à part Azir", fakerAzir, SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
+    expect(await routeQuestion("gold diff at 15 de Faker par champion", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).not.toMatchObject({ call: { tool: "champion_pool" } });
   });
 });
 
-describe("a pool phrase is a LoL cue: a short or everyday handle next to it is a player", () => {
-  const db = new DatabaseSync(":memory:");
+describe("a pool phrase is a LoL cue: a short or everyday handle next to it is a player", async () => {
+  const db = await testDb();
 
-  createSchema(db);
-  createQuerySchema(db);
-  db.exec(`
+  await db.exec(`
     INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Faker');
     INSERT INTO player_aliases VALUES ('bin','Bin',1),('faker','Faker',2);
   `);
@@ -162,16 +159,14 @@ describe("a pool phrase is a LoL cue: a short or everyday handle next to it is a
  * LEC 2025 Spring and Summer, three games G2 – Fnatic: Caps (Mid, G2) plays Azir twice and Orianna once,
  * BrokenBlade (Top, G2) plays Gnar then Azir; Humanoid (Mid, Fnatic) plays Orianna. Game 3 has no death count for Caps.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
 
-  db.prepare(
+  await db.run(
     "INSERT INTO tournaments(id,page,event_page,stage,league_id,year,split) VALUES (1,'LEC25/Spring','LEC25 Spring','season',?,2025,'Spring'),(2,'LEC25/Summer','LEC25 Summer','season',?,2025,'Summer')",
-  ).run(lec, lec);
-  db.exec(`
+  lec, lec);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'G2 Esports'),(2,'Fnatic');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade');
     INSERT INTO champions VALUES (1,'Azir','https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Azir.png'),(2,'Orianna',NULL),(3,'Gnar',NULL);
@@ -191,23 +186,23 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-async function run(db: DatabaseSync, call: Parameters<typeof bindTool>[1]) {
-  const tool = bindTool(db, call);
+async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
+  const tool = await bindTool(db, call);
 
   // Typed queries go through the same guard as generated ones.
-  expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+  expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
-  return tool.format(db, db.prepare(tool.sql).all(tool.params));
+  return tool.format(db, (await db.query(tool.sql, tool.params)));
 }
 
 const LEC25 = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, split: null };
 
 describe("champion_pool on a seeded season", () => {
   test("a player's pool: games, W-L, win rate, KDA, share and diversity", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const out = await run(db, { tool: "champion_pool", input: { subject: "player", name: "Caps", ...LEC25 } });
 
       expect(out.table!.columns).toEqual(["rank", "champion", "games", "wins", "losses", "winrate", "kda", "share"]);
@@ -223,15 +218,15 @@ describe("champion_pool on a seeded season", () => {
       expect(out.sources.map((s) => s.label)).toContain("Leaguepedia — LEC25 Spring");
       expect(out.totals).toMatchObject({ games: 3, unique: 2, top: "Azir", top_games: 2, top3_share: 100 });
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("a split narrows the pool; a team's pool counts every pick of its players", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const summer = await run(db, { tool: "champion_pool", input: { subject: "player", name: "Caps", ...LEC25, split: "Summer" } });
 
       expect(summer.table!.rows.map((r) => r[1])).toEqual(["Azir"]);
@@ -248,24 +243,24 @@ describe("champion_pool on a seeded season", () => {
       ]);
       expect(g2.pool).toMatchObject({ subject: "team", games: 3, wins: 2, picks: 5, unique: 3 });
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  test("an empty split or period is relaxed, said in a note", () => {
-    const db = new DatabaseSync(":memory:");
+  test("an empty split or period is relaxed, said in a note", async () => {
+    const db = await testDb();
 
     try {
-      seed(db);
-      const tool = bindTool(db, { tool: "champion_pool", input: { subject: "player", name: "Caps", ...LEC25, split: "Winter" } });
+      await seed(db);
+      const tool = await bindTool(db, { tool: "champion_pool", input: { subject: "player", name: "Caps", ...LEC25, split: "Winter" } });
 
-      expect(db.prepare(tool.sql).all(tool.params)).toEqual([]);
+      expect((await db.query(tool.sql, tool.params))).toEqual([]);
       expect(tool.relaxations(scope({ players: ["Caps"] })).map((r) => [r.key, r.note])).toEqual([
         ["split", "Aucune partie en Winter : toute la saison."],
         ["period", "Rien entre 2025 et 2025 : affichage de toutes les saisons."],
       ]);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

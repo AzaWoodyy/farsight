@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { closeSync, createReadStream, existsSync, openSync, readSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { selectAll, selectOne } from "../../src/lib/db";
+import { sqliteAll as selectAll, sqliteOne as selectOne } from "./sqlite";
 
 /** Release tags are `data-YYYYMMDD`, with `-2`, `-3`… for a second run the same day. */
 export const TAG_PREFIX = "data-";

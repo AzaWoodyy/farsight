@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool, type SeriesInput } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedTeam } from "../src/lib/agent/types";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const SCHEMA = { v_games: ["game_id"] };
 const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
@@ -21,8 +20,8 @@ const entities = (league: LeagueName | null, year: number | null, teams: Resolve
   players: [], teams, champion: null, unresolved: [], league, leagueShort: null, leagueMention: league ? (MENTION[league] ?? null) : null, yearFrom: year, yearTo: year, split: null, outOfScope: null,
 });
 
-const route = (q: string, e: Entities) => {
-  const r = routeQuestion(q, e, SCHEMA, COVERAGE);
+const route = async (q: string, e: Entities) => {
+  const r = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
   return r.kind === "tool" ? { tool: r.call.tool, input: r.call.input, confidence: r.confidence } : { tool: r.kind };
 };
@@ -43,41 +42,41 @@ describe("a stage of a competition routes to its series", () => {
     ["quarts de finale des worlds 2025", "quarterfinal"],
     ["quarters worlds 2025", "quarterfinal"],
     ["quarterfinals worlds 2025", "quarterfinal"],
-  ])("%s → %s", (q, phase) => {
-    expect(route(q, entities(WORLDS, 2025))).toMatchObject({ tool: "series", input: { phase, league: WORLDS, yearFrom: 2025, yearTo: 2025, teamA: null }, confidence: 0.9 });
+  ])("%s → %s", async (q, phase) => {
+    expect(await route(q, entities(WORLDS, 2025))).toMatchObject({ tool: "series", input: { phase, league: WORLDS, yearFrom: 2025, yearTo: 2025, teamA: null }, confidence: 0.9 });
   });
 
-  test("two teams and a stage: that match, before their head-to-head", () => {
-    expect(route("T1 vs Gen.G finale LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({
+  test("two teams and a stage: that match, before their head-to-head", async () => {
+    expect(await route("T1 vs Gen.G finale LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({
       tool: "series",
       input: { teamA: "T1", teamB: "Gen.G", league: "LoL Champions Korea", phase: "final", split: null },
     });
-    expect(route("T1 vs Gen.G LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({ tool: "head_to_head" });
+    expect(await route("T1 vs Gen.G LCK 2024", entities("LoL Champions Korea", 2024, [team("T1"), team("Gen.G")]))).toMatchObject({ tool: "head_to_head" });
   });
 
-  test("two teams and a best-of word in a season: their series there; without a season, their head-to-head", () => {
+  test("two teams and a best-of word in a season: their series there; without a season, their head-to-head", async () => {
     const kcT1 = [team("Karmine Corp"), team("T1")];
 
     for (const q of ["BO KC T1 worlds 2026", "bo5 KC T1 worlds 2026", "best of KC vs T1 worlds 2026"])
-      expect(route(q, entities(WORLDS, 2026, kcT1))).toMatchObject({ tool: "series", input: { teamA: "Karmine Corp", teamB: "T1", league: WORLDS, yearFrom: 2026, yearTo: 2026, phase: null } });
+      expect(await route(q, entities(WORLDS, 2026, kcT1))).toMatchObject({ tool: "series", input: { teamA: "Karmine Corp", teamB: "T1", league: WORLDS, yearFrom: 2026, yearTo: 2026, phase: null } });
 
-    expect(route("BO KC T1 worlds", entities(WORLDS, null, kcT1))).toMatchObject({ tool: "head_to_head" });
-    expect(route("BO T1 worlds 2026", entities(WORLDS, 2026, [team("T1")])).tool).not.toBe("series");
+    expect(await route("BO KC T1 worlds", entities(WORLDS, null, kcT1))).toMatchObject({ tool: "head_to_head" });
+    expect((await route("BO T1 worlds 2026", entities(WORLDS, 2026, [team("T1")]))).tool).not.toBe("series");
   });
 
-  test("standings words keep the standings, a game number keeps the timeline, a metric keeps its route", () => {
-    expect(route("classement des Worlds 2025", entities(WORLDS, 2025))).toMatchObject({ tool: "tournament_standings" });
-    expect(route("palmarès des finales des Worlds", entities(WORLDS, null))).toMatchObject({ tool: "tournament_standings" });
-    expect(route("game 5 de la finale des Worlds 2024", entities(WORLDS, 2024))).toMatchObject({ tool: "game_timeline" });
-    expect(route("kills en finale des Worlds 2025", entities(WORLDS, 2025)).tool).not.toBe("series");
+  test("standings words keep the standings, a game number keeps the timeline, a metric keeps its route", async () => {
+    expect(await route("classement des Worlds 2025", entities(WORLDS, 2025))).toMatchObject({ tool: "tournament_standings" });
+    expect(await route("palmarès des finales des Worlds", entities(WORLDS, null))).toMatchObject({ tool: "tournament_standings" });
+    expect(await route("game 5 de la finale des Worlds 2024", entities(WORLDS, 2024))).toMatchObject({ tool: "game_timeline" });
+    expect((await route("kills en finale des Worlds 2025", entities(WORLDS, 2025))).tool).not.toBe("series");
   });
 
-  test("the split asked is kept: the LCK summer final is not the spring one", () => {
-    expect(route("finale LCK summer 2024", { ...entities("LoL Champions Korea", 2024), split: "Summer" })).toMatchObject({ tool: "series", input: { phase: "final", split: "Summer" } });
+  test("the split asked is kept: the LCK summer final is not the spring one", async () => {
+    expect(await route("finale LCK summer 2024", { ...entities("LoL Champions Korea", 2024), split: "Summer" })).toMatchObject({ tool: "series", input: { phase: "final", split: "Summer" } });
   });
 
-  test("a stage alone, without a competition or a team, is not routed to a series", () => {
-    expect(route("finale", entities(null, null)).tool).not.toBe("series");
+  test("a stage alone, without a competition or a team, is not routed to a series", async () => {
+    expect((await route("finale", entities(null, null))).tool).not.toBe("series");
   });
 });
 
@@ -85,19 +84,17 @@ describe("a stage of a competition routes to its series", () => {
  * Worlds 2025: the LPL Regional Finals (a qualifier under the Worlds league, tab "Finals") and the main event's final, a Bo5
  * T1 3-2 KT. MSI 2024: a double-elimination bracket without a "Semifinals" tab (Bracket Round 3, Bracket Round 4, Finals).
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const id = (name: string) => Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(name)!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
 
-  db.prepare(
+  await db.run(
     `INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year) VALUES
      (1,'LPL/2025 Season/Regional Finals','LPL/2025 Season/Regional Finals','qualifier','LPL 2025 Regional Finals',?,2025),
      (2,'2025 Season World Championship/Main Event','2025 Season World Championship','main_event','Worlds 2025 Main Event',?,2025),
      (3,'2024 Mid-Season Invitational','2024 Mid-Season Invitational','main_event','MSI 2024',?,2024)`,
-  ).run(id(WORLDS), id(WORLDS), id("Mid-Season Invitational"));
-  db.exec(`
+  await id(WORLDS), await id(WORLDS), await id("Mid-Season Invitational"));
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'Top Esports'),(2,'Invictus Gaming'),(3,'T1'),(4,'KT Rolster'),(5,'Gen.G'),(6,'Bilibili Gaming'),(7,'G2 Esports');
     INSERT INTO champions VALUES (1,'Ryze','https://ddragon/Ryze.png'),(2,'Taliyah','https://ddragon/Taliyah.png'),(3,'Azir',NULL);
     INSERT INTO players(id,page,ign) VALUES (1,'Bdd','Bdd'),(2,'Faker','Faker'),(3,'Doran (Choi Hyeon-jun)','Doran');
@@ -115,21 +112,21 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-const run = async (db: DatabaseSync, input: SeriesInput) => {
-  const tool = bindTool(db, { tool: "series", input });
-  const guarded = guardQuery(db, readSchema(db), tool.sql);
+const run = async (db: TestDb, input: SeriesInput) => {
+  const tool = await bindTool(db, { tool: "series", input });
+  const guarded = guardQuery(await readSchema(db), tool.sql);
 
   expect(guarded.ok).toBe(true);
 
-  return tool.format(db, db.prepare(tool.sql).all(tool.params));
+  return tool.format(db, (await db.query(tool.sql, tool.params)));
 };
 
 describe("series tool on a seeded database", () => {
   test("the Worlds final is the main event's, not the LPL Regional Finals: one Bo5 with every game", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const out = await run(db, { teamA: null, teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final", split: null });
 
       expect(out.series?.series.map((s) => [s.teamA, s.winsA, s.winsB, s.teamB, s.bestOf, s.label])).toEqual([["T1", 3, 2, "KT Rolster", 5, "Worlds 2025 · finale"]]);
@@ -152,58 +149,58 @@ describe("series tool on a seeded database", () => {
       // A follow-up recap names both teams, so it opens a game of this series.
       expect(out.followUps[0]).toBe("Récap de la game 5 de T1 vs KT Rolster, la finale des Worlds 2025");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("a double-elimination bracket: its semifinal is the last round before the final, with a note", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const out = await run(db, { teamA: null, teamB: null, league: "Mid-Season Invitational", yearFrom: 2024, yearTo: 2024, phase: "semifinal", split: null });
 
       expect(out.series?.series.map((s) => `${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`)).toEqual(["Gen.G 1-0 Bilibili Gaming", "Bilibili Gaming 1-0 T1"]);
       expect(out.title).toBe("Demi-finales — MSI 2024");
       expect(out.notes?.join(" ")).toContain("double élimination");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("a split filters the tournaments: no MSI 2024 semifinal in a Summer split", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
-      db.exec("UPDATE tournaments SET split = 'Spring' WHERE id = 3");
+      await seed(db);
+      await db.exec("UPDATE tournaments SET split = 'Spring' WHERE id = 3");
       const input = { teamA: null, teamB: null, league: "Mid-Season Invitational", yearFrom: 2024, yearTo: 2024, phase: "semifinal" } as const;
-      const summer = bindTool(db, { tool: "series", input: { ...input, split: "Summer" } });
-      const spring = bindTool(db, { tool: "series", input: { ...input, split: "Spring" } });
+      const summer = await bindTool(db, { tool: "series", input: { ...input, split: "Summer" } });
+      const spring = await bindTool(db, { tool: "series", input: { ...input, split: "Spring" } });
 
-      expect(db.prepare(summer.sql).all(summer.params)).toHaveLength(0);
-      expect(db.prepare(spring.sql).all(spring.params)).toHaveLength(2);
+      expect((await db.query(summer.sql, summer.params))).toHaveLength(0);
+      expect((await db.query(spring.sql, spring.params))).toHaveLength(2);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  test("a team that did not reach the stage: the stage without the team, said in a note", () => {
-    const db = new DatabaseSync(":memory:");
+  test("a team that did not reach the stage: the stage without the team, said in a note", async () => {
+    const db = await testDb();
 
     try {
-      seed(db);
-      const tool = bindTool(db, { tool: "series", input: { teamA: "G2 Esports", teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final", split: null } });
+      await seed(db);
+      const tool = await bindTool(db, { tool: "series", input: { teamA: "G2 Esports", teamB: null, league: WORLDS, yearFrom: 2025, yearTo: 2025, phase: "final", split: null } });
 
-      expect(db.prepare(tool.sql).all(tool.params)).toHaveLength(0);
+      expect((await db.query(tool.sql, tool.params))).toHaveLength(0);
       const [relax] = tool.relaxations(entities(WORLDS, 2025));
 
       expect(relax.note).toContain("G2 Esports n'a pas joué de finale");
-      const next = relax.next();
+      const next = await relax.next();
 
-      expect(db.prepare(next.sql).all(next.params)).toHaveLength(5);
+      expect((await db.query(next.sql, next.params))).toHaveLength(5);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

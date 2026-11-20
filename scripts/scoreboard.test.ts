@@ -1,23 +1,20 @@
 import { expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { answerProfiles } from "../src/lib/agent/run";
 import { bindTool, playerProfiles } from "../src/lib/agent/tools";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { photoUrl, playerPhoto } from "../src/lib/domain/player-photos";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const ICON = "https://ddragon.leagueoflegends.com/cdn/img/x.png";
 
 /** One Worlds final game (T1 red, winner) and one LEC season game for the profiles. */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const league = (name: string) => Number(db.prepare("SELECT id FROM leagues WHERE name = ?").get(name)!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const league = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
 
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(1,'W24','W24','main_event',?,2024)").run(league("World Championship"));
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(2,'LEC24','LEC24','season',?,2024)").run(league("LoL EMEA Championship"));
-  db.exec(`
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(1,'W24','W24','main_event',?,2024)", await league("World Championship"));
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(2,'LEC24','LEC24','season',?,2024)", await league("LoL EMEA Championship"));
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'Bilibili Gaming'),(2,'T1'),(3,'Karmine Corp'),(4,'Team Vitality');
     INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Zeus'),(3,'SAKEN');
     INSERT INTO champions VALUES (1,'Jax','${ICON}'),(2,'Gragas','${ICON}');
@@ -47,12 +44,12 @@ function seed(db: DatabaseSync) {
 }
 
 test("a game's recap reads the scoreboard tables, winner first, even without Riot timeline", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
-    const tool = bindTool(db, { tool: "game_timeline", input: { teamA: "T1", teamB: "Bilibili Gaming", league: "World Championship", year: 2024, phase: "final", game: 5 } });
-    const out = await tool.format(db, db.prepare(tool.sql).all(tool.params));
+    await seed(db);
+    const tool = await bindTool(db, { tool: "game_timeline", input: { teamA: "T1", teamB: "Bilibili Gaming", league: "World Championship", year: 2024, phase: "final", game: 5 } });
+    const out = await tool.format(db, (await db.query(tool.sql, tool.params)));
     const sb = out.scoreboard!;
 
     expect(sb.label).toBe("Worlds 2024 · finale · game 5");
@@ -82,108 +79,108 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
     ]);
     expect(bin.runes).toEqual([]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
 test("with a Riot timeline, the recap names each team's dragons in order and the soul", async () => {
-  const db = new DatabaseSync(":memory:");
+  const db = await testDb();
 
   try {
-    seed(db);
-    db.exec(`
+    await seed(db);
+    await db.exec(`
       INSERT INTO game_riot VALUES (1,'K1','V5 data:K1',5,1,0);
       INSERT INTO game_team_stats(game_id,side,elder_dragons,dragon_soul,soul) VALUES (1,1,0,0,NULL),(1,2,1,1,'ocean');
       -- game_id, seq, team_seq, side, kind, time_s
       INSERT INTO game_dragons VALUES (1,1,1,2,'cloud',400),(1,2,1,1,'infernal',800),(1,3,2,2,'ocean',1100),(1,4,3,2,'ocean',1400),(1,5,4,2,'ocean',1700),(1,6,5,2,'elder',1900);
     `);
-    const tool = bindTool(db, { tool: "game_timeline", input: { teamA: "T1", teamB: "Bilibili Gaming", league: "World Championship", year: 2024, phase: "final", game: 5 } });
-    const sb = (await tool.format(db, db.prepare(tool.sql).all(tool.params))).scoreboard!;
+    const tool = await bindTool(db, { tool: "game_timeline", input: { teamA: "T1", teamB: "Bilibili Gaming", league: "World Championship", year: 2024, phase: "final", game: 5 } });
+    const sb = (await tool.format(db, (await db.query(tool.sql, tool.params)))).scoreboard!;
 
     expect([sb.red.dragonKinds, sb.red.soul]).toEqual([["nuage", "océan", "océan", "océan", "ancestral"], "océan"]);
     expect([sb.blue.dragonKinds, sb.blue.soul]).toEqual([["infernal"], null]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("compared players' profiles list teams by games and the main role, in the scope given", () => {
-  const db = new DatabaseSync(":memory:");
+test("compared players' profiles list teams by games and the main role, in the scope given", async () => {
+  const db = await testDb();
 
   try {
-    seed(db);
+    await seed(db);
 
     // Zeus has no LEC game: no team, no role.
-    expect(playerProfiles(db, ["SAKEN", "Zeus"], { league: "LoL EMEA Championship", yearFrom: null, yearTo: null })).toEqual([
+    expect(await playerProfiles(db, ["SAKEN", "Zeus"], { league: "LoL EMEA Championship", yearFrom: null, yearTo: null })).toEqual([
       { player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null },
       { player: "Zeus", teams: [], role: null, photo: null },
     ]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("profiles follow the scope given, not a narrower one", () => {
-  const db = new DatabaseSync(":memory:");
+test("profiles follow the scope given, not a narrower one", async () => {
+  const db = await testDb();
 
   try {
-    seed(db);
+    await seed(db);
     const lec = { league: "LoL EMEA Championship", yearFrom: null, yearTo: null };
 
     // The period the question asked, before a relaxation drops it: no game there.
-    expect(playerProfiles(db, ["SAKEN"], { ...lec, yearFrom: 1999, yearTo: 1999 })).toEqual([{ player: "SAKEN", teams: [], role: null, photo: null }]);
+    expect(await playerProfiles(db, ["SAKEN"], { ...lec, yearFrom: 1999, yearTo: 1999 })).toEqual([{ player: "SAKEN", teams: [], role: null, photo: null }]);
     // The widened scope the comparison ran on.
-    expect(playerProfiles(db, ["SAKEN"], lec)).toEqual([{ player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null }]);
+    expect(await playerProfiles(db, ["SAKEN"], lec)).toEqual([{ player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null }]);
     // No competition: Zeus's Worlds game counts.
-    expect(playerProfiles(db, ["Zeus"], { league: null, yearFrom: null, yearTo: null })).toEqual([{ player: "Zeus", teams: ["T1"], role: "Top", photo: null }]);
+    expect(await playerProfiles(db, ["Zeus"], { league: null, yearFrom: null, yearTo: null })).toEqual([{ player: "Zeus", teams: ["T1"], role: "Top", photo: null }]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("an answer profiles the player its statistics are about, both compared players, and no team", () => {
-  const db = new DatabaseSync(":memory:");
+test("an answer profiles the player its statistics are about, both compared players, and no team", async () => {
+  const db = await testDb();
 
   try {
-    seed(db);
-    const call = (c: Parameters<typeof bindTool>[1]) => bindTool(db, c).call;
+    await seed(db);
+    const call = async (c: Parameters<typeof bindTool>[1]) => (await bindTool(db, c)).call;
     const lec = { league: "LoL EMEA Championship" as const, yearFrom: null, yearTo: null };
     const saken = { player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null };
 
-    expect(answerProfiles(db, call({ tool: "player_event_history", input: { player: "SAKEN", ...lec } }))).toEqual([saken]);
-    expect(answerProfiles(db, call({ tool: "player_recent_games", input: { player: "SAKEN", ...lec, count: null } }))).toEqual([saken]);
-    expect(answerProfiles(db, call({ tool: "champion_pool", input: { subject: "player", name: "SAKEN", ...lec, split: null } }))).toEqual([saken]);
-    expect(answerProfiles(db, call({ tool: "champion_pool", input: { subject: "team", name: "Team Vitality", ...lec, split: null } }))).toEqual([]);
-    expect(answerProfiles(db, call({ tool: "team_history", input: { team: "T1", league: "World Championship", yearFrom: null, yearTo: null } }))).toEqual([]);
+    expect(await answerProfiles(db, await call({ tool: "player_event_history", input: { player: "SAKEN", ...lec } }))).toEqual([saken]);
+    expect(await answerProfiles(db, await call({ tool: "player_recent_games", input: { player: "SAKEN", ...lec, count: null } }))).toEqual([saken]);
+    expect(await answerProfiles(db, await call({ tool: "champion_pool", input: { subject: "player", name: "SAKEN", ...lec, split: null } }))).toEqual([saken]);
+    expect(await answerProfiles(db, await call({ tool: "champion_pool", input: { subject: "team", name: "Team Vitality", ...lec, split: null } }))).toEqual([]);
+    expect(await answerProfiles(db, await call({ tool: "team_history", input: { team: "T1", league: "World Championship", yearFrom: null, yearTo: null } }))).toEqual([]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a player's photo is the one of the period: latest taken by then, else the earliest, the latest without a date", () => {
-  const db = new DatabaseSync(":memory:");
+test("a player's photo is the one of the period: latest taken by then, else the earliest, the latest without a date", async () => {
+  const db = await testDb();
   const at = (day: string) => Date.parse(`${day}T00:00:00Z`) / 1000;
 
   try {
-    seed(db);
-    db.prepare("INSERT INTO player_images VALUES (?,?,?)").run(1, at("2023-01-11"), "BLG Bin 2023 Split 1.png");
-    db.prepare("INSERT INTO player_images VALUES (?,?,?)").run(1, at("2024-01-22"), "BLG Bin 2024 Split 1.png");
-    db.prepare("INSERT INTO player_images VALUES (?,?,?)").run(1, at("2025-01-13"), "BLG Bin 2025 Split 1.png");
+    await seed(db);
+    await db.run("INSERT INTO player_images VALUES (?,?,?)", 1, at("2023-01-11"), "BLG Bin 2023 Split 1.png");
+    await db.run("INSERT INTO player_images VALUES (?,?,?)", 1, at("2024-01-22"), "BLG Bin 2024 Split 1.png");
+    await db.run("INSERT INTO player_images VALUES (?,?,?)", 1, at("2025-01-13"), "BLG Bin 2025 Split 1.png");
 
-    const file = (when: number | null) => playerPhoto(db, "Bin", when)?.source.split("File:")[1];
+    const file = async (when: number | null) => (await playerPhoto(db, "Bin", when))?.source.split("File:")[1];
 
-    expect(file(at("2024-10-02"))).toBe("BLG_Bin_2024_Split_1.png");
-    expect(file(at("2024-01-22"))).toBe("BLG_Bin_2024_Split_1.png");
-    expect(file(at("2020-05-01"))).toBe("BLG_Bin_2023_Split_1.png");
-    expect(file(null)).toBe("BLG_Bin_2025_Split_1.png");
-    expect(playerPhoto(db, "Bin", at("2024-10-02"))).toEqual({
+    expect(await file(at("2024-10-02"))).toBe("BLG_Bin_2024_Split_1.png");
+    expect(await file(at("2024-01-22"))).toBe("BLG_Bin_2024_Split_1.png");
+    expect(await file(at("2020-05-01"))).toBe("BLG_Bin_2023_Split_1.png");
+    expect(await file(null)).toBe("BLG_Bin_2025_Split_1.png");
+    expect(await playerPhoto(db, "Bin", at("2024-10-02"))).toEqual({
       url: photoUrl("BLG Bin 2024 Split 1.png"),
       year: 2024,
       source: "https://lol.fandom.com/wiki/File:BLG_Bin_2024_Split_1.png",
     });
-    expect(playerPhoto(db, "Zeus", null)).toBeNull();
+    expect(await playerPhoto(db, "Zeus", null)).toBeNull();
   } finally {
-    db.close();
+    await db.close();
   }
 });
 

@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "./schema";
 
@@ -12,16 +12,38 @@ export const DB_PATH = resolve(
   process.env.DATABASE_PATH || "data/lol.sqlite",
 );
 
-/** A value read from SQLite. */
-export type SqlValue = SQLOutputValue;
+/** A value read from the database; an aggregated JSON column comes back as arrays and objects. */
+export type SqlValue = string | number | bigint | boolean | null | Uint8Array | SqlValue[] | { [key: string]: SqlValue };
 
-/** A row as node:sqlite returns it: column name -> value. */
+/** A row: column name -> value. */
 export type SqlRow = Record<string, SqlValue>;
 
-/** Named parameters (`:name`) or positional ones (`?`). */
-export type SqlParams = Record<string, SQLInputValue> | SQLInputValue[];
+/** A value a query is given. */
+export type SqlInput = string | number | bigint | null;
 
-let cached: DatabaseSync | null = null;
+/** Named parameters (`:name`) or positional ones (`?`). */
+export type SqlParams = Record<string, SqlInput> | SqlInput[];
+
+/** The read side of the database, the only one the app sees. Every call is asynchronous: the database may be remote. */
+export interface Db {
+  readonly kind: "sqlite" | "postgres";
+  /** Every row of one read-only statement. */
+  query(sql: string, params?: SqlParams): Promise<SqlRow[]>;
+}
+
+/** A synchronous SQLite handle behind the asynchronous interface. */
+export function sqliteDb(db: DatabaseSync): Db {
+  return {
+    kind: "sqlite",
+    query: async (sql, params = []) => {
+      const stmt = db.prepare(sql);
+
+      return Array.isArray(params) ? stmt.all(...params) : stmt.all(params);
+    },
+  };
+}
+
+let cached: Db | null = null;
 
 /** Validate a file before caching it; usable by offline verification too. */
 export function openReadOnlyDb(path: string): DatabaseSync {
@@ -42,11 +64,11 @@ export function openReadOnlyDb(path: string): DatabaseSync {
   }
 }
 
-export function openDb(): DatabaseSync {
+export function openDb(): Db {
   if (cached) return cached;
 
   try {
-    cached = openReadOnlyDb(DB_PATH);
+    cached = sqliteDb(openReadOnlyDb(DB_PATH));
   } catch (err) {
     throw new Error(`Cannot open ${DB_PATH} (${err instanceof Error ? err.message : String(err)}). Run \`bun run data:build\` first.`);
   }
@@ -55,31 +77,46 @@ export function openDb(): DatabaseSync {
 }
 
 /** Runs a query and parses every row with `schema`, so callers get typed rows. */
-export function selectAll<S extends z.ZodType>(db: DatabaseSync, schema: S, sql: string, params: SqlParams = []): z.infer<S>[] {
-  const stmt = db.prepare(sql);
-
-  return z.array(schema).parse(Array.isArray(params) ? stmt.all(...params) : stmt.all(params));
+export async function selectAll<S extends z.ZodType>(db: Db, schema: S, sql: string, params: SqlParams = []): Promise<z.infer<S>[]> {
+  return z.array(schema).parse(await db.query(sql, params));
 }
 
 /** First row parsed with `schema`, or null when the query returns nothing. */
-export function selectOne<S extends z.ZodType>(db: DatabaseSync, schema: S, sql: string, params: SqlParams = []): z.infer<S> | null {
-  const stmt = db.prepare(sql);
-  const row = Array.isArray(params) ? stmt.get(...params) : stmt.get(params);
+export async function selectOne<S extends z.ZodType>(db: Db, schema: S, sql: string, params: SqlParams = []): Promise<z.infer<S> | null> {
+  const [row] = await db.query(sql, params);
 
   return row === undefined ? null : schema.parse(row);
 }
 
 const NameRow = z.object({ name: z.string() });
 
-/** Table or view -> columns, read live from SQLite. Used by the schema guard. */
-export function readSchema(db: DatabaseSync): Record<string, string[]> {
-  const objects = selectAll(
+const schemas = new WeakMap<Db, Promise<Record<string, string[]>>>();
+
+/**
+ * Table or view -> columns, read from the database once per handle: the schema of a deployment does not change
+ * under it (a new schema is a new deployment). Used by the schema guard and the router.
+ */
+export function readSchema(db: Db): Promise<Record<string, string[]>> {
+  let schema = schemas.get(db);
+
+  if (!schema) {
+    schema = introspect(db);
+    // A failed read is not kept: the next question tries again.
+    schema.catch(() => schemas.delete(db));
+    schemas.set(db, schema);
+  }
+
+  return schema;
+}
+
+async function introspect(db: Db): Promise<Record<string, string[]>> {
+  const objects = await selectAll(
     db,
     NameRow,
     "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'",
   );
 
   return Object.fromEntries(
-    objects.map(({ name }) => [name, selectAll(db, NameRow, `PRAGMA table_info("${name}")`).map((c) => c.name)]),
+    await Promise.all(objects.map(async ({ name }) => [name, (await selectAll(db, NameRow, `PRAGMA table_info("${name}")`)).map((c) => c.name)] as const)),
   );
 }

@@ -1,14 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { understandQuestion } from "../src/lib/agent/understand";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
+import { testDb } from "./fixtures/test-db";
 
-describe("a single year after a period word: depuis / jusqu'en include it, après / avant do not", () => {
-  const db = new DatabaseSync(":memory:");
+describe("a single year after a period word: depuis / jusqu'en include it, après / avant do not", async () => {
+  const db = await testDb();
 
-  createSchema(db);
-  createQuerySchema(db);
-  db.exec(`
+  await db.exec(`
     INSERT INTO players(id,page) VALUES (1,'Faker');
     INSERT INTO player_aliases VALUES ('faker','Faker',1);
   `);

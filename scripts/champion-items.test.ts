@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { routeQuestion } from "../src/lib/agent/query";
 import { bindTool } from "../src/lib/agent/tools";
 import type { Entities } from "../src/lib/agent/types";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { enchantedKind, type ItemKind, type ItemMeta, itemKinds } from "../src/lib/domain/items";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 describe("item kinds from Data Dragon", () => {
   // Shapes taken from item.json 16.22.1 and 13.24.1 (Ornn upgrade, transformation, null recipe entries).
@@ -73,16 +72,14 @@ describe("item kinds from Data Dragon", () => {
  * Worlds 2026, four games of Yunara in the bot lane (three with an inventory), and MSI 2023 first dragons:
  * T1 takes it in two of its three games, Gen.G in one.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const worlds = Number(db.prepare("SELECT id FROM leagues WHERE name = 'World Championship'").get()!.id);
-  const msi = Number(db.prepare("SELECT id FROM leagues WHERE name = 'Mid-Season Invitational'").get()!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const worlds = Number((await db.query("SELECT id FROM leagues WHERE name = 'World Championship'"))[0]!.id);
+  const msi = Number((await db.query("SELECT id FROM leagues WHERE name = 'Mid-Season Invitational'"))[0]!.id);
   const icon = (id: number) => `https://ddragon.leagueoflegends.com/cdn/16.22.1/img/item/${id}.png`;
 
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'W26/Main Event','W26','main_event',?,2026),(2,'MSI23','MSI23','main_event',?,2023)").run(worlds, msi);
-  db.exec(`
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'W26/Main Event','W26','main_event',?,2026),(2,'MSI23','MSI23','main_event',?,2023)", worlds, msi);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES (1,'Gumayusi'),(2,'Ruler');
     INSERT INTO champions VALUES (1,'Yunara',NULL),(2,'Jinx',NULL);
@@ -103,20 +100,20 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-async function run(db: DatabaseSync, call: Parameters<typeof bindTool>[1]) {
-  const tool = bindTool(db, call);
+async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
+  const tool = await bindTool(db, call);
 
-  expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+  expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
-  return tool.format(db, db.prepare(tool.sql).all(tool.params));
+  return tool.format(db, (await db.query(tool.sql, tool.params)));
 }
 
 describe("a champion's most built items", () => {
   test("games per item with two copies counted once, share of the games with an inventory, kinds and missing data", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
       const items = out.champion!.items;
 
@@ -136,26 +133,26 @@ describe("a champion's most built items", () => {
       expect(out.totals).toMatchObject({ item_games: 3, top_item: "Infinity Edge", top_item_games: 3 });
       expect(out.sources.map((s) => s.label)).toContain("Leaguepedia — inventaires de fin de partie (ScoreboardPlayers)");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("no inventory in the scope: an empty list and the reason", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
-      db.exec("DELETE FROM game_player_items");
+      await seed(db);
+      await db.exec("DELETE FROM game_player_items");
       const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
 
       expect(out.champion!.items).toMatchObject({ games: 0, items: [] });
       expect(out.champion!.items.notes[0]).toBe("Leaguepedia ne liste aucun inventaire de fin de partie pour ces parties.");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  test("an item question about a champion goes to its profile, decided by the rules", () => {
+  test("an item question about a champion goes to its profile, decided by the rules", async () => {
     const e: Entities = {
       players: [], teams: [], champion: { mention: "Yunara", champion: "Yunara" }, unresolved: [], league: "World Championship", leagueShort: "Worlds",
       leagueMention: "Worlds", yearFrom: 2026, yearTo: 2026, split: null, outOfScope: null,
@@ -164,14 +161,14 @@ describe("a champion's most built items", () => {
     const coverage = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
 
     for (const q of ["Items de Yunara aux Worlds 2026", "build Yunara worlds 2026", "yunara worlds 2026"])
-      expect(routeQuestion(q, e, { v_games: ["game_id"] }, coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });
+      expect(await routeQuestion(q, e, { v_games: ["game_id"] }, coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });
   });
 });
 
 describe("a champion's summoner spells and runes", () => {
   /** Spells on the four Yunara games; a keystone on three of them, the whole page on two. */
-  function loadouts(db: DatabaseSync) {
-    db.exec(`
+  async function loadouts(db: TestDb) {
+    await db.exec(`
       INSERT INTO summoner_spells VALUES (1,'Flash','/flash.png'),(2,'Heal',NULL),(3,'Barrier',NULL);
       INSERT INTO runes VALUES (1,'Lethal Tempo','Precision','/lt.png'),(2,'Fleet Footwork','Precision',NULL),(3,'Triumph','Precision',NULL),
         (4,'Biscuit Delivery','Inspiration',NULL),(5,'Attack Speed',NULL,NULL);
@@ -186,11 +183,11 @@ describe("a champion's summoner spells and runes", () => {
   }
 
   test("spell pairs and runes by part of the page, each over the games that list it", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
-      loadouts(db);
+      await seed(db);
+      await loadouts(db);
       const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
       const s = out.champion!.setups;
 
@@ -216,15 +213,15 @@ describe("a champion's summoner spells and runes", () => {
       expect(out.totals).toMatchObject({ top_spells: "Flash + Heal", top_spells_games: 3, keystone_games: 3, top_keystone: "Lethal Tempo", top_keystone_games: 2 });
       expect(out.sources.map((x) => x.label)).toContain("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   test("no rune in the scope: the reason, and no source", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       const out = await run(db, { tool: "champion_event_stats", input: { champion: "Yunara", league: "World Championship", yearFrom: 2026, yearTo: 2026 , focus: null} });
 
       expect(out.champion!.setups).toEqual({
@@ -233,36 +230,36 @@ describe("a champion's summoner spells and runes", () => {
       });
       expect(out.sources.map((x) => x.label)).not.toContain("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  test("a rune or spell question about a champion goes to its profile; summoner spells are no longer missing data", () => {
+  test("a rune or spell question about a champion goes to its profile; summoner spells are no longer missing data", async () => {
     const e: Entities = {
       players: [], teams: [], champion: { mention: "Yunara", champion: "Yunara" }, unresolved: [], league: "World Championship", leagueShort: "Worlds",
       leagueMention: "Worlds", yearFrom: 2026, yearTo: 2026, split: null, outOfScope: null,
     };
 
     const coverage = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
 
       for (const q of ["Runes de Yunara aux Worlds 2026", "keystone Yunara worlds 2026", "sorts d'invocateur de Yunara aux Worlds 2026", "summoner spells Yunara worlds 2026"])
-        expect(routeQuestion(q, e, readSchema(db), coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });
+        expect(await routeQuestion(q, e, await readSchema(db), coverage)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_event_stats", input: { champion: "Yunara" } } });
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
 
 describe("rate leaderboards show the count beside the share", () => {
   test("first dragon: games, first dragons, %", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
 
       const out = await run(db, {
         tool: "ingame_leaderboard",
@@ -274,16 +271,16 @@ describe("rate leaderboards show the count beside the share", () => {
       expect(out.facts).toContain("1. T1 (2 sur 3 parties, 66.7 %), 2. Gen.G (1 sur 3 parties, 33.3 %)");
       expect(out.totals).toMatchObject({ leader: "T1", leader_value: 66.7, leader_count: 2 });
     } finally {
-      db.close();
+      await db.close();
     }
   });
   test("a renamed team is one row", async () => {
-    const db = new DatabaseSync(":memory:");
+    const db = await testDb();
 
     try {
-      seed(db);
+      await seed(db);
       // SK Telecom T1 is T1's former name: its MSI 2023 game (a first dragon) counts for T1. Inserted before any team is resolved.
-      db.exec(`
+      await db.exec(`
         INSERT INTO teams(id,name) VALUES (3,'SK Telecom T1');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (8,2,3,2,1,40);
         INSERT INTO game_riot VALUES (8,'K8','V5 data:K8',5,1,0);
@@ -298,7 +295,7 @@ describe("rate leaderboards show the count beside the share", () => {
       expect(out.table!.rows).toEqual([[1, "T1", 4, 3, 75], [2, "Gen.G", 4, 1, 25]]);
       expect(out.table!.rows.some((r) => r[1] === "SK Telecom T1")).toBe(false);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

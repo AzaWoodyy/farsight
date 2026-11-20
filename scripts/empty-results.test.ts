@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { explainEmpty, unrecognizedNote } from "../src/lib/agent/empty";
 import { type AgentEvent, execute } from "../src/lib/agent/run";
 import type { Entities, QueryPlan, ResolvedPlayer, StepPart } from "../src/lib/agent/types";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb } from "./fixtures/test-db";
 
 const WORLDS = "World Championship";
 
@@ -20,14 +19,12 @@ const champion = (name: string) => ({ mention: name, champion: name });
  * Worlds 2024: one qualifier game (Faker on Azir) and two main event games with
  * Riot data and no pentakill (Faker on Orianna), the second with a quadrakill.
  */
-function fresh() {
-  const db = new DatabaseSync(":memory:");
+async function fresh() {
+  const db = await testDb();
   const league = LEAGUES.find((l) => l.name === WORLDS)!;
 
-  createSchema(db);
-  createQuerySchema(db);
-  db.prepare("INSERT INTO leagues VALUES(1,?,?,?,?)").run(league.name, league.short, league.region, +league.international);
-  db.exec(`
+  await db.run("INSERT INTO leagues VALUES(1,?,?,?,?)", league.name, league.short, league.region, +league.international);
+  await db.exec(`
     INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year) VALUES
       (1,'LCK/2024 Season/Regional Finals','LCK/2024 Season/Regional Finals','qualifier','LCK 2024 Regional Finals',1,2024),
       (2,'2024 Season World Championship/Main Event','2024 Season World Championship','main_event','Worlds 2024',1,2024);
@@ -71,143 +68,143 @@ afterEach(() => {
   expect(fetches).toBe(0);
 });
 
-test("a count that is zero over the in-game games is an answer, not an empty result", () => {
-  const db = fresh();
+test("a count that is zero over the in-game games is an answer, not an empty result", async () => {
+  const db = await fresh();
 
   try {
-    const why = explainEmpty(db, scope(), PENTAS);
+    const why = await explainEmpty(db, scope(), PENTAS);
 
     expect(why?.reason).toBe("zero_count");
     expect(why?.conclusive).toBe(true);
     expect(why?.summary).toBe("Aucun pentakill sur les 2 parties avec données in-game aux Worlds en 2024 (qualifications exclues).");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a count that is not zero leaves the empty result unexplained", () => {
-  const db = fresh();
+test("a count that is not zero leaves the empty result unexplained", async () => {
+  const db = await fresh();
 
   try {
-    const why = explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "quadra_kills"));
+    const why = await explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "quadra_kills"));
 
     expect(why?.reason).toBe("unexplained");
     expect(why?.conclusive).toBe(false);
     expect(why?.summary).toContain("2 parties aux Worlds en 2024");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("games only in regional qualifiers are shown and said to be excluded", () => {
-  const db = fresh();
+test("games only in regional qualifiers are shown and said to be excluded", async () => {
+  const db = await fresh();
 
   try {
-    const why = explainEmpty(db, scope({ players: [faker], champion: champion("Azir") }), "SELECT 1 FROM v_game_players WHERE 0");
+    const why = await explainEmpty(db, scope({ players: [faker], champion: champion("Azir") }), "SELECT 1 FROM v_game_players WHERE 0");
 
     expect(why?.reason).toBe("qualifier_only");
     expect(why?.summary).toContain("La seule partie de Faker sur Azir aux Worlds en 2024 est en qualifications régionales (LCK 2024 Regional Finals)");
     expect(why?.table?.rows).toEqual([["2024-09-14", "LCK 2024 Regional Finals", "Faker", "T1", "Azir", "victoire", "3/0/4", "Conqueror"]]);
     expect(why?.sources).toEqual(["LCK/2024 Season/Regional Finals"]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a statistic the Riot data does not give is no zero", () => {
-  const db = fresh();
+test("a statistic the Riot data does not give is no zero", async () => {
+  const db = await fresh();
 
   try {
     // plates is NULL in every game: the data does not measure it.
-    const why = explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "plates"));
+    const why = await explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "plates"));
 
     expect(why?.reason).toBe("unexplained");
     expect(why?.conclusive).toBe(false);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a column without data does not hide another column's positive total", () => {
-  const db = fresh();
+test("a column without data does not hide another column's positive total", async () => {
+  const db = await fresh();
 
   try {
     // Game 2: Chovy has a pentakill and no plate data; Faker has neither.
-    db.exec("UPDATE game_player_stats SET penta_kills = 1 WHERE game_id = 2 AND player_id = 2; UPDATE game_player_stats SET plates = 0 WHERE player_id = 1");
-    const why = explainEmpty(db, scope(), "SELECT SUM(penta_kills), SUM(plates) FROM v_game_player_stats HAVING SUM(penta_kills) > 5");
+    await db.exec("UPDATE game_player_stats SET penta_kills = 1 WHERE game_id = 2 AND player_id = 2; UPDATE game_player_stats SET plates = 0 WHERE player_id = 1");
+    const why = await explainEmpty(db, scope(), "SELECT SUM(penta_kills), SUM(plates) FROM v_game_player_stats HAVING SUM(penta_kills) > 5");
 
     expect(why?.conclusive).toBe(false);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a split the games are not in leaves no game", () => {
-  const db = fresh();
+test("a split the games are not in leaves no game", async () => {
+  const db = await fresh();
 
   try {
-    expect(explainEmpty(db, scope({ split: "Summer" }), PENTAS)?.summary).toBe("Aucune partie au split Summer aux Worlds en 2024 dans la base.");
+    expect((await explainEmpty(db, scope({ split: "Summer" }), PENTAS))?.summary).toBe("Aucune partie au split Summer aux Worlds en 2024 dans la base.");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("several players are not explained: their games together, or each one's own", () => {
-  const db = fresh();
+test("several players are not explained: their games together, or each one's own", async () => {
+  const db = await fresh();
 
   try {
     const chovy: ResolvedPlayer = { ...faker, mention: "Chovy", player: "Chovy", matchedAlias: "Chovy" };
 
-    expect(explainEmpty(db, scope({ players: [faker, chovy] }), PENTAS)).toBeNull();
+    expect(await explainEmpty(db, scope({ players: [faker, chovy] }), PENTAS)).toBeNull();
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a team whose games are all in qualifiers gets one row per game", () => {
-  const db = fresh();
+test("a team whose games are all in qualifiers gets one row per game", async () => {
+  const db = await fresh();
 
   try {
-    db.exec(`
+    await db.exec(`
       INSERT INTO teams(id,name) VALUES(3,'Dplus KIA');
       INSERT INTO players(id,page) VALUES(3,'ShowMaker'),(4,'Canyon');
       INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES(4,1,3,1,2,1800,1726380000);
       INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win) VALUES(4,3,3,1,'Mid',3,0),(4,4,3,1,'Jungle',2,0),(4,1,1,2,'Mid',1,1);
     `);
-    const why = explainEmpty(db, scope({ teams: [{ mention: "DK", team: "Dplus KIA", members: ["Dplus KIA"] }] }), "SELECT 1");
+    const why = await explainEmpty(db, scope({ teams: [{ mention: "DK", team: "Dplus KIA", members: ["Dplus KIA"] }] }), "SELECT 1");
 
     expect(why?.reason).toBe("qualifier_only");
     expect(why?.table?.rows).toEqual([["2024-09-15", "LCK 2024 Regional Finals", "Dplus KIA", "T1", "T1"]]);
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a scope without any game says so", () => {
-  const db = fresh();
+test("a scope without any game says so", async () => {
+  const db = await fresh();
 
   try {
-    const why = explainEmpty(db, scope({ players: [faker], champion: champion("Ahri") }), "SELECT 1");
+    const why = await explainEmpty(db, scope({ players: [faker], champion: champion("Ahri") }), "SELECT 1");
 
     expect(why?.reason).toBe("no_games");
     expect(why?.summary).toBe("Aucune partie de Faker sur Ahri aux Worlds en 2024 dans la base.");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("a question without any scope gets no explanation", () => {
-  const db = fresh();
+test("a question without any scope gets no explanation", async () => {
+  const db = await fresh();
 
   try {
-    expect(explainEmpty(db, scope({ league: null, leagueShort: null, yearFrom: null, yearTo: null }), PENTAS)).toBeNull();
+    expect(await explainEmpty(db, scope({ league: null, leagueShort: null, yearFrom: null, yearTo: null }), PENTAS)).toBeNull();
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
 test("execute stops at the first empty generated query the scope explains", async () => {
-  const db = fresh();
+  const db = await fresh();
 
   try {
     const events: AgentEvent[] = [];
@@ -220,7 +217,7 @@ test("execute stops at the first empty generated query the scope explains", asyn
     expect(last?.status).toBe("warn");
     expect(last?.title).toBe("Aucun pentakill");
   } finally {
-    db.close();
+    await db.close();
   }
 });
 

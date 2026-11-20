@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { DatabaseSync } from "node:sqlite";
 import { guardQuery } from "../src/lib/agent/guard";
 import { withLocale } from "../src/lib/agent/messages";
 import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf } from "../src/lib/agent/query";
@@ -9,8 +8,8 @@ import type { Entities, LeagueName, ResolvedPlayer } from "../src/lib/agent/type
 import { understandQuestion } from "../src/lib/agent/understand";
 import { detectChampionRanking } from "../src/lib/champions";
 import { readSchema } from "../src/lib/db";
-import { createQuerySchema, createSchema } from "../src/lib/db/schema";
 import { LEAGUES } from "../src/lib/domain/leagues";
+import { testDb, type TestDb } from "./fixtures/test-db";
 
 const SCHEMA = { v_games: ["game_id"] };
 const COVERAGE = { league: () => ({ games: 100, ingame: 100 }), player: () => ({ games: 100, ingame: 100 }), team: () => ({ games: 100, ingame: 100 }) };
@@ -25,7 +24,7 @@ const NONE = scope(null, null);
 const LEC25 = scope("LoL EMEA Championship", "LEC", 2025);
 const WORLDS = scope("World Championship", "Worlds");
 const champion = (name: string) => ({ mention: name, champion: name });
-const route = (question: string, e: Entities) => routeQuestion(question, e, SCHEMA, COVERAGE);
+const route = async (question: string, e: Entities) => routeQuestion(question, e, SCHEMA, COVERAGE);
 
 describe("cues of the rankings", () => {
   test.each([
@@ -86,133 +85,133 @@ describe("cues of the rankings", () => {
 });
 
 describe("routes of the rankings", () => {
-  test("a side of the map filters the player, champion and in-game rankings", () => {
-    expect(route("meilleurs mids côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { role: "Mid", side: "blue", criterion: "kda" } } });
-    expect(route("champions les plus joués côté rouge en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "picks", side: "red" } } });
-    expect(route("qui a le plus de solo kills côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "ingame_leaderboard", input: { metric: "solo_kills", side: "blue" } } });
-    expect(route("meilleurs mids en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { side: null } } });
+  test("a side of the map filters the player, champion and in-game rankings", async () => {
+    expect(await route("meilleurs mids côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { role: "Mid", side: "blue", criterion: "kda" } } });
+    expect(await route("champions les plus joués côté rouge en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "picks", side: "red" } } });
+    expect(await route("qui a le plus de solo kills côté bleu en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "ingame_leaderboard", input: { metric: "solo_kills", side: "blue" } } });
+    expect(await route("meilleurs mids en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { side: null } } });
   });
 
-  test("a share of the team's damage or gold is a criterion of the players, not a team ranking", () => {
-    expect(route("joueurs avec la plus grosse part des dégâts de leur équipe en LEC 2025", LEC25)).toMatchObject({
+  test("a share of the team's damage or gold is a criterion of the players, not a team ranking", async () => {
+    expect(await route("joueurs avec la plus grosse part des dégâts de leur équipe en LEC 2025", LEC25)).toMatchObject({
       kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { criterion: "dmg_share" } },
     });
-    expect(route("quel ADC a la plus grosse part de l'or en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "gold_share", role: "Bot" } } });
+    expect(await route("quel ADC a la plus grosse part de l'or en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "gold_share", role: "Bot" } } });
     // Damage alone stays the per-minute figure.
-    expect(route("joueurs avec le plus de dégâts en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "dpm" } } });
+    expect(await route("joueurs avec le plus de dégâts en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "dpm" } } });
   });
 
-  test("champions ranked on a figure of their picks", () => {
-    expect(route("champions avec le meilleur écart d'or à 15 min en mid en LEC 2025", LEC25)).toMatchObject({
+  test("champions ranked on a figure of their picks", async () => {
+    expect(await route("champions avec le meilleur écart d'or à 15 min en mid en LEC 2025", LEC25)).toMatchObject({
       kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "gold_diff_15", role: "Mid" } },
     });
-    expect(route("champions avec le plus de dégâts par minute en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "dpm" } } });
+    expect(await route("champions avec le plus de dégâts par minute en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input: { sort: "dpm" } } });
     // The ranking has no snapshot at 10 min: generated SQL.
-    expect(route("champions avec le meilleur écart d'or à 10 min en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(await route("champions avec le meilleur écart d'or à 10 min en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
   });
 
-  test("champions ranked on a total over the scope: end-of-game figures, multikills and lane counts of the Riot data", () => {
-    const ranked = (q: string, input: Partial<ChampionRankingInput>, e = LEC25) =>
-      expect(route(q, e)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input } });
+  test("champions ranked on a total over the scope: end-of-game figures, multikills and lane counts of the Riot data", async () => {
+    const ranked = async (q: string, input: Partial<ChampionRankingInput>, e = LEC25) =>
+      expect(await route(q, e)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking", input } });
 
-    ranked("champion avec le plus de mort au worlds 2026", { sort: "deaths", total: true, minPicks: null, league: "World Championship" }, WORLDS);
-    ranked("Champions les plus morts — Worlds 2026", { sort: "deaths", total: true }, WORLDS);
-    ranked("champions avec le plus de kills en LEC 2025", { sort: "kills", total: true });
-    ranked("quel champion fait le plus de dégâts en LEC 2025", { sort: "damage", total: true });
-    ranked("quel champion a le plus de pentakills en LEC 2025", { sort: "penta_kills", total: true });
-    ranked("champions avec le plus de quadra kills en LEC 2025", { sort: "quadra_kills", total: true });
-    ranked("champions avec le plus de solo kills en LEC 2025", { sort: "solo_kills", total: true });
-    ranked("quels champions ont le plus de first bloods au total en LEC 2025", { sort: "first_blood", total: true });
+    await ranked("champion avec le plus de mort au worlds 2026", { sort: "deaths", total: true, minPicks: null, league: "World Championship" }, WORLDS);
+    await ranked("Champions les plus morts — Worlds 2026", { sort: "deaths", total: true }, WORLDS);
+    await ranked("champions avec le plus de kills en LEC 2025", { sort: "kills", total: true });
+    await ranked("quel champion fait le plus de dégâts en LEC 2025", { sort: "damage", total: true });
+    await ranked("quel champion a le plus de pentakills en LEC 2025", { sort: "penta_kills", total: true });
+    await ranked("champions avec le plus de quadra kills en LEC 2025", { sort: "quadra_kills", total: true });
+    await ranked("champions avec le plus de solo kills en LEC 2025", { sort: "solo_kills", total: true });
+    await ranked("quels champions ont le plus de first bloods au total en LEC 2025", { sort: "first_blood", total: true });
     // A champion's games are its picks: "plus de 4 parties" is a minimum of 5, for a total as for an average.
-    ranked("champion avec le plus de morts au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: true, minPicks: 5 }, WORLDS);
-    ranked("champion avec le plus de morts par game au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: false, minPicks: 5 }, WORLDS);
+    await ranked("champion avec le plus de morts au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: true, minPicks: 5 }, WORLDS);
+    await ranked("champion avec le plus de morts par game au worlds 2026 avec plus de 4 parties", { sort: "deaths", total: false, minPicks: 5 }, WORLDS);
     // A share, a figure per minute or per game keep their own sort.
-    ranked("champions avec le plus de first bloods en LEC 2025", { sort: "first_blood", total: false });
-    ranked("champions avec le plus de solo kills par partie en LEC 2025", { sort: "solo_kills", total: false });
-    ranked("champions avec le plus de dégâts par minute en LEC 2025", { sort: "dpm", total: false });
+    await ranked("champions avec le plus de first bloods en LEC 2025", { sort: "first_blood", total: false });
+    await ranked("champions avec le plus de solo kills par partie en LEC 2025", { sort: "solo_kills", total: false });
+    await ranked("champions avec le plus de dégâts par minute en LEC 2025", { sort: "dpm", total: false });
     // The lowest figure, two figures at once: generated SQL. A competition without Riot data has no multikill.
-    expect(route("champion avec le moins de morts en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
-    expect(route("champions avec le plus de kills et d'assists en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
-    expect(routeQuestion("quel champion a le plus de pentakills aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(await route("champion avec le moins de morts en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(await route("champions avec le plus de kills et d'assists en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(await routeQuestion("quel champion a le plus de pentakills aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
   });
 
-  test("teams ranked on a named criterion; the standings keep 'meilleures équipes'", () => {
-    expect(route("équipes avec le meilleur winrate côté bleu en LEC 2025", LEC25)).toMatchObject({
+  test("teams ranked on a named criterion; the standings keep 'meilleures équipes'", async () => {
+    expect(await route("équipes avec le meilleur winrate côté bleu en LEC 2025", LEC25)).toMatchObject({
       kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "winrate", order: "desc", side: "blue", league: "LoL EMEA Championship" } },
     });
-    expect(route("quelle équipe a les parties les plus courtes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "game_length", order: "asc" } } });
-    expect(route("équipe avec le moins de morts par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "deaths", order: "asc" } } });
-    expect(route("équipes avec le meilleur winrate", NONE)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { league: "World Championship" } }, notes: ["Aucune compétition précisée : classement sur les Worlds."] });
-    expect(route("meilleures équipes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "tournament_standings" } });
+    expect(await route("quelle équipe a les parties les plus courtes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "game_length", order: "asc" } } });
+    expect(await route("équipe avec le moins de morts par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "deaths", order: "asc" } } });
+    expect(await route("équipes avec le meilleur winrate", NONE)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { league: "World Championship" } }, notes: ["Aucune compétition précisée : classement sur les Worlds."] });
+    expect(await route("meilleures équipes en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "tournament_standings" } });
     // An in-game metric keeps its own leaderboard.
-    expect(route("quelle équipe prend le plus souvent le premier dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "first_dragon" } } });
+    expect(await route("quelle équipe prend le plus souvent le premier dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "first_dragon" } } });
   });
 
-  test("dragons by element and souls: their breakdown; a ranking of teams keeps the in-game leaderboard", () => {
+  test("dragons by element and souls: their breakdown; a ranking of teams keeps the in-game leaderboard", async () => {
     const t1 = { ...WORLDS, teams: [{ mention: "T1", team: "T1", members: ["T1"] }] };
 
-    expect(route("quelles âmes ont été prises aux Worlds", WORLDS)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "dragon_stats", input: { team: null, league: "World Championship" } } });
-    expect(route("taux de victoire avec l'âme infernale en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: null, yearFrom: 2025, yearTo: 2025 } } });
-    expect(route("types de dragons pris par T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
-    expect(route("combien de dragons ancestraux pour T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
-    expect(route("dragon soul win rate at Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats" } });
+    expect(await route("quelles âmes ont été prises aux Worlds", WORLDS)).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "dragon_stats", input: { team: null, league: "World Championship" } } });
+    expect(await route("taux de victoire avec l'âme infernale en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: null, yearFrom: 2025, yearTo: 2025 } } });
+    expect(await route("types de dragons pris par T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
+    expect(await route("combien de dragons ancestraux pour T1 aux Worlds", t1)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats", input: { team: "T1" } } });
+    expect(await route("dragon soul win rate at Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "dragon_stats" } });
     // Teams ranked on the soul or the elder dragons: the leaderboard; on one element, no typed tool.
-    expect(route("quelle équipe prend le plus souvent l'âme du dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "dragon_soul" } } });
-    expect(route("équipes avec le plus de dragons ancestraux en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "elder_dragons" } } });
-    expect(route("quelle équipe a pris le plus d'âmes infernales en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
+    expect(await route("quelle équipe prend le plus souvent l'âme du dragon en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "dragon_soul" } } });
+    expect(await route("équipes avec le plus de dragons ancestraux en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "ingame_leaderboard", input: { subject: "team", metric: "elder_dragons" } } });
+    expect(await route("quelle équipe a pris le plus d'âmes infernales en LEC 2025", LEC25)).toMatchObject({ kind: "sql" });
     // The dragon count of the scoreboards stays a criterion of the team ranking, and the first dragon its own metric.
-    expect(route("équipes avec le plus de dragons par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "dragons" } } });
+    expect(await route("équipes avec le plus de dragons par partie en LEC 2025", LEC25)).toMatchObject({ kind: "tool", call: { tool: "team_leaderboard", input: { criterion: "dragons" } } });
     // A competition without Riot data has no soul to read.
-    expect(routeQuestion("quelles âmes ont été prises aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
-    expect(route("âmes du dragon de Faker", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "sql" });
+    expect(await routeQuestion("quelles âmes ont été prises aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(await route("âmes du dragon de Faker", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "sql" });
   });
 
-  test("champion matchups: two champions set against each other, or one and a matchup word", () => {
+  test("champion matchups: two champions set against each other, or one and a matchup word", async () => {
     const azir = { ...NONE, champion: champion("Azir") };
     const duel = { ...azir, opponentChampion: champion("Orianna") };
 
-    expect(route("Azir contre Orianna", duel)).toMatchObject({
+    expect(await route("Azir contre Orianna", duel)).toMatchObject({
       kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { champion: "Azir", opponent: "Orianna", role: null, league: null } },
       notes: ["Aucune compétition précisée : toutes compétitions confondues."],
     });
-    expect(route("winrate d'Azir face à Orianna en mid en LEC 2025", { ...LEC25, champion: champion("Azir"), opponentChampion: champion("Orianna") })).toMatchObject({
+    expect(await route("winrate d'Azir face à Orianna en mid en LEC 2025", { ...LEC25, champion: champion("Azir"), opponentChampion: champion("Orianna") })).toMatchObject({
       kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { opponent: "Orianna", role: "Mid", league: "LoL EMEA Championship", yearFrom: 2025 } }, notes: [],
     });
-    expect(route("matchups d'Azir", azir)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { champion: "Azir", opponent: null } } });
-    expect(route("counters d'Azir en mid", azir)).toMatchObject({ kind: "tool", call: { tool: "champion_matchup", input: { opponent: null, role: "Mid" } } });
+    expect(await route("matchups d'Azir", azir)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_matchup", input: { champion: "Azir", opponent: null } } });
+    expect(await route("counters d'Azir en mid", azir)).toMatchObject({ kind: "tool", call: { tool: "champion_matchup", input: { opponent: null, role: "Mid" } } });
     // Without an opposing word, the first champion's profile, as before.
-    expect(route("stats d'Azir et Orianna", duel)).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats", input: { champion: "Azir" } } });
-    expect(route("stats d'Azir aux Worlds", { ...WORLDS, champion: champion("Azir") })).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats" } });
+    expect(await route("stats d'Azir et Orianna", duel)).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats", input: { champion: "Azir" } } });
+    expect(await route("stats d'Azir aux Worlds", { ...WORLDS, champion: champion("Azir") })).toMatchObject({ kind: "tool", call: { tool: "champion_event_stats" } });
   });
 
-  test("single-game records, of everyone or of one player", () => {
-    expect(route("record de kills en une partie aux Worlds", WORLDS)).toMatchObject({
+  test("single-game records, of everyone or of one player", async () => {
+    expect(await route("record de kills en une partie aux Worlds", WORLDS)).toMatchObject({
       kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: null, league: "World Championship" } }, notes: [],
     });
-    expect(route("most damage in a single game", NONE)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "damage", league: null } } });
-    expect(route("record de kills des mids en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "kills", role: "Mid" } } });
+    expect(await route("most damage in a single game", NONE)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "damage", league: null } } });
+    expect(await route("record de kills des mids en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "game_records", input: { metric: "kills", role: "Mid" } } });
     // A per-minute figure is not one the records hold, and a competition without Riot data has no lane record.
-    expect(route("record de dégâts par minute en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "sql" });
+    expect(await route("record de dégâts par minute en une partie aux Worlds", WORLDS)).toMatchObject({ kind: "sql" });
 
-    for (const figure of ["DPM", "GPM", "CSPM"]) expect(route(`record de ${figure} en une partie aux Worlds`, WORLDS)).toMatchObject({ kind: "sql" });
-    expect(routeQuestion("record de solo kills en une partie aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
-    expect(routeQuestion("champions avec le meilleur écart d'or à 15 min aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
-    expect(route("meilleure game de Faker en kills", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: "Faker", role: null } } });
+    for (const figure of ["DPM", "GPM", "CSPM"]) expect(await route(`record de ${figure} en une partie aux Worlds`, WORLDS)).toMatchObject({ kind: "sql" });
+    expect(await routeQuestion("record de solo kills en une partie aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(await routeQuestion("champions avec le meilleur écart d'or à 15 min aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+    expect(await route("meilleure game de Faker en kills", { ...NONE, players: [player("Faker")] })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "game_records", input: { metric: "kills", player: "Faker", role: null } } });
     // A total over the scope stays the player ranking, and a team's "record" is its results.
-    expect(route("qui a le plus de kills aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "kills" } } });
-    expect(route("record de T1", { ...NONE, teams: [{ mention: "T1", team: "T1", members: ["T1"] }] })).toMatchObject({ kind: "tool", call: { tool: "team_history" } });
+    expect(await route("qui a le plus de kills aux Worlds", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { criterion: "kills" } } });
+    expect(await route("record de T1", { ...NONE, teams: [{ mention: "T1", team: "T1", members: ["T1"] }] })).toMatchObject({ kind: "tool", call: { tool: "team_history" } });
   });
 
-  test("a player's latest games", () => {
+  test("a player's latest games", async () => {
     const faker = { ...NONE, players: [player("Faker")] };
 
-    expect(route("forme récente de Faker", faker)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "player_recent_games", input: { player: "Faker", league: null, count: null } } });
-    expect(route("5 dernières parties de Faker en LEC", { ...scope("LoL EMEA Championship", "LEC"), players: [player("Faker")] })).toMatchObject({
+    expect(await route("forme récente de Faker", faker)).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "player_recent_games", input: { player: "Faker", league: null, count: null } } });
+    expect(await route("5 dernières parties de Faker en LEC", { ...scope("LoL EMEA Championship", "LEC"), players: [player("Faker")] })).toMatchObject({
       kind: "tool", confidence: 0.9, call: { tool: "player_recent_games", input: { count: 5, league: "LoL EMEA Championship" } },
     });
-    expect(route("last 5 games of Faker", faker)).toMatchObject({ kind: "tool", call: { tool: "player_recent_games", input: { count: 5 } } });
+    expect(await route("last 5 games of Faker", faker)).toMatchObject({ kind: "tool", call: { tool: "player_recent_games", input: { count: 5 } } });
     // Their results at an event stay the history.
-    expect(route("résultats de Faker aux Worlds", { ...WORLDS, players: [player("Faker")] })).toMatchObject({ kind: "tool", call: { tool: "player_event_history" } });
+    expect(await route("résultats de Faker aux Worlds", { ...WORLDS, players: [player("Faker")] })).toMatchObject({ kind: "tool", call: { tool: "player_event_history" } });
   });
 });
 
@@ -220,14 +219,12 @@ describe("routes of the rankings", () => {
  * Three LEC 2025 games between G2 (Caps mid, BrokenBlade top) and Fnatic (Humanoid mid, Oscarinin top):
  * G2 wins game 1 on blue and game 2 on red, Fnatic wins game 3 on red. Every game has Riot data.
  */
-function seed(db: DatabaseSync) {
-  createSchema(db);
-  createQuerySchema(db);
-  LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
-  const lec = Number(db.prepare("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'").get()!.id);
+async function seed(db: TestDb) {
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
 
-  db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC25','LEC25','season',?,2025)").run(lec);
-  db.exec(`
+  await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'LEC25','LEC25','season',?,2025)", lec);
+  await db.exec(`
     INSERT INTO teams(id,name) VALUES (1,'G2 Esports'),(2,'Fnatic');
     INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid'),(3,'BrokenBlade'),(4,'Oscarinin');
     INSERT INTO champions VALUES (1,'Azir','https://ddragon/Azir.png'),(2,'Orianna','https://ddragon/Orianna.png'),(3,'Gnar','https://ddragon/Gnar.png'),(4,'Jax',NULL),(5,'Locke',NULL);
@@ -254,24 +251,24 @@ function seed(db: DatabaseSync) {
   `);
 }
 
-async function run(db: DatabaseSync, call: Parameters<typeof bindTool>[1]) {
-  const tool = bindTool(db, call);
+async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
+  const tool = await bindTool(db, call);
 
   // Typed queries go through the same guard as generated ones.
-  expect(guardQuery(db, readSchema(db), tool.sql).ok).toBe(true);
+  expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
-  return tool.format(db, db.prepare(tool.sql).all(tool.params));
+  return tool.format(db, (await db.query(tool.sql, tool.params)));
 }
 
-async function seeded<T>(body: (db: DatabaseSync) => Promise<T>): Promise<T> {
-  const db = new DatabaseSync(":memory:");
+async function seeded<T>(body: (db: TestDb) => Promise<T>): Promise<T> {
+  const db = await testDb();
 
   try {
-    seed(db);
+    await seed(db);
 
     return await body(db);
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
@@ -333,7 +330,7 @@ describe("rankings on a seeded season", () => {
 
       expect(min.facts).toContain("minimum 3 picks");
 
-      db.exec("UPDATE game_player_stats SET penta_kills = 0, quadra_kills = CASE WHEN game_id = 1 AND player_id = 1 THEN 1 ELSE 0 END");
+      await db.exec("UPDATE game_player_stats SET penta_kills = 0, quadra_kills = CASE WHEN game_id = 1 AND player_id = 1 THEN 1 ELSE 0 END");
       const quadras = await run(db, { tool: "champion_ranking", input: { ...input, sort: "quadra_kills" } });
 
       // Champions without one are left out of a total ranking.
@@ -350,7 +347,7 @@ describe("rankings on a seeded season", () => {
       expect(pentas.followUps).toEqual(["Champions avec le plus de quadrakills en LEC 2025", "Champions les plus joués en LEC 2025"]);
 
       // No Riot data at all in the scope (the LPL): the figure is absent, not zero, and the scope is not widened.
-      db.exec("DELETE FROM game_player_stats");
+      await db.exec("DELETE FROM game_player_stats");
       const absent = await run(db, { tool: "champion_ranking", input: { ...input, sort: "penta_kills" } });
 
       expect(absent.table).toBeUndefined();
@@ -389,7 +386,7 @@ describe("rankings on a seeded season", () => {
   test("dragons and souls: kills by element, souls and the wins of the teams that got them, for every team or one", () =>
     seeded(async (db) => {
       // Game 1: G2 (blue, winner) takes four dragons and the mountain soul. Game 2: no soul. Game 3: Fnatic (red, winner) the chemtech soul, G2 the elder.
-      db.exec(`
+      await db.exec(`
         UPDATE game_team_stats SET elder_dragons = 0, dragon_soul = (side = 1), soul = CASE side WHEN 1 THEN 'mountain' END WHERE game_id = 1;
         INSERT INTO game_team_stats(game_id,side,elder_dragons,dragon_soul,soul) VALUES (2,1,0,0,NULL),(2,2,0,0,NULL),(3,1,1,0,NULL),(3,2,0,1,'chemtech');
         -- game_id, seq, team_seq, side, kind, time_s
@@ -427,7 +424,7 @@ describe("rankings on a seeded season", () => {
 
       expect(rate.table!.rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([["Fnatic", 3, 1, 33.3], ["G2 Esports", 3, 1, 33.3]]);
       // A game where the soul is unknown (no timeline, or before patch 9.23) is not in the rate nor in its games.
-      db.exec("UPDATE game_team_stats SET dragon_soul = NULL, soul = NULL WHERE game_id = 2");
+      await db.exec("UPDATE game_team_stats SET dragon_soul = NULL, soul = NULL WHERE game_id = 2");
       const known = await run(db, { tool: "ingame_leaderboard", input: { ...LEC, subject: "team", metric: "dragon_soul", minute: null, role: null, minGames: 1, side: null } });
 
       expect(known.table!.rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([["Fnatic", 2, 1, 50], ["G2 Esports", 2, 1, 50]]);
@@ -465,9 +462,9 @@ describe("rankings on a seeded season", () => {
       expect(red.title).toBe("Classement des équipes — % victoires côté rouge (LEC 2025)");
 
       // The default minimum of a league season (10 games) leaves nobody: the first correction lowers it.
-      const strict = bindTool(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate", minGames: null } });
+      const strict = await bindTool(db, { tool: "team_leaderboard", input: { ...input, criterion: "winrate", minGames: null } });
 
-      expect(db.prepare(strict.sql).all(strict.params)).toEqual([]);
+      expect((await db.query(strict.sql, strict.params))).toEqual([]);
       expect(strict.relaxations(LEC25)[0]).toMatchObject({ key: "minGames" });
     }));
 
@@ -489,9 +486,9 @@ describe("rankings on a seeded season", () => {
       expect(back.totals).toMatchObject({ games: 3, wins: 1, gold_diff_15: -100 });
 
       // Never in the same role: nothing, then the role filter is the first correction.
-      const top = bindTool(db, { tool: "champion_matchup", input: { ...LEC, champion: "Azir", opponent: "Orianna", role: "Top" } });
+      const top = await bindTool(db, { tool: "champion_matchup", input: { ...LEC, champion: "Azir", opponent: "Orianna", role: "Top" } });
 
-      expect(db.prepare(top.sql).all(top.params)).toEqual([]);
+      expect((await db.query(top.sql, top.params))).toEqual([]);
       expect(top.relaxations(LEC25).map((r) => r.key)).toEqual(["role", "period", "league"]);
     }));
 
@@ -511,9 +508,9 @@ describe("rankings on a seeded season", () => {
       const { TOOLS } = await import("../src/lib/agent/tools");
       const input = { ...LEC, role: null };
 
-      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "azir", opponent: "ORIANNA" })).toMatchObject({ input: { champion: "Azir", opponent: "Orianna" } });
-      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Azir" })).toMatchObject({ input: { champion: "Azir", opponent: null } });
-      expect(TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Nobody" })).toBeNull();
+      expect(await TOOLS.champion_matchup.normalize(db, { ...input, champion: "azir", opponent: "ORIANNA" })).toMatchObject({ input: { champion: "Azir", opponent: "Orianna" } });
+      expect(await TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Azir" })).toMatchObject({ input: { champion: "Azir", opponent: null } });
+      expect(await TOOLS.champion_matchup.normalize(db, { ...input, champion: "Azir", opponent: "Nobody" })).toBeNull();
     }));
 
   test("the ranked column a table names as its focus is one of its columns, in both languages", () =>

@@ -17,7 +17,7 @@ import { playerIdentity } from "./identity";
 import { loadIngame } from "./riot";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION } from "./ingame";
 import { createSchema, createQuerySchema, SCHEMA_TABLES } from "../../src/lib/db/schema";
-import { selectAll, selectOne } from "../../src/lib/db";
+import { sqliteAll as selectAll, sqliteOne as selectOne } from "./sqlite";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
 import {

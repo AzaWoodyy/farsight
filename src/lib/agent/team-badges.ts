@@ -1,6 +1,5 @@
-import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { selectAll } from "../db";
+import { type Db, selectAll } from "../db";
 import { CUP_LEAGUES } from "../domain/leagues";
 import { teamLogo } from "../domain/team-logos";
 import type { ToolOutput } from "./tools";
@@ -41,7 +40,7 @@ const LEAGUES_SHOWN = 2;
  * Logo, logo tone and league of each team name. `aliases`: the other names a shown name stands for (a roster's
  * team counts every name it played under), whose games count for its league.
  */
-export function teamBadges(db: DatabaseSync, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
+export async function teamBadges(db: Db, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
   const logos = names.flatMap((name) => {
     const logo = teamLogo(name);
 
@@ -51,7 +50,7 @@ export function teamBadges(db: DatabaseSync, names: string[], period: Period, al
   return {
     icons: Object.fromEntries(logos.map((l) => [l.name, l.url])),
     tones: Object.fromEntries(logos.flatMap((l) => (l.tone ? [[l.name, l.tone]] : []))),
-    leagues: teamLeagues(db, names, period, aliases),
+    leagues: await teamLeagues(db, names, period, aliases),
   };
 }
 
@@ -64,8 +63,8 @@ type Period = { yearFrom: number | null; yearTo: number | null };
  * league it last played in, from its latest season that has one. A name is matched as stored or as displayed,
  * without Leaguepedia's disambiguation ("Griffin (Korean Team)").
  */
-export function teamLeagues(db: DatabaseSync, names: string[], period: Period, aliases: Record<string, string[]>): Record<string, string[]> {
-  const inPeriod = new Map([...seasonGames(db, names, period, aliases)].flatMap(([team, rows]) => {
+export async function teamLeagues(db: Db, names: string[], period: Period, aliases: Record<string, string[]>): Promise<Record<string, string[]>> {
+  const inPeriod = new Map([...(await seasonGames(db, names, period, aliases))].flatMap(([team, rows]) => {
     const leagues = ownLeagues(rows);
 
     return leagues.length ? [[team, leagues.toSorted((a, b) => a.first - b.first).slice(-LEAGUES_SHOWN).map((l) => l.league)]] : [];
@@ -73,7 +72,7 @@ export function teamLeagues(db: DatabaseSync, names: string[], period: Period, a
 
   const missing = names.filter((n) => !inPeriod.has(n));
 
-  const latest = [...seasonGames(db, missing, { yearFrom: null, yearTo: null }, aliases)].flatMap(([team, rows]) => {
+  const latest = [...(await seasonGames(db, missing, { yearFrom: null, yearTo: null }, aliases))].flatMap(([team, rows]) => {
     const years = [...new Set(rows.map((r) => r.year))].toSorted((a, b) => b - a);
 
     for (const year of years) {
@@ -106,13 +105,13 @@ function ownLeagues(rows: SeasonGames[]): LeagueGames[] {
 }
 
 /** Games of each team over the period, by season and competition. */
-function seasonGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Map<string, SeasonGames[]> {
+async function seasonGames(db: Db, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Promise<Map<string, SeasonGames[]>> {
   if (!names.length) return new Map();
 
   const asked = names.flatMap((team) => [...new Set([team, ...(aliases[team] ?? [])])].map((name) => [team, name]));
 
   // Two queries: given the shown names as a joined list, SQLite walks it again for every game.
-  const ids = selectAll(
+  const ids = await selectAll(
     db,
     z.object({ team: z.string(), id: z.number() }),
     `WITH asked(team, name) AS (SELECT value ->> 0, value ->> 1 FROM json_each(?))
@@ -123,7 +122,7 @@ function seasonGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Pe
 
   if (!ids.length) return new Map();
 
-  const rows = selectAll(
+  const rows = await selectAll(
     db,
     z.object({ id: z.number(), year: z.number(), league: z.string(), own: z.number(), games: z.number(), first: z.number(), last: z.number() }),
     `WITH ids(id) AS (SELECT value FROM json_each(?)),

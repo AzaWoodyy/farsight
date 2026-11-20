@@ -2,29 +2,30 @@ import { expect, test } from "bun:test";
 import { DatabaseSync } from "node:sqlite";
 import { sitemapEntries } from "../src/app/i18n/metadata";
 import robots from "../src/app/robots";
+import { sqliteDb } from "../src/lib/db";
 import { dataReleaseDay } from "../src/lib/db/release";
 
 const RUNS = "CREATE TABLE ingest_runs (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL)";
 
-function withRuns(rows: [kind: string, finishedAt: string][]): DatabaseSync {
+function withRuns(rows: [kind: string, finishedAt: string][]) {
   const db = new DatabaseSync(":memory:");
 
   db.exec(RUNS);
 
   for (const [kind, finishedAt] of rows) db.prepare("INSERT INTO ingest_runs (kind, started_at, finished_at) VALUES (?, 'x', ?)").run(kind, finishedAt);
 
-  return db;
+  return sqliteDb(db);
 }
 
-test("the data release day is the last build recorded in the database", () => {
+test("the data release day is the last build recorded in the database", async () => {
   const db = withRuns([["build", "2026-11-10T02:17:37.590Z"], ["fetch_full", "2026-11-17T01:00:00.000Z"], ["build", "2026-11-17T02:17:37.590Z"], ["fetch_full", "2026-11-18T01:00:00.000Z"]]);
 
-  expect(dataReleaseDay(db)).toBe("2026-11-17");
+  expect(await dataReleaseDay(db)).toBe("2026-11-17");
 });
 
-test("no build, or an unreadable date, gives no day rather than an invented one", () => {
-  expect(dataReleaseDay(withRuns([]))).toBeNull();
-  expect(dataReleaseDay(withRuns([["build", "x"]]))).toBeNull();
+test("no build, or an unreadable date, gives no day rather than an invented one", async () => {
+  expect(await dataReleaseDay(withRuns([]))).toBeNull();
+  expect(await dataReleaseDay(withRuns([["build", "x"]]))).toBeNull();
 });
 
 test("the sitemap dates each page with its own day and keeps its alternates", () => {
