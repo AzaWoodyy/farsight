@@ -144,7 +144,6 @@ export function postgresDb(pool: PgPool, ready?: () => Promise<void>): Db {
   let checked: Promise<void> | null = null;
 
   return {
-    kind: "postgres",
     pool,
     query: async (sql, params) => {
       if (ready) {

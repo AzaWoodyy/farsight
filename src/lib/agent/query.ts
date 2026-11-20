@@ -50,7 +50,7 @@ export const OPPOSE = word(
 );
 
 const STANDINGS = word(
-  "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|who won|classements?|standings|podium|sacr[ée]s?|finale",
+  "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|qui a soulev[ée] (?:la coupe|le troph[ée]e)|who won|who lifted the (?:cup|trophy)|classements?|standings|podium|sacr[ée]s?|finale",
 );
 
 /** Metrics and open rankings no typed tool computes: they go to text-to-SQL. */
@@ -279,6 +279,9 @@ const CHAMPION_UNRANKED = word(
 
 /** Figures of a game, not of a champion's line: no per-game average of the ranking answers them. */
 const CHAMPION_OTHER_FIGURES = word("dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration");
+
+/** The dragon event identifies its team, but has no killer champion. */
+const CHAMPION_DRAGON_KILLS = word("champions? (?:avec|ayant|a|ont) le plus de dragons?|champions? (?:with|has|have|killed|kills) the most (?:dragons|drakes|dragon kills)");
 
 export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
 
@@ -1065,14 +1068,14 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   if (e.champion && !e.players.length && !e.teams.length && (MATCHUP.test(question) || (e.opponentChampion && VERSUS.test(question)))) return matchupRoute(question, e);
 
   // "record de kills en une partie aux Worlds", "meilleure game de Faker en dégâts": one game's figure, of everyone or of one player.
-  const recordCue = detectMetric(question);
+  const cue = detectMetric(question);
   const asksRecord = !e.champion && !e.teams.length && e.players.length <= 1 && SINGLE_GAME.test(question) && !LOWEST.test(question);
-  const record = asksRecord ? recordMetricOf(question, recordCue) : null;
+  const record = asksRecord ? recordMetricOf(question, cue) : null;
 
   // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
   if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: msg().route.perMinuteRecord };
 
-  if (record) return (recordCue && (await ingameAbsent(e, recordCue.mention, coverage))) ?? recordsRoute(e, record, roleOf(question));
+  if (record) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? recordsRoute(e, record, roleOf(question));
 
   // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
@@ -1083,10 +1086,10 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   // One player or one team and a pool word ("champion pool de Faker", "quels champions joue Keria", "pool de T1 aux Worlds 2023"),
   // before the roster: "quels champions joue le mid de T1" asks for champions, not players.
   // Not with a champion named (a player on one champion), nor with an in-game metric the pool does not hold.
-  if (!e.champion && !detectMetric(question) && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
+  if (!e.champion && !cue && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
 
   // One player and a word about their latest games ("forme récente de Faker", "5 dernières parties de Caps").
-  if (e.players.length === 1 && !e.champion && !detectMetric(question) && RECENT.test(question)) return recentRoute(question, e);
+  if (e.players.length === 1 && !e.champion && !cue && RECENT.test(question)) return recentRoute(question, e);
 
   // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
   // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?", "top fpx 2019", "jg de G2"): the roster, that role first.
@@ -1096,7 +1099,7 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   // One player and a team or roster word, no team named ("Rooster team 2026", "coéquipiers de Faker en 2017"): the roster of their team.
   // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
   const asksPlayerTeam =
-    e.players.length === 1 && !e.teams.length && !e.champion && !detectMetric(question) && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
+    e.players.length === 1 && !e.teams.length && !e.champion && !cue && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
     PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(PLAYS_FOR.test(rest) ? rest.replace(WHICH_TEAM, " ") : rest);
 
   const playerTeam = asksPlayerTeam ? await coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
@@ -1105,18 +1108,24 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   // Only when the roster reads every word: "did Faker's team qualify" or "which team was Faker facing" ask something else about the team.
   if (ofPlayerTeam?.kind === "tool" && unreadWords(question, e, ofPlayerTeam.call).words.length === 0) return ofPlayerTeam;
 
-  const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !detectMetric(question);
+  const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !cue;
 
   if (oneTeam && (ROSTER.test(question) || (teamRoleOf(rest) && !RANKING.test(rest) && !COMPARE.test(question) && !HISTORY_WORDS.test(question) && !UNSUPPORTED.test(rest))))
     return rosterRoute(question, e);
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
 
-  const cue = detectMetric(question);
-
   // A champion alone: its profile answers its averages too ("KDA d'Azir", "dégâts de Jinx"), and the gold
   // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
   if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e, question);
+
+  if (noEntity && CHAMPION_DRAGON_KILLS.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
+    // Team totals can be joined to the champions picked by that side.
+    if (TEAM_WORDS.test(question)) return { kind: "sql", reason: msg().route.championFigureUnsorted("dragons") };
+    const concept = msg().route.championDragonKills;
+
+    return { kind: "missing", concepts: [concept], reason: msg().route.missing(concept) };
+  }
 
   // Teams ranked on a criterion the question names ("équipes avec le meilleur winrate", "quelle équipe a les parties les plus courtes").
   // In-game metrics keep their leaderboard, and "meilleures équipes" alone keeps the standings.

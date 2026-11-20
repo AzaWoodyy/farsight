@@ -4,8 +4,6 @@
  * Each decision point lists its deciders from cheapest to most expensive:
  *
  *   rules  regex, alias table, typed query templates (free, ~1 ms)
- *   model  small local model, e.g. a classifier or NER exported to ONNX
- *          (reserved: no decider uses it yet)
  *   llm    OpenRouter, only when the cheaper levels are not confident enough
  *
  * `decide()` runs them in order and stops at the first result whose
@@ -17,7 +15,7 @@
 import { describeLlmError, requestAborted } from "./llm";
 import { msg } from "./messages";
 
-export type DecisionLevel = "rules" | "model" | "llm";
+export type DecisionLevel = "rules" | "llm";
 
 export type Decision<T> = {
   result: T;

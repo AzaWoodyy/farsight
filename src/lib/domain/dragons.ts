@@ -8,9 +8,6 @@ export const DRAGON_KINDS = ["infernal", "ocean", "mountain", "cloud", "hextech"
 
 export type DragonKind = (typeof DRAGON_KINDS)[number];
 
-/** The elements a soul can have: every dragon but the elder. */
-export const SOUL_KINDS = DRAGON_KINDS.filter((k) => k !== "elder");
-
 /** `monsterSubType` of an ELITE_MONSTER_KILL event. */
 const RIOT_SUB_TYPES = new Map<string, DragonKind>([
   ["FIRE_DRAGON", "infernal"],
@@ -49,19 +46,9 @@ export const DRAGON_LABELS: Record<DragonKind, string> = {
 
 export const isDragonKind = (value: string | null | undefined): value is DragonKind => DRAGON_KINDS.some((k) => k === value);
 
-const DRAGON_LABELS_EN: Record<DragonKind, string> = {
-  infernal: "infernal",
-  ocean: "ocean",
-  mountain: "mountain",
-  cloud: "cloud",
-  hextech: "hextech",
-  chemtech: "chemtech",
-  elder: "elder",
-};
-
 /** Label of a stored kind in the language of the request; "sans élément" / "no element" for the dragons before the elements. */
 export const dragonLabel = (kind: string | null | undefined): string =>
-  say(isDragonKind(kind) ? DRAGON_LABELS[kind] : "sans élément", isDragonKind(kind) ? DRAGON_LABELS_EN[kind] : "no element");
+  isDragonKind(kind) ? say(DRAGON_LABELS[kind], kind) : say("sans élément", "no element");
 
 /** Leaguepedia's icon file of each dragon (Riot's art, fair use: file names only, see wiki-images.ts). */
 export const DRAGON_ICON_FILES: Record<DragonKind, string> = {

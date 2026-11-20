@@ -16,7 +16,6 @@ export type SqlParams = Record<string, SqlInput> | SqlInput[];
 
 /** The read side of the database, the only one the app sees. Every call is asynchronous: the database is remote. */
 export interface Db {
-  readonly kind: "postgres";
   /** The connections behind it: generated queries borrow one for their own read-only transaction. */
   readonly pool: PgPool;
   /** Every row of one read-only statement. */

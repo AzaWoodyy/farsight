@@ -1,25 +1,15 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PlayerPhoto } from "../agent/types";
 import { type Db, selectOne } from "../db";
+import { wikiImageUrl } from "./wiki-images";
 
 /**
  * Leaguepedia headshots (table player_images), dated by the tournament they were taken for. The images are
  * fair use (Riot Games and the leagues), not CC BY-SA: the database keeps their file names only, and the page
  * shows them from Fandom's CDN at the width it needs.
+ * The CDN serves twice the largest avatar width (56 px).
  */
-const CDN = "https://static.wikia.nocookie.net/lolesports_gamepedia_en/images";
-
-/** Width served: twice the largest avatar (56 px, the player header), for high-density screens. */
 const WIDTH = 112;
-
-/** MediaWiki stores a file under the first one and two hex digits of the md5 of its name. */
-export function photoUrl(file: string, width = WIDTH): string {
-  const name = file.replace(/ /g, "_");
-  const md5 = createHash("md5").update(name).digest("hex");
-
-  return `${CDN}/${md5[0]}/${md5.slice(0, 2)}/${encodeURIComponent(name)}/revision/latest/scale-to-width-down/${width}`;
-}
 
 /** `taken_at` of a headshot Leaguepedia does not date: the oldest date, kept only for a player who has no other. */
 export const UNDATED_PHOTO = 0;
@@ -40,7 +30,7 @@ export async function playerPhoto(db: Db, player: string, at: number | null): Pr
   if (!row) return null;
 
   return {
-    url: photoUrl(row.file),
+    url: wikiImageUrl(row.file, WIDTH),
     year: row.taken_at === UNDATED_PHOTO ? null : new Date(row.taken_at * 1000).getUTCFullYear(),
     source: `https://lol.fandom.com/wiki/File:${encodeURIComponent(row.file.replace(/ /g, "_"))}`,
   };

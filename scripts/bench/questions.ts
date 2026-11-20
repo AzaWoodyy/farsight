@@ -50,18 +50,17 @@ const compare = option("compare");
 
 if (compare) {
   const [a, b] = compare.split(",").map((f) => Report.parse(JSON.parse(readFileSync(f, "utf8"))));
-  const byId = new Map(b.questions.map((q) => [q.id, q]));
-  const differ = a.questions.filter((q) => byId.get(q.id)?.fingerprint !== q.fingerprint);
+  const before = new Map(a.questions.map((q) => [q.id, q]));
+  const after = new Map(b.questions.map((q) => [q.id, q]));
+  const ids = new Set([...before.keys(), ...after.keys()]);
+  const differ = [...ids].filter((id) => before.get(id)?.fingerprint !== after.get(id)?.fingerprint);
+  const describe = (q: Measured | undefined) => q ? `${q.route}/${q.rows} "${q.title}"` : "absent";
 
   console.log(`A ${line(a)}`);
   console.log(`B ${line(b)}`);
-  console.log(`same answer: ${a.questions.length - differ.length}/${a.questions.length}`);
+  console.log(`same answer: ${ids.size - differ.length}/${ids.size}`);
 
-  for (const q of differ) {
-    const o = byId.get(q.id);
-
-    console.log(`  ${q.id}: ${q.route}/${q.rows} "${q.title}" ≠ ${o ? `${o.route}/${o.rows} "${o.title}"` : "absent"}`);
-  }
+  for (const id of differ) console.log(`  ${id}: ${describe(before.get(id))} ≠ ${describe(after.get(id))}`);
 
   process.exit(0);
 }
@@ -70,7 +69,9 @@ const out = option("out");
 
 if (!out) throw new Error("--out=<file> is required");
 
-const passes = Math.max(2, Number(option("passes") ?? 2));
+const passes = Number(option("passes") ?? 2);
+
+if (!Number.isSafeInteger(passes) || passes < 2) throw new Error("--passes must be an integer of at least 2 (including the warm-up)");
 
 // Rules only, nothing traced: the figures are the database's and the agent's, not a model's.
 delete process.env.OPENROUTER_API_KEY;
@@ -108,7 +109,7 @@ for (let pass = 0; pass < passes; pass++) {
   }
 }
 
-const report: Report = { database: process.env.DATABASE_URL ? "postgres" : "sqlite", startedAt: new Date().toISOString(), passes, firstMs, questions: measured };
+const report: Report = { database: "postgres", startedAt: new Date().toISOString(), passes, firstMs, questions: measured };
 
 writeFileSync(out, `${JSON.stringify(report, null, 1)}\n`);
 

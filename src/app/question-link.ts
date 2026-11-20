@@ -16,7 +16,7 @@ const OPENING_ATTR = "data-question-link";
  * answer, so the console stays hidden until it has read the address (see globals.css) instead of flashing
  * the home screen first.
  */
-export const QUESTION_LINK_SCRIPT = `if(/[?&]${PARAM}=[^&]/.test(location.search))document.documentElement.setAttribute("${OPENING_ATTR}","")`;
+export const QUESTION_LINK_SCRIPT = `{const q=new URLSearchParams(location.search).getAll("${PARAM}");if(q.length===1&&q[0])document.documentElement.setAttribute("${OPENING_ATTR}","")}`;
 
 export const questionLinkRead = () => document.documentElement.removeAttribute(OPENING_ATTR);
 
@@ -29,13 +29,11 @@ export const normalizeQuestion = (text: string): string => text.replace(/\s+/g, 
  * would let a broken escape through as text; a literal percent sign is `%25`.
  */
 export function questionIn(search: string): string | null {
-  const encoded = search
-    .replace(/^\?/, "")
-    .split("&")
-    .find((pair) => pair.startsWith(`${PARAM}=`))
-    ?.slice(PARAM.length + 1);
+  // The decoded key can also be written %71. Count bare and empty keys as duplicates.
+  const fields = search.replace(/^\?/, "").split("&").filter((pair) => /^(?:q|%71)(?:=|$)/.test(pair));
 
-  if (!encoded) return null;
+  if (fields.length !== 1 || !fields[0].includes("=")) return null;
+  const encoded = fields[0].slice(fields[0].indexOf("=") + 1);
 
   let raw: string;
 

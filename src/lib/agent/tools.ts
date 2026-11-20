@@ -2,6 +2,7 @@ import { answerLocale, type Phrase, phrase, say, tr } from "./messages";
 import { dateFormat, NO_DATA, numberFormat } from "../locale";
 import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } from "../domain/dragons";
 import { runeIcon } from "../domain/rune-icons";
+import { displayTeam } from "../domain/teams";
 import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
 import { englishIn, frenchIn, frenchOf, LEAGUES, leagueMembers, ROSTER_EXCLUDED } from "../domain/leagues";
@@ -194,8 +195,6 @@ export type ChampionExtraSort = (typeof CHAMPION_EXTRA_SORTS)[number];
 
 /** Multikills of the Riot game data: rare enough that only their total over the scope means something. */
 export const CHAMPION_MULTIKILL_SORTS = ["penta_kills", "quadra_kills", "triple_kills", "double_kills"] as const;
-
-export type ChampionMultikillSort = (typeof CHAMPION_MULTIKILL_SORTS)[number];
 
 export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda", ...CHAMPION_AVERAGE_SORTS, ...CHAMPION_EXTRA_SORTS, ...CHAMPION_MULTIKILL_SORTS] as const;
 
@@ -581,7 +580,6 @@ const noPeriod = <I extends Period>(input: I, what: string): Relaxation<I> => ({
   reason: say("filtre de période retiré", "period filter removed"),
 });
 
-export const displayTeam = (team: string) => team.replace(/\s*\(.*?\)\s*$/, "");
 const pct = (w: number, n: number) => Math.round((100 * w) / Math.max(1, n));
 const span = (years: number[]) => (years.length ? `${Math.min(...years)}–${Math.max(...years)}` : "");
 
@@ -3200,6 +3198,7 @@ LIMIT 20`),
     const pages = (await selectAll(db, z.object({ event_page: z.string() }), `SELECT s.event_page FROM v_games s WHERE ${scope} AND s.has_ingame = 1 GROUP BY s.event_page ORDER BY MAX(s.played_at) DESC NULLS LAST LIMIT 12`, params)).map((r) => r.event_page);
     const value = (r: z.infer<typeof LeaderRow>) => (def.aggregate === "sum" ? (r.total ?? 0) : round1(r.average));
     const unit = def.aggregate === "rate" ? say(" %", "%") : "";
+    const displayName = (name: string) => input.subject === "team" ? displayTeam(name) : name;
     const who = input.subject === "team" ? say("Équipe", "Team") : say("Joueur", "Player");
     const minGames = minGamesOf(input);
     const years = (await selectAll(db, z.object({ year: z.number().nullable() }), `SELECT DISTINCT s.year FROM v_games s WHERE ${scope} AND s.has_ingame = 1`, params)).flatMap((r) => (r.year == null ? [] : [r.year]));
@@ -3207,7 +3206,7 @@ LIMIT 20`),
     const roleLabel = say(`${input.role ? ` (rôle ${input.role})` : ""}${sideLabel(input.side)}`, `${input.role ? ` (${input.role} role)` : ""}${sideLabel(input.side)}`);
 
     const totals: ToolOutput["totals"] = {
-      leader: rows[0] ? displayTeam(rows[0].name) : "",
+      leader: rows[0] ? displayName(rows[0].name) : "",
       leader_value: rows[0] ? (value(rows[0]) ?? 0) : 0,
       rows: rows.length,
       ingame_games: cov.ingame,
@@ -3218,7 +3217,7 @@ LIMIT 20`),
 
     const facts =
       say(`${def.aggregate === "sum" ? "Total de" : def.aggregate === "rate" ? "Part des parties avec" : "Moyenne par partie de"} ${label}${roleLabel} ${scopeLabel} : `, `${def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "Share of games with" : "Average per game of"} ${label}${roleLabel} ${scopeLabel}: `) +
-      rows.slice(0, 3).map((r, i) => say(`${i + 1}. ${displayTeam(r.name)} (${def.aggregate === "rate" ? `${r.total ?? 0} sur ${r.counted} parties, ${value(r)}${unit}` : `${value(r)}${unit}, ${r.games} parties`})`, `${i + 1}. ${displayTeam(r.name)} (${def.aggregate === "rate" ? `${r.total ?? 0} out of ${r.counted} games, ${value(r)}${unit}` : `${value(r)}${unit}, ${r.games} games`})`)).join(", ") +
+      rows.slice(0, 3).map((r, i) => say(`${i + 1}. ${displayName(r.name)} (${def.aggregate === "rate" ? `${r.total ?? 0} sur ${r.counted} parties, ${value(r)}${unit}` : `${value(r)}${unit}, ${r.games} parties`})`, `${i + 1}. ${displayName(r.name)} (${def.aggregate === "rate" ? `${r.total ?? 0} out of ${r.counted} games, ${value(r)}${unit}` : `${value(r)}${unit}, ${r.games} games`})`)).join(", ") +
       say(`. ${cov.ingame} parties avec données in-game${def.aggregate === "sum" ? "" : `, minimum ${minGames} parties par ${input.subject === "team" ? "équipe" : "joueur"}`}.`, `. ${cov.ingame} games with in-game data${def.aggregate === "sum" ? "" : `, minimum ${minGames} games per ${input.subject === "team" ? "team" : "player"}`}.`) +
       coverageNote(cov);
 
@@ -3229,7 +3228,7 @@ LIMIT 20`),
         columns: [say("Rang", "Rank"), who, ...(input.subject === "player" ? [say("Équipe (dernière)", "Team (latest)")] : []), say("Parties", "Games"), ...(def.aggregate === "rate" ? [say("Nombre", "Count")] : []), def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : say("Moyenne", "Average"), ...(def.aggregate === "sum" ? [say("Par partie", "Per game")] : [])],
         rows: rows.map((r, i) => [
           i + 1,
-          displayTeam(r.name),
+          displayName(r.name),
           ...(input.subject === "player" ? [r.team ? displayTeam(r.team) : null] : []),
           // A rate is over the games where the flag is known (a soul before patch 9.23 is not).
           def.aggregate === "rate" ? r.counted : r.games,

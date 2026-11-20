@@ -145,7 +145,7 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
     const input = new Map<string, Scalar>(Object.entries(m.input ?? {}));
 
     for (const [k, v] of Object.entries(e.input))
-      routed(`entrée ${k}`, same(input.get(k) ?? null, v), `attendu ${show(v)}, obtenu ${show(input.get(k))}`);
+      routed(`entrée ${k}`, same(input.get(k), v), `attendu ${show(v)}, obtenu ${show(input.get(k))}`);
   }
 
   if (e.ambiguity) {
@@ -223,6 +223,9 @@ for (const c of cases) {
     );
 
     checks = score(c, answer, steps);
+
+    if (llm && !answer.meta.sqlAvailable && (c.llm || c.expect.route === "sql"))
+      checks.push({ name: "disponibilité du LLM", ok: false, detail: "le modèle configuré est devenu indisponible" });
   } catch (err) {
     checks = [{ name: "exécution", ok: false, detail: err instanceof Error ? err.message : String(err) }];
   }

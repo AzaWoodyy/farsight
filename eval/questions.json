@@ -3100,7 +3100,6 @@
       "tags": [
         "paraphrase"
       ],
-      "llm": true,
       "expect": {
         "route": "tournament_standings",
         "league": "World Championship",
@@ -3109,6 +3108,18 @@
           "yearTo": 2023
         },
         "rowsMin": 1
+      }
+    },
+    {
+      "id": "en-lifted-trophy-msi",
+      "question": "Who lifted the trophy at MSI 2023?",
+      "tags": ["english", "paraphrase"],
+      "locale": "en",
+      "expect": {
+        "route": "tournament_standings",
+        "league": "Mid-Season Invitational",
+        "input": { "yearFrom": 2023, "yearTo": 2023 },
+        "totals": { "champion": "JD Gaming" }
       }
     },
     {
@@ -6218,11 +6229,13 @@
       "question": "champions avec le plus de dragons aux Worlds 2024",
       "tags": [
         "champion",
-        "sql"
+        "missing_data"
       ],
       "expect": {
-        "route": "sql",
-        "league": "World Championship"
+        "route": "missing_data",
+        "league": "World Championship",
+        "noFigure": true,
+        "summaryIncludes": ["seule son équipe est enregistrée"]
       }
     },
     {
