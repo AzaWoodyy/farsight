@@ -24,11 +24,21 @@ export const ALLOWED_OBJECTS = [...VIEWS, "leagues", "teams", "champions", "play
 
 export const MAX_ROWS = 200;
 
+/** Statements and clauses a read-only query never needs (a SELECT … INTO creates a table, FOR UPDATE locks rows). */
 const FORBIDDEN =
-  /\b(insert|update|delete|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint)\b/i;
+  /\b(insert|update|delete|merge|drop|alter|attach|detach|pragma|create|vacuum|reindex|truncate|analyze|begin|commit|rollback|savepoint|grant|revoke|copy|lock|listen|notify|unlisten|set|reset|discard|call|do|execute|prepare|deallocate|refresh|cluster|comment|security|into|import|load|checkpoint)\b/i;
 
-/** Functions that read files, load code or reach the server: never in a generated query, whatever the database allows. */
-const DENIED_FUNCTION = /(?:"(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system)"|\b(load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system))\s*\(/i;
+/**
+ * Functions that read files, run SQL of their own, sleep, signal the server or read its settings: never in a generated
+ * query, whatever the role allows (the role of generated queries holds none of the privileges they need anyway).
+ * SQLite's file functions are refused too: a model may still write that dialect.
+ */
+const DENIED_NAMES =
+  "pg_\\w+|set_config|current_setting|query_to_xml\\w*|query_to_xmlschema|cursor_to_xml\\w*|table_to_xml\\w*|schema_to_xml\\w*|database_to_xml\\w*|" +
+  "dblink\\w*|lo_\\w+|txid_\\w+|has_\\w+_privilege|inet_\\w+|version|" +
+  "load_extension|readfile|writefile|fts3_tokenizer|eval|edit|shell|system";
+
+const DENIED_FUNCTION = new RegExp(`(?:"(${DENIED_NAMES})"|\\b(${DENIED_NAMES}))\\s*\\(`, "i");
 
 /** Words that end the table list of a FROM clause. */
 const CLAUSE_END = /^(?:where|group|order|limit|having|window|union|except|intersect|on|using|join|left|right|inner|outer|full|cross|natural|offset|fetch|for)$/i;
