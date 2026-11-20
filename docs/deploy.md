@@ -1,5 +1,8 @@
 # Déploiement sur Vercel
 
+> Branche d'essai Postgres : l'app y lit Neon à `DATABASE_URL`, voir [postgres.md](postgres.md). Ce document décrit le
+> déploiement de `main`, avec la base SQLite embarquée.
+
 Projet Vercel séparé (plan Hobby, quotas partagés avec le portfolio), domaine
 `askfarsight.com`. Cette page décrit ce que le code fait déjà et les
 réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
