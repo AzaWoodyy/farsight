@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { claimsBeyondFacts } from "../src/lib/agent/summary";
 import { LEAGUES, detectLeague, eraLeague, leagueMembers } from "../src/lib/domain/leagues";
+import { classifyTournament } from "./data/scope";
 import { periodProblem } from "../src/lib/domain/years";
 import { readSchema } from "../src/lib/db";
 import { bindTool } from "../src/lib/agent/tools";
@@ -41,6 +42,15 @@ test("league cues choose the longest match and preserve all scope names", () => 
   expect(detectLeague("LCK CL 2024").league).toBe("LCK Challengers League");
   expect(detectLeague("LTA North").league).toBe("League of Legends Championship of The Americas North");
   expect(detectLeague("EU LCS 2016").league).toBe("Europe League Championship Series");
+});
+
+test("First Stand is its own international event, apart from Worlds and MSI", () => {
+  expect(detectLeague("Qui a gagné First Stand 2025 ?").league).toBe("First Stand");
+  expect(detectLeague("Who won First Stand 2026?").league).toBe("First Stand");
+  expect(detectLeague("qui a gagné les Worlds 2024").league).toBe("World Championship");
+  expect(detectLeague("vainqueur du MSI 2025").league).toBe("Mid-Season Invitational");
+  expect(detectLeague("first blood de T1 aux Worlds").league).toBe("World Championship");
+  expect(classifyTournament("2025 First Stand", LEAGUES.find((l) => l.name === "First Stand")!)).toEqual({ stage: "main_event", eventPage: "2025 First Stand" });
 });
 
 test("periods spanning renamings read both leagues in parameterized tool SQL", async () => {

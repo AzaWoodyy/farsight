@@ -782,8 +782,8 @@
         "totals": {
           "games_a": 1560,
           "wins_a": 1042,
-          "games_b": 1002,
-          "wins_b": 696,
+          "games_b": 1011,
+          "wins_b": 702,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146,
@@ -853,7 +853,7 @@
         },
         "totals": {
           "metric_a": 124,
-          "metric_b": 79,
+          "metric_b": 80,
           "h2h_metric_a": 16,
           "h2h_metric_b": 11
         },
@@ -886,7 +886,7 @@
         },
         "totals": {
           "metric_a": 32,
-          "metric_b": 142,
+          "metric_b": 145,
           "h2h_metric_a": -89,
           "h2h_metric_b": 89
         },
@@ -1139,7 +1139,7 @@
         "rows": 2,
         "totals": {
           "games_a": 1560,
-          "games_b": 1002,
+          "games_b": 1011,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146
@@ -1168,7 +1168,7 @@
         "rows": 2,
         "totals": {
           "games_a": 1560,
-          "games_b": 1002,
+          "games_b": 1011,
           "h2h_games": 146,
           "h2h_wins_a": 70,
           "h2h_listed": 146
@@ -4579,9 +4579,9 @@
           "league": null
         },
         "totals": {
-          "events": 35,
-          "wins": 307,
-          "losses": 183,
+          "events": 36,
+          "wins": 315,
+          "losses": 194,
           "titles": 7
         }
       }
@@ -5039,11 +5039,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -5067,11 +5067,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -5095,11 +5095,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -5123,11 +5123,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -5151,11 +5151,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -5179,11 +5179,11 @@
         },
         "rows": 43,
         "totals": {
-          "games": 902,
-          "wins": 574,
+          "games": 917,
+          "wins": 586,
           "unique": 43,
           "top": "Gnar",
-          "top_games": 105
+          "top_games": 108
         }
       }
     },
@@ -7373,6 +7373,123 @@
         "route": "player_event_history",
         "league": "Liga Española de League of Legends",
         "rows": 6
+      }
+    },
+    {
+      "id": "first-stand-2025-winner",
+      "question": "Qui a gagné First Stand 2025 ?",
+      "tags": [
+        "first-stand",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "First Stand",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "full": true
+        },
+        "rows": 5,
+        "totals": {
+          "champion": "Hanwha Life Esports"
+        },
+        "sources": 1
+      }
+    },
+    {
+      "id": "en-first-stand-2026-winner",
+      "question": "Who won First Stand 2026?",
+      "locale": "en",
+      "tags": [
+        "first-stand",
+        "standings",
+        "english"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "First Stand",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026,
+          "full": true
+        },
+        "rows": 8,
+        "totals": {
+          "champion": "Bilibili Gaming"
+        },
+        "summaryIncludes": [
+          "First Stand 2026: Bilibili Gaming champion, G2 Esports runner-up"
+        ],
+        "summaryExcludes": [
+          "finaliste"
+        ]
+      }
+    },
+    {
+      "id": "first-stand-winners",
+      "question": "palmarès First Stand",
+      "tags": [
+        "first-stand",
+        "standings"
+      ],
+      "expect": {
+        "route": "tournament_standings",
+        "league": "First Stand",
+        "input": {
+          "full": false
+        },
+        "rows": 2,
+        "totals": {
+          "events": 2,
+          "latest_champion": "Bilibili Gaming"
+        },
+        "summaryIncludes": [
+          "Palmarès du First Stand"
+        ]
+      }
+    },
+    {
+      "id": "first-stand-ingame-first-dragon",
+      "question": "Qui prend le plus souvent le premier dragon au First Stand 2025 ?",
+      "tags": [
+        "first-stand",
+        "ingame",
+        "leaderboard",
+        "team"
+      ],
+      "expect": {
+        "route": "ingame_leaderboard",
+        "league": "First Stand",
+        "input": {
+          "subject": "team",
+          "metric": "first_dragon",
+          "yearFrom": 2025
+        },
+        "totals": {
+          "leader": "Team Liquid",
+          "leader_value": 60,
+          "leader_count": 6
+        },
+        "rows": 5
+      }
+    },
+    {
+      "id": "first-stand-team-history-title",
+      "question": "historique de Hanwha Life Esports en 2025",
+      "tags": [
+        "first-stand",
+        "team",
+        "history"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "Hanwha Life Esports"
+        ],
+        "summaryIncludes": [
+          "dont First Stand 2025"
+        ]
       }
     }
   ]

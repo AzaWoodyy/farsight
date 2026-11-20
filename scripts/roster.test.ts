@@ -211,7 +211,7 @@ describe("in-game statistics of one team: absent data is said", () => {
   test("games in the scope asked but none with Riot data: data absent, with the competition named", async () => {
     const route = await routeQuestion("first blood de T1 au MSI 2016", entities({ teams: [T1_NOW], ...MSI, ...year(2016) }), SCHEMA, stub((_, l) => (l ? { games: 12, ingame: 0 } : { games: 900, ingame: 600 })));
 
-    expect(route).toMatchObject({ kind: "missing", coverage: true, concepts: ["les statistiques in-game (first blood) de T1 en MSI"] });
+    expect(route).toMatchObject({ kind: "missing", coverage: true, concepts: ["les statistiques in-game (first blood) de T1 au MSI"] });
   });
 
   test("no game in the scope asked but Riot data elsewhere: the tool, whose relaxations widen the scope", async () => {

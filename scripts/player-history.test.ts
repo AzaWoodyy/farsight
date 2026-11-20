@@ -67,7 +67,7 @@ describe("player_event_history on a seeded history", () => {
 
     // By name, Spring Playoffs would come before Spring Season.
     expect(out.rows!.map((r) => r.event)).toEqual(["LCK/2024 Season/Spring Season", "LCK/2024 Season/Spring Playoffs"]);
-    expect(out.facts).toContain("Faker a disputé 2 tournois de LCK");
+    expect(out.facts).toContain("Faker a disputé 2 tournois de la LCK");
     expect(out.totals).toMatchObject({ events: 2 });
   });
 
