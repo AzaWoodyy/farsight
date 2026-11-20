@@ -464,9 +464,8 @@ Projet → **Firewall** → **Configure** → **New Rule** :
 | Clé | `IP` |
 | Action au dépassement | `Too Many Requests` (429) |
 
-Puis **Save** et **Review Changes** → **Publish**. Le plan Hobby autorise
-jusqu'à 3 règles personnalisées et inclut 1 M de requêtes autorisées par mois
-pour le rate limiting.
+Puis **Save** et **Review Changes** → **Publish**. Le plan Hobby inclut 1 M
+de requêtes autorisées par mois pour le rate limiting.
 
 La même règle en CLI, pour référence :
 
@@ -487,16 +486,18 @@ un 429. Le chat affiche alors une erreur.
 
 Deuxième règle, contre un usage soutenu sur la durée (même formulaire) :
 nom `ask hourly cap`, mêmes conditions, `Fixed Window`, `3600` secondes,
-`40` requêtes, clé `IP`, action `Too Many Requests`. Elle laisse une règle
-personnalisée libre sur les 3 du plan Hobby.
+`40` requêtes, clé `IP`, action `Too Many Requests`. Elle n'est pas publiée
+en production : le projet compte deux règles personnalisées (une règle de
+contournement pour le propriétaire et `ask rate limit`), et sur le plan Hobby
+l'ajout d'une troisième a été refusé par Vercel avec un 402 (option payante).
 
 Aperçus de liens : `GET /api/card` (l'image d'une réponse) et les liens
 `/?q=…`, `/en?q=…` sont lus par les robots des messageries, donc sans BotID.
 Ils ne coûtent jamais d'appel au modèle : une lecture SQL et, pour l'image, son
 rendu, mis en cache par le CDN pour la durée du déploiement. Le code limite
-`/api/card` à 300 requêtes par IP et par 10 minutes, par instance. Si le
-trafic le demande, la troisième règle du firewall peut plafonner
-`Request Path` `equals` `/api/card` ; elle n'est pas créée par défaut.
+`/api/card` à 300 requêtes par IP et par 10 minutes, par instance. Aucune
+règle du firewall ne plafonne `/api/card` : une troisième règle n'est pas
+disponible sur le plan Hobby (402).
 
 ### 2. BotID
 
@@ -589,8 +590,10 @@ début de la question.
    (`question`).
 
 L'envoi se fait après la réponse (`after`), borné à 3 s : Langfuse lent ou en
-panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback` ;
-pour le limiter par IP, la troisième règle personnalisée du firewall est libre.
+panne ne change rien pour le visiteur. BotID protège aussi `/api/feedback`,
+qui n'a pas de limite par IP au firewall : la règle qu'il faudrait (une
+troisième) n'est pas disponible sur le plan Hobby, Vercel répond 402. Seul le
+compteur du code s'applique, 30 avis par IP et par 10 minutes, par instance.
 
 ### 5. Web Analytics
 
