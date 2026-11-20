@@ -12,8 +12,9 @@ import { TABLE_DDL } from "../../src/lib/db/schema";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
 import { playerIdentity } from "./identity";
-import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch } from "./ingame";
+import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch, type PlayerSummary } from "./ingame";
 import { loadIngame } from "./riot";
+import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
 import { type Classification, type Dataset, IngestRun, LEAGUES, classifyTournament, datasetFile } from "./scope";
 
 /** A value of a row, as both writers take it. */
@@ -537,7 +538,7 @@ export function deriveDataset() {
       data: z.record(z.string(), z.object({ id: z.string(), key: z.string(), name: z.string(), image: z.object({ full: z.string() }) })),
     }),
     item: z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) }),
-    runes: z.array(z.object({ name: z.string(), slots: z.array(z.object({ runes: z.array(z.object({ name: z.string(), icon: z.string() })) })) })),
+    runes: z.array(z.object({ name: z.string(), slots: z.array(z.object({ runes: z.array(z.object({ id: z.number().int(), name: z.string(), icon: z.string() })) })) })),
     summoner: z.object({ data: z.record(z.string(), z.object({ name: z.string(), image: z.object({ full: z.string() }), modes: z.array(z.string()).optional() })) }),
     // `meta` is absent from raw caches fetched before items had a kind: their retired items get a NULL kind.
     legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()), meta: z.record(z.string(), ItemMeta).optional() })),
@@ -559,18 +560,6 @@ export function deriveDataset() {
   for (const c of store.names("champions")) {
     const d = championByName.get(normalizeAlias(c.name));
     updChampion.run(d ? `${cdn}/${dd.version}/img/champion/${d.image.full}` : null, c.id);
-  }
-
-  // Runes: tree and icon from Data Dragon, the tree of a retired rune from the lines. Stat shards have neither.
-  const ddRunes = new Map(dd.runes.flatMap((t) => t.slots.flatMap((s) => s.runes.map((r) => [normalizeAlias(r.name), { tree: t.name, icon: r.icon }] as const))));
-  const updRune = store.update("runes", ["tree", "icon_url"]);
-  const runeCounts = { ddragon: 0, tree_from_lines: 0, shard_or_unknown: 0 };
-
-  for (const r of store.names("runes")) {
-    const d = ddRunes.get(normalizeAlias(r.name));
-    const voted = [...(treeVotes.get(r.name) ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    updRune.run(d?.tree ?? voted, d ? `${cdn}/img/${d.icon}` : null, r.id);
-    runeCounts[d ? "ddragon" : voted ? "tree_from_lines" : "shard_or_unknown"]++;
   }
 
   // Summoner spells: the Summoner's Rift entry when several modes share a name.
@@ -671,16 +660,43 @@ export function deriveDataset() {
   const diff = (a: number | null, b: number | null | undefined) => (a == null || b == null ? null : a - b);
 
   // What the scoreboard lacks, taken from the Riot JSON (derive 4): Leaguepedia's value always wins.
-  const fromRiot = { damage: 0, vision: 0, heralds: 0, patch: 0 };
+  const fromRiot = { damage: 0, vision: 0, heralds: 0, patch: 0, rune_pages: 0, keystones: 0, rune_pages_unknown_id: 0 };
   const fillDamage = store.fill("game_players", "damage");
   const fillVision = store.fill("game_players", "vision");
   const fillBlueHeralds = store.fill("games", "blue_heralds");
   const fillRedHeralds = store.fill("games", "red_heralds");
   const fillPatch = store.fill("games", "patch");
+  const fillKeystone = store.fill("game_players", "keystone_id");
+  const ddRuneNames = new Map(dd.runes.flatMap((t) => t.slots.flatMap((sl) => sl.runes.map((r) => [r.id, r.name] as const))));
 
   /** Filled from the Riot JSON when the value is known and Leaguepedia has none; counted in `fromRiot`. */
   const fill = (filler: ReturnType<Store["fill"]>, field: keyof typeof fromRiot, value: Cell | undefined, ...key: Cell[]) => {
     if (filler.run(value, ...key)) fromRiot[field]++;
+  };
+
+  /**
+   * A scoreboard without a rune page gets the Riot one (names of the game's patch, `runes.ts`), with its trees as votes.
+   * A page with an id that no table names is left out, not stored with a hole.
+   */
+  const fillRunes = (p: PlayerSummary, gid: number, pid: number, version: string | null | undefined) => {
+    if (!p.runes || store.has("game_player_runes", gid, pid)) return;
+    const names = p.runes.map((id) => runeName(id, version, ddRuneNames));
+
+    if (!names.every((n) => n != null)) {
+      fromRiot.rune_pages_unknown_id++;
+
+      return;
+    }
+
+    const slots = names.slice(1);
+
+    insRunes.run(gid, pid, ...Array.from({ length: 8 }, (_, i) => rune(slots[i])));
+    fromRiot.rune_pages++;
+    const primary = RUNE_TREES.get(p.primary_tree ?? -1);
+    const secondary = RUNE_TREES.get(p.secondary_tree ?? -1);
+    names.slice(0, 6).forEach((name, i) => vote(name, i < 4 ? primary : secondary));
+
+    fill(fillKeystone, "keystones", rune(names[0]), gid, pid);
   };
 
   const ingame = loadIngame();
@@ -767,6 +783,7 @@ export function deriveDataset() {
       if (l.kills != null && l.kills !== p.kills) ingameCounts.kills_mismatch++;
       const opp = stats.find((o) => o.l.side !== l.side && o.l.role != null && o.l.role === l.role)?.p;
       fill(fillDamage, "damage", p.damage, gid, l.pid);
+      fillRunes(p, gid, l.pid, line.gameVersion);
       fill(fillVision, "vision", p.vision, gid, l.pid);
       insPlayerStats.run(
         gid, l.pid,
@@ -804,6 +821,21 @@ export function deriveDataset() {
       if (s != null) teamSeq.set(s, (teamSeq.get(s) ?? 0) + 1);
       insDragon.run(gid, i + 1, s == null ? null : teamSeq.get(s)!, s, d.kind, d.t);
     });
+  }
+
+  // Runes: tree and icon from Data Dragon, the tree of a removed rune from `runes.ts` or from the lines (Leaguepedia's
+  // and the Riot pages'). Stat shards have neither. After the in-game stats, which may add runes.
+  const ddRunes = new Map(dd.runes.flatMap((t) => t.slots.flatMap((s) => s.runes.map((r) => [normalizeAlias(r.name), { tree: t.name, icon: r.icon }] as const))));
+  const updRune = store.update("runes", ["tree", "icon_url"]);
+  const runeCounts = { ddragon: 0, tree_retired: 0, tree_from_lines: 0, shard_or_unknown: 0 };
+  const retiredTree = new Map([...RETIRED_RUNES.values()].map((x) => [x.name, x.tree]));
+
+  for (const r of store.names("runes")) {
+    const d = ddRunes.get(normalizeAlias(r.name));
+    const retired = retiredTree.get(r.name);
+    const voted = [...(treeVotes.get(r.name) ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    updRune.run(d?.tree ?? retired ?? voted, d ? `${cdn}/img/${d.icon}` : null, r.id);
+    runeCounts[d ? "ddragon" : retired ? "tree_retired" : voted ? "tree_from_lines" : "shard_or_unknown"]++;
   }
 
   // Team abbreviations ------------------------------------------------------------
