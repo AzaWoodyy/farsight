@@ -27,7 +27,7 @@
  *   non-zero value (the field was not tracked yet).
  * - `runes`: the rune ids in Leaguepedia's order, keystone, three primary runes, two secondary runes, then the stat
  *   shards offense, flex, defense (six ids before the shards, patch 8.23); `primary_tree` / `secondary_tree`: the
- *   two tree ids. Null before Runes Reforged or when a slot is missing.
+ *   two tree ids. Null before Runes Reforged or when a slot (a shard from 8.23) is missing.
  * - `heralds`: Rift Heralds a team killed, from Riot's end-of-game count; null before the Herald (patch 5.22).
  * - `gameVersion`: Riot's full game version ("9.11.276.3025").
  */
@@ -238,6 +238,13 @@ function hasPlates(version: string | undefined): boolean {
   return major > 9 || (major === 9 && minor >= 2);
 }
 
+/** Patch 8.23 introduced the stat shards. */
+function hasShards(version: string | undefined): boolean {
+  const [major, minor] = (version ?? "").split(".").map(Number);
+
+  return major > 8 || (major === 8 && minor >= 23);
+}
+
 /** Patch 5.22 introduced the Rift Herald. */
 function hasHeralds(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
@@ -260,7 +267,7 @@ const known = (ids: (number | null)[]): ids is number[] => ids.every((x) => x !=
 type RunePage = { runes: number[] | null; primary: number | null; secondary: number | null };
 
 /** The rune page of a participant, match-v4 (`perk0`..) or match-v5 (`perks`), in Leaguepedia's order. */
-function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>): RunePage {
+function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, version: string | undefined): RunePage {
   const styles = p.perks?.styles;
   const primaryStyle = styles?.find((x) => x.description === "primaryStyle") ?? styles?.[0];
   const subStyle = styles?.find((x) => x.description === "subStyle") ?? styles?.[1];
@@ -277,10 +284,12 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>): R
 
   const page = runes.map(id);
   const statIds = shardIds.map(id);
-  const complete = page.length === 6 && known(page);
+  // From patch 8.23 a page has its three shards: without them it is incomplete, not a page of six runes.
+  const shardsAt = hasShards(version);
+  const complete = page.length === 6 && known(page) && (!shardsAt || known(statIds));
 
   return {
-    runes: complete ? (known(statIds) ? [...page, ...statIds] : page) : null,
+    runes: complete ? (shardsAt && known(statIds) ? [...page, ...statIds] : page) : null,
     primary: complete ? id(primary) : null,
     secondary: complete ? id(secondary) : null,
   };
@@ -357,7 +366,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
   const players = stats.participants.map((p, i): PlayerSummary => {
     const s = merged[i];
     const pid = p.participantId;
-    const page = runePage(p, s);
+    const page = runePage(p, s, stats.gameVersion);
     const [a, b, c] = MINUTES.map((m) => snapshot(pid, m));
 
     return {
