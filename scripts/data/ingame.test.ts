@@ -3,7 +3,7 @@ import { z } from "zod";
 import { RAW_GAME_FORMAT, type RawGame } from "../../src/lib/sources/riot";
 import corpus from "./fixtures/dragons.json";
 import fallbacks from "./fixtures/fallbacks.json";
-import { DERIVE_COMPATIBLE, DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
+import { DERIVE_COMPATIBLE, DERIVE_VERSION, IngameLine, leaguepediaPatch, summarizeGame } from "./ingame";
 
 /**
  * Real games (Leaguepedia's Riot JSON, Worlds 2014 to 2026), cut down to what the dragons read: the patch, who is on
@@ -203,6 +203,10 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
 
     expect(s.players.map((p) => [p.damage, p.vision])).toEqual(Array.from({ length: 10 }, () => [null, null]));
   });
+});
+
+test("Leaguepedia's patch of a Riot game version, up to season 14 only", () => {
+  expect(["9.11.276.3025", "4.21.0.302", "10.1.304.5432", "14.18.617.4123", "15.9.678.2101", "", null].map(leaguepediaPatch)).toEqual(["9.11", "4.21", "10.1", "14.18", null, null, null]);
 });
 
 describe("summaries of an older derive version", () => {

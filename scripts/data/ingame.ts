@@ -296,6 +296,16 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
   return known(statIds) ? { runes: [...page, ...statIds], primary: id(primary), secondary: id(secondary) } : none;
 }
 
+/**
+ * Leaguepedia's patch ("9.11") of a Riot game version ("9.11.276.3025"), for a game whose scoreboard has none. Only
+ * up to season 14: from 2025 Riot's versions (15.x) and Leaguepedia's patches (25.x, 25.S1.1) are numbered apart.
+ */
+export function leaguepediaPatch(version: string | null | undefined): string | null {
+  const m = /^(\d+)\.(\d+)\./.exec(version ?? "");
+
+  return m && Number(m[1]) <= 14 ? `${Number(m[1])}.${Number(m[2])}` : null;
+}
+
 /** Elemental dragons a team needs for the soul. */
 const SOUL_DRAGONS = 4;
 

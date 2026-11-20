@@ -12,7 +12,7 @@ import { TABLE_DDL } from "../../src/lib/db/schema";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
 import { playerIdentity } from "./identity";
-import { DERIVE_COMPATIBLE, DERIVE_VERSION } from "./ingame";
+import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch } from "./ingame";
 import { loadIngame } from "./riot";
 import { type Classification, type Dataset, IngestRun, LEAGUES, classifyTournament, datasetFile } from "./scope";
 
@@ -22,7 +22,7 @@ export type Cell = string | number | null;
 /** A table's columns, in the order of its DDL, and its rows in the order they were first inserted. */
 export type TableRows = { columns: string[]; rows: Cell[][] };
 
-type Stored = TableRows & { key: number[]; seen: Set<string>; byId: Map<Cell, Cell[]> };
+type Stored = TableRows & { key: number[]; byKey: Map<string, Cell[]>; byId: Map<Cell, Cell[]> };
 
 /** Columns and primary key of each table, read from the shared DDL (src/lib/db/schema.ts). */
 export function tableColumns(ddl = TABLE_DDL): Map<string, { columns: string[]; key: string[] }> {
@@ -44,11 +44,11 @@ export function tableColumns(ddl = TABLE_DDL): Map<string, { columns: string[]; 
  * Rows kept in memory, table by table, with the semantics the SQLite build relied on: a plain insert refuses a key
  * already there, an ignoring insert (`INSERT OR IGNORE`) keeps the first row, an update by id changes it in place.
  */
-class Store {
+export class Store {
   readonly tables = new Map<string, Stored>();
 
   constructor() {
-    for (const [name, { columns, key }] of tableColumns()) this.tables.set(name, { columns, rows: [], key: key.map((k) => columns.indexOf(k)), seen: new Set(), byId: new Map() });
+    for (const [name, { columns, key }] of tableColumns()) this.tables.set(name, { columns, rows: [], key: key.map((k) => columns.indexOf(k)), byKey: new Map(), byId: new Map() });
   }
 
   private table(name: string): Stored {
@@ -81,12 +81,12 @@ class Store {
         at.forEach((i, k) => (row[i] = values[k] ?? null));
         const key = JSON.stringify(t.key.map((i) => row[i]));
 
-        if (t.key.length && t.seen.has(key)) {
+        if (t.key.length && t.byKey.has(key)) {
           if (ignore) return;
           throw new Error(`Duplicate key ${key} in ${name}`);
         }
 
-        if (t.key.length) t.seen.add(key);
+        if (t.key.length) t.byKey.set(key, row);
         t.rows.push(row);
 
         if (id >= 0) t.byId.set(row[id], row);
@@ -106,6 +106,31 @@ class Store {
         if (row) at.forEach((i, k) => (row[i] = values[k] ?? null));
       },
     };
+  }
+
+  /**
+   * `UPDATE name SET column = ? WHERE <primary key> = ? AND column IS NULL`: the key values follow the value, in the
+   * order of the primary key. True when a row changed.
+   */
+  fill(name: string, column: string) {
+    const t = this.table(name);
+    const [at] = this.indexes(t, name, [column]);
+
+    return {
+      run: (value: Cell | undefined, ...key: Cell[]): boolean => {
+        const row = t.byKey.get(JSON.stringify(key));
+
+        if (value == null || !row || row[at] != null) return false;
+        row[at] = value;
+
+        return true;
+      },
+    };
+  }
+
+  /** Whether a row of `name` has this primary key. */
+  has(name: string, ...key: Cell[]): boolean {
+    return this.table(name).byKey.has(JSON.stringify(key));
   }
 
   /** `SELECT id, name FROM name`, in insertion order. */
@@ -639,6 +664,20 @@ export function deriveDataset() {
   const insDragon = store.insert("game_dragons", ["game_id", "seq", "team_seq", "side", "kind", "time_s"]);
   const ingameCounts = { games: 0, skipped_unknown_game: 0, skipped_mapping: 0, participants_by_position: 0, kills_mismatch: 0, missing: 0, invalid: 0, duplicates: 0, stale_derive: 0, older_derive: 0 };
   const diff = (a: number | null, b: number | null | undefined) => (a == null || b == null ? null : a - b);
+
+  // What the scoreboard lacks, taken from the Riot JSON (derive 4): Leaguepedia's value always wins.
+  const fromRiot = { damage: 0, vision: 0, heralds: 0, patch: 0 };
+  const fillDamage = store.fill("game_players", "damage");
+  const fillVision = store.fill("game_players", "vision");
+  const fillBlueHeralds = store.fill("games", "blue_heralds");
+  const fillRedHeralds = store.fill("games", "red_heralds");
+  const fillPatch = store.fill("games", "patch");
+
+  /** Filled from the Riot JSON when the value is known and Leaguepedia has none; counted in `fromRiot`. */
+  const fill = (filler: ReturnType<Store["fill"]>, field: keyof typeof fromRiot, value: Cell | undefined, ...key: Cell[]) => {
+    if (filler.run(value, ...key)) fromRiot[field]++;
+  };
+
   const ingame = loadIngame();
   const doneGames = new Set<number>();
 
@@ -722,6 +761,8 @@ export function deriveDataset() {
       // Riot and Leaguepedia disagree on kills: a mapping (or scoreboard) problem worth a look.
       if (l.kills != null && l.kills !== p.kills) ingameCounts.kills_mismatch++;
       const opp = stats.find((o) => o.l.side !== l.side && o.l.role != null && o.l.role === l.role)?.p;
+      fill(fillDamage, "damage", p.damage, gid, l.pid);
+      fill(fillVision, "vision", p.vision, gid, l.pid);
       insPlayerStats.run(
         gid, l.pid,
         p.gold_10, p.gold_15, p.gold_20, p.xp_10, p.xp_15, p.xp_20, p.cs_10, p.cs_15, p.cs_20,
@@ -735,8 +776,11 @@ export function deriveDataset() {
       );
     }
 
+    fill(fillPatch, "patch", leaguepediaPatch(line.gameVersion), gid);
+
     for (const t of line.teams) {
       const o = line.teams.find((x) => x.teamId !== t.teamId);
+      fill(sideOf(t.teamId) === 1 ? fillBlueHeralds : fillRedHeralds, "heralds", t.heralds, gid);
       insTeamStats.run(
         gid, sideOf(t.teamId),
         t.first_blood, t.first_tower, t.first_dragon, t.first_herald, t.first_baron, t.first_inhibitor,
@@ -809,6 +853,6 @@ export function deriveDataset() {
     tables: new Map([...store.tables].map(([name, t]) => [name, { columns: t.columns, rows: t.rows }])),
     runs,
     ddragonVersion: dd.version,
-    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, identity, player_images: photoCounts, team_shorts: shortCounts },
+    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts },
   };
 }
