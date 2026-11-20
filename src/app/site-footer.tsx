@@ -43,7 +43,7 @@ export function SiteFooter({ locale }: { locale: Locale }) {
         · {footer.photos}. {footer.madeBy}{" "}
         <a
           className="font-medium text-accent underline decoration-accent underline-offset-2 hover:decoration-2"
-          href="https://enzoneault.dev"
+          href="https://www.enzoneault.dev"
           target="_blank"
           rel="noreferrer"
         >

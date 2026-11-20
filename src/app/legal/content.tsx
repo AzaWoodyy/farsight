@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Locale } from "../i18n/locales";
 import { CC_BY_SA_URL, RIOT_BOILERPLATE, TEXT_LINK } from "../site-footer";
 
-const CONTACT_URL = "https://enzoneault.dev";
+const CONTACT_URL = "https://www.enzoneault.dev";
 const LICENSE_URL = "https://github.com/AzaWoodyy/farsight/blob/main/LICENSE";
 
 /** Day the text below last changed: shown on the page and sent as `lastmod` in the sitemap. Change it with the text. */

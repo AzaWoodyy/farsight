@@ -8,7 +8,7 @@ import { type Locale, PATHS } from "../i18n/locales";
 import { CC_BY_SA_URL, TEXT_LINK } from "../site-footer";
 import type { Facts } from "./facts";
 
-const AUTHOR_URL = "https://enzoneault.dev";
+const AUTHOR_URL = "https://www.enzoneault.dev";
 const REPO_URL = "https://github.com/AzaWoodyy/farsight";
 const RELEASES_URL = `${REPO_URL}/releases`;
 const LEAGUEPEDIA_URL = "https://lol.fandom.com";

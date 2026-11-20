@@ -2,7 +2,7 @@ import { type Locale, PATHS } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
 import { absoluteUrl, SITE } from "./site";
 
-const author = { "@type": "Person", "@id": "https://enzoneault.dev/#person", name: "Enzo Neault", url: "https://enzoneault.dev" };
+const author = { "@type": "Person", "@id": "https://enzoneault.dev/#person", name: "Enzo Neault", url: "https://www.enzoneault.dev" };
 
 /**
  * Structured data of the home page (schema.org): the site, and the application it is. Static: no answer
