@@ -273,7 +273,7 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
   const subStyle = styles?.find((x) => x.description === "subStyle") ?? styles?.[1];
   const shards = p.perks?.statPerks;
 
-  const [runes, shardIds, primary, secondary] = styles
+  const [perks, shardIds, primary, secondary] = styles
     ? [
         [...(primaryStyle?.selections ?? []), ...(subStyle?.selections ?? [])].map((x) => x.perk),
         [shards?.offense, shards?.flex, shards?.defense],
@@ -282,17 +282,18 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
       ]
     : [[s.perk0, s.perk1, s.perk2, s.perk3, s.perk4, s.perk5], [s.statPerk0, s.statPerk1, s.statPerk2], s.perkPrimaryStyle, s.perkSubStyle];
 
-  const page = runes.map(id);
+  const page = perks.map(id);
   const statIds = shardIds.map(id);
-  // From patch 8.23 a page has its three shards: without them it is incomplete, not a page of six runes.
-  const shardsAt = hasShards(version);
-  const complete = page.length === 6 && known(page) && (!shardsAt || known(statIds));
+  // From patch 8.23 a page has its three shards: without them it is incomplete, not a page of six runes. Without a
+  // version, only a page with its shards is trusted.
+  const shardsAt = /^\d+\.\d+/.test(version ?? "") ? hasShards(version) : true;
+  const none = { runes: null, primary: null, secondary: null };
 
-  return {
-    runes: complete ? (shardsAt && known(statIds) ? [...page, ...statIds] : page) : null,
-    primary: complete ? id(primary) : null,
-    secondary: complete ? id(secondary) : null,
-  };
+  if (page.length !== 6 || !known(page)) return none;
+
+  if (!shardsAt) return { runes: page, primary: id(primary), secondary: id(secondary) };
+
+  return known(statIds) ? { runes: [...page, ...statIds], primary: id(primary), secondary: id(secondary) } : none;
 }
 
 /** Elemental dragons a team needs for the soul. */

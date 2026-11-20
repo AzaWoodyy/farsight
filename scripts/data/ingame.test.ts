@@ -172,6 +172,17 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
     expect(at("8.23.1")[3].runes).toHaveLength(9);
   });
 
+  test("without a game version, a page keeps its shards; a page without them is not trusted", () => {
+    const g = statsOnly("ESPORTSTMNT01_1130750");
+    const { gameVersion: _v, ...stats } = V4Game.parse(g.stats);
+    const [a, ...rest] = stats.participants;
+    const s = summarizeGame({ ...g, stats: { ...stats, participants: [{ ...a, stats: { ...a.stats, statPerk1: 0 } }, ...rest] } });
+
+    expect(s.gameVersion).toBeNull();
+    expect(s.players[0].runes).toBeNull();
+    expect(s.players[1].runes).toEqual([8010, 9111, 9104, 8014, 8473, 8451, 5008, 5008, 5001]);
+  });
+
   test("no Herald before patch 5.22: null, not 0", () => {
     const g = statsOnly("ESPORTSTMNT01_1130750");
     const s = summarizeGame({ ...g, stats: { ...V4Game.parse(g.stats), gameVersion: "4.20.0.315" } });
