@@ -110,31 +110,33 @@ async function seasonGames(db: Db, names: string[], { yearFrom, yearTo }: Period
 
   const asked = names.flatMap((team) => [...new Set([team, ...(aliases[team] ?? [])])].map((name) => [team, name]));
 
-  // Two queries: given the shown names as a joined list, SQLite walks it again for every game.
+  // Two queries: the team ids first, so the games are read by id.
   const ids = await selectAll(
     db,
     z.object({ team: z.string(), id: z.number() }),
-    `WITH asked(team, name) AS (SELECT value ->> 0, value ->> 1 FROM json_each(?))
+    `WITH asked(team, name) AS (VALUES ${asked.map(() => "(?, ?)").join(", ")})
      SELECT DISTINCT a.team, tm.id FROM asked a JOIN teams tm
-       ON tm.name = a.name OR (tm.name LIKE a.name || ' (%)' AND NOT EXISTS (SELECT 1 FROM teams x WHERE x.name = a.name))`,
-    [JSON.stringify(asked)],
+       ON tm.name = a.name OR (tm.name ILIKE a.name || ' (%)' AND NOT EXISTS (SELECT 1 FROM teams x WHERE x.name = a.name))`,
+    asked.flat(),
   );
 
   if (!ids.length) return new Map();
 
+  const teamIds = [...new Set(ids.map((i) => i.id))];
+  const marks = (n: number) => Array.from({ length: n }, () => "?").join(", ");
+
   const rows = await selectAll(
     db,
     z.object({ id: z.number(), year: z.number(), league: z.string(), own: z.number(), games: z.number(), first: z.number(), last: z.number() }),
-    `WITH ids(id) AS (SELECT value FROM json_each(?)),
-       sides AS (
-         SELECT blue_team_id AS id, tournament_id, played_at FROM games WHERE blue_team_id IN ids
-         UNION ALL SELECT red_team_id, tournament_id, played_at FROM games WHERE red_team_id IN ids)
-     SELECT s.id, t.year, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (SELECT value FROM json_each(?))) AS own,
+    `WITH sides AS (
+         SELECT blue_team_id AS id, tournament_id, played_at FROM games WHERE blue_team_id IN (${marks(teamIds.length)})
+         UNION ALL SELECT red_team_id, tournament_id, played_at FROM games WHERE red_team_id IN (${marks(teamIds.length)}))
+     SELECT s.id, t.year, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (${marks(CUP_LEAGUES.size)}))::integer AS own,
             COUNT(*) AS games, MIN(s.played_at) AS first, MAX(s.played_at) AS last
      FROM sides s JOIN tournaments t ON t.id = s.tournament_id JOIN leagues l ON l.id = t.league_id
-     WHERE t.year IS NOT NULL AND (? IS NULL OR t.year >= ?) AND (? IS NULL OR t.year <= ?)
+     WHERE t.year IS NOT NULL AND (CAST(? AS integer) IS NULL OR t.year >= ?) AND (CAST(? AS integer) IS NULL OR t.year <= ?)
      GROUP BY s.id, t.year, l.id`,
-    [JSON.stringify([...new Set(ids.map((i) => i.id))]), JSON.stringify([...CUP_LEAGUES]), yearFrom, yearFrom, yearTo, yearTo],
+    [...teamIds, ...teamIds, ...CUP_LEAGUES, yearFrom, yearFrom, yearTo, yearTo],
   );
 
   const byId = Map.groupBy(rows, (r) => r.id);

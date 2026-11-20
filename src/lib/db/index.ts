@@ -1,16 +1,6 @@
-import { resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { SCHEMA_VERSION } from "./schema";
-
-/**
- * The SQLite file is built by `bun run data:build` and shipped read-only: the
- * app never writes to it, so it opens on Vercel's read-only filesystem.
- */
-export const DB_PATH = resolve(
-  /*turbopackIgnore: true*/ process.cwd(),
-  process.env.DATABASE_PATH || "data/lol.sqlite",
-);
+import { attachToFunction, createPool, type PgPool, postgresDb } from "./postgres";
+import { PG_MIGRATION } from "./schema";
 
 /** A value read from the database; an aggregated JSON column comes back as arrays and objects. */
 export type SqlValue = string | number | bigint | boolean | null | Uint8Array | SqlValue[] | { [key: string]: SqlValue };
@@ -19,61 +9,47 @@ export type SqlValue = string | number | bigint | boolean | null | Uint8Array | 
 export type SqlRow = Record<string, SqlValue>;
 
 /** A value a query is given. */
-export type SqlInput = string | number | bigint | null;
+export type SqlInput = string | number | null;
 
 /** Named parameters (`:name`) or positional ones (`?`). */
 export type SqlParams = Record<string, SqlInput> | SqlInput[];
 
-/** The read side of the database, the only one the app sees. Every call is asynchronous: the database may be remote. */
+/** The read side of the database, the only one the app sees. Every call is asynchronous: the database is remote. */
 export interface Db {
-  readonly kind: "sqlite" | "postgres";
+  readonly kind: "postgres";
+  /** The connections behind it: generated queries borrow one for their own read-only transaction. */
+  readonly pool: PgPool;
   /** Every row of one read-only statement. */
   query(sql: string, params?: SqlParams): Promise<SqlRow[]>;
 }
 
-/** A synchronous SQLite handle behind the asynchronous interface. */
-export function sqliteDb(db: DatabaseSync): Db {
-  return {
-    kind: "sqlite",
-    query: async (sql, params = []) => {
-      const stmt = db.prepare(sql);
-
-      return Array.isArray(params) ? stmt.all(...params) : stmt.all(params);
-    },
-  };
-}
-
 let cached: Db | null = null;
 
-/** Validate a file before caching it; usable by offline verification too. */
-export function openReadOnlyDb(path: string): DatabaseSync {
-  const db = new DatabaseSync(path, { readOnly: true, limits: { length: 1_000_000 } });
+const Version = z.object({ version: z.number().nullable() });
 
-  try {
-    if (!db.limits || db.limits.length > 1_000_000)
-      throw new Error("SQLite length limit unavailable; Node >=24.15 is required.");
-    const version = db.prepare("PRAGMA user_version").get()?.user_version;
-
-    if (version !== SCHEMA_VERSION)
-      throw new Error(`Database schema version ${version}; expected ${SCHEMA_VERSION}. Run data:pull --force or rebuild the database.`);
-
-    return db;
-  } catch (err) {
-    db.close();
-    throw err;
-  }
-}
-
+/**
+ * The database of the deployment: Postgres at DATABASE_URL, as the read-only app role (db/roles.sql). The schema it
+ * holds must be the one this code was written for: the newest migration applied is PG_MIGRATION.
+ */
 export function openDb(): Db {
   if (cached) return cached;
+  const url = process.env.DATABASE_URL;
 
-  try {
-    cached = sqliteDb(openReadOnlyDb(DB_PATH));
-  } catch (err) {
-    throw new Error(`Cannot open ${DB_PATH} (${err instanceof Error ? err.message : String(err)}). Run \`bun run data:build\` first.`);
-  }
+  if (!url) throw new Error("DATABASE_URL is not set: the app reads Postgres (see docs/postgres.md).");
+  const pool = createPool(url);
+
+  attachToFunction(pool);
+  cached = postgresDb(pool, () => checkMigration(pool));
 
   return cached;
+}
+
+/** The newest migration applied to the schema on the search path must be PG_MIGRATION. */
+export async function checkMigration(pool: PgPool): Promise<void> {
+  const { rows } = await pool.query("SELECT MAX(version) AS version FROM schema_migrations");
+  const version = Version.parse(rows[0] ?? { version: null }).version;
+
+  if (version !== PG_MIGRATION) throw new Error(`Database schema migration ${version}; expected ${PG_MIGRATION}. Run \`bun run db:load\` (or db:migrate).`);
 }
 
 /** Runs a query and parses every row with `schema`, so callers get typed rows. */
@@ -88,13 +64,13 @@ export async function selectOne<S extends z.ZodType>(db: Db, schema: S, sql: str
   return row === undefined ? null : schema.parse(row);
 }
 
-const NameRow = z.object({ name: z.string() });
+const ColumnRow = z.object({ name: z.string(), column: z.string() });
 
 const schemas = new WeakMap<Db, Promise<Record<string, string[]>>>();
 
 /**
  * Table or view -> columns, read from the database once per handle: the schema of a deployment does not change
- * under it (a new schema is a new deployment). Used by the schema guard and the router.
+ * under it (a new schema is a new load or migration, and the version check above). Used by the guard and the router.
  */
 export function readSchema(db: Db): Promise<Record<string, string[]>> {
   let schema = schemas.get(db);
@@ -109,14 +85,15 @@ export function readSchema(db: Db): Promise<Record<string, string[]>> {
   return schema;
 }
 
+/** One query for every table and view of the schema on the search path, columns in their order. */
 async function introspect(db: Db): Promise<Record<string, string[]>> {
-  const objects = await selectAll(
+  const rows = await selectAll(
     db,
-    NameRow,
-    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'",
+    ColumnRow,
+    `SELECT c.table_name AS name, c.column_name AS column FROM information_schema.columns c
+     WHERE c.table_schema = current_schema() AND c.table_name <> 'schema_migrations'
+     ORDER BY c.table_name, c.ordinal_position`,
   );
 
-  return Object.fromEntries(
-    await Promise.all(objects.map(async ({ name }) => [name, (await selectAll(db, NameRow, `PRAGMA table_info("${name}")`)).map((c) => c.name)] as const)),
-  );
+  return Object.fromEntries([...Map.groupBy(rows, (r) => r.name)].map(([name, cols]) => [name, cols.map((c) => c.column)]));
 }

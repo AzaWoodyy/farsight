@@ -22,5 +22,5 @@ test("the page's figures come from what the build inlined, without opening the d
 });
 
 test("without inlined figures the page fails with what to run, rather than showing zeros", () => {
-  expect(() => readFacts("")).toThrow("data:pull");
+  expect(() => readFacts("")).toThrow("DATABASE_URL");
 });

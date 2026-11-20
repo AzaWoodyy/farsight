@@ -228,7 +228,7 @@ async function attempt(db: Db, schema: Record<string, string[]>, plan: QueryPlan
   llmSignal();
 
   try {
-    const rows = plan.tool ? await db.query(guard.sql, plan.params) : await executeGeneratedQuery(guard.sql, plan.params, { signal: llmSignal() });
+    const rows = plan.tool ? await db.query(guard.sql, plan.params) : await executeGeneratedQuery(guard.sql, plan.params, { signal: llmSignal(), pool: db.pool });
     const ms = Math.round(performance.now() - started);
 
     if (rows.length) {
@@ -362,8 +362,8 @@ async function championIcons(db: Db, columns: string[], raw: SqlRow[]): Promise<
   const rows = await selectAll(
     db,
     z.object({ name: z.string(), icon_url: z.string() }),
-    `SELECT name, icon_url FROM champions WHERE icon_url IS NOT NULL AND name IN (SELECT value FROM json_each(?))`,
-    [JSON.stringify(names)],
+    `SELECT name, icon_url FROM champions WHERE icon_url IS NOT NULL AND name IN (${names.map(() => "?").join(", ")})`,
+    names,
   );
 
   return Object.fromEntries(rows.map((r) => [r.name, r.icon_url]));

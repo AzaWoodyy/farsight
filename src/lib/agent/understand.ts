@@ -208,10 +208,10 @@ async function contextGames(db: Db, playerId: number, ctx: Context): Promise<num
      JOIN games g ON g.id = gp.game_id JOIN tournaments t ON t.id = g.tournament_id
      JOIN leagues l ON l.id = t.league_id
      WHERE gp.player_id = :id AND t.stage <> 'qualifier'
-       AND (:league IS NULL OR l.name IN (SELECT value FROM json_each(:members)))
-       AND (:yearFrom IS NULL OR t.year >= :yearFrom)
-       AND (:yearTo IS NULL OR t.year <= :yearTo)`,
-    { id: playerId, members: JSON.stringify(members), league: ctx.league, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo },
+       ${members.length ? `AND l.name IN (${members.map((_, i) => `:m${i}`).join(", ")})` : ""}
+       AND (CAST(:yearFrom AS integer) IS NULL OR t.year >= :yearFrom)
+       AND (CAST(:yearTo AS integer) IS NULL OR t.year <= :yearTo)`,
+    { id: playerId, yearFrom: ctx.yearFrom, yearTo: ctx.yearTo, ...Object.fromEntries(members.map((m, i) => [`m${i}`, m])) },
   );
 
   return row?.n ?? 0;

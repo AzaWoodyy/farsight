@@ -163,7 +163,7 @@ export async function explainEmpty(db: Db, entities: Entities, sql: string): Pro
   const stages = await selectAll(
     db,
     Stage,
-    `SELECT gp.stage = 'qualifier' AS qualifier, COUNT(DISTINCT gp.game_id) AS games FROM v_game_players gp ${clause} GROUP BY 1`,
+    `SELECT (gp.stage = 'qualifier')::integer AS qualifier, COUNT(DISTINCT gp.game_id) AS games FROM v_game_players gp ${clause} GROUP BY 1`,
     filter.params,
   );
 

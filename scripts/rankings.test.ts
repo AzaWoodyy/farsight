@@ -387,7 +387,7 @@ describe("rankings on a seeded season", () => {
     seeded(async (db) => {
       // Game 1: G2 (blue, winner) takes four dragons and the mountain soul. Game 2: no soul. Game 3: Fnatic (red, winner) the chemtech soul, G2 the elder.
       await db.exec(`
-        UPDATE game_team_stats SET elder_dragons = 0, dragon_soul = (side = 1), soul = CASE side WHEN 1 THEN 'mountain' END WHERE game_id = 1;
+        UPDATE game_team_stats SET elder_dragons = 0, dragon_soul = (side = 1)::integer, soul = CASE side WHEN 1 THEN 'mountain' END WHERE game_id = 1;
         INSERT INTO game_team_stats(game_id,side,elder_dragons,dragon_soul,soul) VALUES (2,1,0,0,NULL),(2,2,0,0,NULL),(3,1,1,0,NULL),(3,2,0,1,'chemtech');
         -- game_id, seq, team_seq, side, kind, time_s
         INSERT INTO game_dragons VALUES

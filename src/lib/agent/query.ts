@@ -1475,7 +1475,9 @@ export async function schemaPrompt(db: Db): Promise<string> {
 
 /** `language`: the one the model names the missing data in, as the answer shows it. */
 const sqlRules = (language: string) =>
-  "SQLite dialect. One read-only SELECT statement, no trailing semicolon. " +
+  "PostgreSQL dialect. One read-only SELECT statement, no trailing semicolon, no server function (pg_*, set_config...). " +
+  "Text matches exactly: use ILIKE for a case-insensitive match. Flags (win, has_ingame, first_*) are 0/1 integers: compare them with = 1 and SUM them. " +
+  "Every column selected beside an aggregate is in the GROUP BY. Order a column that can be NULL with NULLS LAST. " +
   "In-game stats come from Riot game data and only exist for some games: v_game_player_stats (one row per player and game: " +
   "gold/xp/cs at 10, 15 and 20 minutes and their difference with the lane opponent, kills_10/deaths_10/assists_10 before 10:00, solo_kills, " +
   "first_blood_kill/assist/victim, double to penta kills, wards, control_wards, plates) and v_game_team_stats (one row per team and game: first_* objectives as 0/1, " +
