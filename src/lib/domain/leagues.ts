@@ -51,6 +51,12 @@ export const LEAGUE_NAMES = LEAGUES.map((l) => l.name);
  */
 export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters", "KeSPA Cup"]);
 
+/**
+ * Competitions left out of a team's roster unless the question names them: an LCK team fields its academy players at
+ * the KeSPA Cup, who would read as substitutes of the main roster. Their games still count everywhere else.
+ */
+export const ROSTER_EXCLUDED: ReadonlySet<LeagueName> = new Set(["KeSPA Cup"]);
+
 /** How French names a competition: "les Worlds", "le MSI", "l'EWC", "la LCK". */
 export function frenchArticle(short: string): "les" | "le" | "l'" | "la" {
   if (short === "Worlds" || short.endsWith("Masters")) return "les";

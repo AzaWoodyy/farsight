@@ -439,3 +439,52 @@ describe("roster of a team on a seeded database", () => {
     }
   });
 });
+
+describe("the KeSPA Cup in a roster", () => {
+  test("left out unless asked: the academy players it fields are not substitutes of the main roster, nor its last season", async () => {
+    const db = await testDb();
+
+    try {
+      await seed(db);
+      const kespa = Number((await db.query("SELECT id FROM leagues WHERE name = ?", ["KeSPA Cup"]))[0]!.id);
+
+      await db.run("INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year,split) VALUES (5,'KeSPA14','KeSPA14','KeSPA Cup 2014','main_event',?,2014,NULL),(6,'KeSPA16','KeSPA16','KeSPA Cup 2016','main_event',?,2016,NULL)", kespa, kespa);
+      await db.exec(`
+        INSERT INTO players(id,page) VALUES (9,'Rookie Top'),(10,'Rookie Jungle'),(11,'Rookie Mid'),(12,'Rookie Bot'),(13,'Rookie Support');
+        INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (7,5,'Round 1',1,1,2,4,1,350),(8,6,'Round 1',1,1,2,4,1,500);
+      `);
+
+      for (const game of [7, 8])
+        for (const [i, role] of ["Top", "Jungle", "Mid", "Bot", "Support"].entries())
+          await db.run("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (?,?,?,?,?,?)", game, 9 + i, 2, role, 1, 1);
+
+      const roster = async (input: { league: LeagueName | null; yearFrom: number | null }) => {
+        const tool = await bindTool(db, { tool: "team_roster", input: { team: "Samsung White", split: null, role: null, yearTo: input.yearFrom, ...input } });
+
+        expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
+
+        return await tool.format(db, await db.query(tool.sql, tool.params));
+      };
+
+      const in2014 = await roster({ league: null, yearFrom: 2014 });
+
+      expect(in2014.roster).toMatchObject({ games: 5, wins: 4 });
+      expect(in2014.roster!.tournaments.map((t) => t.label)).toEqual(["Champions 2014 Spring", "Champions 2014 Summer", "Worlds 2014"]);
+      expect(in2014.roster!.players.map((p) => p.player)).not.toContain("Rookie Top");
+
+      // The latest season is the team's last one in its other competitions, not a later KeSPA Cup.
+      expect((await roster({ league: null, yearFrom: null })).roster).toMatchObject({ games: 1, scope: "en 2015" });
+
+      // Asked by name, the KeSPA Cup gives its own roster.
+      const atKespa = await roster({ league: "KeSPA Cup", yearFrom: 2014 });
+
+      expect(atKespa.roster).toMatchObject({ games: 1 });
+      expect(atKespa.roster!.players.map((p) => p.player)).toEqual(["Rookie Top", "Rookie Jungle", "Rookie Mid", "Rookie Bot", "Rookie Support"]);
+
+      // Its games still count for the team everywhere else.
+      expect(await coverageLookup(db).team(["Samsung Ozone", "Samsung White"], null, 2014, 2014)).toEqual({ games: 6, ingame: 0 });
+    } finally {
+      await db.close();
+    }
+  });
+});
