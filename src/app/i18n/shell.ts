@@ -6,13 +6,13 @@ import type { Locale } from "./locales";
  *
  * Tagline and description both carry "LoL": people search "farsight lol" more than "farsight league of
  * legends", and Google ranks a brand query on the words a page actually contains. The description is the
- * search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that stands alone, about 150
+ * search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that stands alone, under 150
  * characters so Google shows it whole.
  */
 const fr = {
   tagline: "L'esport League of Legends (LoL) en une question",
   description:
-    "Farsight répond à tes questions sur les matchs pros de LoL (League of Legends) : Worlds, MSI, LCK, LPL, LEC, LCS, avec un tableau et ses sources Leaguepedia.",
+    "Pose une question sur l'esport LoL (League of Legends), Farsight répond avec ses sources : Worlds, MSI, LCK, LPL, LEC, LCS.",
   dataset:
     "Wiki communautaire de l'esport League of Legends : résultats des matchs, compositions, picks et bans, statistiques des joueurs et des équipes de chaque compétition.",
   homeLabel: "Farsight, retour à l'accueil",
@@ -40,7 +40,7 @@ export type Shell = typeof fr;
 const en: Shell = {
   tagline: "League of Legends (LoL) esports in one question",
   description:
-    "Farsight answers your questions about pro LoL (League of Legends) matches: Worlds, MSI, LCK, LPL, LEC, LCS, with a table and its Leaguepedia sources.",
+    "Ask a question about LoL (League of Legends) esports, Farsight answers with its sources: Worlds, MSI, LCK, LPL, LEC, LCS.",
   dataset:
     "Community wiki of League of Legends esports: match results, drafts, picks and bans, player and team statistics of every competition.",
   homeLabel: "Farsight, back to the home page",
