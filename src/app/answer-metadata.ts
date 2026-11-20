@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { z } from "zod";
 import { shareCard } from "@/lib/agent/share";
 import { CARD_SIZE } from "./brand/answer-card";
@@ -25,6 +26,8 @@ export async function answerMetadata(locale: Locale, search: Record<string, stri
   // A repeated `q` is nobody's question; one `q` goes through the same strict reading as in the browser.
   const q = Search.safeParse(search).data?.q;
   const question = q == null ? null : questionIn(`?${new URLSearchParams({ q })}`);
+  // The answer reads the database over the network and the clock: rendered per request, never while prerendering.
+  if (question) await connection();
   const card = question ? await shareCard(question, locale) : null;
 
   if (!question || !card) return home;
