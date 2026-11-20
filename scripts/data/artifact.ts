@@ -56,6 +56,8 @@ export const Manifest = z.object({
     players_with_photo: z.number().int().optional(),
     /** Teams with a Leaguepedia abbreviation (Teams.Short); absent before schema v10. */
     teams_with_short: z.number().int().optional(),
+    /** Series known only from Leaguepedia's match schedule (series_results); absent before schema v11. */
+    schedule_series: z.number().int().optional(),
   }),
   /** The in-game summaries asset; absent before schema v4. */
   ingame: z
@@ -163,6 +165,7 @@ export function readFacts(path: string): DbFacts {
         ingame_games: schemaVersion >= 4 ? count(db, "SELECT COUNT(*) AS n FROM game_riot") : undefined,
         players_with_photo: schemaVersion >= 9 ? count(db, "SELECT COUNT(DISTINCT player_id) AS n FROM player_images") : undefined,
         teams_with_short: schemaVersion >= 10 ? count(db, "SELECT COUNT(*) AS n FROM teams WHERE short IS NOT NULL") : undefined,
+        schedule_series: schemaVersion >= 11 ? count(db, "SELECT COUNT(*) AS n FROM series_results") : undefined,
       },
       ddragonVersion: metadata?.success ? (metadata.data.ddragon_version ?? null) : null,
       deriveVersion: metadata?.success ? (metadata.data.derive_version ?? null) : null,

@@ -619,6 +619,9 @@ async function leagueShortName(db: Db, league: string | null): Promise<string> {
 const inLeague = (short: string) =>
   short === allCompetitions() ? "" : say(frenchIn(short), englishIn(short));
 
+/** `pages` with `kept` moved to the end, so that `eventSources` keeps them when it keeps the last pages. */
+const lastPages = (pages: string[], kept: string[]) => [...pages.filter((p) => !kept.includes(p)), ...kept];
+
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
 
@@ -677,6 +680,8 @@ const TeamHistoryRow = z.object({
   place: NullableText,
   place_number: z.number().nullable(),
   regular_season: z.number(),
+  schedule_series: z.number(),
+  schedule_forfeits: z.number(),
 });
 
 const HeadToHeadRow = z.object({
@@ -686,6 +691,8 @@ const HeadToHeadRow = z.object({
   tournament: NullableText,
   wins_a: z.number(),
   wins_b: z.number(),
+  schedule_series: z.number(),
+  schedule_forfeits: z.number(),
 });
 
 const ChampionStatsRow = z.object({
@@ -858,6 +865,37 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
 
 // 2. Team history -------------------------------------------------------------------
 
+/**
+ * Games a series known only from the schedule (v_series_results `sr`) adds to a team's record: its score for the team
+ * whose names are `team` ("own") or for its opponent ("other"); none for a forfeit, whose score is not games played.
+ */
+const scheduleScore = (s: string, team: string, whose: "own" | "other") => {
+  const [mine, theirs] = whose === "own" ? ["team1_score", "team2_score"] : ["team2_score", "team1_score"];
+
+  return `CASE WHEN ${s}.forfeited_by IS NOT NULL THEN 0 WHEN ${s}.team1 IN (${team}) THEN COALESCE(${s}.${mine}, 0) ELSE COALESCE(${s}.${theirs}, 0) END`;
+};
+
+/** 1 for a series of v_series_results `sr` that a team forfeited, else 0. */
+const scheduleForfeit = (s: string) => `CASE WHEN ${s}.forfeited_by IS NOT NULL THEN 1 ELSE 0 END`;
+
+/** The notes of an answer that counts series known only from Leaguepedia's schedule, empty without any. */
+function scheduleNotes(count: number, forfeits: number, tournaments: string[]): string[] {
+  if (!count) return [];
+  const unique = [...new Set(tournaments)];
+  const where = unique.length ? ` (${unique.slice(0, 5).join(", ")}${unique.length > 5 ? ", …" : ""})` : "";
+
+  const one = count === 1;
+
+  return [
+    say(
+      `${one ? "1 série n'a que son" : `${count} séries n'ont que leur`} résultat, tiré du calendrier de Leaguepedia${where} : aucune stat de partie, seulement le score.` +
+        (forfeits ? ` ${forfeits === 1 ? "Un forfait" : `${forfeits} forfaits`} : la série compte, sans partie jouée.` : ""),
+      `${one ? "1 series has only its" : `${count} series have only their`} result, from Leaguepedia's match schedule${where}: no game statistic, just the score.` +
+        (forfeits ? ` ${forfeits === 1 ? "One forfeit" : `${forfeits} forfeits`}: the series counts, with no game played.` : ""),
+    ),
+  ];
+}
+
 const teamHistory: ToolDef<TeamHistoryInput> = {
   name: "team_history",
   label: phrase("historique d'équipe", "team history"),
@@ -867,28 +905,36 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
     const { members } = await teamMembers(db, input.team);
     const params: Params = {};
     const t = inList("t", members, params);
-    let league = "";
+    const league = (alias: string) => (input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "");
+    const period = (alias: string) => periodFilter(`${alias}.year`, input, params);
 
-    if (input.league) {
-      league = `AND ${leagueFilter("g.league", input, params)}`;
-
-    }
-
+    // A series known only from the schedule counts its score as games (none for a forfeit), and is counted apart.
     return {
       params,
       sql: tidy(`WITH team_games AS (
   SELECT g.year, g.league_short, g.event_page, g.stage, g.tournament, g.played_at,
          CASE WHEN g.blue_team IN (${t}) THEN g.blue_team ELSE g.red_team END AS team,
-         CASE WHEN g.winner IN (${t}) THEN 1 ELSE 0 END AS win
+         CASE WHEN g.winner IN (${t}) THEN 1 ELSE 0 END AS win,
+         CASE WHEN g.winner IN (${t}) THEN 0 ELSE 1 END AS loss,
+         0 AS schedule, 0 AS forfeit
   FROM v_games g
   WHERE (g.blue_team IN (${t}) OR g.red_team IN (${t}))
     AND g.stage IN (${COMPETITION_STAGES})
-    ${league}
-    ${periodFilter("g.year", input, params)}
+    ${league("g")}
+    ${period("g")}
+  UNION ALL
+  SELECT sr.year, sr.league_short, sr.event_page, sr.stage, sr.tournament, sr.played_at,
+         CASE WHEN sr.team1 IN (${t}) THEN sr.team1 ELSE sr.team2 END,
+         ${scheduleScore("sr", t, "own")}, ${scheduleScore("sr", t, "other")}, 1, ${scheduleForfeit("sr")}
+  FROM v_series_results sr
+  WHERE (sr.team1 IN (${t}) OR sr.team2 IN (${t}))
+    AND sr.stage IN (${COMPETITION_STAGES})
+    ${league("sr")}
+    ${period("sr")}
 )
 SELECT tg.year, ANY_VALUE(tg.league_short) AS league_short, tg.event_page, MIN(tg.stage) AS stage,
        COALESCE(ANY_VALUE(tr.tournament), MIN(tg.tournament)) AS tournament, tg.team,
-       SUM(tg.win) AS wins, COUNT(*) - SUM(tg.win) AS losses,
+       SUM(tg.win) AS wins, SUM(tg.loss) AS losses, SUM(tg.schedule) AS schedule_series, SUM(tg.forfeit) AS schedule_forfeits,
        ANY_VALUE(tr.place) AS place, ANY_VALUE(tr.place_number) AS place_number,
        MAX(CASE WHEN ${regularSeason("t")} THEN 1 ELSE 0 END) AS regular_season
 FROM team_games tg
@@ -934,8 +980,18 @@ ORDER BY tg.year NULLS FIRST, MIN(tg.played_at) NULLS FIRST, tg.event_page`),
 
     if (names.length > 1) facts += say(` Noms pris en compte : ${names.map(displayTeam).join(", ")}.`, ` Names counted: ${names.map(displayTeam).join(", ")}.`);
 
+    const scheduled = raw.filter((r) => r.schedule_series > 0);
+    const scheduledCount = scheduled.reduce((n, r) => n + r.schedule_series, 0);
+
+    const notes = scheduleNotes(
+      scheduledCount,
+      scheduled.reduce((n, r) => n + r.schedule_forfeits, 0),
+      scheduled.map((r) => r.tournament ?? r.event_page),
+    );
+
     return {
       title: `${team} — ${[league === allCompetitions() ? say("historique", "history") : league, titlePeriod(input)].filter(Boolean).join(" ")}`,
+      notes,
       table: {
         columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Tournoi", "Tournament"), ...(names.length > 1 ? [say("Équipe", "Team")] : []), "Place", say("V-D", "W-L"), "%"],
         rows: raw.map((r) => [
@@ -951,13 +1007,13 @@ ORDER BY tg.year NULLS FIRST, MIN(tg.played_at) NULLS FIRST, tg.event_page`),
       facts,
       sources: [
         ...members.map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
-        ...eventSources([...titles.map((r) => String(r.event_page)), ...raw.slice(-8).map((r) => String(r.event_page))], 20),
+        ...eventSources(lastPages([...titles.map((r) => String(r.event_page)), ...raw.slice(-8).map((r) => String(r.event_page))], scheduled.slice(-5).map((r) => r.event_page)), 25),
       ],
       followUps: [
         input.league ? say(`Historique de ${team}`, `${team} history`) : say(`${team} aux Worlds`, `${team} at Worlds`),
         say(`Palmarès ${league === allCompetitions() ? "des Worlds" : league}`, `${league === allCompetitions() ? "Worlds" : league} winners`),
       ],
-      totals: { events: raw.length, wins, losses, titles: titles.length },
+      totals: { events: raw.length, wins, losses, titles: titles.length, schedule_series: scheduledCount },
     };
   },
   normalize: async (db, input) => {
@@ -1202,6 +1258,10 @@ const SeriesRow = z.object({
   team_b: Text,
   wins_a: z.number(),
   wins_b: z.number(),
+  /** 1 when side A won the series, 0 when side B did, null without a winner. */
+  won_a: z.number().nullable(),
+  schedule: z.number(),
+  forfeited_by: NullableText,
 });
 
 /** Series listed under a head-to-head; the record counts every series of the scope. */
@@ -1212,28 +1272,43 @@ async function teamSeries(db: Db, input: HeadToHeadInput) {
   const params: Params = {};
   const A = inList("a", (await teamMembers(db, input.sideA)).members, params);
   const B = inList("b", (await teamMembers(db, input.sideB)).members, params);
-  const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
+  const league = (alias: string) => (input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "");
+  const winsA = `SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END)`;
+  const winsB = `SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END)`;
 
+  // The series of the scoreboards, then those known only from the schedule (their score, the side that forfeited).
   const rows = await selectAll(
     db,
     SeriesRow,
-    `SELECT g.tournament_page, g.tab, MIN(g.league_short) AS league_short, MIN(g.year) AS year, MIN(g.played_at) AS played_at,
+    `SELECT * FROM (
+     SELECT g.tournament_page, g.tab, MIN(g.league_short) AS league_short, MIN(g.year) AS year, MIN(g.played_at) AS played_at,
             MIN(CASE WHEN g.blue_team IN (${A}) THEN g.blue_team ELSE g.red_team END) AS team_a,
             MIN(CASE WHEN g.blue_team IN (${A}) THEN g.red_team ELSE g.blue_team END) AS team_b,
-            SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END) AS wins_a,
-            SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END) AS wins_b
+            ${winsA} AS wins_a, ${winsB} AS wins_b,
+            CASE WHEN ${winsA} > ${winsB} THEN 1 WHEN ${winsA} < ${winsB} THEN 0 END AS won_a,
+            0 AS schedule, NULL::text AS forfeited_by
      FROM v_games g
      WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}) AND g.red_team IN (${A})))
-       AND g.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("g.year", input, params)}
+       AND g.stage IN (${COMPETITION_STAGES}) ${league("g")} ${periodFilter("g.year", input, params)}
      GROUP BY g.tournament_page, g.tab, g.match_n
-     ORDER BY MIN(g.played_at) DESC NULLS LAST`,
+     UNION ALL
+     SELECT sr.tournament_page, sr.tab, sr.league_short, sr.year, sr.played_at,
+            CASE WHEN sr.team1 IN (${A}) THEN sr.team1 ELSE sr.team2 END, CASE WHEN sr.team1 IN (${A}) THEN sr.team2 ELSE sr.team1 END,
+            CASE WHEN sr.team1 IN (${A}) THEN COALESCE(sr.team1_score, 0) ELSE COALESCE(sr.team2_score, 0) END,
+            CASE WHEN sr.team1 IN (${A}) THEN COALESCE(sr.team2_score, 0) ELSE COALESCE(sr.team1_score, 0) END,
+            CASE WHEN sr.winner IN (${A}) THEN 1 ELSE 0 END, 1, sr.forfeited_by
+     FROM v_series_results sr
+     WHERE ((sr.team1 IN (${A}) AND sr.team2 IN (${B})) OR (sr.team1 IN (${B}) AND sr.team2 IN (${A})))
+       AND sr.stage IN (${COMPETITION_STAGES}) ${league("sr")} ${periodFilter("sr.year", input, params)}
+     ) series ORDER BY played_at DESC NULLS LAST`,
     params,
   );
 
   return {
     count: rows.length,
-    seriesA: rows.filter((r) => r.wins_a > r.wins_b).length,
-    seriesB: rows.filter((r) => r.wins_b > r.wins_a).length,
+    seriesA: rows.filter((r) => r.won_a === 1).length,
+    seriesB: rows.filter((r) => r.won_a === 0).length,
+    scheduleOnly: rows.filter((r) => r.schedule === 1).length,
     series: rows.slice(0, MAX_SERIES).map((r): TeamSeries => ({
       playedAt: r.played_at,
       label: [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · "),
@@ -1241,6 +1316,9 @@ async function teamSeries(db: Db, input: HeadToHeadInput) {
       teamB: displayTeam(r.team_b),
       winsA: r.wins_a,
       winsB: r.wins_b,
+      winner: r.won_a == null ? null : displayTeam(r.won_a === 1 ? r.team_a : r.team_b),
+      scheduleOnly: r.schedule === 1,
+      forfeitedBy: r.forfeited_by ? displayTeam(r.forfeited_by) : null,
       source: { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) },
     })),
   };
@@ -1253,28 +1331,37 @@ const headToHead: ToolDef<HeadToHeadInput> = {
     "Games between two teams, tournament by tournament (wins of each side). For two players, use player_comparison.",
   plan: async (db, input) => {
     const params: Params = {};
-    const filters: string[] = [];
-
     const A = inList("a", (await teamMembers(db, input.sideA)).members, params);
     const B = inList("b", (await teamMembers(db, input.sideB)).members, params);
+    const league = (alias: string) => (input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "");
 
-    if (input.league) {
-      filters.push(`AND ${leagueFilter("g.league", input, params)}`);
-
-    }
-
+    // A series known only from the schedule adds its score as games (none for a forfeit), and is counted apart.
     return {
       params,
-      sql: tidy(`SELECT g.year, ANY_VALUE(g.league_short) AS league_short, g.event_page, MIN(g.tournament) AS tournament,
-       SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END) AS wins_a,
-       SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END) AS wins_b
-FROM v_games g
-WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}) AND g.red_team IN (${A})))
-  AND g.stage IN (${COMPETITION_STAGES})
-  ${filters.join(" ")}
-  ${periodFilter("g.year", input, params)}
-GROUP BY g.year, g.event_page
-ORDER BY g.year NULLS FIRST, MIN(g.played_at) NULLS FIRST, g.event_page`),
+      sql: tidy(`WITH meetings AS (
+  SELECT g.year, g.league_short, g.event_page, g.tournament, g.played_at,
+         CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END AS wins_a,
+         CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END AS wins_b,
+         0 AS schedule, 0 AS forfeit
+  FROM v_games g
+  WHERE ((g.blue_team IN (${A}) AND g.red_team IN (${B})) OR (g.blue_team IN (${B}) AND g.red_team IN (${A})))
+    AND g.stage IN (${COMPETITION_STAGES})
+    ${league("g")}
+    ${periodFilter("g.year", input, params)}
+  UNION ALL
+  SELECT sr.year, sr.league_short, sr.event_page, sr.tournament, sr.played_at,
+         ${scheduleScore("sr", A, "own")}, ${scheduleScore("sr", A, "other")}, 1, ${scheduleForfeit("sr")}
+  FROM v_series_results sr
+  WHERE ((sr.team1 IN (${A}) AND sr.team2 IN (${B})) OR (sr.team1 IN (${B}) AND sr.team2 IN (${A})))
+    AND sr.stage IN (${COMPETITION_STAGES})
+    ${league("sr")}
+    ${periodFilter("sr.year", input, params)}
+)
+SELECT year, ANY_VALUE(league_short) AS league_short, event_page, MIN(tournament) AS tournament, SUM(wins_a) AS wins_a, SUM(wins_b) AS wins_b,
+       SUM(schedule) AS schedule_series, SUM(forfeit) AS schedule_forfeits
+FROM meetings
+GROUP BY year, event_page
+ORDER BY year NULLS FIRST, MIN(played_at) NULLS FIRST, event_page`),
     };
   },
   relaxations: (input) => {
@@ -1311,10 +1398,14 @@ ORDER BY g.year NULLS FIRST, MIN(g.played_at) NULLS FIRST, g.event_page`),
       say(`${series.count} séries (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} gagnées par ${a.team} et ${series.seriesB} par ${b.team} (${seriesLeader}) ; `, `${series.count} series (${span(raw.map((r) => Number(r.year)))}), ${series.seriesA} won by ${a.team} and ${series.seriesB} by ${b.team} (${seriesLeader}); `) +
       say(`${winsA} victoires à ${winsB} en parties sur ${raw.length} tournois, ${leader}. `, `${winsA} wins to ${winsB} in games over ${raw.length} tournaments, ${leader}. `) +
       (latest
-        ? say(`Dernière rencontre : ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`, `Latest meeting: ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}.`)
+        ? say(`Dernière rencontre : ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.forfeitedBy ? `victoire de ${latest.winner} par forfait` : `${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}`}.`, `Latest meeting: ${latest.label}${latest.playedAt ? ` (${dayFormat().format(new Date(latest.playedAt * 1000))})` : ""}, ${latest.forfeitedBy ? `${latest.winner} won by forfeit` : `${latest.teamA} ${latest.winsA}-${latest.winsB} ${latest.teamB}`}.`)
         : say(`Dernière confrontation : ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`, `Latest head-to-head: ${last.tournament ?? last.event_page} (${last.wins_a}-${last.wins_b}).`));
 
+    const scheduled = raw.filter((r) => r.schedule_series > 0);
+    const notes = scheduleNotes(series.scheduleOnly, scheduled.reduce((n, r) => n + r.schedule_forfeits, 0), scheduled.map((r) => r.tournament ?? r.event_page));
+
     return {
+      notes,
       title: `${a.team} vs ${b.team}${titleScope(league, input, " — ")}`,
       table: {
         columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Tournoi", "Tournament"), a.team, b.team],
@@ -1323,7 +1414,7 @@ ORDER BY g.year NULLS FIRST, MIN(g.played_at) NULLS FIRST, g.event_page`),
       facts,
       sources: [
         ...[...a.members, ...b.members].map((m) => ({ label: `Leaguepedia — ${m}`, url: wikiUrl(m) })),
-        ...eventSources(raw.map((r) => String(r.event_page)), 15),
+        ...eventSources(lastPages(raw.map((r) => String(r.event_page)), scheduled.slice(-5).map((r) => r.event_page)), 15),
       ],
       teams: {
         teamA: a.team,
@@ -1337,7 +1428,7 @@ ORDER BY g.year NULLS FIRST, MIN(g.played_at) NULLS FIRST, g.event_page`),
         series: series.series,
       },
       followUps: [say(`Historique de ${a.team}`, `${a.team} history`), say(`Historique de ${b.team}`, `${b.team} history`)],
-      totals: { wins_a: winsA, wins_b: winsB, events: raw.length, series: series.count, series_a: series.seriesA, series_b: series.seriesB },
+      totals: { wins_a: winsA, wins_b: winsB, events: raw.length, series: series.count, series_a: series.seriesA, series_b: series.seriesB, schedule_series: series.scheduleOnly },
     };
   },
   // The model may write a franchise's old name ("MAD Lions KOI"): the input carries the franchise's current one.
@@ -4339,7 +4430,8 @@ async function phaseTabs(db: Db, input: SeriesInput & { phase: GamePhase }): Pro
     PhaseTabRow,
     `SELECT g.tournament_page, g.tab, MIN(g.played_at) AS start, MAX(g.played_at) AS end,
             MAX((${PHASE_SQL[input.phase]})::integer) AS named, MAX((${PHASE_SQL.final})::integer) AS final, MAX((${PHASE_SQL.play_in})::integer) AS play_in
-     FROM v_games g
+     FROM (SELECT tournament_page, tab, played_at, stage, league, year FROM v_games
+           UNION ALL SELECT tournament_page, tab, played_at, stage, league, year FROM v_series_results) g
      WHERE g.stage IN (${COMPETITION_STAGES}) AND g.tab IS NOT NULL ${league} ${periodFilter("g.year", input, params)} ${splitFilter("g.tournament_page", input, params)}
      GROUP BY g.tournament_page, g.tab`,
     params,
@@ -4367,7 +4459,8 @@ async function phaseTabs(db: Db, input: SeriesInput & { phase: GamePhase }): Pro
 }
 
 const SeriesGameRow = z.object({
-  game_id: z.number(),
+  /** Null on a series known only from the schedule: one row, without any game. */
+  game_id: z.number().nullable(),
   tournament_page: Text,
   event_page: Text,
   tournament: NullableText,
@@ -4383,6 +4476,11 @@ const SeriesGameRow = z.object({
   red_team: NullableText,
   winner: NullableText,
   stats_page: NullableText,
+  /** A series known only from the schedule: its id, its score (team1 = blue_team) and the team that forfeited. */
+  series_id: z.number().nullable(),
+  score1: z.number().nullable(),
+  score2: z.number().nullable(),
+  forfeited_by: NullableText,
 });
 
 type SeriesGameRow = z.infer<typeof SeriesGameRow>;
@@ -4483,30 +4581,40 @@ const series: ToolDef<SeriesInput> = {
     "the international event's final. For a team's whole record against another, use head_to_head; for one game's minute-by-minute story, game_timeline.",
   plan: async (db, input) => {
     const params: Params = {};
-    const where = [`g.stage IN (${COMPETITION_STAGES})`];
     const a = input.teamA ? inList("a", (await teamMembers(db, input.teamA)).members, params) : null;
     const b = input.teamB ? inList("b", (await teamMembers(db, input.teamB)).members, params) : null;
+    const tabs = input.phase ? await phaseTabs(db, { ...input, phase: input.phase }) : null;
+    const tabList = tabs?.length ? inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params) : null;
 
-    if (a && b) where.push(`((g.blue_team IN (${a}) AND g.red_team IN (${b})) OR (g.blue_team IN (${b}) AND g.red_team IN (${a})))`);
-    else if (a) where.push(`(g.blue_team IN (${a}) OR g.red_team IN (${a}))`);
+    // The same filters on the games (v_games) and on the series known only from the schedule (v_series_results).
+    const where = (alias: string, one: string, two: string) => {
+      const w = [`${alias}.stage IN (${COMPETITION_STAGES})`];
 
-    if (input.league) where.push(leagueFilter("g.league", input, params));
+      if (a && b) w.push(`((${alias}.${one} IN (${a}) AND ${alias}.${two} IN (${b})) OR (${alias}.${one} IN (${b}) AND ${alias}.${two} IN (${a})))`);
+      else if (a) w.push(`(${alias}.${one} IN (${a}) OR ${alias}.${two} IN (${a}))`);
 
-    if (input.phase) {
-      const tabs = await phaseTabs(db, { ...input, phase: input.phase });
+      if (input.league) w.push(leagueFilter(`${alias}.league`, input, params));
 
-      where.push(tabs.length ? `(g.tournament_page || '|' || g.tab) IN (${inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params)})` : "FALSE");
-    }
+      if (tabs) w.push(tabList ? `(${alias}.tournament_page || '|' || ${alias}.tab) IN (${tabList})` : "FALSE");
+
+      return `${w.join("\n  AND ")}
+  ${periodFilter(`${alias}.year`, input, params)}
+  ${splitFilter(`${alias}.tournament_page`, input, params)}`;
+    };
 
     return {
       params,
       sql: `SELECT g.game_id, g.tournament_page, g.event_page, g.tournament, g.league_short, g.year, g.tab, g.match_n, g.game_n,
-       g.played_at, g.patch, g.length_s, g.blue_team, g.red_team, g.winner, r.stats_page
+       g.played_at, g.patch, g.length_s, g.blue_team, g.red_team, g.winner, r.stats_page,
+       NULL::integer AS series_id, NULL::integer AS score1, NULL::integer AS score2, NULL::text AS forfeited_by
 FROM v_games g LEFT JOIN game_riot r ON r.game_id = g.game_id
-WHERE ${where.join("\n  AND ")}
-  ${periodFilter("g.year", input, params)}
-  ${splitFilter("g.tournament_page", input, params)}
-ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_n NULLS FIRST, g.game_n NULLS FIRST`,
+WHERE ${where("g", "blue_team", "red_team")}
+UNION ALL
+SELECT NULL, sr.tournament_page, sr.event_page, sr.tournament, sr.league_short, sr.year, sr.tab, sr.match_n, NULL,
+       sr.played_at, NULL, NULL, sr.team1, sr.team2, sr.winner, NULL, sr.series_id, sr.team1_score, sr.team2_score, sr.forfeited_by
+FROM v_series_results sr
+WHERE ${where("sr", "team1", "team2")}
+ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS FIRST, game_n NULLS FIRST`,
     };
   },
   relaxations: (input) => {
@@ -4537,12 +4645,40 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
     const rows = z.array(SeriesGameRow).parse(sqlRows);
     const groups = new Map<string, SeriesGameRow[]>();
 
-    for (const r of rows) groups.set(seriesKey(r), [...(groups.get(seriesKey(r)) ?? []), r]);
+    // A series known only from the schedule is one row of its own, whatever its tab and number.
+    const keyOf = (r: SeriesGameRow) => (r.game_id == null ? `schedule|${r.series_id}` : seriesKey(r));
+
+    for (const r of rows) groups.set(keyOf(r), [...(groups.get(keyOf(r)) ?? []), r]);
     const seriesGames = [...groups.values()];
-    const detailedIds = seriesGames.slice(0, MAX_DETAILED_SERIES).flatMap((g) => g.map((r) => r.game_id));
+    const detailedIds = seriesGames.slice(0, MAX_DETAILED_SERIES).flatMap((g) => g.flatMap((r) => r.game_id ?? []));
     const draftOf = await seriesDrafts(db, detailedIds);
+    const gameRows = rows.filter((r) => r.game_id != null);
 
     const list: SeriesDetail[] = seriesGames.map((games, i) => {
+      const scheduled = games[0].game_id == null ? games[0] : null;
+
+      // Known only from the schedule: its score, the winner first, no game.
+      if (scheduled) {
+        const firstWon = scheduled.winner === scheduled.blue_team;
+        const [x, y] = firstWon ? [scheduled.blue_team, scheduled.red_team] : [scheduled.red_team, scheduled.blue_team];
+        const [wx, wy] = firstWon ? [scheduled.score1 ?? 0, scheduled.score2 ?? 0] : [scheduled.score2 ?? 0, scheduled.score1 ?? 0];
+
+        return {
+          label: seriesLabel(scheduled),
+          tournamentPage: scheduled.tournament_page,
+          playedAt: scheduled.played_at,
+          teamA: displayTeam(x ?? "?"),
+          teamB: displayTeam(y ?? "?"),
+          winsA: wx,
+          winsB: wy,
+          bestOf: scheduled.forfeited_by ? null : bestOfScore(wx, wy),
+          games: null,
+          scheduleOnly: true,
+          forfeitedBy: scheduled.forfeited_by ? displayTeam(scheduled.forfeited_by) : null,
+          source: { label: `Leaguepedia — ${scheduled.tournament_page}`, url: wikiUrl(scheduled.tournament_page) },
+        };
+      }
+
       games.sort((x, y) => (x.game_n ?? 0) - (y.game_n ?? 0));
       const first = games[0];
       const names = [...new Set(games.flatMap((g) => [g.blue_team, g.red_team]).filter((t): t is string => t != null))];
@@ -4559,6 +4695,8 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
         winsA: winsOf(x),
         winsB: winsOf(y),
         bestOf: bestOfScore(winsOf(x), winsOf(y)),
+        scheduleOnly: false,
+        forfeitedBy: null,
         games:
           i < MAX_DETAILED_SERIES
             ? games.map((g) => ({
@@ -4569,7 +4707,7 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
                 winner: g.winner == null ? null : g.winner === g.blue_team ? "blue" : g.winner === g.red_team ? "red" : null,
                 durationS: g.length_s,
                 patch: g.patch,
-                ...draftOf(g.game_id),
+                ...draftOf(g.game_id!),
                 source: gameSource(g),
               }))
             : null,
@@ -4608,7 +4746,9 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
 
     if (rows.length >= MAX_ROWS) notes.push(say(`Liste limitée aux ${MAX_ROWS} premières parties : précise la saison ou la phase pour la suite.`, `List limited to the first ${MAX_ROWS} games: name the season or the stage for the rest.`));
 
-    const score = (s: SeriesDetail) => `${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`;
+    const score = (s: SeriesDetail) => (s.forfeitedBy ? say(`${s.teamA} bat ${s.teamB} par forfait`, `${s.teamA} beats ${s.teamB} by forfeit`) : `${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`);
+    const scheduledCount = list.filter((s) => s.scheduleOnly).length;
+    notes.push(...scheduleNotes(scheduledCount, list.filter((s) => s.forfeitedBy).length, []));
     const sideName = (g: SeriesGame) => (g.winner === "blue" ? say(`${g.blue} (bleu)`, `${g.blue} (blue)`) : g.winner === "red" ? say(`${g.red} (rouge)`, `${g.red} (red)`) : say("vainqueur inconnu", "winner unknown"));
 
     const ofScope = oneEvent
@@ -4619,7 +4759,9 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
 
     const phrase = capitalize(one || !phaseName ? seriesPhrase(firstRow) : `${phaseName} ${ofScope}`.trim());
 
-    const facts = one
+    const facts = one?.scheduleOnly
+      ? say(`${phrase} : ${score(one)}${one.playedAt ? `, le ${dayFormat().format(new Date(one.playedAt * 1000))}` : ""}.`, `${phrase}: ${score(one)}${one.playedAt ? `, on ${dayFormat().format(new Date(one.playedAt * 1000))}` : ""}.`)
+      : one
       ? say(`${phrase} : ${one.winsA === one.winsB ? `${one.teamA} et ${one.teamB} à égalité ${one.winsA}-${one.winsB}` : `${one.teamA} bat ${one.teamB} ${one.winsA}-${one.winsB}`}`, `${phrase}: ${one.winsA === one.winsB ? `${one.teamA} and ${one.teamB} tied ${one.winsA}-${one.winsB}` : `${one.teamA} beats ${one.teamB} ${one.winsA}-${one.winsB}`}`) +
         say(`${one.bestOf ? ` (BO${one.bestOf})` : ""}${one.playedAt ? `, le ${dayFormat().format(new Date(one.playedAt * 1000))}` : ""}. `, `${one.bestOf ? ` (BO${one.bestOf})` : ""}${one.playedAt ? `, on ${dayFormat().format(new Date(one.playedAt * 1000))}` : ""}. `) +
         (one.games ?? []).map((g) => say(`Game ${g.n ?? "?"} : ${sideName(g)}${g.durationS ? ` en ${clock(g.durationS)}` : ""}`, `Game ${g.n ?? "?"}: ${sideName(g)}${g.durationS ? ` in ${clock(g.durationS)}` : ""}`)).join(say(" ; ", "; ")) +
@@ -4637,7 +4779,7 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
         ]
       : list.slice(0, 3).map(askAgain);
 
-    const totals: ToolOutput["totals"] = { series: list.length, games: rows.length };
+    const totals: ToolOutput["totals"] = { series: list.length, games: gameRows.length, schedule_series: scheduledCount };
     const top = list[0];
 
     if (top)
@@ -4658,20 +4800,25 @@ ORDER BY g.played_at NULLS FIRST, g.tournament_page, g.tab NULLS FIRST, g.match_
     return {
       title: one ? `${score(one)} — ${one.label}` : phaseName ? `${capitalize(phaseName)} — ${[event, teams.join(" – ")].filter(Boolean).join(" · ")}` : say(`Séries — ${scope}`, `Series — ${scope}`),
       series: { scope, count: list.length, series: list },
-      table: {
-        columns: [say("Série", "Series"), "Game", say("Bleu", "Blue"), say("Rouge", "Red"), say("Vainqueur", "Winner"), say("Durée", "Duration"), "Patch"],
-        rows: list.flatMap((s, i) =>
-          seriesGames[i].map((g) => [
-            `${score(s)} · ${s.label}`,
-            g.game_n,
-            displayTeam(g.blue_team ?? "?"),
-            displayTeam(g.red_team ?? "?"),
-            g.winner ? displayTeam(g.winner) : null,
-            g.length_s ? clock(g.length_s) : null,
-            g.patch,
-          ]),
-        ),
-      },
+      // The games only: a series known only from the schedule has none, and stays in the series list.
+      table: gameRows.length
+        ? {
+            columns: [say("Série", "Series"), "Game", say("Bleu", "Blue"), say("Rouge", "Red"), say("Vainqueur", "Winner"), say("Durée", "Duration"), "Patch"],
+            rows: list.flatMap((s, i) =>
+              s.scheduleOnly
+                ? []
+                : seriesGames[i].map((g) => [
+                    `${score(s)} · ${s.label}`,
+                    g.game_n,
+                    displayTeam(g.blue_team ?? "?"),
+                    displayTeam(g.red_team ?? "?"),
+                    g.winner ? displayTeam(g.winner) : null,
+                    g.length_s ? clock(g.length_s) : null,
+                    g.patch,
+                  ]),
+            ),
+          }
+        : undefined,
       facts,
       sources: [...pages.map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) })), ...gamePages].slice(0, 30),
       followUps: followUps.slice(0, 3),

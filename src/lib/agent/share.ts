@@ -114,7 +114,9 @@ export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCa
     card.duel = { a: teamA, b: teamB, scoreA: gamesA, scoreB: gamesB, caption: t.series(seriesCount) };
   } else if (one) {
     card.heading = one.label;
-    card.duel = { a: one.teamA, b: one.teamB, scoreA: one.winsA, scoreB: one.winsB, caption: one.bestOf ? `BO${one.bestOf}` : "" };
+
+    // A forfeit has no score to draw: the title names its winner.
+    if (!one.forfeitedBy) card.duel = { a: one.teamA, b: one.teamB, scoreA: one.winsA, scoreB: one.winsB, caption: one.bestOf ? `BO${one.bestOf}` : "" };
   } else if (answer.rows.length) {
     // The tool's own counts, the ones its summary writes: a tournament played for two teams is two rows.
     const totals = HistoryTotals.safeParse(meta.totals).data;

@@ -270,6 +270,34 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Schéma v11 (migration Postgres 2)
+
+Le schéma v11 ajoute `series_results` (vue `v_series_results`, migration
+`db/migrations/0002_series_results.sql`) : les séries que Leaguepedia ne publie
+que dans son calendrier (`MatchSchedule`), sans aucun scoreboard, avec équipes,
+score, vainqueur, forfait, date et onglet, sans stat de partie. `data:fetch` lit
+le calendrier de chaque ligue (une requête par ligue et par tranche de 5 000
+matchs, environ 30 000 matchs, une quarantaine de requêtes) dans
+`data/raw/schedule.json`, et le relit pour les tournois récents en incrémental ;
+la dérivation (`scripts/data/derive.ts`) n'en garde que les matchs décidés
+qu'aucune partie ne couvre (1 391 séries sur l'instantané CI, dont 116 forfaits).
+
+La migration ne fait qu'ajouter une table et une vue : le code en place
+(migration 1) lit une base à la migration 2. Mise en production, dans cet ordre
+(voir `docs/postgres.md`, « Livrer une migration de table ou de vue ») :
+
+1. Désactiver Deploy (`gh workflow disable Deploy`), puis merger la PR.
+2. Lancer « Postgres update » à la demande depuis `main` : Neon passe à la
+   migration 2, avec le calendrier ; l'app en place continue de répondre.
+3. Réactiver Deploy et le lancer à la demande.
+
+La **Data release** suivante publie le fichier SQLite v11. `data:package` refuse
+une release sans aucune de ces séries ; `--check-only` se contente d'un
+avertissement. `ci/data.json` épingle encore `data-20261120-6` (v10), et
+`ci/raw.tar.zst` contient déjà `schedule.json` : la CI charge Postgres depuis
+l'instantané brut, et reconstruit le fichier SQLite v11 hors ligne jusqu'au
+ré-épinglage sur la première release v11.
+
 ### Première release v10
 
 Le schéma v10 ajoute `teams.short`, le sigle Leaguepedia de chaque équipe

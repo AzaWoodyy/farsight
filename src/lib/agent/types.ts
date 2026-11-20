@@ -315,6 +315,12 @@ export type TeamSeries = {
   teamB: string;
   winsA: number;
   winsB: number;
+  /** The series winner (teamA or teamB), null for a draw; the schedule's own winner when the score says otherwise. */
+  winner: string | null;
+  /** Known only from Leaguepedia's match schedule: the score, without any game statistic. */
+  scheduleOnly: boolean;
+  /** The team that forfeited, null when the series was played. */
+  forfeitedBy: string | null;
   source: Source;
 };
 
@@ -371,8 +377,12 @@ export type SeriesDetail = {
   winsB: number;
   /** 1, 3 or 5 read from the score (wins needed × 2 − 1); null when the series has no winner. */
   bestOf: number | null;
-  /** Null when the series is listed without its games (beyond the detailed ones). */
+  /** Null when the series is listed without its games (beyond the detailed ones, or known only from the schedule). */
   games: SeriesGame[] | null;
+  /** Known only from Leaguepedia's match schedule: the score, without any game statistic. */
+  scheduleOnly: boolean;
+  /** The team that forfeited, null when the series was played. */
+  forfeitedBy: string | null;
   source: Source;
 };
 

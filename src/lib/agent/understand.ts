@@ -464,16 +464,19 @@ function singular(name: string): string | null {
 const getIndexes = cachedRead(readIndexes);
 
 async function readIndexes(db: Db): Promise<Indexes> {
-  const rows = await selectAll(
+  // Teams with games, then those known only from series without a scoreboard (series_results), with 0 games.
+  const all = await selectAll(
     db,
     z.object({ name: z.string(), short: z.string().nullable(), games: z.number() }),
-    `SELECT t.name, t.short, x.games FROM (
-       SELECT team_id, COUNT(*) AS games FROM (
-         SELECT blue_team_id AS team_id FROM games
-         UNION ALL SELECT red_team_id FROM games WHERE red_team_id != blue_team_id
-       ) GROUP BY team_id
-     ) x JOIN teams t ON t.id = x.team_id ORDER BY x.games DESC, t.name`,
+    `SELECT t.name, t.short, SUM(x.game) AS games FROM (
+       SELECT blue_team_id AS team_id, 1 AS game FROM games
+       UNION ALL SELECT red_team_id, 1 FROM games WHERE red_team_id != blue_team_id
+       UNION ALL SELECT team1_id, 0 FROM series_results
+       UNION ALL SELECT team2_id, 0 FROM series_results
+     ) x JOIN teams t ON t.id = x.team_id GROUP BY t.id ORDER BY games DESC, t.name`,
   );
+
+  const rows = all.filter((r) => r.games > 0);
 
   const gamesOf = new Map(rows.map((r) => [r.name, r.games]));
   const teams: TeamIndex = new Map();
@@ -550,6 +553,20 @@ async function readIndexes(db: Db): Promise<Indexes> {
     }
   }
 
+  // A team known only from the schedule is named by its full name alone, never one that a question reads by accident:
+  // an everyday word, or a team with games followed by a grammar word ("T1 a gagné" is "t1a" once normalized, the name
+  // of a T1 academy team that has no scoreboard). "Afreeca Freecs Academy B" stays a name, and so does a Hangul name of
+  // two syllables ("떡상"), which the two-letter rule of abbreviations is not about.
+  const played = new Set(rows.map((r) => normalizeAlias(r.name)));
+
+  for (const { name } of all.filter((r) => r.games === 0)) {
+    const key = normalizeAlias(name);
+    const word = /^\p{Script=Hangul}{2,}$/u.test(key) ? { caps: false } : abbreviation(name);
+    const glued = [1, 2, 3].some((n) => played.has(key.slice(0, -n)) && STOPWORDS.has(key.slice(-n)));
+
+    if (word && !word.caps && !glued) add(name, single(name), "name");
+  }
+
   const champions = new Map<string, string>();
 
   for (const { name } of await selectAll(db, z.object({ name: z.string() }), "SELECT name FROM champions"))
@@ -571,6 +588,7 @@ export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam
 /**
  * The end of one team's name, in two words or more ("Blue Stars" for Karmine Corp Blue Stars), when no other team's
  * name ends the same way. Only for a mention the model already read as a team: the rules never guess from a name's end.
+ * A team known only from the schedule (no game) is read by its full name alone.
  */
 function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   const words = mention.trim().split(/\s+/);
@@ -580,7 +598,7 @@ function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   const found = new Map<string, TeamEntry>();
 
   for (const entry of teams.values())
-    if (entry.rank === ALIAS_RANK.name && entry.members.length === 1 && ` ${entry.team.toLowerCase()}`.endsWith(end) && entry.team.length > end.length)
+    if (entry.rank === ALIAS_RANK.name && entry.members.length === 1 && entry.games > 0 && ` ${entry.team.toLowerCase()}`.endsWith(end) && entry.team.length > end.length)
       found.set(entry.team, entry);
 
   return found.size === 1 ? [...found.values()][0] : null;

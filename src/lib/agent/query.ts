@@ -1498,6 +1498,9 @@ const sqlRules = (language: string) =>
   "'chemtech', 'elder'; NULL before 2016), time_s. v_ingame_coverage gives games and ingame_games per league and year: " +
   "the LPL (Tencent LoL Pro League) has none. If the question needs in-game stats for a scope whose ingame_games is 0, set `missing`. " +
   "End-of-game objective counts (dragons, barons, towers, heralds, void grubs, inhibitors) are in v_games for every league. " +
+  "v_series_results lists the series Leaguepedia only has on its match schedule, without any game: team1, team2, winner, " +
+  "team1_score, team2_score, forfeited_by (the team that forfeited, NULL when played). A count of series or a series record adds them " +
+  "to the series of v_games (one tab's match_n of one tournament_page); they have no game statistic. " +
   "Summoner spells are v_game_players.spell1 and spell2 (every game; the pair is stored in alphabetical order, so 'Flash' + 'Teleport' is " +
   "spell1 = 'Flash' AND spell2 = 'Teleport'). Runes: v_game_players.keystone (from 2018) and v_player_runes, one row per rune of a page " +
   "(kind 'keystone', 'primary', 'secondary' or 'shard'; tree; whole pages from 2020, the keystone alone before), joined on game_id and player. " +

@@ -8,8 +8,8 @@ describe("database schema contract", () => {
   test("DDL changes require reviewing the schema version and its fingerprint together", () => {
     const fingerprint = createHash("sha256").update(TABLE_DDL + QUERY_DDL.replace(/^CREATE INDEX .+;\n/gm, "")).digest("hex");
     expect({ version: SCHEMA_VERSION, fingerprint }).toEqual({
-      version: 10,
-      fingerprint: "f452e9fb9ce2cf65881c555ab6da8714034c41a9a0024695d8592a50c58ee602",
+      version: 11,
+      fingerprint: "e5f852a10c5e928c9140e86b7f17dc7d6adb75a823066130d512f994c03eba6d",
     });
   });
 

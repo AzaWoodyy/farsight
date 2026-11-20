@@ -55,6 +55,7 @@ const row = (year: number, placeNumber: number | null, placeLabel: string, wins:
 
 const series = (over: Partial<SeriesDetail> = {}): SeriesDetail => ({
   label: "Worlds 2025 · finale", tournamentPage: "2025 Season World Championship/Main Event", playedAt: null, teamA: "T1", teamB: "KT Rolster", winsA: 3, winsB: 2, bestOf: 5, games: null,
+  scheduleOnly: false, forfeitedBy: null,
   source: { label: "Leaguepedia", url: "https://lol.fandom.com/wiki/2025_Season_World_Championship" },
   ...over,
 });
