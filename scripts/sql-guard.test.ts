@@ -152,6 +152,8 @@ test("the app refuses a schema older than the code's migration and accepts a new
     await expect(checkMigration(other.pool)).resolves.toBeUndefined();
     await other.exec("DELETE FROM schema_migrations");
     await expect(checkMigration(other.pool)).rejects.toThrow(/migration null; expected/);
+    await other.exec(`INSERT INTO schema_migrations (version, name, checksum) VALUES (${PG_MIGRATION - 1}, 'previous', 'x')`);
+    await expect(checkMigration(other.pool)).rejects.toThrow(/expected/);
   } finally {
     await other.close();
   }

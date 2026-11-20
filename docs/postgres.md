@@ -101,9 +101,10 @@ Vercel.
 
 - **Livrer une migration de table ou de vue** : la base doit passer avant le code, sinon le code neuf refuse
   l'ancienne base.
-  1. Merger la PR, puis annuler le Deploy que la CI de `main` déclenche.
-  2. Lancer « Postgres update » à la demande depuis `main` : l'app en place lit la base migrée.
-  3. Relancer Deploy à la demande.
+  1. Désactiver le workflow Deploy (`gh workflow disable Deploy`), puis merger la PR. Annuler un Deploy déjà lancé ne
+     suffit pas : Vercel peut avoir reçu le déploiement, et son build réussit sur l'ancienne base.
+  2. Lancer « Postgres update » à la demande depuis `main` et attendre son succès : l'app en place lit la base migrée.
+  3. Réactiver Deploy (`gh workflow enable Deploy`) et le lancer à la demande.
 
 ## En local
 
