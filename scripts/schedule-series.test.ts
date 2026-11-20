@@ -20,14 +20,15 @@ async function seed(db: TestDb) {
 
   await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'AS20','AS20','season',?,2020),(2,'AS20P','AS20P','playoffs',?,2020)", league, league);
   await db.exec(`
-    INSERT INTO teams(id,name) VALUES (1,'T1 Rookies'),(2,'Gen.G Global Academy'),(3,'DRX Academy'),(4,'Red');
+    INSERT INTO teams(id,name) VALUES (1,'T1 Rookies'),(2,'Gen.G Global Academy'),(3,'DRX Academy'),(4,'Red'),(5,'Sandbox Gaming Youth');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES
       (1,2,'Finals',1,1,1,2,1,2000),(2,2,'Finals',1,2,2,1,2,2100);
     INSERT INTO series_results(id,tournament_id,tab,match_n,team1_id,team2_id,winner_side,team1_score,team2_score,forfeit,played_at) VALUES
       (1,1,'Week 1',1,1,2,1,2,1,NULL,1000),
       (2,1,'Week 2',1,2,1,2,0,2,1,1500),
       (3,2,'Semifinals',1,1,3,1,3,1,NULL,1800),
-      (4,1,'Week 3',1,4,2,2,0,2,NULL,1600);
+      (4,1,'Week 3',1,4,2,2,0,2,NULL,1600),
+      (5,1,'Week 4',1,5,2,2,0,2,NULL,1700);
   `);
 }
 
@@ -112,6 +113,8 @@ describe("series known only from the schedule (v_series_results)", () => {
       await seed(db);
       expect(await resolveTeam(db, "DRX Academy")).toMatchObject({ team: "DRX Academy", members: ["DRX Academy"] });
       expect(await resolveTeam(db, "red")).toBeNull();
+      // Nor by the end of its name, which the model may write for a team with games.
+      expect(await resolveTeam(db, "Gaming Youth")).toBeNull();
     } finally {
       await db.close();
     }

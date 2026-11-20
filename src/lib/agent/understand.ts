@@ -588,6 +588,7 @@ export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam
 /**
  * The end of one team's name, in two words or more ("Blue Stars" for Karmine Corp Blue Stars), when no other team's
  * name ends the same way. Only for a mention the model already read as a team: the rules never guess from a name's end.
+ * A team known only from the schedule (no game) is read by its full name alone.
  */
 function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   const words = mention.trim().split(/\s+/);
@@ -597,7 +598,7 @@ function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   const found = new Map<string, TeamEntry>();
 
   for (const entry of teams.values())
-    if (entry.rank === ALIAS_RANK.name && entry.members.length === 1 && ` ${entry.team.toLowerCase()}`.endsWith(end) && entry.team.length > end.length)
+    if (entry.rank === ALIAS_RANK.name && entry.members.length === 1 && entry.games > 0 && ` ${entry.team.toLowerCase()}`.endsWith(end) && entry.team.length > end.length)
       found.set(entry.team, entry);
 
   return found.size === 1 ? [...found.values()][0] : null;
