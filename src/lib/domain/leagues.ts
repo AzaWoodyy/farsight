@@ -25,7 +25,9 @@ export const LEAGUES = [
   { name: "La Ligue Française", short: "LFL", region: "France", international: false, cue: /\blfl\b/i, family: "", from: 2011, to: null },
   { name: "La Ligue Française Division 2", short: "LFL D2", region: "France", international: false, cue: /\b(lfl d(iv(ision)?)? ?2|div2)\b/i, family: "", from: 2011, to: null },
   { name: "LVP SuperLiga Orange", short: "SL Orange", region: "Spain", international: false, cue: /\b(superliga orange|sl orange)\b/i, family: "SuperLiga", from: 2011, to: 2020 },
-  { name: "LVP SuperLiga", short: "SuperLiga", region: "Spain", international: false, cue: /\b(superliga|lvp)\b/i, family: "SuperLiga", from: 2021, to: null },
+  { name: "LVP SuperLiga", short: "SuperLiga", region: "Spain", international: false, cue: /\b(superliga|lvp)\b/i, family: "SuperLiga", from: 2021, to: 2025 },
+  // "les" is a French article: the acronym only in capitals and before a year, else the league's full name.
+  { name: "Liga Española de League of Legends", short: "LES", region: "Spain", international: false, cue: /\b(liga espa[ñn]ola|(?-i:LES)(?= \d{4}\b))/i, family: "SuperLiga", from: 2026, to: null },
   { name: "LVP SuperLiga 2nd Division", short: "SL 2nd Div", region: "Spain", international: false, cue: /\b(superliga 2(nd)?( div(ision)?)?|sl 2nd|segunda divisi[oó]n)\b/i, family: "", from: 2011, to: null },
 ] as const;
 
