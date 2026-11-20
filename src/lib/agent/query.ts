@@ -1,5 +1,5 @@
 import { msg } from "./messages";
-import { leagueMembers } from "../domain/leagues";
+import { LEAGUES, leagueMembers } from "../domain/leagues";
 import type { DatabaseSync } from "node:sqlite";
 import { generateText, Output } from "ai";
 import { z } from "zod";
@@ -1210,7 +1210,7 @@ function routeByRules(question: string, e: Entities, schema: Record<string, stri
   if (e.league || STANDINGS.test(question)) {
     const league = defaultLeague();
     const oneYear = e.yearFrom != null && e.yearFrom === e.yearTo;
-    const international = league === WORLDS || league === "Mid-Season Invitational";
+    const international = LEAGUES.some((l) => l.name === league && l.international);
 
     return {
       kind: "tool",

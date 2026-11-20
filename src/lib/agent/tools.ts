@@ -4,7 +4,7 @@ import { DRAGON_ICON_FILES, dragonLabel, isDragonKind, PLAIN_DRAGON_ICON_FILE } 
 import { runeIcon } from "../domain/rune-icons";
 import { wikiImageUrl } from "../domain/wiki-images";
 import { ITEM_KINDS } from "../domain/items";
-import { LEAGUES, leagueMembers } from "../domain/leagues";
+import { englishBare, frenchIn, frenchOf, LEAGUES, leagueMembers } from "../domain/leagues";
 import { YEAR_MIN } from "../domain/years";
 import type { DatabaseSync } from "node:sqlite";
 import { type StaticToolCall, tool } from "ai";
@@ -605,7 +605,7 @@ function leagueShortName(db: DatabaseSync, league: string | null): string {
 
 /** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
 const inLeague = (short: string) =>
-  short === allCompetitions() ? "" : say(short === "Worlds" ? "aux Worlds" : short === "MSI" ? "au MSI" : `en ${short}`, short === "Worlds" || short === "MSI" ? `at ${short}` : `in ${short}`);
+  short === allCompetitions() ? "" : say(frenchIn(short), englishBare(short) && !short.endsWith("Masters") ? `at ${short}` : `in ${short}`);
 
 function eventSources(pages: string[], max = 12): Source[] {
   const unique = [...new Set(pages)];
@@ -910,7 +910,7 @@ ORDER BY tg.year, MIN(tg.played_at), tg.event_page`),
     const titles = raw.filter((r) => r.place === "1" && r.regular_season !== 1);
     const leagues = [...new Set(raw.map((r) => String(r.league_short)))];
     const names = [...new Set(raw.map((r) => String(r.team)))];
-    const intl = titles.filter((r) => r.league_short === "Worlds" || r.league_short === "MSI");
+    const intl = titles.filter((r) => LEAGUES.some((l) => l.short === r.league_short && l.international));
 
     let facts =
       say(`${team} : ${raw.length} tournois ${inLeague(league) || `(${leagues.join(", ")})`} entre ${span(raw.map((r) => Number(r.year))).replace("–", " et ")}, `, `${team}: ${raw.length} tournaments ${inLeague(league) || `(${leagues.join(", ")})`} between ${span(raw.map((r) => Number(r.year))).replace("–", " and ")}, `) +
@@ -2846,7 +2846,7 @@ ORDER BY t.date_start, tr.event_page, tr.place_number IS NULL, tr.place_number, 
     const latest = editions.findLast((e) => e.winner)?.winner ?? "";
 
     const facts =
-      say(`Palmarès ${league === "Worlds" ? "des Worlds" : `de ${league}`}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(editions.map((e) => e.year))}). `, `Winners of ${league}${input.split ? ` (${input.split})` : ""}: ${rows.length} tournaments (${span(editions.map((e) => e.year))}). `) +
+      say(`Palmarès ${frenchOf(league)}${input.split ? ` (${input.split})` : ""} : ${rows.length} tournois (${span(editions.map((e) => e.year))}). `, `Winners of ${league}${input.split ? ` (${input.split})` : ""}: ${rows.length} tournaments (${span(editions.map((e) => e.year))}). `) +
       (ranking.length
         ? say(`Plus titrés : ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Dernier vainqueur : ${latest}.`, `Most titles: ${ranking.slice(0, 3).map(([t, n]) => `${t} (${n})`).join(", ")}. Latest winner: ${latest}.`)
         : say("Aucun vainqueur publié.", "No winner published."));
@@ -4435,9 +4435,9 @@ const PHASE_PLURAL: Record<GamePhase, string> = {
 
 /** "des Worlds 2025", "du MSI 2024", "de la LCK 2024" */
 function ofEvent(r: Pick<SeriesNaming, "league_short" | "year">): string {
-  const event = `${r.league_short}${r.year ? ` ${r.year}` : ""}`;
+  const year = r.year ? ` ${r.year}` : "";
 
-  return say(r.league_short === "Worlds" || r.league_short.endsWith("Masters") ? `des ${event}` : r.league_short === "MSI" ? `du ${event}` : `de la ${event}`, `of ${event}`);
+  return say(`${frenchOf(r.league_short)}${year}`, `of ${r.league_short}${year}`);
 }
 
 const capitalize = (text: string) => text.replace(/^./, (c) => c.toUpperCase());

@@ -9,6 +9,7 @@ const LES_CUE = /\b[Ll][Ii][Gg][Aa] [Ee][Ss][Pp][Aa][ÑñNn][Oo][Ll][Aa]( [Dd][E
 export const LEAGUES = [
   { name: "World Championship", short: "Worlds", region: "International", international: true, cue: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i, family: "", from: 2011, to: null },
   { name: "Mid-Season Invitational", short: "MSI", region: "International", international: true, cue: /\b(msi|mid[- ]season invitational)\b/i, family: "", from: 2011, to: null },
+  { name: "First Stand", short: "First Stand", region: "International", international: true, cue: /\bfirst stand\b/i, family: "", from: 2011, to: null },
   { name: "LoL The Champions", short: "OGN Champions", region: "Korea", international: false, cue: /\b(ogn|champions korea \d{4}|the champions)\b/i, family: "LCK", from: 2011, to: 2015 },
   { name: "LoL Champions Korea", short: "LCK", region: "Korea", international: false, cue: /\blck\b/i, family: "LCK", from: 2016, to: null },
   { name: "LCK Challengers League", short: "LCK CL", region: "Korea", international: false, cue: /\b(lck cl|lck challengers)\b/i, family: "", from: 2011, to: null },
@@ -43,9 +44,34 @@ export const LEAGUE_NAMES = LEAGUES.map((l) => l.name);
 
 /**
  * Cross-league competitions of the scope: a team plays them besides its own league (a French team in the
- * LFL and in the EMEA Masters), so they never name the league a team is in. Worlds and MSI are `international`.
+ * LFL and in the EMEA Masters), so they never name the league a team is in. Worlds, MSI and First Stand are `international`.
  */
 export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters"]);
+
+/** How French names a competition: "les Worlds", "le MSI", "la LCK". */
+export function frenchArticle(short: string): "les" | "le" | "la" {
+  if (short === "Worlds" || short.endsWith("Masters")) return "les";
+
+  return short === "MSI" || short === "First Stand" ? "le" : "la";
+}
+
+/** "aux Worlds", "au MSI", "en LCK". */
+export function frenchIn(short: string): string {
+  const article = frenchArticle(short);
+
+  return article === "les" ? `aux ${short}` : article === "le" ? `au ${short}` : `en ${short}`;
+}
+
+/** "des Worlds", "du MSI", "de la LCK". */
+export function frenchOf(short: string): string {
+  const article = frenchArticle(short);
+
+  return article === "les" ? `des ${short}` : article === "le" ? `du ${short}` : `de la ${short}`;
+}
+
+/** English names an international event bare ("at Worlds", "at First Stand") and a league with "the". */
+export const englishBare = (short: string) => short === "Worlds" || short === "MSI" || short === "First Stand" || short.endsWith("Masters");
+
 export const SCOPE_LABEL = LEAGUES.map((l) => l.short).join(", ");
 
 /** Only current family names include historical names; explicit old names keep their meaning. */
