@@ -83,7 +83,7 @@ function seed(db: DatabaseSync) {
 
   db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'W26/Main Event','W26','main_event',?,2026),(2,'MSI23','MSI23','main_event',?,2023)").run(worlds, msi);
   db.exec(`
-    INSERT INTO teams VALUES (1,'T1'),(2,'Gen.G');
+    INSERT INTO teams(id,name) VALUES (1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES (1,'Gumayusi'),(2,'Ruler');
     INSERT INTO champions VALUES (1,'Yunara',NULL),(2,'Jinx',NULL);
     INSERT INTO items VALUES (1,'Infinity Edge','${icon(3031)}','complete'),(2,'Long Sword','${icon(1036)}','component'),
@@ -284,7 +284,7 @@ describe("rate leaderboards show the count beside the share", () => {
       seed(db);
       // SK Telecom T1 is T1's former name: its MSI 2023 game (a first dragon) counts for T1. Inserted before any team is resolved.
       db.exec(`
-        INSERT INTO teams VALUES (3,'SK Telecom T1');
+        INSERT INTO teams(id,name) VALUES (3,'SK Telecom T1');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (8,2,3,2,1,40);
         INSERT INTO game_riot VALUES (8,'K8','V5 data:K8',5,1,0);
         INSERT INTO game_team_stats(game_id,side,first_dragon) VALUES (8,1,1),(8,2,0);

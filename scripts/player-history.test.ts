@@ -26,7 +26,7 @@ function seed(db: DatabaseSync) {
       (4,'2024 Season World Championship/Main Event','2024 Season World Championship','main_event',?,2024,NULL)`,
   ).run(lck, lck, worlds, worlds);
   db.exec(`
-    INSERT INTO teams VALUES (1,'T1'),(2,'Gen.G');
+    INSERT INTO teams(id,name) VALUES (1,'T1'),(2,'Gen.G');
     INSERT INTO players(id,page) VALUES (1,'Faker'),(2,'Chovy');
     INSERT INTO champions VALUES (1,'Azir',NULL),(2,'Orianna',NULL);
     INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at)

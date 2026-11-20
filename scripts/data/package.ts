@@ -148,6 +148,12 @@ if (problems.length === 0) {
     if (checkOnly) console.warn("package: no player photo (raw cache without player_images.json); a release refuses this");
     else problems.push("no player photo: data:fetch did not save player_images.json");
   }
+
+  // Same for the team abbreviations (schema v10): understand reads them as aliases ("KCB").
+  if (!facts.counts.teams_with_short) {
+    if (checkOnly) console.warn("package: no team abbreviation (raw cache without teams.json); a release refuses this");
+    else problems.push("no team abbreviation: data:fetch did not save teams.json");
+  }
 }
 
 db.close();
@@ -211,6 +217,7 @@ writeFileSync(
     `- ${manifest.counts.games} games, ${manifest.counts.leagues} leagues, ${manifest.counts.tournaments} tournaments, ${manifest.counts.players} players`,
     `- ${manifest.counts.ingame_games ?? 0} games with in-game stats (Riot data on Leaguepedia; none for the LPL)`,
     `- ${manifest.counts.players_with_photo ?? 0} players with a photo: Leaguepedia file names and dates only, the images (fair use, Riot Games and the leagues) are not included`,
+    `- ${manifest.counts.teams_with_short ?? 0} teams with their Leaguepedia abbreviation`,
     `- \`${INGAME_ASSET}\`: in-game summaries (${ingameLines} lines), read back by the next weekly run`,
     `- \`${DB_ASSET}\`: ${mb(manifest.asset.size)} (zstd), ${mb(size)} uncompressed`,
     `- sha256 (uncompressed): \`${manifest.database.sha256}\``,

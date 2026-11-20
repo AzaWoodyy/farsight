@@ -47,7 +47,7 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
     try {
       createSchema(db);
       createQuerySchema(db);
-      db.exec(`INSERT INTO teams VALUES (1,'DragonX'),(2,'DRX'),(3,'Kiwoom DRX'),(4,'HANJIN BRION'),(5,'OKSavingsBank BRION'),(6,'DN SOOPers'),(7,'Kwangdong Freecs');
+      db.exec(`INSERT INTO teams(id,name) VALUES (1,'DragonX'),(2,'DRX'),(3,'Kiwoom DRX'),(4,'HANJIN BRION'),(5,'OKSavingsBank BRION'),(6,'DN SOOPers'),(7,'Kwangdong Freecs');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id) VALUES (1,1,1,2),(2,1,3,4),(3,1,5,6),(4,1,7,1);`);
       // Members are the names with games in the database.
 
@@ -83,7 +83,7 @@ function seed(db: DatabaseSync) {
     id("World Championship"),
   );
   db.exec(`
-    INSERT INTO teams VALUES (1,'Karmine Corp'),(2,'MAD Lions KOI'),(3,'Movistar KOI'),(4,'MAD Lions'),(5,'Fnatic');
+    INSERT INTO teams(id,name) VALUES (1,'Karmine Corp'),(2,'MAD Lions KOI'),(3,'Movistar KOI'),(4,'MAD Lions'),(5,'Fnatic');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES
       (1,1,'Week 2',3,1,1,2,1,100),
       (2,2,'Semifinals',1,1,1,3,1,200),(3,2,'Semifinals',1,2,3,1,1,210),(4,2,'Semifinals',1,3,1,3,2,220),
@@ -138,7 +138,7 @@ describe("head-to-head of two teams on a seeded database", () => {
     try {
       seed(db);
       // Before any team is resolved: the team index is cached per database handle.
-      db.exec(`INSERT INTO teams VALUES (6,'Anyone''s Legend');
+      db.exec(`INSERT INTO teams(id,name) VALUES (6,'Anyone''s Legend');
         INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (7,3,'Round 1',1,1,5,6,1,310);`);
       const order = async (q: string) => (await understandQuestion(db, q, new Date("2026-11-14")))?.result.teams.map((t) => t.team);
 

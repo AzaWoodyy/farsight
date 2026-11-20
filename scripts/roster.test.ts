@@ -250,7 +250,7 @@ function seed(db: DatabaseSync) {
     "INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year,split) VALUES (1,'OGN14Sp','OGN14Sp','Champions 2014 Spring','season',?,2014,'Spring'),(2,'OGN14Su','OGN14Su','Champions 2014 Summer','season',?,2014,'Summer'),(3,'W14','W14','Worlds 2014','main_event',?,2014,NULL),(4,'W15','W15','Worlds 2015','main_event',?,2015,NULL)",
   ).run(id("LoL The Champions"), id("LoL The Champions"), id("World Championship"), id("World Championship"));
   db.exec(`
-    INSERT INTO teams VALUES (1,'Samsung Ozone'),(2,'Samsung White'),(3,'Samsung Blue'),(4,'Other');
+    INSERT INTO teams(id,name) VALUES (1,'Samsung Ozone'),(2,'Samsung White'),(3,'Samsung Blue'),(4,'Other');
     INSERT INTO players(id,page) VALUES (1,'Looper'),(2,'DanDy'),(3,'PawN'),(4,'Imp'),(5,'Mata'),(6,'Homme'),(7,'Dade'),(8,'Deft');
     INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES
       (1,1,'Week 1',1,1,1,4,1,100),(2,1,'Week 1',2,1,1,4,2,110),

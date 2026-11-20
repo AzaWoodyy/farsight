@@ -49,7 +49,7 @@ test("periods spanning renamings read both leagues in parameterized tool SQL", a
 
   try {
     createSchema(db); createQuerySchema(db);
-    db.exec(`INSERT INTO teams VALUES(1,'T1'),(2,'Gen.G');`);
+    db.exec(`INSERT INTO teams(id,name) VALUES(1,'T1'),(2,'Gen.G');`);
     LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i+1,l.name,l.short,l.region,+l.international));
     const names = ["North America League Championship Series", "League of Legends Championship Series"];
     names.forEach((name, i) => {

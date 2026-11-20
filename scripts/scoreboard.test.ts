@@ -18,7 +18,7 @@ function seed(db: DatabaseSync) {
   db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(1,'W24','W24','main_event',?,2024)").run(league("World Championship"));
   db.prepare("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES(2,'LEC24','LEC24','season',?,2024)").run(league("LoL EMEA Championship"));
   db.exec(`
-    INSERT INTO teams VALUES (1,'Bilibili Gaming'),(2,'T1'),(3,'Karmine Corp'),(4,'Team Vitality');
+    INSERT INTO teams(id,name) VALUES (1,'Bilibili Gaming'),(2,'T1'),(3,'Karmine Corp'),(4,'Team Vitality');
     INSERT INTO players(id,page) VALUES (1,'Bin'),(2,'Zeus'),(3,'SAKEN');
     INSERT INTO champions VALUES (1,'Jax','${ICON}'),(2,'Gragas','${ICON}');
     INSERT INTO items VALUES (1,'Trinity Force','${ICON}','complete'),(2,'Sundered Sky','${ICON}','complete');

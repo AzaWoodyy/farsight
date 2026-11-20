@@ -1,7 +1,7 @@
 /** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const TABLE_DDL = `
 CREATE TABLE leagues (
@@ -14,7 +14,8 @@ CREATE TABLE tournaments (
   stage TEXT NOT NULL,                -- event | main_event | play_in | qualifier | season | playoffs
   name TEXT, league_id INT NOT NULL REFERENCES leagues(id),
   year INT, date_start TEXT, date_end TEXT, split TEXT);
-CREATE TABLE teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+-- short: the team's abbreviation on Leaguepedia (Teams.Short, "KCB"), through TeamRedirects for an older name; read by understand.
+CREATE TABLE teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, short TEXT);
 CREATE TABLE players (
   id INTEGER PRIMARY KEY, page TEXT NOT NULL UNIQUE, ign TEXT, real_name TEXT, native_name TEXT);
 -- Leaguepedia headshots (PlayerImages): the file name only, the image stays on Fandom's CDN (fair use, not CC BY-SA).

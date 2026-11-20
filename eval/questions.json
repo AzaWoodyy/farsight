@@ -336,6 +336,49 @@
       }
     },
     {
+      "id": "lfl-kc-blue-history",
+      "question": "historique de KC Blue en LFL",
+      "tags": [
+        "lfl",
+        "team",
+        "abbreviation"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "Karmine Corp Blue"
+        ],
+        "league": "La Ligue Française",
+        "rows": 16,
+        "totals": {
+          "titles": 3,
+          "wins": 111,
+          "losses": 65
+        }
+      }
+    },
+    {
+      "id": "lfl-d2-kcbs-history",
+      "question": "historique des KCBS",
+      "tags": [
+        "lfl",
+        "team",
+        "abbreviation"
+      ],
+      "expect": {
+        "route": "team_history",
+        "teams": [
+          "Karmine Corp Blue Stars"
+        ],
+        "rows": 4,
+        "totals": {
+          "titles": 0,
+          "wins": 17,
+          "losses": 28
+        }
+      }
+    },
+    {
       "id": "lpl-ruler",
       "question": "Ruler en LPL",
       "tags": [

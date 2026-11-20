@@ -388,11 +388,46 @@ const CHAMPION_SHORTHANDS = {
 
 const ROLE_NAMES = new Set(["top", "jungle", "mid", "bot", "support", "adc"]);
 
-type TeamIndex = Map<string, ResolvedTeam & { games: number; curated: boolean }>;
+/**
+ * How an alias names its team, weakest first: an abbreviation or a form derived from it (`alias`), the team's own name
+ * (`name`), a curated shorthand (`curated`). On the same alias the stronger kind wins, then the team with more games.
+ */
+const ALIAS_RANK = { alias: 0, name: 1, curated: 2 } as const;
+
+type AliasKind = keyof typeof ALIAS_RANK;
+
+/** `caps`: an abbreviation that is also an everyday word ("MAD", "FLY"), read as the team only when written in capitals. */
+type TeamEntry = ResolvedTeam & { games: number; curated: boolean; rank: number; caps: boolean };
+
+type TeamIndex = Map<string, TeamEntry>;
 
 type Indexes = { teams: TeamIndex; champions: Map<string, string> };
 
 const indexes = new WeakMap<DatabaseSync, Indexes>();
+
+/** Three-letter abbreviations that are everyday words, too short for the common word list. */
+const SHORT_WORDS = new Set(
+  "all ban bar big bot cow dan dia dig exp fly fox fun fur gen god inf jgl los lvl mad mid mil nip one par pig pro pty rec red ren rud sam sat sha sin sly spy std sto sup the tip top use ver vip war way win".split(" "),
+);
+
+/**
+ * A team's Leaguepedia abbreviation as an alias ("KCB"): null when it is too short to mean the team (two letters without a
+ * digit: "AT", "GO"), or a role or grammar word; `caps` when it is also an everyday word.
+ */
+function abbreviation(short: string): { caps: boolean } | null {
+  const norm = normalizeAlias(short);
+
+  if (norm.length < 2 || (norm.length === 2 && !/\d/.test(norm)) || STOPWORDS.has(norm) || ROLE_NAMES.has(norm)) return null;
+
+  return { caps: COMMON_WORDS.has(norm) || SHORT_WORDS.has(norm) };
+}
+
+/** "Karmine Corp Blue Stars" -> "Karmine Corp Blue Star": the plural last word of a name of several words, written in the singular. */
+function singular(name: string): string | null {
+  const m = /^(.+\s\p{L}{3,}[^s\s])s$/iu.exec(name.trim());
+
+  return m ? m[1] : null;
+}
 
 function getIndexes(db: DatabaseSync): Indexes {
   const cached = indexes.get(db);
@@ -401,8 +436,8 @@ function getIndexes(db: DatabaseSync): Indexes {
 
   const rows = selectAll(
     db,
-    z.object({ name: z.string(), games: z.number() }),
-    `SELECT t.name, x.games FROM (
+    z.object({ name: z.string(), short: z.string().nullable(), games: z.number() }),
+    `SELECT t.name, t.short, x.games FROM (
        SELECT team_id, COUNT(*) AS games FROM (
          SELECT blue_team_id AS team_id FROM games
          UNION ALL SELECT red_team_id FROM games WHERE red_team_id != blue_team_id
@@ -413,20 +448,22 @@ function getIndexes(db: DatabaseSync): Indexes {
   const gamesOf = new Map(rows.map((r) => [r.name, r.games]));
   const teams: TeamIndex = new Map();
 
-  const add = (alias: string, team: ResolvedTeam, curated: boolean) => {
+  const add = (alias: string, team: ResolvedTeam, kind: AliasKind, caps = false) => {
     const key = normalizeAlias(alias);
 
     if (key.length < 2 || STOPWORDS.has(key)) return;
     const games = team.members.reduce((n, m) => n + (gamesOf.get(m) ?? 0), 0);
+    const rank = ALIAS_RANK[kind];
     const prev = teams.get(key);
 
-    if (!prev || (curated && !prev.curated) || (curated === prev.curated && games > prev.games))
-      teams.set(key, { ...team, games, curated });
+    if (!prev || rank > prev.rank || (rank === prev.rank && games > prev.games))
+      teams.set(key, { ...team, games, curated: kind === "curated", rank, caps });
   };
 
+  const single = (name: string) => ({ mention: "", team: name, members: [name] });
+
   for (const { name } of rows) {
-    const team = { mention: "", team: name, members: [name] };
-    add(name, team, false);
+    add(name, single(name), "name");
 
     const short = name
       .replace(/\s*\(.*?\)\s*$/, "")
@@ -434,16 +471,49 @@ function getIndexes(db: DatabaseSync): Indexes {
       .replace(/\s+(Esports|e-Sports|Gaming|Esport)$/i, "");
 
     // "Top Esports" is not "top": a bare role word names the role (TES and Top Esports still name the team).
-    if (normalizeAlias(short).length >= 3 && !ROLE_NAMES.has(normalizeAlias(short))) add(short, team, false);
+    if (normalizeAlias(short).length >= 3 && !ROLE_NAMES.has(normalizeAlias(short))) add(short, single(name), "name");
   }
 
   for (const [alias, name] of Object.entries(TEAM_SHORTHANDS))
-    if (gamesOf.has(name)) add(alias, { mention: "", team: name, members: [name] }, true);
+    if (gamesOf.has(name)) add(alias, single(name), "curated");
 
   for (const f of FRANCHISES) {
     const team = { mention: "", team: f.team, members: f.members.filter((m) => gamesOf.has(m)) };
 
-    for (const a of [...f.aliases, ...f.members]) add(a, team, true);
+    for (const a of [...f.aliases, ...f.members]) add(a, team, "curated");
+  }
+
+  // Abbreviations, then the names a team of the same organization is called by its parent's abbreviation:
+  // "Karmine Corp Blue Stars" is also "KCBS", "KC Blue Stars", "KCB Stars", and "Blue Star" in the singular.
+  const abbreviations = new Map<string, string[]>();
+
+  for (const { name, short } of rows) {
+    const abbr = short ? abbreviation(short) : null;
+
+    if (short && abbr) {
+      add(short, single(name), "alias", abbr.caps);
+      abbreviations.set(name, [short]);
+    }
+  }
+
+  for (const [alias, name] of Object.entries(TEAM_SHORTHANDS)) abbreviations.set(name, [...(abbreviations.get(name) ?? []), alias]);
+
+  for (const { name } of rows) {
+    const words = name.replace(/\s*\(.*?\)\s*$/, "").split(/\s+/);
+    const forms = [name];
+
+    for (let i = 1; i < words.length; i++) {
+      const suffix = words.slice(i).join(" ");
+
+      for (const a of abbreviations.get(words.slice(0, i).join(" ")) ?? []) forms.push(`${a} ${suffix}`);
+    }
+
+    for (const form of forms) {
+      if (form !== name) add(form, single(name), "alias");
+      const one = singular(form);
+
+      if (one) add(one, single(name), "alias");
+    }
   }
 
   const champions = new Map<string, string>();
@@ -461,9 +531,28 @@ function getIndexes(db: DatabaseSync): Indexes {
 }
 
 export function resolveTeam(db: DatabaseSync, mention: string): ResolvedTeam | null {
-  const hit = getIndexes(db).teams.get(normalizeAlias(mention));
+  const { teams } = getIndexes(db);
+  const hit = teams.get(normalizeAlias(mention)) ?? teamByEnd(teams, mention);
 
   return hit ? { mention, team: hit.team, members: hit.members } : null;
+}
+
+/**
+ * The end of one team's name, in two words or more ("Blue Stars" for Karmine Corp Blue Stars), when no other team's
+ * name ends the same way. Only for a mention the model already read as a team: the rules never guess from a name's end.
+ */
+function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
+  const words = mention.trim().split(/\s+/);
+
+  if (words.length < 2) return null;
+  const end = ` ${words.join(" ").toLowerCase()}`;
+  const found = new Map<string, TeamEntry>();
+
+  for (const entry of teams.values())
+    if (entry.rank === ALIAS_RANK.name && entry.members.length === 1 && ` ${entry.team.toLowerCase()}`.endsWith(end) && entry.team.length > end.length)
+      found.set(entry.team, entry);
+
+  return found.size === 1 ? [...found.values()][0] : null;
 }
 
 /** Franchises with several names that have games in the database, under their current name. */
@@ -611,7 +700,9 @@ function detectMentions(db: DatabaseSync, question: string): Mentions {
       // "MSI winners", "winners of the LCK": the winners of the competition named, not the team Winners.
       if (WINNERS.test(norm) && league) continue;
 
-      const team = teams.get(norm);
+      const hit = teams.get(norm);
+      // "mad" in a sentence is the word; "MAD" is the team.
+      const team = hit?.caps && mention !== mention.toUpperCase() ? undefined : hit;
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? lookupAlias(db, mention) : [];
 
       if (team && (team.curated || !players.length || team.games >= players[0].games)) {
