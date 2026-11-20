@@ -1,0 +1,84 @@
+name: Postgres update
+
+# Trial of the Postgres (Neon) database, run by hand only: the schedule below stays commented out until the trial is
+# validated. Same ingestion as Data release (Cargo tables in full, Riot game JSON incremental from the previous
+# release's in-game summaries, R2 first, the wiki time-boxed), then `db:load` into Neon instead of a SQLite release:
+# migrations into a fresh schema, COPY, swap (or in place when two copies would not fit the plan's storage).
+# The app reads the new data as soon as the load commits, without a redeployment.
+#
+# Secrets: NEON_DATABASE_OWNER_URL (owner role, direct host) for the load, NEON_DATABASE_URL (farsight_app, pooled
+# host) for the check, and the R2_* secrets of Data release. On a public repository GitHub disables a schedule after
+# 60 days without activity: re-enable it from the Actions tab if it stops.
+
+on:
+  workflow_dispatch:
+    inputs:
+      riot_budget:
+        description: Minutes of Riot JSON downloads from the wiki
+        default: "30"
+  # schedule:
+  #   # Every day at 05:23 UTC, after the evening's matches.
+  #   - cron: "23 5 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      LEAGUEPEDIA_DELAY_MS: "3000"
+      LEAGUEPEDIA_USER_AGENT: "farsight/1.0 (+https://askfarsight.com; batch ingestion, one request every 3 s)"
+      # Neon's free plan: 1 GB of storage, the database about 570 MB.
+      DATABASE_SIZE_LIMIT_MB: "1024"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - run: bun install --frozen-lockfile
+
+      - name: Restore the in-game summaries of the newest data release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous=$(gh release list --exclude-drafts --exclude-pre-releases --limit 50 --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
+          if [ -n "$previous" ]; then
+            gh release download "$previous" --pattern manifest.json --pattern ingame.jsonl.zst --dir data/previous
+            schema=$(bun -e 'import { SCHEMA_VERSION } from "./scripts/data/scope"; console.log(SCHEMA_VERSION)')
+            if jq -e --argjson s "$schema" '.schema_version == $s and .ingame != null' data/previous/manifest.json >/dev/null; then
+              mkdir -p data/raw
+              zstd -d -q data/previous/ingame.jsonl.zst -o data/raw/ingame.jsonl
+              echo "restored $(wc -l < data/raw/ingame.jsonl) in-game summaries from $previous"
+            fi
+          fi
+
+      - name: Fetch Leaguepedia, Riot game JSON and Data Dragon
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RIOT_BUDGET: ${{ inputs.riot_budget || '30' }}
+        run: bun run data:fetch --riot-budget="$RIOT_BUDGET"
+
+      - name: Load Neon
+        env:
+          DATABASE_OWNER_URL: ${{ secrets.NEON_DATABASE_OWNER_URL }}
+        run: bun run db:load
+
+      # The agent reads the new data as the app does (read-only role, rules level, no LLM key).
+      - name: Ask the reference question on Neon
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: bun run eval --only=worlds-chovy-closed --deterministic --strict

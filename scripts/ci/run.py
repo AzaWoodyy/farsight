@@ -22,7 +22,8 @@ def run(name):
     with log.open("w") as out:
         process = subprocess.Popen(commands[name], stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
         try:
-            code = process.wait(timeout=240)
+            # Seven test runs on Postgres (one schema per test database) take about three minutes.
+            code = process.wait(timeout=480)
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGTERM)
             try:
