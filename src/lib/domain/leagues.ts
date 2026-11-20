@@ -3,7 +3,7 @@
  * "the" ("classement LES 2026", "Résultats de X en LES"): "les" is a French article. Written without the `i`
  * flag (a case-sensitive part needs no regex modifier, which older browsers cannot parse).
  */
-const LES_CUE = /\b[Ll][Ii][Gg][Aa] [Ee][Ss][Pp][Aa][ÑñNn][Oo][Ll][Aa]( [Dd][Ee] [Ll][Ee][Aa][Gg][Uu][Ee] [Oo][Ff] [Ll][Ee][Gg][Ee][Nn][Dd][Ss])?(?![\p{L}])|\bLES(?= \d{4}\b)|(?<=\b(?:en|la|in|the|EN|LA|IN|THE) )LES\b/u;
+const LES_CUE = /\b[Ll][Ii][Gg][Aa] [Ee][Ss][Pp][Aa][ÑñNn][Oo][Ll][Aa]( [Dd][Ee] [Ll][Ee][Aa][Gg][Uu][Ee] [Oo][Ff] [Ll][Ee][Gg][Ee][Nn][Dd][Ss])?(?![\p{L}])|\bLES(?= \d{4}\b)|(?<=\b(?:[Ee][Nn]|[Ll][Aa]|[Ii][Nn]|[Tt][Hh][Ee]) )LES\b/u;
 
 /** Fixed ingestion and query scope. Cues are matched by longest text, not declaration order. */
 export const LEAGUES = [

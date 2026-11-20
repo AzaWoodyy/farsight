@@ -7318,6 +7318,19 @@
         "league": "LVP SuperLiga 2nd Division",
         "rows": 2
       }
+    },
+    {
+      "id": "les-sentence-start",
+      "question": "En LES, résultats de Fresskowy",
+      "tags": [
+        "superliga",
+        "player"
+      ],
+      "expect": {
+        "route": "player_event_history",
+        "league": "Liga Española de League of Legends",
+        "rows": 6
+      }
     }
   ]
 }
