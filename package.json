@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "bun run data:pull && bun run lab:build && next build && bun run size",
+    "build": "bun run lab:build && next build && bun run size",
     "start": "next start",
     "lint": "oxlint",
     "data:fetch": "bun scripts/data/fetch.ts",
@@ -17,18 +17,21 @@
     "data:package": "bun scripts/data/package.ts",
     "data:pull": "bun scripts/data/pull.ts",
     "data:sync": "bun scripts/data/sync.ts",
+    "db:load": "bun scripts/db/load.ts",
+    "db:migrate": "bun scripts/db/migrate.ts",
     "size": "bun scripts/size.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "ask": "bun scripts/ask.ts",
     "lab:build": "bun scripts/lab/build.ts",
     "eval": "bun scripts/eval.ts",
     "test": "bun test scripts",
-    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run data:pull && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"
+    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.178",
     "@langfuse/otel": "6.1.1",
     "@langfuse/tracing": "6.1.1",
+    "@neondatabase/serverless": "1.2.0",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@opentelemetry/api": "1.10.0",
     "@opentelemetry/context-async-hooks": "2.12.1",
@@ -40,6 +43,7 @@
     "aws4fetch": "1.0.20",
     "botid": "1.5.13",
     "next": "16.4.6",
+    "pg": "8.23.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zod": "4.6.7"
@@ -49,9 +53,12 @@
     "@tailwindcss/turbopack": "4.3.5",
     "@types/bun": "1.4.4",
     "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "@types/pg-copy-streams": "1.2.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "oxlint": "1.94.0",
+    "pg-copy-streams": "7.0.0",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2",
     "vercel": "65.17.0"
