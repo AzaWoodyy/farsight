@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { RAW_GAME_FORMAT, type RawGame } from "../../src/lib/sources/riot";
 import corpus from "./fixtures/dragons.json";
+import fallbacks from "./fixtures/fallbacks.json";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
 
 /**
@@ -107,6 +108,77 @@ describe("dragons and souls of real games", () => {
   });
 });
 
+/**
+ * Two real games cut down to their end-of-game stats: LCK 2019 (match-v4, a game whose Leaguepedia scoreboard has no
+ * damage, vision or runes) and Worlds 2024 (match-v5).
+ */
+const Fallback = z.object({ key: z.string(), version: z.number(), stats: z.record(z.string(), z.json()) });
+
+/** What the tests edit in a match-v4 game, the rest kept as is. */
+const V4Game = z.object({ participants: z.array(z.object({ stats: z.record(z.string(), z.number()) }).catchall(z.json())) }).catchall(z.json());
+
+function statsOnly(key: string): RawGame {
+  const g = z.array(Fallback).parse(fallbacks).find((x) => x.key === key);
+
+  if (!g) throw new Error(`no fixture game ${key}`);
+
+  return {
+    format: RAW_GAME_FORMAT,
+    key: g.key,
+    gameId: `Test_${g.key}`,
+    version: g.version,
+    statsPage: `V${g.version} data:${g.key}`,
+    timelinePage: null,
+    statsRevid: 1,
+    timelineRevid: null,
+    fetchedAt: "2026-11-20T00:00:00.000Z",
+    stats: g.stats,
+    timeline: null,
+  };
+}
+
+describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
+  test("match-v4 (LCK 2019): damage, vision, rune page in Leaguepedia's order, heralds and game version", () => {
+    const s = summarizeGame(statsOnly("ESPORTSTMNT01_1130750"));
+    const [first, second] = s.players;
+
+    expect(s.gameVersion).toBe("9.11.276.3025");
+    expect(first).toMatchObject({ damage: 12265, vision: 29, runes: [8230, 8226, 8210, 8236, 8139, 8135, 5008, 5008, 5002], primary_tree: 8200, secondary_tree: 8100 });
+    expect(second).toMatchObject({ damage: 4923, vision: 57, runes: [8010, 9111, 9104, 8014, 8473, 8451, 5008, 5008, 5001], primary_tree: 8000, secondary_tree: 8400 });
+    expect(s.teams.map((t) => [t.teamId, t.heralds])).toEqual([[100, 0], [200, 1]]);
+    expect(s.players.every((p) => p.runes?.length === 9 && p.damage != null && p.vision != null)).toBe(true);
+  });
+
+  test("match-v5 (Worlds 2024): the same fields from `perks` and `objectives`", () => {
+    const s = summarizeGame(statsOnly("LOLTMNT05_84144"));
+
+    expect(s.gameVersion).toBe("14.18.617.4123");
+    expect(s.players[0]).toMatchObject({ damage: 21994, vision: 45, runes: [8229, 8275, 8210, 8237, 9105, 8017, 5007, 5008, 5001], primary_tree: 8200, secondary_tree: 8000 });
+    expect(s.teams.map((t) => [t.teamId, t.heralds])).toEqual([[100, 1], [200, 0]]);
+    expect(s.players.every((p) => p.runes?.length === 9)).toBe(true);
+  });
+
+  test("a page without stat shards keeps its six runes; a page with an empty slot is not trusted", () => {
+    const g = statsOnly("ESPORTSTMNT01_1130750");
+    const stats = V4Game.parse(g.stats);
+    const [a, b, ...rest] = stats.participants;
+    const edited = [{ ...a, stats: { ...a.stats, statPerk0: 0, statPerk1: 0, statPerk2: 0 } }, { ...b, stats: { ...b.stats, perk3: 0 } }, ...rest];
+    const s = summarizeGame({ ...g, stats: { ...stats, participants: edited } });
+
+    expect(s.players[0]).toMatchObject({ runes: [8230, 8226, 8210, 8236, 8139, 8135], primary_tree: 8200, secondary_tree: 8100 });
+    expect(s.players[1]).toMatchObject({ runes: null, primary_tree: null, secondary_tree: null });
+  });
+
+  test("damage and vision that nobody in the game has are not tracked: null, not 0", () => {
+    const g = statsOnly("ESPORTSTMNT01_1130750");
+    const stats = V4Game.parse(g.stats);
+    const zeroed = stats.participants.map((p) => ({ ...p, stats: { ...p.stats, totalDamageDealtToChampions: 0, visionScore: 0 } }));
+    const s = summarizeGame({ ...g, stats: { ...stats, participants: zeroed } });
+
+    expect(s.players.map((p) => [p.damage, p.vision])).toEqual(Array.from({ length: 10 }, () => [null, null]));
+  });
+});
+
 describe("summaries of an older derive version", () => {
   test("a line without the dragon fields still parses, and is the oldest version the build keeps", () => {
     const { dragons: _dragons, ...old } = summarizeGame(raw("LOLTMNT05_84144"));
@@ -114,5 +186,18 @@ describe("summaries of an older derive version", () => {
 
     expect(line.status === "ok" && line.dragons).toBeUndefined();
     expect(DERIVE_COMPATIBLE).toBeLessThan(DERIVE_VERSION);
+  });
+
+  test("a derive 3 line, without the Leaguepedia fallbacks of derive 4, still parses", () => {
+    const { gameVersion: _v, ...old } = summarizeGame(raw("LOLTMNT05_84144"));
+
+    const line = IngameLine.parse({
+      ...old,
+      derive: 3,
+      players: old.players.map(({ damage: _d, vision: _vi, runes: _r, primary_tree: _p, secondary_tree: _s, ...p }) => p),
+      teams: old.teams.map(({ heralds: _h, ...t }) => t),
+    });
+
+    expect(line.status === "ok" && [line.gameVersion, line.players[0].runes, line.teams[0].heralds]).toEqual([undefined, undefined, undefined]);
   });
 });
