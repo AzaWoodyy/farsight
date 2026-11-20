@@ -1,0 +1,29 @@
+# Farsight
+
+> Farsight answers natural-language questions about professional League of Legends (LoL) esports: Worlds, MSI, LCK, LPL, LEC, LCS and other leagues. Each answer is a table with a one-sentence summary and links to its Leaguepedia source pages. The site is free, in French and in English.
+
+A question can be put in the address: `https://askfarsight.com/?q=<question>` (French page) or `https://askfarsight.com/en?q=<question>` (English page). Questions are understood in both languages on either page.
+
+## Pages
+
+- [Farsight (français)](https://askfarsight.com): ask a question in French
+- [Farsight (English)](https://askfarsight.com/en): ask a question in English
+- [How Farsight works](https://askfarsight.com/en/how-it-works): the four steps behind an answer, the data and its limits
+- [Comment Farsight fonctionne](https://askfarsight.com/comment-ca-marche): the same page in French
+
+## Example questions
+
+- [Faker vs Chovy](https://askfarsight.com/en?q=Faker%20vs%20Chovy): head-to-head between two players
+- [Azir stats at Worlds 2025](https://askfarsight.com/en?q=Azir%20stats%20at%20Worlds%202025): a champion in a tournament
+- [Most banned champions in LCK 2025](https://askfarsight.com/en?q=Most%20banned%20champions%20in%20LCK%202025): a champion ranking
+
+## Data
+
+- [Leaguepedia](https://lol.fandom.com): match results, drafts and game statistics, CC BY-SA 3.0
+- Riot Data Dragon: champion, item and rune names and icons
+- In-game statistics are missing for the LPL; Farsight says so instead of guessing
+
+## Optional
+
+- [Legal notice and privacy](https://askfarsight.com/en/legal-notice)
+- [Mentions légales et confidentialité](https://askfarsight.com/mentions-legales)
