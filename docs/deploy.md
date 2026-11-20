@@ -1,7 +1,8 @@
 # Déploiement sur Vercel
 
-> Branche d'essai Postgres : l'app y lit Neon à `DATABASE_URL`, voir [postgres.md](postgres.md). Ce document décrit le
-> déploiement de `main`, avec la base SQLite embarquée.
+> Depuis #135 (20/11/2026), l'app lit Postgres sur Neon : la base, sa mise à jour quotidienne et ce que fait Deploy
+> sont décrits dans [postgres.md](postgres.md). Les passages de ce document sur le fichier `data/lol.sqlite` embarqué
+> et `data:pull` décrivent l'ancien déploiement ; la Data release, elle, publie toujours sa release chaque lundi.
 
 Projet Vercel séparé (plan Hobby, quotas partagés avec le portfolio), domaine
 `askfarsight.com`. Cette page décrit ce que le code fait déjà et les
