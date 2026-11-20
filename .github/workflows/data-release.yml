@@ -16,9 +16,9 @@ name: Data release
 #
 # Only the 4 newest data releases are kept (and the 4 newest prereleases).
 #
-# On main, a successful release then redeploys production (deploy.yml), whose
-# build downloads the release just published. A failed check, publication or
-# clean-up skips the deployment.
+# The app reads Postgres (Neon), updated daily by the Postgres update workflow:
+# a release no longer redeploys production. It stays the versioned snapshot of
+# the data (and its in-game summaries, which Postgres update restores).
 
 on:
   workflow_dispatch:
@@ -179,18 +179,3 @@ jobs:
             echo "deleting $old"
             gh release delete "$old" --cleanup-tag --yes
           done
-
-  deploy:
-    needs: [release, publish]
-    # A branch run publishes a prerelease, which production never reads.
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/deploy.yml
-    with:
-      data-tag: ${{ needs.release.outputs.tag }}
-    secrets:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
