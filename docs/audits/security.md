@@ -74,7 +74,7 @@ Un worker thread ne règle rien : `worker.terminate()` ne rend pas la main tant 
 - **Où** : `src/app/api/feedback/route.ts:6-9,25`, `src/lib/tracing/langfuse.ts:146-178`.
 - **Exploitabilité** : rien ne prouve que l'identifiant a été émis par `/api/ask`. Un client qui passe BotID peut envoyer des avis sur des identifiants inventés, sans limite de débit dans le code. Les avis des autres visiteurs ne sont pas atteignables (identifiants de 128 bits jamais exposés).
 - **À valider** : que Langfuse accepte et compte un score sur une trace inexistante (aucun appel fait à Langfuse). Si oui : unités du plan Hobby brûlées (50 000 par mois) et statistiques d'avis faussées.
-- **Correctif** : signer l'identifiant. `/api/ask` envoie `traceId` et `HMAC-SHA256(secret, traceId)` dans la part `data-trace` ; `/api/feedback` vérifie en temps constant. Ajouter la troisième règle du pare-feu sur `/api/feedback` (`docs/deploy.md:473`). Effort : 1 h, une variable `FEEDBACK_SECRET`.
+- **Correctif** : signer l'identifiant. `/api/ask` envoie `traceId` et `HMAC-SHA256(secret, traceId)` dans la part `data-trace` ; `/api/feedback` vérifie en temps constant. Une troisième règle du pare-feu sur `/api/feedback` n'est pas disponible sur le plan Hobby (402 à l'ajout) : seul le compteur par instance du code limite cette route. Effort : 1 h, une variable `FEEDBACK_SECRET`.
 
 ### L1. Limite de débit et plafond de coût hors du dépôt (basse, à valider)
 
