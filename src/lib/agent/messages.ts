@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
+import { englishBare, englishIn, frenchArticle, frenchIn } from "../domain/leagues";
 import type { LlmStatus } from "./llm";
 
 /**
@@ -139,13 +140,13 @@ const fr = {
     playerRanking: (role: string | null, criterion: string, side: string | null) => `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion}${side ? `, côté ${side}` : ""})`,
     teamRanking: (criterion: string, ascending: boolean, side: string | null) => `classement d'équipes (critère : ${criterion}${ascending ? ", ordre croissant" : ""}${side ? `, côté ${side}` : ""})`,
     /** A league of the scope as a sentence names it: "la LPL", "le MSI", "les Worlds". */
-    leagueScope: (short: string | null) => (!short ? "cette compétition" : short === "Worlds" || short.endsWith("Masters") ? `les ${short}` : short === "MSI" ? "le MSI" : `la ${short}`),
+    leagueScope: (short: string | null) => (!short ? "cette compétition" : `${frenchArticle(short)} ${short}`),
     ingameStats: (mention: string) => `les statistiques in-game (${mention})`,
     ingameFor: (what: string, scope: string) => `${what} pour ${scope}`,
     noRiotGames: (league: string, year: number | null) => `aucune partie de ${league} ${year ?? ""} avec données Riot sur Leaguepedia`.replace(/\s+/g, " "),
     minuteOnly: (mention: string, asked: number, minutes: readonly number[]) => `${mention} à ${asked} min (relevé seulement à ${minutes.join(", ").replace(/, (\d+)$/, " et $1")} min)`,
     minuteAbsent: (asked: number) => `minute ${asked} absente des données in-game`,
-    ingameOf: (what: string, who: string, league: string | null) => `${what} de ${who}${league ? ` en ${league}` : ""}`,
+    ingameOf: (what: string, who: string, league: string | null) => `${what} de ${who}${league ? ` ${frenchIn(league)}` : ""}`,
     noRiotGamesOf: (who: string) => `aucune partie de ${who} avec données Riot dans ce périmètre`,
     dragons: (mention: string) => `dragons par élément et âmes (« ${mention} »)`,
     teamMetricForPlayer: (mention: string) => `métrique d'équipe (« ${mention} ») demandée pour un joueur`,
@@ -361,13 +362,13 @@ const en: Messages = {
     championRanking: (sort, total, role, side) => `champion ranking (sorted by: ${sort}${total ? ", totals" : ""}${role ? `, role ${role}` : ""}${side ? `, ${side} side` : ""})`,
     playerRanking: (role, criterion, side) => `player ranking${role ? ` for the ${role} role` : ""} (criterion: ${criterion}${side ? `, ${side} side` : ""})`,
     teamRanking: (criterion, ascending, side) => `team ranking (criterion: ${criterion}${ascending ? ", ascending" : ""}${side ? `, ${side} side` : ""})`,
-    leagueScope: (short) => (!short ? "this competition" : short === "Worlds" || short === "MSI" || short.endsWith("Masters") ? short : `the ${short}`),
+    leagueScope: (short) => (!short ? "this competition" : englishBare(short) ? short : `the ${short}`),
     ingameStats: (mention) => `in-game statistics (${mention})`,
     ingameFor: (what, scope) => `${what} for ${scope}`,
     noRiotGames: (league, year) => `no game of ${league} ${year ?? ""} with Riot data on Leaguepedia`.replace(/\s+/g, " "),
     minuteOnly: (mention, asked, minutes) => `${mention} at ${asked} min (recorded only at ${minutes.join(", ").replace(/, (\d+)$/, " and $1")} min)`,
     minuteAbsent: (asked) => `minute ${asked} is not in the in-game data`,
-    ingameOf: (what, who, league) => `${what} of ${who}${league ? ` in ${league}` : ""}`,
+    ingameOf: (what, who, league) => `${what} of ${who}${league ? ` ${englishIn(league)}` : ""}`,
     noRiotGamesOf: (who) => `no game of ${who} with Riot data in this scope`,
     dragons: (mention) => `dragons by element and souls ("${mention}")`,
     teamMetricForPlayer: (mention) => `team metric ("${mention}") asked for a player`,

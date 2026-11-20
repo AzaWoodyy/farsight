@@ -3,7 +3,7 @@ import { answerProfiles } from "../src/lib/agent/run";
 import { bindTool, playerProfiles } from "../src/lib/agent/tools";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { wikiImageUrl } from "../src/lib/domain/wiki-images";
-import { playerPhoto } from "../src/lib/domain/player-photos";
+import { playerPhoto, UNDATED_PHOTO } from "../src/lib/domain/player-photos";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
 const ICON = "https://ddragon.leagueoflegends.com/cdn/img/x.png";
@@ -180,6 +180,19 @@ test("a player's photo is the one of the period: latest taken by then, else the 
       source: "https://lol.fandom.com/wiki/File:BLG_Bin_2024_Split_1.png",
     });
     expect(await playerPhoto(db, "Zeus", null)).toBeNull();
+  } finally {
+    await db.close();
+  }
+});
+
+test("an undated photo, kept for a player who has no other, is shown without a year", async () => {
+  const db = await testDb();
+
+  try {
+    await seed(db);
+    await db.run("INSERT INTO player_images VALUES (?,?,?)", 1, UNDATED_PHOTO, "Bin.png");
+    expect(await playerPhoto(db, "Bin", Date.parse("2024-10-02T00:00:00Z") / 1000)).toEqual({ url: wikiImageUrl("Bin.png", 112), year: null, source: "https://lol.fandom.com/wiki/File:Bin.png" });
+    expect((await playerPhoto(db, "Bin", null))?.year).toBeNull();
   } finally {
     await db.close();
   }

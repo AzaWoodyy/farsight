@@ -11,13 +11,16 @@ import { wikiImageUrl } from "./wiki-images";
  */
 const WIDTH = 112;
 
+/** `taken_at` of a headshot Leaguepedia does not date: the oldest date, kept only for a player who has no other. */
+export const UNDATED_PHOTO = 0;
+
 const Photo = z.object({ file: z.string(), taken_at: z.number() });
 
 const PHOTOS = "SELECT i.file, i.taken_at FROM player_images i JOIN players p ON p.id = i.player_id WHERE p.page = :player";
 
 /**
  * The player's photo of the period: the latest one taken on or before `at` (unix seconds), the earliest when
- * every photo is later, the latest when `at` is null. Null when Leaguepedia has none.
+ * every photo is later, the latest when `at` is null. Null when Leaguepedia has none. An undated photo has no year.
  */
 export async function playerPhoto(db: Db, player: string, at: number | null): Promise<PlayerPhoto | null> {
   const row =
@@ -28,7 +31,7 @@ export async function playerPhoto(db: Db, player: string, at: number | null): Pr
 
   return {
     url: wikiImageUrl(row.file, WIDTH),
-    year: new Date(row.taken_at * 1000).getUTCFullYear(),
+    year: row.taken_at === UNDATED_PHOTO ? null : new Date(row.taken_at * 1000).getUTCFullYear(),
     source: `https://lol.fandom.com/wiki/File:${encodeURIComponent(row.file.replace(/ /g, "_"))}`,
   };
 }
