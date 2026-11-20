@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { normalizeAlias } from "../../src/lib/aliases";
 import { enchantedKind, type ItemKind, ItemMeta, itemKinds } from "../../src/lib/domain/items";
+import { UNDATED_PHOTO } from "../../src/lib/domain/player-photos";
 import { TABLE_DDL } from "../../src/lib/db/schema";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
@@ -458,8 +459,12 @@ export function deriveDataset() {
   // Player photos -----------------------------------------------------------------
   // Leaguepedia headshots, dated by the start of the tournament they were taken for. An image's link is resolved
   // like a scoreboard link (case, older handle). Absent from an older raw cache: the players then have no photo.
+  // An undated headshot is kept only for a player who has no dated one, at the oldest date (UNDATED_PHOTO): any
+  // dated photo would win over it, and the page shows it without a year.
   const insImage = store.insert("player_images", ["player_id", "taken_at", "file"], { ignore: true });
-  const photoCounts = { kept: 0, other_players: 0, undated: 0, wide_shot: 0 };
+  const photoCounts = { kept: 0, other_players: 0, undated: 0, undated_fallback: 0, wide_shot: 0 };
+  const datedPhotos = new Set<number>();
+  const undatedPhotos = new Map<number, string[]>();
 
   // ImageType is free text (Headshot, headshot, Portrait, Profile, Bodyshot, Stageshot...): wide shots crop badly into an avatar.
   const WIDE_SHOT = /body|full|stage|tilt|valentine/i;
@@ -473,11 +478,24 @@ export function deriveDataset() {
 
     if (!file || pid == null) photoCounts.other_players++;
     else if (r.Type != null && WIDE_SHOT.test(String(r.Type))) photoCounts.wide_shot++;
-    else if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date)) photoCounts.undated++;
+    else if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date)) undatedPhotos.set(pid, [...(undatedPhotos.get(pid) ?? []), file]);
     else {
       insImage.run(pid, Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / 1000, file);
+      datedPhotos.add(pid);
       photoCounts.kept++;
     }
+  }
+
+  for (const [pid, files] of undatedPhotos) {
+    if (datedPhotos.has(pid)) {
+      photoCounts.undated += files.length;
+      continue;
+    }
+
+    // Several undated files: the first by name, so a rebuild picks the same one.
+    insImage.run(pid, UNDATED_PHOTO, files.toSorted()[0]);
+    photoCounts.undated_fallback++;
+    photoCounts.undated += files.length - 1;
   }
 
   if (!existsSync(imagesFile)) console.warn(`  ${imagesFile} is missing: no player photo (run \`bun run data:fetch\`)`);
