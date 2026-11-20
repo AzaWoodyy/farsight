@@ -1,30 +1,30 @@
 {
   "repository": "AzaWoodyy/farsight",
-  "tag": "data-20261120-2",
-  "schemaVersion": 9,
+  "tag": "data-20261120-5",
+  "schemaVersion": 10,
   "database": {
     "asset": "lol.sqlite.zst",
-    "sha256": "e04523d3553f9a5483d8e3aa475b310fb7c34a9629105d2ea1e8b62626270540",
-    "uncompressedSha256": "8c9c2b00fe1abba858476dc1915f7d4ead4577e52dcba372ebd213964d9d2915"
+    "sha256": "957d3719fbe77975faaa0bce87d0f7903284f40eeab9f1e65f60ad46137ec169",
+    "uncompressedSha256": "bf4248becc64821d8924977732636eed4110cee86ef5585e8e12e4fa6b7a3b91"
   },
   "ingame": {
     "asset": "ingame.jsonl.zst",
-    "sha256": "79cfa854eb26bd01c72d6a7893d0c887113998511b5da3e65ba4da4f3a8a40dd"
+    "sha256": "d0e49b52f00523bc402c5a6b75e70793c97fa5dc4a39e4faabaa133fc5aded3a"
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "f11bd72f84684fb69a1cfff40b813cfd7cae2d6e86d4019255bba49b551191c0",
+    "sha256": "50f8075773c6f760b0678f941105740110a5a9207750e8a44b371274f9dbb927",
     "files": {
-      "tournaments.json": "692f94a129fe8ff00572f987ae3d8d1637db40c8db6523194bb09b7ffc385d31",
-      "results.json": "d11bd2563f079a5a6832a4121801c99fed6d62a668b944e92b1e1f23eb71f505",
-      "games.json": "3646c466346d59b7a102b954158b31c0d73550927c73bcb76c19f8fdbec372b0",
-      "lines.json": "12fa01660dbd1cffe0c1e1c16ac115cc78a7ee41d4594ab37c72f47bb4d46543",
-      "players.json": "48c4d6799bc1bb53f4ac7efe4c07732419ee7dd25a950466a3026f1a0ac26c23",
-      "redirects.json": "a299b93f3489012a83d93567b550e1aa163d47f9cd7a18283e93d14cff725a50",
-      "player_images.json": "a9b6b98dc154f9f0e8cf5b9a20efb605f85761c040bd45b41aa4b6a533071f7b",
+      "tournaments.json": "45e998f7f4305f79f734b3aae97584b69418b95af8cfbdc92c963eef1eecf934",
+      "results.json": "57b16d6af38ebbbd9da5fda7a7b6bf462a340f56639622ab6661413b505db11a",
+      "games.json": "0e493e7ec4c398fba3ad36152e77d3e8e05b0a483608618ae26ffdc7f36056eb",
+      "lines.json": "5f85688c2be3d20621fde9834209c0aa7e38a28b4d1c2db220f8037f1d8ab6d9",
+      "players.json": "5eac23a72e8f2bef945cb09a13fdd1cf19de097d2ea85c61defa803596cd1124",
+      "redirects.json": "13578099d807f7d195609a05d5bbafc06a1b52841e3d37f58751ad9e8e05b0bc",
+      "player_images.json": "2ac7ad76b741677cfb01fd3fbcde400afad4ccd8d2c01d03c9e179ef0bcabc87",
       "ddragon.json": "e945a32e0b277111faa5df68d92ac05a33be9c298deb6716e59a04696ed8ab77",
-      "riot_games.json": "ae79ff6090b4529f480aef986ed06d360b45dc66ae1b82e02d933c6d346030a6",
-      "runs.json": "113ee1c4c853adea799b8aef87878cdf80f6f5fc27e0f75dd469e391308e0822",
+      "riot_games.json": "2063186c34a0a9e2273e7cd2481fe460be55bc463c30b287de009fc3f68bdb91",
+      "runs.json": "df675737bf78e3e14b9342686c04490914b3040e45074f626f4464d1ab925331",
       "teams.json": "626dd34461dd773e4e8f23824fabd21fe4381f3981c1c9dba94be6d9e6a22350",
       "team_redirects.json": "63adbf0d6f9af7db99271bbfc93c7880cfb27d51f33bf99886a59084a9cab0f8"
     }
