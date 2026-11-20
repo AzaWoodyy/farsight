@@ -61,27 +61,52 @@ type Period = { yearFrom: number | null; yearTo: number | null };
  * The league each team played in over the period: its own leagues (neither international nor cross-league),
  * each with at least LEAGUE_SHARE of all its games of the period, oldest first, the last LEAGUES_SHOWN of them.
  * A team without one in the period under that name (a name taken later, "Movistar KOI" at MSI 2023) gets the
- * league it last played in. A name is matched as stored or as displayed, without Leaguepedia's disambiguation
- * ("Griffin (Korean Team)").
+ * league it last played in, from its latest season that has one. A name is matched as stored or as displayed,
+ * without Leaguepedia's disambiguation ("Griffin (Korean Team)").
  */
 export function teamLeagues(db: DatabaseSync, names: string[], period: Period, aliases: Record<string, string[]>): Record<string, string[]> {
-  const inPeriod = leagueGames(db, names, period, aliases);
-  const missing = names.filter((n) => !inPeriod.has(n));
-  const ever = leagueGames(db, missing, { yearFrom: null, yearTo: null }, aliases);
+  const inPeriod = new Map([...seasonGames(db, names, period, aliases)].flatMap(([team, rows]) => {
+    const leagues = ownLeagues(rows);
 
-  return Object.fromEntries([
-    ...[...inPeriod].map(([team, l]) => [team, l.toSorted((a, b) => a.first - b.first).slice(-LEAGUES_SHOWN).map((x) => x.league)]),
-    ...[...ever].map(([team, l]) => [team, [l.reduce((a, b) => (b.last > a.last ? b : a)).league]]),
-  ]);
+    return leagues.length ? [[team, leagues.toSorted((a, b) => a.first - b.first).slice(-LEAGUES_SHOWN).map((l) => l.league)]] : [];
+  }));
+
+  const missing = names.filter((n) => !inPeriod.has(n));
+
+  const latest = [...seasonGames(db, missing, { yearFrom: null, yearTo: null }, aliases)].flatMap(([team, rows]) => {
+    const years = [...new Set(rows.map((r) => r.year))].toSorted((a, b) => b - a);
+
+    for (const year of years) {
+      const leagues = ownLeagues(rows.filter((r) => r.year === year));
+
+      if (leagues.length) return [[team, [leagues.reduce((a, b) => (b.last > a.last ? b : a)).league]] as const];
+    }
+
+    return [];
+  });
+
+  return Object.fromEntries([...inPeriod, ...latest]);
 }
+
+type SeasonGames = { year: number; league: string; own: number; games: number; first: number; last: number };
 
 type LeagueGames = { league: string; games: number; first: number; last: number };
 
-/**
- * The own leagues of each team over the period that hold at least LEAGUE_SHARE of its games there (internationals
- * and cups count in the total: a team whose league is out of the scope gets none). Teams without one are left out.
- */
-function leagueGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Map<string, LeagueGames[]> {
+/** The own leagues of these games that hold at least LEAGUE_SHARE of them (internationals and cups count in the total). */
+function ownLeagues(rows: SeasonGames[]): LeagueGames[] {
+  const total = rows.reduce((n, r) => n + r.games, 0);
+  const leagues = new Map<string, LeagueGames>();
+
+  for (const r of rows.filter((x) => x.own)) {
+    const l = leagues.get(r.league);
+    leagues.set(r.league, { league: r.league, games: (l?.games ?? 0) + r.games, first: Math.min(l?.first ?? r.first, r.first), last: Math.max(l?.last ?? r.last, r.last) });
+  }
+
+  return [...leagues.values()].filter((l) => l.games >= total * LEAGUE_SHARE);
+}
+
+/** Games of each team over the period, by season and competition. */
+function seasonGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Map<string, SeasonGames[]> {
   if (!names.length) return new Map();
 
   const asked = names.flatMap((team) => [...new Set([team, ...(aliases[team] ?? [])])].map((name) => [team, name]));
@@ -100,35 +125,20 @@ function leagueGames(db: DatabaseSync, names: string[], { yearFrom, yearTo }: Pe
 
   const rows = selectAll(
     db,
-    z.object({ id: z.number(), league: z.string(), own: z.number(), games: z.number(), first: z.number(), last: z.number() }),
+    z.object({ id: z.number(), year: z.number(), league: z.string(), own: z.number(), games: z.number(), first: z.number(), last: z.number() }),
     `WITH ids(id) AS (SELECT value FROM json_each(?)),
        sides AS (
          SELECT blue_team_id AS id, tournament_id, played_at FROM games WHERE blue_team_id IN ids
          UNION ALL SELECT red_team_id, tournament_id, played_at FROM games WHERE red_team_id IN ids)
-     SELECT s.id, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (SELECT value FROM json_each(?))) AS own,
+     SELECT s.id, t.year, l.short_name AS league, (l.is_international = 0 AND l.name NOT IN (SELECT value FROM json_each(?))) AS own,
             COUNT(*) AS games, MIN(s.played_at) AS first, MAX(s.played_at) AS last
      FROM sides s JOIN tournaments t ON t.id = s.tournament_id JOIN leagues l ON l.id = t.league_id
-     WHERE (? IS NULL OR t.year >= ?) AND (? IS NULL OR t.year <= ?)
-     GROUP BY s.id, l.id`,
+     WHERE t.year IS NOT NULL AND (? IS NULL OR t.year >= ?) AND (? IS NULL OR t.year <= ?)
+     GROUP BY s.id, t.year, l.id`,
     [JSON.stringify([...new Set(ids.map((i) => i.id))]), JSON.stringify([...CUP_LEAGUES]), yearFrom, yearFrom, yearTo, yearTo],
   );
 
   const byId = Map.groupBy(rows, (r) => r.id);
 
-  return new Map(
-    [...Map.groupBy(ids, (i) => i.team)].flatMap(([team, mine]) => {
-      const all = mine.flatMap((i) => byId.get(i.id) ?? []);
-      const total = all.reduce((n, r) => n + r.games, 0);
-      const leagues = new Map<string, LeagueGames>();
-
-      for (const r of all.filter((x) => x.own)) {
-        const l = leagues.get(r.league);
-        leagues.set(r.league, l ? { league: r.league, games: l.games + r.games, first: Math.min(l.first, r.first), last: Math.max(l.last, r.last) } : r);
-      }
-
-      const kept = [...leagues.values()].filter((l) => l.games >= total * LEAGUE_SHARE);
-
-      return kept.length ? [[team, kept]] : [];
-    }),
-  );
+  return new Map([...Map.groupBy(ids, (i) => i.team)].map(([team, mine]) => [team, mine.flatMap((i) => byId.get(i.id) ?? [])]));
 }

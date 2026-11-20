@@ -13,13 +13,13 @@ beforeAll(() => {
   LEAGUES.forEach((l, i) => db.prepare("INSERT INTO leagues VALUES(?,?,?,?,?)").run(i + 1, l.name, l.short, l.region, +l.international));
 
   const tournaments: [string, number][] = [
-    ["LFL D2", 2023], ["LFL", 2024], ["EMEA Masters", 2024], ["LEC", 2024], ["Worlds", 2024], ["LCK", 2015], ["LCK", 2025], ["OGN Champions", 2014],
+    ["LFL D2", 2023], ["LFL", 2024], ["EMEA Masters", 2024], ["LEC", 2024], ["Worlds", 2024], ["LCK", 2015], ["LCK", 2025], ["OGN Champions", 2014], ["LFL D2", 2024],
   ];
 
   tournaments.forEach(([short, year], i) =>
     db.prepare("INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (?,?,?,?,?,?,?)").run(i + 1, `T${i}`, `T${i}`, `${short} ${year}`, "season", league(short), year),
   );
-  db.exec(`INSERT INTO teams VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back')`);
+  db.exec(`INSERT INTO teams VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted')`);
 
   let id = 0;
 
@@ -45,10 +45,12 @@ beforeAll(() => {
   // A team of a league out of the scope: a few LFL games beside its EMEA Masters run.
   games(7, 2, 2);
   games(7, 3, 25);
-  // Back in the LFL D2 after a stint in the LFL: its last league is the D2, though the LFL started later.
-  games(8, 1, 10, 10_000);
-  games(8, 2, 10, 20_000);
-  games(8, 1, 10, 30_000);
+  // Relegated within its latest season: the LFL, then the LFL D2 the same year.
+  games(8, 2, 10);
+  games(8, 9, 10, 30_000);
+  // Years in the LFL D2, then promoted: its latest season is all LFL, though the LFL is under a tenth of its career.
+  games(9, 1, 50);
+  games(9, 2, 4);
 });
 
 const all = { yearFrom: null, yearTo: null };
@@ -80,6 +82,10 @@ describe("the league a team played in", () => {
 
   test("the share counts every game of the team, cups and internationals included", () => {
     expect(teamLeagues(db, ["Prime"], all, {})).toEqual({});
+  });
+
+  test("the fallback reads the latest season: a recent promotion after a long stint below", () => {
+    expect(teamLeagues(db, ["Promoted"], { yearFrom: 2015, yearTo: 2015 }, {})).toEqual({ Promoted: ["LFL"] });
   });
 
   test("the fallback is the league the team played in last", () => {
