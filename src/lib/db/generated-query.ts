@@ -147,6 +147,8 @@ export async function executeGeneratedQuery(
 
   try {
     if (deadline - Date.now() < MIN_RUN_MS) throw new SqlTimeoutError();
+    // An abort while waiting for a slot fired before the listener of connectBy: checked here.
+    signal?.throwIfAborted();
     client = await connectBy(pool, deadline, signal);
     signal?.addEventListener("abort", abort, { once: true });
     signal?.throwIfAborted();
