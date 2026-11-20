@@ -174,7 +174,11 @@ function referencedTables(code: string): { name: string; alias: string | undefin
 }
 
 /** Strip literals/comments for the static pass and reject an unfinished token.
- * A trailing /* would otherwise swallow the forced LIMIT added by the wrapper.
+ * A trailing comment would otherwise swallow the forced LIMIT added by the wrapper.
+ *
+ * The pass reads plain strings ('' doubles a quote) and line comments as Postgres does. The forms it would read
+ * otherwise are refused, since Postgres could then run what the pass took for text: escape strings (E'\'' ends
+ * after the second quote), dollar-quoted strings and block comments (Postgres nests them). No question needs them.
  */
 function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: string } {
   let code = "";
@@ -182,6 +186,12 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
 
   for (let i = 0; i < sql.length; i++) {
     const char = sql[i];
+
+    if (char === "'" && /[eE]/.test(sql[i - 1] ?? "") && !/[\w$]/.test(sql[i - 2] ?? "")) return { ok: false, issue: "Escape strings (E'…') are not allowed." };
+
+    if (char === "$") return { ok: false, issue: "Dollar signs (dollar-quoted strings, parameters) are not allowed." };
+
+    if (char === "/" && sql[i + 1] === "*") return { ok: false, issue: "Block comments (/* … */) are not allowed." };
 
     if (char === "'" || char === '"' || char === "`" || char === "[") {
       const close = char === "[" ? "]" : char;

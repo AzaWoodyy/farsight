@@ -59,6 +59,25 @@ const inPlace = args.includes("--in-place") || (limitMb > 0 && 2 * liveBytes > 0
 const next = inPlace ? schema : `${schema}_next`;
 const old = `${schema}_old`;
 
+const liveExists = Boolean((await client.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [schema])).rowCount);
+
+// In place, the live schema goes before the load: the derived rows are compared with it first, table by table.
+if (inPlace && liveExists && !args.includes("--allow-shrink")) {
+  const smaller: string[] = [];
+
+  for (const table of ["games", "game_players", "game_riot", "tournament_results", "tournaments"]) {
+    const live = Number((await client.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM ${quoteIdent(schema)}.${quoteIdent(table)}`)).rows[0].n);
+    const derivedRows = derived.tables.get(table)?.rows.length ?? 0;
+
+    if (derivedRows < live) smaller.push(`${table}: ${live} live, ${derivedRows} derived`);
+  }
+
+  if (smaller.length) {
+    await client.end();
+    throw new Error(`The derived data has less than the live data (${smaller.join("; ")}); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
+  }
+}
+
 if (inPlace) console.warn(`in place: ${schema} is dropped before the load (${(liveBytes / 1e6).toFixed(0)} MB live${limitMb ? `, limit ${limitMb} MB` : ""}); the app has no data until it commits`);
 
 try {
@@ -101,33 +120,33 @@ try {
   const analyzedIn = seconds(analyzeStarted);
 
   // A partial ingestion (a league missing, a failed source) must not replace complete data: per league, the staged
-  // schema keeps at least the games, player lines and in-game games of the live one. `--allow-shrink` loads anyway.
-  if (!inPlace && !args.includes("--allow-shrink")) {
+  // schema keeps at least the games, player lines, in-game games and standings of the live one. `--allow-shrink` loads
+  // anyway.
+  if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
     const shrunk = await client.query<{ league: string; what: string; live: number; staged: number }>(
       `WITH counts AS (
-         SELECT 'live' AS side, l.name AS league, COUNT(DISTINCT g.id) AS games, COUNT(gp.game_id) AS lines, COUNT(DISTINCT gr.game_id) AS ingame
+         SELECT 'live' AS side, l.name AS league, COUNT(DISTINCT g.id) AS games, COUNT(gp.game_id) AS lines, COUNT(DISTINCT gr.game_id) AS ingame,
+                (SELECT COUNT(*) FROM ${quoteIdent(schema)}.tournament_results r JOIN ${quoteIdent(schema)}.tournaments rt ON rt.id = r.tournament_id WHERE rt.league_id = l.id) AS standings
          FROM ${quoteIdent(schema)}.games g JOIN ${quoteIdent(schema)}.tournaments t ON t.id = g.tournament_id
          JOIN ${quoteIdent(schema)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(schema)}.game_players gp ON gp.game_id = g.id
-         LEFT JOIN ${quoteIdent(schema)}.game_riot gr ON gr.game_id = g.id GROUP BY l.name
+         LEFT JOIN ${quoteIdent(schema)}.game_riot gr ON gr.game_id = g.id GROUP BY l.id, l.name
          UNION ALL
-         SELECT 'staged', l.name, COUNT(DISTINCT g.id), COUNT(gp.game_id), COUNT(DISTINCT gr.game_id)
+         SELECT 'staged', l.name, COUNT(DISTINCT g.id), COUNT(gp.game_id), COUNT(DISTINCT gr.game_id),
+                (SELECT COUNT(*) FROM ${quoteIdent(next)}.tournament_results r JOIN ${quoteIdent(next)}.tournaments rt ON rt.id = r.tournament_id WHERE rt.league_id = l.id)
          FROM ${quoteIdent(next)}.games g JOIN ${quoteIdent(next)}.tournaments t ON t.id = g.tournament_id
          JOIN ${quoteIdent(next)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(next)}.game_players gp ON gp.game_id = g.id
-         LEFT JOIN ${quoteIdent(next)}.game_riot gr ON gr.game_id = g.id GROUP BY l.name)
+         LEFT JOIN ${quoteIdent(next)}.game_riot gr ON gr.game_id = g.id GROUP BY l.id, l.name)
        SELECT a.league, m.what, m.live::integer AS live, COALESCE(m.staged, 0)::integer AS staged
        FROM (SELECT league FROM counts WHERE side = 'live') a
        CROSS JOIN LATERAL (VALUES
          ('games', (SELECT games FROM counts WHERE side = 'live' AND league = a.league), (SELECT games FROM counts WHERE side = 'staged' AND league = a.league)),
          ('player lines', (SELECT lines FROM counts WHERE side = 'live' AND league = a.league), (SELECT lines FROM counts WHERE side = 'staged' AND league = a.league)),
-         ('in-game games', (SELECT ingame FROM counts WHERE side = 'live' AND league = a.league), (SELECT ingame FROM counts WHERE side = 'staged' AND league = a.league))
+         ('in-game games', (SELECT ingame FROM counts WHERE side = 'live' AND league = a.league), (SELECT ingame FROM counts WHERE side = 'staged' AND league = a.league)),
+         ('standings', (SELECT standings FROM counts WHERE side = 'live' AND league = a.league), (SELECT standings FROM counts WHERE side = 'staged' AND league = a.league))
        ) AS m(what, live, staged)
        WHERE COALESCE(m.staged, 0) < m.live
        ORDER BY a.league, m.what`,
-    ).catch((err: Error) => {
-      // No live schema yet (the first load): nothing to compare with.
-      if (/does not exist/.test(err.message)) return { rows: [] };
-      throw err;
-    });
+    );
 
     if (shrunk.rows.length) {
       for (const r of shrunk.rows) console.error(`  ${r.league}: ${r.what} ${r.live} live, ${r.staged} staged`);
