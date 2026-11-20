@@ -158,15 +158,18 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
     expect(s.players.every((p) => p.runes?.length === 9)).toBe(true);
   });
 
-  test("a page without stat shards keeps its six runes; a page with an empty slot is not trusted", () => {
+  test("six runes before the stat shards (patch 8.23); from 8.23 a missing shard or any empty slot is not trusted", () => {
     const g = statsOnly("ESPORTSTMNT01_1130750");
     const stats = V4Game.parse(g.stats);
-    const [a, b, ...rest] = stats.participants;
-    const edited = [{ ...a, stats: { ...a.stats, statPerk0: 0, statPerk1: 0, statPerk2: 0 } }, { ...b, stats: { ...b.stats, perk3: 0 } }, ...rest];
-    const s = summarizeGame({ ...g, stats: { ...stats, participants: edited } });
+    const [a, b, c, ...rest] = stats.participants;
+    const noShard = { ...a, stats: { ...a.stats, statPerk0: 0, statPerk1: 0, statPerk2: 0 } };
+    const edited = [noShard, { ...b, stats: { ...b.stats, perk3: 0 } }, { ...c, stats: { ...c.stats, statPerk2: 0 } }, ...rest];
+    const at = (gameVersion: string) => summarizeGame({ ...g, stats: { ...stats, gameVersion, participants: edited } }).players;
 
-    expect(s.players[0]).toMatchObject({ runes: [8230, 8226, 8210, 8236, 8139, 8135], primary_tree: 8200, secondary_tree: 8100 });
-    expect(s.players[1]).toMatchObject({ runes: null, primary_tree: null, secondary_tree: null });
+    expect(at("8.22.1")[0]).toMatchObject({ runes: [8230, 8226, 8210, 8236, 8139, 8135], primary_tree: 8200, secondary_tree: 8100 });
+    expect(at("8.22.1")[2].runes).toHaveLength(6);
+    expect(at("8.23.1").slice(0, 3).map((p) => [p.runes, p.primary_tree, p.secondary_tree])).toEqual([[null, null, null], [null, null, null], [null, null, null]]);
+    expect(at("8.23.1")[3].runes).toHaveLength(9);
   });
 
   test("no Herald before patch 5.22: null, not 0", () => {
