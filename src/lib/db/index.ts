@@ -29,7 +29,7 @@ const Version = z.object({ version: z.number().nullable() });
 
 /**
  * The database of the deployment: Postgres at DATABASE_URL, as the read-only app role (db/roles.sql). The schema it
- * holds must be the one this code was written for: the newest migration applied is PG_MIGRATION.
+ * holds must be at least the one this code was written for: the newest migration applied is PG_MIGRATION or later.
  */
 export function openDb(): Db {
   if (cached) return cached;
@@ -44,12 +44,18 @@ export function openDb(): Db {
   return cached;
 }
 
-/** The newest migration applied to the schema on the search path must be PG_MIGRATION. */
+/**
+ * The newest migration applied to the schema on the search path must be PG_MIGRATION or a later one. A later one is
+ * accepted because the load of a new migration lands before the deployment of the code that reads it (docs/postgres.md):
+ * a migration therefore only adds, and keeps every table, view and column the previous code reads.
+ */
 export async function checkMigration(pool: PgPool): Promise<void> {
   const { rows } = await pool.query("SELECT MAX(version) AS version FROM schema_migrations");
   const version = Version.parse(rows[0] ?? { version: null }).version;
 
-  if (version !== PG_MIGRATION) throw new Error(`Database schema migration ${version}; expected ${PG_MIGRATION}. Run \`bun run db:load\` (or db:migrate).`);
+  if (version === null || version < PG_MIGRATION) {
+    throw new Error(`Database schema migration ${version}; expected ${PG_MIGRATION} or later. Run \`bun run db:load\` (or db:migrate).`);
+  }
 }
 
 /** Runs a query and parses every row with `schema`, so callers get typed rows. */
