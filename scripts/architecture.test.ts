@@ -60,6 +60,7 @@ describe("the Esports World Cup and the KeSPA Cup do not take the cues of Worlds
     ["who won the esports world cup 2026", "Esports World Cup"],
     ["LoL World Cup 2025 winner", "Esports World Cup"],
     ["vainqueur de la coupe du monde de l'esport 2025", "Esports World Cup"],
+    ["Qui a gagné la coupe du monde de l’esport 2025 ?", "Esports World Cup"],
     ["KeSPA Cup 2025", "KeSPA Cup"],
     ["qui a gagné la kespa 2024", "KeSPA Cup"],
     ["qui a gagné les Worlds 2024", "World Championship"],

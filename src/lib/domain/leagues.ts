@@ -10,7 +10,7 @@ export const LEAGUES = [
   { name: "World Championship", short: "Worlds", region: "International", international: true, cue: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i, family: "", from: 2011, to: null },
   { name: "Mid-Season Invitational", short: "MSI", region: "International", international: true, cue: /\b(msi|mid[- ]season invitational)\b/i, family: "", from: 2011, to: null },
   { name: "First Stand", short: "First Stand", region: "International", international: true, cue: /\bfirst stand\b/i, family: "", from: 2011, to: null },
-  { name: "Esports World Cup", short: "EWC", region: "International", international: true, cue: /\b(e-?sports? world cup|world cup|ewc|coupe du monde (de l'|des )e-?sports?)\b/i, family: "", from: 2011, to: null },
+  { name: "Esports World Cup", short: "EWC", region: "International", international: true, cue: /\b(e-?sports? world cup|world cup|ewc|coupe du monde (de l['’]|des )e-?sports?)\b/i, family: "", from: 2011, to: null },
   { name: "LoL The Champions", short: "OGN Champions", region: "Korea", international: false, cue: /\b(ogn|champions korea \d{4}|the champions)\b/i, family: "LCK", from: 2011, to: 2015 },
   { name: "LoL Champions Korea", short: "LCK", region: "Korea", international: false, cue: /\blck\b/i, family: "LCK", from: 2016, to: null },
   { name: "LCK Challengers League", short: "LCK CL", region: "Korea", international: false, cue: /\b(lck cl|lck challengers)\b/i, family: "", from: 2011, to: null },

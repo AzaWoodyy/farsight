@@ -7573,12 +7573,13 @@
         "league": "KeSPA Cup",
         "input": {
           "yearFrom": 2025,
-          "yearTo": 2025
+          "yearTo": 2025,
+          "full": true
         },
-        "rows": 1,
+        "rows": 14,
         "totals": {
-          "events": 1,
-          "latest_champion": "T1"
+          "champion": "T1",
+          "events": 1
         }
       }
     },

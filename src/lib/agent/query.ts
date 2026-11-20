@@ -1212,11 +1212,12 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   if (e.league || STANDINGS.test(question)) {
     const league = defaultLeague();
     const oneYear = e.yearFrom != null && e.yearFrom === e.yearTo;
-    const international = LEAGUES.some((l) => l.name === league && l.international);
+    // One edition a year: the international events, and the KeSPA Cup.
+    const oneEdition = league === "KeSPA Cup" || LEAGUES.some((l) => l.name === league && l.international);
 
     return {
       kind: "tool",
-      call: { tool: "tournament_standings", input: { league, ...period, split: e.split, full: oneYear && (international || e.split != null) } },
+      call: { tool: "tournament_standings", input: { league, ...period, split: e.split, full: oneYear && (oneEdition || e.split != null) } },
       confidence: STANDINGS.test(question) || oneYear ? 0.9 : 0.75,
       reason: msg().route.leagueAlone,
       notes,
