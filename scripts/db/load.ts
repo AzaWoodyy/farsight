@@ -61,20 +61,84 @@ const old = `${schema}_old`;
 
 const liveExists = Boolean((await client.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [schema])).rowCount);
 
-// In place, the live schema goes before the load: the derived rows are compared with it first, table by table.
-if (inPlace && liveExists && !args.includes("--allow-shrink")) {
-  const smaller: string[] = [];
+/** What each league holds, counted from the leagues so a league with standings and no game is counted too. */
+const METRICS = ["tournaments", "games", "player lines", "in-game games", "standings"] as const;
 
-  for (const table of ["games", "game_players", "game_riot", "tournament_results", "tournaments"]) {
-    const live = Number((await client.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM ${quoteIdent(schema)}.${quoteIdent(table)}`)).rows[0].n);
-    const derivedRows = derived.tables.get(table)?.rows.length ?? 0;
+type LeagueCounts = Map<string, number[]>;
 
-    if (derivedRows < live) smaller.push(`${table}: ${live} live, ${derivedRows} derived`);
+async function schemaCounts(name: string): Promise<LeagueCounts> {
+  const s = quoteIdent(name);
+  const inLeague = (table: string, alias: string, join: string) => `(SELECT COUNT(*)::integer FROM ${s}.${table} ${alias} ${join} WHERE t.league_id = l.id)`;
+  const viaGame = `JOIN ${s}.games g ON g.id = x.game_id JOIN ${s}.tournaments t ON t.id = g.tournament_id`;
+
+  const { rows } = await client.query<{ league: string; counts: number[] }>(
+    `SELECT l.name AS league, ARRAY[
+       ${inLeague("tournaments", "t", "")},
+       ${inLeague("games", "g", `JOIN ${s}.tournaments t ON t.id = g.tournament_id`)},
+       ${inLeague("game_players", "x", viaGame)},
+       ${inLeague("game_riot", "x", viaGame)},
+       ${inLeague("tournament_results", "x", `JOIN ${s}.tournaments t ON t.id = x.tournament_id`)}] AS counts
+     FROM ${s}.leagues l`,
+  );
+
+  return new Map(rows.map((r) => [r.league, r.counts]));
+}
+
+/** The same counts from the derived rows, before anything is written. */
+function derivedCounts(): LeagueCounts {
+  const rowsOf = (table: string) => {
+    const t = derived.tables.get(table)!;
+
+    return { col: (name: string) => t.columns.indexOf(name), rows: t.rows };
+  };
+
+  const leagues = rowsOf("leagues");
+  const leagueName = new Map(leagues.rows.map((r) => [r[leagues.col("id")], String(r[leagues.col("name")])]));
+  const tournaments = rowsOf("tournaments");
+  const leagueOfTournament = new Map(tournaments.rows.map((r) => [r[tournaments.col("id")], leagueName.get(r[tournaments.col("league_id")])]));
+  const games = rowsOf("games");
+  const leagueOfGame = new Map(games.rows.map((r) => [r[games.col("id")], leagueOfTournament.get(r[games.col("tournament_id")])]));
+  const counts: LeagueCounts = new Map([...leagueName.values()].map((name) => [name, METRICS.map(() => 0)]));
+
+  const add = (league: string | undefined, metric: number) => {
+    if (league != null) counts.get(league)![metric]++;
+  };
+
+  for (const r of tournaments.rows) add(leagueOfTournament.get(r[tournaments.col("id")]), 0);
+
+  for (const r of games.rows) add(leagueOfGame.get(r[games.col("id")]), 1);
+
+  for (const [metric, table, key] of [[2, "game_players", "game_id"], [3, "game_riot", "game_id"]] as const) {
+    const t = rowsOf(table);
+
+    for (const r of t.rows) add(leagueOfGame.get(r[t.col(key)]), metric);
   }
 
-  if (smaller.length) {
+  const results = rowsOf("tournament_results");
+
+  for (const r of results.rows) add(leagueOfTournament.get(r[results.col("tournament_id")]), 4);
+
+  return counts;
+}
+
+/** Every count of a live league the new data has less of, as "LCK: games 900 → 850". */
+function losses(live: LeagueCounts, fresh: LeagueCounts): string[] {
+  return [...live].flatMap(([league, before]) =>
+    METRICS.flatMap((metric, i) => {
+      const after = fresh.get(league)?.[i] ?? 0;
+
+      return after < before[i] ? [`${league}: ${metric} ${before[i]} → ${after}`] : [];
+    }),
+  );
+}
+
+// In place, the live schema goes before the load: the derived rows are compared with it first, league by league.
+if (inPlace && liveExists && !args.includes("--allow-shrink")) {
+  const lost = losses(await schemaCounts(schema), derivedCounts());
+
+  if (lost.length) {
     await client.end();
-    throw new Error(`The derived data has less than the live data (${smaller.join("; ")}); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
+    throw new Error(`The derived data has less than the live data (${lost.join("; ")}); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
   }
 }
 
@@ -119,39 +183,13 @@ try {
   await grantReaders(client, next, SCHEMA_VIEWS);
   const analyzedIn = seconds(analyzeStarted);
 
-  // A partial ingestion (a league missing, a failed source) must not replace complete data: per league, the staged
-  // schema keeps at least the games, player lines, in-game games and standings of the live one. `--allow-shrink` loads
-  // anyway.
+  // A partial ingestion must not replace complete data: the staged schema keeps, league by league, what the live one has.
   if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
-    const shrunk = await client.query<{ league: string; what: string; live: number; staged: number }>(
-      `WITH counts AS (
-         SELECT 'live' AS side, l.name AS league, COUNT(DISTINCT g.id) AS games, COUNT(gp.game_id) AS lines, COUNT(DISTINCT gr.game_id) AS ingame,
-                (SELECT COUNT(*) FROM ${quoteIdent(schema)}.tournament_results r JOIN ${quoteIdent(schema)}.tournaments rt ON rt.id = r.tournament_id WHERE rt.league_id = l.id) AS standings
-         FROM ${quoteIdent(schema)}.games g JOIN ${quoteIdent(schema)}.tournaments t ON t.id = g.tournament_id
-         JOIN ${quoteIdent(schema)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(schema)}.game_players gp ON gp.game_id = g.id
-         LEFT JOIN ${quoteIdent(schema)}.game_riot gr ON gr.game_id = g.id GROUP BY l.id, l.name
-         UNION ALL
-         SELECT 'staged', l.name, COUNT(DISTINCT g.id), COUNT(gp.game_id), COUNT(DISTINCT gr.game_id),
-                (SELECT COUNT(*) FROM ${quoteIdent(next)}.tournament_results r JOIN ${quoteIdent(next)}.tournaments rt ON rt.id = r.tournament_id WHERE rt.league_id = l.id)
-         FROM ${quoteIdent(next)}.games g JOIN ${quoteIdent(next)}.tournaments t ON t.id = g.tournament_id
-         JOIN ${quoteIdent(next)}.leagues l ON l.id = t.league_id LEFT JOIN ${quoteIdent(next)}.game_players gp ON gp.game_id = g.id
-         LEFT JOIN ${quoteIdent(next)}.game_riot gr ON gr.game_id = g.id GROUP BY l.id, l.name)
-       SELECT a.league, m.what, m.live::integer AS live, COALESCE(m.staged, 0)::integer AS staged
-       FROM (SELECT league FROM counts WHERE side = 'live') a
-       CROSS JOIN LATERAL (VALUES
-         ('games', (SELECT games FROM counts WHERE side = 'live' AND league = a.league), (SELECT games FROM counts WHERE side = 'staged' AND league = a.league)),
-         ('player lines', (SELECT lines FROM counts WHERE side = 'live' AND league = a.league), (SELECT lines FROM counts WHERE side = 'staged' AND league = a.league)),
-         ('in-game games', (SELECT ingame FROM counts WHERE side = 'live' AND league = a.league), (SELECT ingame FROM counts WHERE side = 'staged' AND league = a.league)),
-         ('standings', (SELECT standings FROM counts WHERE side = 'live' AND league = a.league), (SELECT standings FROM counts WHERE side = 'staged' AND league = a.league))
-       ) AS m(what, live, staged)
-       WHERE COALESCE(m.staged, 0) < m.live
-       ORDER BY a.league, m.what`,
-    );
+    const lost = losses(await schemaCounts(schema), await schemaCounts(next));
 
-    if (shrunk.rows.length) {
-      for (const r of shrunk.rows) console.error(`  ${r.league}: ${r.what} ${r.live} live, ${r.staged} staged`);
+    if (lost.length) {
       await client.query(`DROP SCHEMA ${quoteIdent(next)} CASCADE`);
-      throw new Error(`The staged data has less than the live data (above); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
+      throw new Error(`The staged data has less than the live data (${lost.join("; ")}); ${schema} is left as it was. Check the ingestion, or load with --allow-shrink.`);
     }
   }
 

@@ -47,6 +47,9 @@ test("guard rejects writes, unauthorized reads, server functions, recursive CTEs
     "SELECT E'\\'' AS a, length(set_config('role', 'farsight_app', true)) AS b, ''' AS c",
     "SELECT $$'$$ AS a, length(set_config('role', 'farsight_app', true)) AS b, ' AS c'",
     "SELECT 1 AS n /* /* */ , pg_sleep(1) */",
+    // Brackets are an array to Postgres: what they hold is code, read by the pass.
+    "SELECT (ARRAY[pg_sleep(1)])[1] AS n",
+    "SELECT (ARRAY[1, length(set_config('role', 'farsight_app', true))])[1] AS n",
     // A comment Postgres ends at a lone carriage return: the call after it runs.
     "SELECT 1 AS n -- note\rUNION ALL SELECT length(set_config('role', 'farsight_app', true))",
     // An escaped name hides set_config, which would give the session's own role back.

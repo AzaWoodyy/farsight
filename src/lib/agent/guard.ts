@@ -193,8 +193,9 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
 
     if (char === "/" && sql[i + 1] === "*") return { ok: false, issue: "Block comments (/* … */) are not allowed." };
 
-    if (char === "'" || char === '"' || char === "`" || char === "[") {
-      const close = char === "[" ? "]" : char;
+    // Only Postgres' own quotes: brackets are arrays and subscripts there, read as code.
+    if (char === "'" || char === '"') {
+      const close = char;
       let token = char;
       let closed = false;
 
@@ -203,7 +204,7 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
 
         if (sql[i] !== close) continue;
 
-        if (sql[i + 1] === close && close !== "]") {
+        if (sql[i + 1] === close) {
           token += sql[++i];
           continue;
         }
