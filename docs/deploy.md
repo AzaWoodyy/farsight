@@ -153,9 +153,10 @@ envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
 5. GitHub → dépôt → **Settings** → **Secrets and variables** → **Actions** :
    les quatre mêmes secrets (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
    `R2_SECRET_ACCESS_KEY`). Le workflow « Postgres update » les exige et
-   s'arrête sans eux : les résumés in-game et les JSON des parties ne viennent
-   que de R2. Un objet de résumés absent ou illisible déclenche un recalcul
-   depuis les JSON de R2 ; une lecture R2 refusée ou en erreur arrête le run.
+   s'arrête sans eux : les résumés in-game ne viennent que de R2. Un objet de
+   résumés absent ou illisible déclenche un recalcul depuis les JSON de R2 ; une
+   lecture de cet objet refusée ou en erreur arrête le run. Le JSON d'une partie
+   que R2 n'a pas, ou ne rend pas, est demandé au wiki dans la limite du budget.
 6. Vercel : voir « Timeline d'une partie » ci-dessous. Le token d'écriture de
    l'ingestion ne va jamais sur Vercel.
 

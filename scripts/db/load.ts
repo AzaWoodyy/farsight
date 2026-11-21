@@ -24,7 +24,7 @@ import { from as copyFrom } from "pg-copy-streams";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { DERIVE_VERSION } from "../data/ingame";
-import { datasetProblems } from "../data/checks";
+import { datasetProblems, photoLoss } from "../data/checks";
 import { type Cell, deriveDataset } from "../data/derive";
 import { SCHEMA_TABLES, SCHEMA_VERSION, SCHEMA_VIEWS } from "../../src/lib/db/schema";
 import { grantReaders, migrate, quoteIdent } from "./migrations";
@@ -144,9 +144,6 @@ function losses(live: LeagueCounts, fresh: LeagueCounts): string[] {
   );
 }
 
-/** A new load may lose a few photos to wiki edits, not more: a partial PlayerImages fetch keeps every league's counts. */
-const MIN_PHOTOS_RATIO = 0.98;
-
 const photoPlayersIn = async (name: string) =>
   (await client.query<{ n: number }>(`SELECT COUNT(DISTINCT player_id)::integer AS n FROM ${quoteIdent(name)}.player_images`)).rows[0].n;
 
@@ -156,9 +153,6 @@ function derivedPhotoPlayers(): number {
 
   return new Set(t.rows.map((r) => r[at])).size;
 }
-
-/** The players with a photo the new data lacks, as a loss, when more than 2 % of the live ones are gone. */
-const photoLoss = (before: number, after: number) => (after < Math.floor(before * MIN_PHOTOS_RATIO) ? [`players with a photo ${before} → ${after}`] : []);
 
 // In place, the live schema goes before the load: the derived rows are compared with it first, league by league.
 if (inPlace && liveExists && !args.includes("--allow-shrink")) {

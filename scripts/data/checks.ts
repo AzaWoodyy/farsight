@@ -96,3 +96,9 @@ export function datasetProblems(tables: DerivedTables, summaries: SummaryCounts,
 
   return problems;
 }
+
+/**
+ * The players with a photo the new data lacks, as a loss, when more than 2 % of the live ones are gone: a new load may
+ * lose a few photos to wiki edits, and a partial PlayerImages fetch keeps every league's counts.
+ */
+export const photoLoss = (before: number, after: number): string[] => (after * 100 < before * 98 ? [`players with a photo ${before} → ${after}`] : []);
