@@ -273,6 +273,39 @@ async function seeded<T>(body: (db: TestDb) => Promise<T>): Promise<T> {
 }
 
 const LEC = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025 };
+const LCKCL = { league: "LCK Challengers League" as const, yearFrom: 2025, yearTo: 2025 };
+
+/**
+ * One LCK CL 2025 game where Leaguepedia writes the blue team "Dplus KIA Challengers" on the game and
+ * "Dplus Kia Challengers" on its player lines (two rows of teams), against KT Rolster Challengers on red.
+ */
+async function seededCaseDrift<T>(body: (db: TestDb) => Promise<T>): Promise<T> {
+  const db = await testDb();
+
+  try {
+    for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+    const cl = Number((await db.query("SELECT id FROM leagues WHERE name = 'LCK Challengers League'"))[0]!.id);
+
+    const lines = Array.from({ length: 10 }, (_, i) => {
+      const blue = i < 5;
+
+      return `(1,${i + 1},${blue ? 3 : 2},${blue ? 1 : 2},'Mid',${i + 1},${blue ? 1 : 0},${blue ? 4 - i : 1},1,1,10000,200,10000,10,NULL)`;
+    });
+
+    await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (1,'CL25','CL25','season',?,2025)", cl);
+    await db.exec(`
+      INSERT INTO teams(id,name) VALUES (1,'Dplus KIA Challengers'),(2,'KT Rolster Challengers'),(3,'Dplus Kia Challengers');
+      INSERT INTO players(id,page) VALUES ${Array.from({ length: 10 }, (_, i) => `(${i + 1},'${i ? `P${i + 1}` : "Rahel"}')`).join(",")};
+      INSERT INTO champions(id,name) VALUES ${Array.from({ length: 10 }, (_, i) => `(${i + 1},'C${i + 1}')`).join(",")};
+      INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES (1,1,'Week 1',1,2,1,1800,1735776000);
+      INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES ${lines.join(",")};
+    `);
+
+    return await body(db);
+  } finally {
+    await db.close();
+  }
+}
 
 describe("rankings on a seeded season", () => {
   test("champion ranking: per-minute figures, lane figures of the Riot data, players, and one side of the map", () =>
@@ -587,6 +620,28 @@ describe("rankings on a seeded season", () => {
       const hum = await run(db, { tool: "player_recent_games", input: { player: "Humanoid", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025, count: 3 } });
 
       expect(hum.totals).toMatchObject({ wins: 1, losses: 2, streak: 1, streak_kind: "wins" });
+    }));
+
+  test("a player's opponent comes from the side when the team of the player lines is written another way", () =>
+    seededCaseDrift(async (db) => {
+      const out = await run(db, { tool: "player_recent_games", input: { player: "Rahel", league: null, yearFrom: null, yearTo: null, count: null } });
+
+      expect(out.table!.rows[0].slice(2, 4)).toEqual(["Dplus Kia Challengers", "KT Rolster Challengers"]);
+      expect(out.totals).toMatchObject({ last_opponent: "KT Rolster Challengers" });
+
+      const records = await run(db, { tool: "game_records", input: { ...LCKCL, player: "Rahel", role: null, metric: "kills" } });
+
+      expect(records.table!.rows[0].slice(3, 5)).toEqual(["Dplus Kia Challengers", "KT Rolster Challengers"]);
+    }));
+
+  test("team leaderboard: the player lines of a team written another way still count for its side", () =>
+    seededCaseDrift(async (db) => {
+      const out = await run(db, { tool: "team_leaderboard", input: { ...LCKCL, order: "desc", side: null, minGames: 1, criterion: "kills" } });
+      const row = (team: string) => Object.fromEntries(out.table!.columns.map((c, i) => [c, out.table!.rows.find((r) => r[1] === team)![i]]));
+
+      // Blue: 4 + 3 + 2 + 1 + 0 kills, five champions; red: one kill each.
+      expect(row("Dplus KIA Challengers")).toMatchObject({ Parties: 1, "kills / partie": 10, champions: 5 });
+      expect(row("KT Rolster Challengers")).toMatchObject({ Parties: 1, "kills / partie": 5, champions: 5 });
     }));
 
   test("a second champion in the question is the opponent, in the order written", () =>
