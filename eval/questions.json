@@ -8348,6 +8348,66 @@
       }
     },
     {
+      "id": "superlative-not-player",
+      "question": "pires champions aux Worlds 2024",
+      "tags": [
+        "champion",
+        "ranking",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship",
+        "players": []
+      }
+    },
+    {
+      "id": "superlative-not-player-en",
+      "question": "worst champions at Worlds 2024",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "ranking",
+        "sql",
+        "english"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship",
+        "players": []
+      }
+    },
+    {
+      "id": "worst-players",
+      "question": "pires joueurs aux Worlds 2024",
+      "tags": [
+        "player",
+        "ranking",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship",
+        "players": []
+      }
+    },
+    {
+      "id": "worst-players-en",
+      "question": "worst players at Worlds 2024",
+      "locale": "en",
+      "tags": [
+        "player",
+        "ranking",
+        "sql",
+        "english"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "World Championship",
+        "players": []
+      }
+    },
+    {
       "id": "en-champion-ranking-split-summer",
       "question": "Most played champions LEC Summer 2024",
       "locale": "en",

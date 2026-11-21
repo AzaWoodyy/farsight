@@ -88,6 +88,15 @@ const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\
 const ROLE_PHRASES = phrase(ROLE_WORDS);
 
 /**
+ * A superlative right before what it ranks is never a handle either: "pires
+ * champions" is not the player Pires; "Worst aux Worlds" still is the player.
+ */
+const SUPERLATIVE_PHRASES = phrase(
+  "(?:pires?|worst)(?= (?:champions?|joueurs?|joueuses?|players?|[ée]quipes?|teams?|picks?|bans?|games?|parties?|matchs?|matches|" +
+    "s[ée]ries?|winrates?|kda|tops?|junglers?|mids?|adcs?|bots?|supports?|toplaners?|midlaners?|botlaners?)(?![\\p{L}\\p{N}]))",
+);
+
+/**
  * Seasons named relative to today ("l'an dernier", "this season"), as an
  * offset in years. A LoL season is a calendar year.
  */
@@ -114,7 +123,7 @@ const STAT_WORDS = phrase(
 
 /** The question with its stat, game, role and relative-season terms blanked out, for alias lookups ("last" is also a handle). */
 function maskTerms(question: string): string {
-  return [TERM_PHRASES, ROLE_PHRASES, ...RELATIVE_YEARS.map((r) => r.pattern)].reduce(blank, question);
+  return [SUPERLATIVE_PHRASES, TERM_PHRASES, ROLE_PHRASES, ...RELATIVE_YEARS.map((r) => r.pattern)].reduce(blank, question);
 }
 
 /** True when a mention only occurs inside a stat or game term of the question. */

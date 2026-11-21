@@ -147,6 +147,27 @@ describe("routes of the rankings", () => {
     expect(await route(question, e)).toMatchObject({ kind: "sql" });
   });
 
+  // "pires champions" is a ranking of champions too, from the lowest up.
+  test.each([
+    ["pires champions aux Worlds 2024", WORLDS],
+    ["worst champions at Worlds 2024", WORLDS],
+  ])("the worst champions go to generated SQL: %p", async (question, e) => {
+    expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  // The player leaderboards only rank from the highest down: the worst players would be answered by the best.
+  test.each([
+    ["worst players at Worlds 2024", WORLDS],
+    ["pire joueur de LEC 2025", LEC25],
+    ["pires mids aux Worlds 2024", WORLDS],
+  ])("the worst players go to generated SQL: %p", async (question, e) => {
+    expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  test("the best players keep their leaderboard", async () => {
+    expect(await route("meilleurs joueurs aux Worlds 2024", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard" } });
+  });
+
   // "au moins 10 picks" is a minimum, not an order.
   test.each([
     ["champions les plus joués avec au moins 10 picks", 10],
