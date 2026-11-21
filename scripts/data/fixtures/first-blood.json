@@ -1,0 +1,366 @@
+[
+  {
+    "key": "ESPORTSTMNT02_3048494",
+    "gameId": "2022 Season World Championship/Main Event_Quarterfinals_2_3",
+    "version": 5,
+    "stats": {
+      "gameDuration": 1592,
+      "gameVersion": "12.18.471.9980",
+      "participants": [
+        {
+          "participantId": 1,
+          "teamId": 100,
+          "championId": 266,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 2,
+          "teamId": 100,
+          "championId": 254,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 3,
+          "teamId": 100,
+          "championId": 517,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 4,
+          "teamId": 100,
+          "championId": 523,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 5,
+          "teamId": 100,
+          "championId": 16,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 6,
+          "teamId": 200,
+          "championId": 777,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 7,
+          "teamId": 200,
+          "championId": 113,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 8,
+          "teamId": 200,
+          "championId": 84,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 9,
+          "teamId": 200,
+          "championId": 110,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 10,
+          "teamId": 200,
+          "championId": 223,
+          "firstBloodKill": false
+        }
+      ],
+      "teams": [
+        {
+          "teamId": 100,
+          "win": false,
+          "objectives": {
+            "champion": {
+              "first": true
+            }
+          }
+        },
+        {
+          "teamId": 200,
+          "win": true,
+          "objectives": {
+            "champion": {
+              "first": false
+            }
+          }
+        }
+      ]
+    },
+    "kills": [
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 203795,
+        "killerId": 0,
+        "victimId": 8,
+        "assistingParticipantIds": []
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 407827,
+        "killerId": 1,
+        "victimId": 7,
+        "assistingParticipantIds": [
+          3
+        ]
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 416923,
+        "killerId": 9,
+        "victimId": 3,
+        "assistingParticipantIds": [
+          7,
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "key": "LOLTMNT02_486481",
+    "gameId": "2026 Season World Championship/Main Event_Round 4_6_2",
+    "version": 5,
+    "stats": {
+      "gameDuration": 1572,
+      "gameVersion": "16.20.826.3891",
+      "participants": [
+        {
+          "participantId": 1,
+          "teamId": 100,
+          "championId": 799,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 2,
+          "teamId": 100,
+          "championId": 59,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 3,
+          "teamId": 100,
+          "championId": 50,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 4,
+          "teamId": 100,
+          "championId": 236,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 5,
+          "teamId": 100,
+          "championId": 902,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 6,
+          "teamId": 200,
+          "championId": 164,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 7,
+          "teamId": 200,
+          "championId": 246,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 8,
+          "teamId": 200,
+          "championId": 3,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 9,
+          "teamId": 200,
+          "championId": 498,
+          "firstBloodKill": false
+        },
+        {
+          "participantId": 10,
+          "teamId": 200,
+          "championId": 497,
+          "firstBloodKill": false
+        }
+      ],
+      "teams": [
+        {
+          "teamId": 100,
+          "win": true,
+          "objectives": {
+            "champion": {
+              "first": false
+            }
+          }
+        },
+        {
+          "teamId": 200,
+          "win": false,
+          "objectives": {
+            "champion": {
+              "first": true
+            }
+          }
+        }
+      ]
+    },
+    "kills": [
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 204200,
+        "killerId": 0,
+        "victimId": 5,
+        "assistingParticipantIds": []
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 205068,
+        "killerId": 4,
+        "victimId": 9,
+        "assistingParticipantIds": [
+          2,
+          5
+        ]
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 206805,
+        "killerId": 10,
+        "victimId": 2,
+        "assistingParticipantIds": [
+          9
+        ]
+      }
+    ]
+  },
+  {
+    "key": "TRKR1_610063",
+    "gameId": "Champions/2015 Season/Summer Promotion_Group B_2_2",
+    "version": 4,
+    "stats": {
+      "gameDuration": 2795,
+      "gameVersion": "5.8.0.461",
+      "participants": [
+        {
+          "participantId": 1,
+          "teamId": 100,
+          "championId": 14,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 2,
+          "teamId": 100,
+          "championId": 113,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 3,
+          "teamId": 100,
+          "championId": 7,
+          "stats": {
+            "firstBloodKill": true
+          }
+        },
+        {
+          "participantId": 4,
+          "teamId": 100,
+          "championId": 222,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 5,
+          "teamId": 100,
+          "championId": 412,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 6,
+          "teamId": 200,
+          "championId": 120,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 7,
+          "teamId": 200,
+          "championId": 20,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 8,
+          "teamId": 200,
+          "championId": 38,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 9,
+          "teamId": 200,
+          "championId": 15,
+          "stats": {
+            "firstBloodKill": false
+          }
+        },
+        {
+          "participantId": 10,
+          "teamId": 200,
+          "championId": 12,
+          "stats": {
+            "firstBloodKill": false
+          }
+        }
+      ],
+      "teams": [
+        {
+          "teamId": 100,
+          "win": "Fail",
+          "firstBlood": true
+        },
+        {
+          "teamId": 200,
+          "win": "Win",
+          "firstBlood": false
+        }
+      ]
+    },
+    "kills": [
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 133933,
+        "killerId": 0,
+        "victimId": 1,
+        "assistingParticipantIds": []
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 586161,
+        "killerId": 3,
+        "victimId": 8,
+        "assistingParticipantIds": []
+      },
+      {
+        "type": "CHAMPION_KILL",
+        "timestamp": 588994,
+        "killerId": 8,
+        "victimId": 3,
+        "assistingParticipantIds": []
+      }
+    ]
+  }
+]

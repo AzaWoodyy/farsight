@@ -4,8 +4,11 @@
  *
  * The credited first blood is the first champion kill, in time order, by an
  * identified participant against an identified opponent. An execution (a
- * death to a tower or minions, `killerId` 0) is not one: Riot then credits the
- * next kill. Riot's end-of-game flags (the player with `firstBloodKill`, the
+ * death to a tower or minions, `killerId` 0) is not one: match-v4 then credits
+ * the next kill. match-v5 may instead credit the execution itself to the
+ * team: no player has `firstBloodKill` and the team flag goes to the opponent
+ * of the executed player; the first blood is then that execution, with no
+ * killer. Riot's end-of-game flags (the player with `firstBloodKill`, the
  * team with first blood) are a consistency check: when they name another
  * player or team, or when a kill before it cannot be read (an unknown victim, a
  * kill between teammates), the first blood is unknown rather than a later
@@ -21,7 +24,8 @@ export type KillEvent = { timestamp: number; killerId?: number; victimId?: numbe
  */
 export type FirstBloodFlags = { killers: readonly number[]; teams: readonly number[]; notKillers: readonly number[]; notTeams: readonly number[] };
 
-export type FirstBlood<E extends KillEvent> = { event: E; killerId: number; victimId: number; killerTeam: number; victimTeam: number };
+/** `killerId` is null for an execution Riot credits to the team. */
+export type FirstBlood<E extends KillEvent> = { event: E; killerId: number | null; victimId: number; killerTeam: number; victimTeam: number };
 
 type FlagSource = {
   participants: readonly { participantId: number; firstBloodKill?: boolean; stats?: { firstBloodKill?: boolean } }[];
@@ -48,15 +52,23 @@ export function firstBloodFlags(stats: FlagSource): FirstBloodFlags {
 export function firstBlood<E extends KillEvent>(kills: readonly E[], teamOf: ReadonlyMap<number, number>, flags: FirstBloodFlags): FirstBlood<E> | null {
   const sorted = [...kills].sort((a, b) => a.timestamp - b.timestamp);
 
-  for (const event of sorted) {
+  for (const [i, event] of sorted.entries()) {
     const victimTeam = event.victimId == null ? undefined : teamOf.get(event.victimId);
 
     // Without a killer id the kill cannot be read; 0 (or any id that is no participant) is an execution.
     if (victimTeam == null || event.killerId == null) return null;
     const killerTeam = teamOf.get(event.killerId);
 
-    // An execution: no champion gets the kill, the next one is first blood.
-    if (killerTeam == null) continue;
+    if (killerTeam == null) {
+      // match-v5: the first death, an execution, credited to the other team with no player.
+      const team = flags.teams.length === 1 ? flags.teams[0] : null;
+
+      if (i === 0 && flags.killers.length === 0 && flags.notKillers.length > 0 && team != null && team !== victimTeam && [...teamOf.values()].includes(team))
+        return { event, killerId: null, victimId: event.victimId!, killerTeam: team, victimTeam };
+
+      // Otherwise no champion gets the kill, the next one is first blood.
+      continue;
+    }
 
     if (killerTeam === victimTeam) return null;
     const { killerId } = event;
