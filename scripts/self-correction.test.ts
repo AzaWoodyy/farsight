@@ -137,3 +137,66 @@ test("succeeds at once when the scope has games", async () => {
     await db.close();
   }
 });
+
+/** Faker in the seeded T1 lineup: the Worlds 2023 game is his only one. */
+async function seedPlayer(db: TestDb) {
+  await seed(db);
+  await db.exec(`
+    INSERT INTO players(id,page,ign) VALUES(1,'Faker','Faker');
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,win,kills,deaths,assists) VALUES(1,1,1,1,'Mid',1,3,1,7);
+  `);
+}
+
+const faker: Entities = {
+  ...entities,
+  players: [{ mention: "Faker", player: "Faker", matchedAlias: "Faker", realName: null, nativeName: null, otherCandidates: [], ambiguity: null }],
+  league: WORLDS,
+  leagueShort: "Worlds",
+};
+
+async function recentGames(db: TestDb, scope: Entities) {
+  const first = toolPlan(await bindTool(db, { tool: "player_recent_games", input: { player: "Faker", league: WORLDS, yearFrom: scope.yearFrom, yearTo: scope.yearTo, count: null } }), 1);
+  const notes: string[] = [];
+  const result = await execute(db, "dernières parties de Faker aux Worlds", scope, first, () => {}, notes);
+
+  return { ...result, notes };
+}
+
+test("says the named scope holds no game instead of showing another period", async () => {
+  const db = await testDb();
+
+  try {
+    await seedPlayer(db);
+    const out = await recentGames(db, { ...faker, yearFrom: 2020, yearTo: 2020 });
+
+    expect(out.rows).toEqual([]);
+    expect(out.plan.attempt).toBe(1);
+    expect(out.plan.relaxed).toEqual([]);
+    expect(out.notes).toEqual([]);
+    expect(out.empty?.reason).toBe("no_games");
+    expect(out.empty?.summary).toBe("Aucune partie de Faker aux Worlds en 2020 dans la base.");
+  } finally {
+    await db.close();
+  }
+});
+
+test("still widens the period when the named scope holds only qualifier games", async () => {
+  const db = await testDb();
+
+  try {
+    await seedPlayer(db);
+    await db.exec(`
+      INSERT INTO tournaments(id,page,event_page,stage,name,league_id,year) VALUES(2,'2020 Season World Championship/Qualifier','2020 Season World Championship','qualifier','Worlds 2020 Qualifier',1,2020);
+      INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at) VALUES(2,2,1,2,1,1800,1600000000);
+      INSERT INTO game_players(game_id,player_id,team_id,side,role,win,kills,deaths,assists) VALUES(2,1,1,1,'Mid',1,2,0,5);
+    `);
+    const out = await recentGames(db, { ...faker, yearFrom: 2020, yearTo: 2020 });
+
+    expect(out.rows).toHaveLength(1);
+    expect(out.plan.attempt).toBe(2);
+    expect(out.plan.relaxed).toEqual(["period"]);
+    expect(out.notes).toEqual(["Rien entre 2020 et 2020 : affichage de toutes les saisons."]);
+  } finally {
+    await db.close();
+  }
+});
