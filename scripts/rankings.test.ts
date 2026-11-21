@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { guardQuery } from "../src/lib/agent/guard";
 import { withLocale } from "../src/lib/agent/messages";
-import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf } from "../src/lib/agent/query";
+import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf, toolPlan } from "../src/lib/agent/query";
+import { execute } from "../src/lib/agent/run";
 import { detectMetric } from "../src/lib/agent/metrics";
 import { bindTool, type ChampionRankingInput } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer } from "../src/lib/agent/types";
@@ -794,17 +795,16 @@ describe("rankings of one split", () => {
       expect(en.facts).toContain("in the Summer split in LEC in 2024");
     }));
 
-  test("a split without a game widens to the whole season and says so", () =>
+  test("a split without a game says so, without widening to the whole season", () =>
     seededSplits(async (db) => {
-      const champions = (await bindTool(db, { tool: "champion_ranking", input: { ...picks, split: "Winter" } })).relaxations(LEC24);
-      const players = (await bindTool(db, { tool: "player_leaderboard", input: { ...kills, split: "Winter" } })).relaxations(LEC24);
+      for (const call of [{ tool: "champion_ranking", input: { ...picks, split: "Winter" } }, { tool: "player_leaderboard", input: { ...kills, split: "Winter" } }] as const) {
+        const notes: string[] = [];
+        const out = await execute(db, "classement en LEC Winter 2024", { ...LEC24, split: "Winter" }, toolPlan(await bindTool(db, call), 1), () => {}, notes);
 
-      expect(champions.map((r) => r.key)).toEqual(["split", "period"]);
-      expect(players.map((r) => r.key)).toEqual(["split", "period"]);
-      expect(champions[0].note).toBe("Aucune partie au split Winter : classement sur toute la saison.");
-
-      const widened = await champions[0].next();
-
-      await expect(widened.format(db, await db.query(widened.sql, widened.params))).resolves.toMatchObject({ totals: { leader: "Orianna", games: 5 }, title: "Champions les plus joués — LEC 2024" });
+        expect(out.rows).toEqual([]);
+        expect(out.plan.relaxed).toEqual([]);
+        expect(notes).toEqual([]);
+        expect(out.empty).toMatchObject({ reason: "no_games", summary: "Aucune partie au split Winter en LEC en 2024 dans la base." });
+      }
     }));
 });

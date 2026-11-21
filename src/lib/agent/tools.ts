@@ -1085,14 +1085,6 @@ const rankingTitleScope = (league: string, input: Period & { split?: string | nu
   return scope ? (open === " (" ? scope.replace(/\)$/, ` ${input.split})`) : `${scope} ${input.split}`) : `${open}${input.split}${open === " (" ? ")" : ""}`;
 };
 
-/** A ranking with no game in its split: the whole season, said as such. */
-const noSplit = <I extends { split?: string | null }>(input: I): Relaxation<I> => ({
-  key: "split",
-  input: { ...input, split: null },
-  note: say(`Aucune partie au split ${input.split} : classement sur toute la saison.`, `No game in the ${input.split} split: ranking over the whole season.`),
-  reason: say("filtre de split retiré", "split filter removed"),
-});
-
 /** The roster's competition: the one asked, otherwise every competition but those a roster leaves out (ROSTER_EXCLUDED). */
 const rosterLeague = (column: string, input: TeamRosterInput, params: Params) =>
   input.league ? `AND ${leagueFilter(column, input, params)}` : `AND ${column} NOT IN (${inList("rosterExcluded", [...ROSTER_EXCLUDED], params)})`;
@@ -2587,8 +2579,6 @@ LIMIT 20`),
     if ((needsMinPicks(input) || (totalSortOf(input) && input.minPicks != null)) && input.minPicks !== 1)
       out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: say("Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", "Too few picks per champion in this scope: threshold lowered to 1 pick."), reason: say("seuil de picks abaissé", "pick threshold lowered") });
 
-    if (input.split) out.push(noSplit(input));
-
     if (hasPeriod(input)) out.push(noPeriod(input, input.split ? say(`toutes les saisons (split ${input.split})`, `every season (${input.split} split)`) : say("toutes les saisons", "every season")));
 
     return out;
@@ -3547,8 +3537,6 @@ LIMIT 20`),
 
     if (input.minGames == null && minGamesOfLeaderboard(input) > 3)
       out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: say("Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", "Few games per player in this scope: threshold lowered to 3 games."), reason: say("seuil de parties abaissé", "game threshold lowered") });
-
-    if (input.split) out.push(noSplit(input));
 
     if (hasPeriod(input)) out.push(noPeriod(input, input.split ? say(`toutes les saisons (split ${input.split})`, `every season (${input.split} split)`) : say("toutes les saisons", "every season")));
 
