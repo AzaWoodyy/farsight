@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { InMemorySpanExporter, type ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { generateText } from "ai";
@@ -16,6 +16,7 @@ import {
 } from "../src/lib/agent/trace";
 import type { Answer, Entities, QueryPlan, StepName, StepPart } from "../src/lib/agent/types";
 import { FEEDBACK_SCORE, flushTracing, sampleRate, sendFeedback, shutdownTracing, startTracing } from "../src/lib/tracing/langfuse";
+import { MASKED, maskPersonalData } from "../src/lib/tracing/mask";
 
 /** Conversation id as the browser makes it up. */
 const SESSION = "2b6f0cff-4e0f-4e5c-9d2a-6a4b8f3c1d7e";
@@ -195,6 +196,48 @@ test("sample rate: a ratio between 0 and 1, everything by default", () => {
   expect(sampleRate("abc")).toBe(1);
 });
 
+describe("personal data in a question", () => {
+  test.each([
+    ["mon ip est 2001:db8::1 merci", `mon ip est ${MASKED} merci`],
+    ["fe80::1ff:fe23:4567:890a", MASKED],
+    ["::1", MASKED],
+    ["2001:db8:85a3::8a2e:370:7334", MASKED],
+    ["2001:0db8:85a3:0000:0000:8a2e:0370:7334", MASKED],
+    ["192.168.1.20", MASKED],
+    ["serveur [2001:db8::1]:8080 ?", `serveur [${MASKED}]:8080 ?`],
+    ["::ffff:192.0.2.1", MASKED],
+    ["2001:db8:1:2:3:4:5::", MASKED],
+    ["ip:2001:db8::1, puis fe80::1%eth0.", `ip:${MASKED}, puis ${MASKED}%eth0.`],
+    ["fe80::1%eth-0", `${MASKED}%eth-0`],
+    [`fe80::1%${"z".repeat(80)}`, `${MASKED}%${"z".repeat(80)}`],
+    ["2001:db8::: exemple", `${MASKED}: exemple`],
+    ["_2001:db8::1_.", `_${MASKED}_.`],
+    ["2001:db8::1...2001:db8::2", `${MASKED}...${MASKED}`],
+    ["Mon IP est 2001:db8::1.Merci", `Mon IP est ${MASKED}.Merci`],
+    ["Mon IP est 2001:db8::1.2e question", `Mon IP est ${MASKED}.2e question`],
+    ["2001:db8::1.2001:db8::2", `${MASKED}.${MASKED}`],
+    ["2001:db8::1:OK", `${MASKED}:OK`],
+    ["::ffff:192.0.2.1:OK", `${MASKED}:OK`],
+  ])("%p is masked", (question, masked) => {
+    expect(maskPersonalData(question)).toBe(masked);
+  });
+
+  test.each([
+    "Faker à 12:34 contre Gen.G",
+    "score 3:2 en finale",
+    "KDA 5:1:7 de Chovy",
+    "gold à 15:00",
+    "T1 vs Gen.G : qui gagne ?",
+    "LCK 2019 - 2026",
+    "Match à 19:46, T1 2:0 Gen.G",
+    "Faker (Lee Sang-hyeok) : bilan 3:1",
+    "partie du 2026-11-14T19:46:00.000Z",
+    "SELECT x::int, (::) FROM v_games",
+  ])("%p is kept as written", (question) => {
+    expect(maskPersonalData(question)).toBe(question);
+  });
+});
+
 test("unconsumed words leave out entities, years and personal data", () => {
   expect(unconsumedWords(QUESTION, entities)).toEqual(["bilan", "aux", "réponse"]);
 });
@@ -325,6 +368,46 @@ test("a question is one trace: root, step observations and the LLM generation", 
 
   // Every observation says which question it belongs to.
   for (const span of spans) expect(String(attr(span, "langfuse.trace.metadata.question"))).toContain("bilan de Chovy");
+});
+
+test("a compressed IPv6 address never reaches an exported span, a game clock does", async () => {
+  const address = "2001:db8::42";
+  const question = `Faker à 12:34 contre Gen.G, mon serveur est ${address}`;
+
+  await traceQuestion(question, SESSION, async (id) => {
+    await traceStep(
+      "understand",
+      { question },
+      async () => {
+        await generateText({ model, prompt: question, telemetry: { functionId: "extract-entities" } });
+
+        return entities;
+      },
+      (e) => understandReport(question, e, undefined),
+    );
+
+    return id;
+  });
+
+  await flushTracing();
+  const spans = exporter.getFinishedSpans();
+  const root = spans.find((s) => s.name === TRACE_NAME)!;
+  const generation = spans.find((s) => s.name === "extract-entities")!;
+  const masked = `Faker à 12:34 contre Gen.G, mon serveur est ${MASKED}`;
+
+  expect(root).toBeDefined();
+  expect(generation).toBeDefined();
+  expect(attr(root, "langfuse.trace.name")).toBe(masked);
+  expect(attr(root, "langfuse.observation.input")).toBe(masked);
+  expect(String(attr(root, "langfuse.trace.metadata.question"))).toContain(masked);
+  expect(String(attr(generation, "langfuse.observation.input"))).toContain(masked);
+
+  // Nothing exported, name or text attribute, carries the address.
+  const exported = JSON.stringify(spans.map((s) => ({ name: s.name, attributes: s.attributes })));
+
+  expect(exported).toContain("12:34");
+  expect(exported).not.toContain(address);
+  expect(exported).not.toContain("db8::");
 });
 
 test("every LLM call of a question hangs in its tree, failures included", async () => {
