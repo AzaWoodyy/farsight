@@ -482,6 +482,37 @@ export type ChampionSetups = {
   notes: string[];
 };
 
+/** A rune page as the scoreboards give it, without the stat shards: the keystone, three primary and two secondary runes. */
+export type RunePage = { runes: { rune: string; kind: RuneKind; tree: string | null; icon: string | null }[]; games: number; wins: number };
+
+/** One tree of the page, as the primary path (counted on the keystones) or as the secondary one (counted on the full pages). */
+export type RuneTree = { tree: string; part: "primary" | "secondary"; games: number; wins: number };
+
+/** One player's runes in a scope (player_runes tool), from Leaguepedia's scoreboards. */
+export type PlayerRunes = {
+  player: string;
+  /** "aux Worlds en 2019", "" for every competition and season. */
+  scope: string;
+  /** The champion the question narrows to, null for every champion. */
+  champion: { name: string; icon: string | null } | null;
+  role: string | null;
+  /** Games of the player in the scope, and their wins. */
+  games: number;
+  wins: number;
+  /** Games with a keystone, the share denominator of the keystones and the primary trees. */
+  keystoneGames: number;
+  /** Games with the whole page, the share denominator of the other runes, the secondary trees and the pages. */
+  pageGames: number;
+  /** Most games first, every kind; the view groups them by kind and tree. */
+  runes: ChampionRune[];
+  /** Most games first in each part. */
+  trees: RuneTree[];
+  /** The most frequent pages, most games first. */
+  pages: RunePage[];
+  /** Why part of the scope has no runes (none before 2018, keystone only until part of 2020). */
+  notes: string[];
+};
+
 /** One champion in a competition and period (champion_event_stats tool); null figures are not in the data ("n/d"). */
 export type ChampionProfile = {
   champion: string;
@@ -563,6 +594,8 @@ export type Answer = {
   champion: ChampionProfile | null;
   /** The champions a player or a team played (champion_pool tool). */
   pool: ChampionPool | null;
+  /** One player's keystones, trees and pages (player_runes tool). */
+  runes: PlayerRunes | null;
   /** Series shown as best-of units, with their games (series tool). */
   series: SeriesList | null;
   /** Champion name → Data Dragon icon, for every champion a table names (champion layouts). */

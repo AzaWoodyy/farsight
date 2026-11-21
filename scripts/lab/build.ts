@@ -52,7 +52,7 @@ for (const v of LAB_VARIANTS) {
     ? [
         answer.rows.length && "rows",
         answer.table && `table(${answer.table.rows.length})`,
-        ...(["timeline", "scoreboard", "versus", "teams", "roster", "champion", "pool", "series"] as const).filter((k) => answer[k]),
+        ...(["timeline", "scoreboard", "versus", "teams", "roster", "champion", "pool", "runes", "series"] as const).filter((k) => answer[k]),
       ]
         .filter(Boolean)
         .join("+") || "texte"

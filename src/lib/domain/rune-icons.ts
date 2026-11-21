@@ -41,3 +41,19 @@ export function runeIcon(name: string, stored: string | null): string | null {
 
   return stored ?? (path ? `${CDN}/${path}` : null);
 }
+
+/** The five trees of the page, as Data Dragon's unversioned `cdn/img/` serves their icons (Inspiration is "Whimsy" there). */
+const TREES = new Map([
+  ["Domination", "Styles/7200_Domination.png"],
+  ["Precision", "Styles/7201_Precision.png"],
+  ["Sorcery", "Styles/7202_Sorcery.png"],
+  ["Inspiration", "Styles/7203_Whimsy.png"],
+  ["Resolve", "Styles/7204_Resolve.png"],
+]);
+
+/** The icon of a rune tree, null for a tree Data Dragon does not name. */
+export function treeIcon(tree: string): string | null {
+  const path = TREES.get(tree);
+
+  return path ? `${CDN}/${path}` : null;
+}

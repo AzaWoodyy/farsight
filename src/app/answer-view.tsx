@@ -17,6 +17,7 @@ import { useLocale, useUi } from "./i18n/locale-context";
 import { SeriesView } from "./series-view";
 import { PlayerComparison } from "./player-comparison";
 import { PlayerHeader } from "./player-header";
+import { PlayerRunesView } from "./player-runes-view";
 import { TeamHeadToHead } from "./team-h2h";
 import { TeamRoster } from "./team-roster";
 import { LeagueTag } from "./league-tag";
@@ -48,6 +49,8 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
         <SeriesView list={answer.series} table={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.pool ? (
         <ChampionPoolView pool={answer.pool} fallback={answer.table && <GenericTable table={answer.table} />} />
+      ) : answer.runes ? (
+        <PlayerRunesView r={answer.runes} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.versus ? (
         <Versus v={answer.versus} profiles={answer.profiles} fallback={answer.table && <GenericTable table={answer.table} />} />
       ) : answer.teams ? (

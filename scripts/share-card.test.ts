@@ -18,6 +18,7 @@ function answer(over: Partial<Omit<Answer, "meta">> = {}, meta: Partial<Answer["
     roster: null,
     champion: null,
     pool: null,
+    runes: null,
     series: null,
     icons: {},
     iconTones: {},

@@ -1,5 +1,5 @@
 {
-  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts. The `empty` case (2026-11-17) is an empty result the scope explains (src/lib/agent/empty.ts): a player's only games on a champion in regional qualifiers (Faker on Azir, LCK 2024 Regional Finals, shown as the answer's one row); cross-checked with independent SQL on v_game_players. The `empty-recent-games-year` cases (2026-11-21, data-20261121) are a typed tool whose named scope holds no game: the answer says so instead of widening the period (Rahel played LEC and LTA North in 2025, no LCK CL game; cross-checked with independent SQL on v_game_players). The `riot-fallback` cases (2026-11-21, data-20261121, derive 4) need the values the Riot JSON fills when Leaguepedia's scoreboard has none (scripts/data/derive.ts, `from_riot`): damage at Worlds 2016 (per game and per minute), vision at Worlds 2017, heralds in LCK 2016, full rune pages in 2018 with the ids Riot later reassigned (8135 Ravenous Hunter before 12.6, 8230 Phase Rush before 16.9) named by the game's version; each fails on a database derived without that fill. Their totals were cross-checked with independent SQL on the base tables and, for one game each, with the raw Riot JSON (totalDamageDealtToChampions, visionScore, perk0..5, riftHeraldKills, gameVersion). The `abbreviation-scope` cases (2026-11-21, data-20261121) name a team by an abbreviation two teams share, in a scope only the one with fewer games played: NIP in EU LCS 2017 is Ninjas in Pyjamas (not Ninjas in Pyjamas.CN), RYL at Worlds 2019 is Royal Youth (not Royal Club); cross-checked with independent SQL on games and tournaments.",
+  "$comment": "Reference questions for `bun run eval`. Values come from data/lol.sqlite (schema v6, full scope, in-game stats from the Riot JSON on Leaguepedia as of 2026-11-14); key totals were cross-checked with independent SQL on the base tables. `expect` fields: route (tool name, sql or out_of_scope), players / teams / champion (resolved names, order matters), league (Leaguepedia League), input (subset of the tool input), rows (exact count) or rowsMin (minimum), totals (subset of answer.meta.totals), ambiguity ({mention, chosen, alternatives (subset)}), attempts, notes (substrings), sources (minimum count, Leaguepedia links). Timeline questions read the Riot JSON from R2 (R2_READ_*) or, locally, from data/raw/riot; without either their totals.timeline is \"unconfigured\". Checks that need a query result are skipped when the route is sql and no OPENROUTER_API_KEY is set. `now` is the date relative seasons are resolved against (\"l'an dernier\" = 2025). `expect.unread` lists the words the rules did not understand when they put the route in doubt (answer.meta.unread). A case marked `llm: true` needs the LLM to reach its expected route (the rules hand it to the LLM router): without a key only its rules-level checks run (steps, players, teams, champion, unread) and it is reported as needing the LLM, not as passed. The `paraphrase` cases are the 30 questions of the routing audit of 2026-11-14, the `variant` cases their variants. The `champion` and `lane` cases (2026-11-14) cover the champion profile and ranking tools and the role leaderboards; their key totals were cross-checked with independent SQL on the base tables. The `roster` cases (2026-11-14) cover the team roster tool (players by role over a period, renamed teams merged); their game counts were cross-checked with independent SQL on the base tables. The `pool` cases (2026-11-14) cover the champion pool of a player or a team (champion_pool tool); their key totals were cross-checked with independent SQL on the base tables. The `pool` cases tagged `alias` (2026-11-14) cover the short and reordered ways to ask for a champion pool (\"pool champ bin\", \"bin champ pool\", \"pool bin\", near typos); their key totals were cross-checked with independent SQL on v_game_players. The `items` cases (2026-11-15) cover a champion's end-of-game items (Leaguepedia ScoreboardPlayers.Items, Data Dragon kinds); the first dragon cases show the count beside the share. Their key totals were cross-checked with independent SQL on the base tables, and the MSI 2023 game counts per team with gol.gg. `worlds-chovy-closed` (2026-11-15) is the question the Data release workflow asks the new database: closed editions only, so its totals hold on fresh data; cross-checked with independent SQL on game_players (regional qualifiers excluded). Expectations that include the Worlds 2026 final (4 games, Bilibili Gaming 3-1 Gen.G, 2026-11-14) were updated on 2026-11-15 to the data-20261115 release; the final standings of an edition still in progress are covered by scripts/architecture.test.ts. The `empty` case (2026-11-17) is an empty result the scope explains (src/lib/agent/empty.ts): a player's only games on a champion in regional qualifiers (Faker on Azir, LCK 2024 Regional Finals, shown as the answer's one row); cross-checked with independent SQL on v_game_players. The `empty-recent-games-year` cases (2026-11-21, data-20261121) are a typed tool whose named scope holds no game: the answer says so instead of widening the period (Rahel played LEC and LTA North in 2025, no LCK CL game; cross-checked with independent SQL on v_game_players). The `riot-fallback` cases (2026-11-21, data-20261121, derive 4) need the values the Riot JSON fills when Leaguepedia's scoreboard has none (scripts/data/derive.ts, `from_riot`): damage at Worlds 2016 (per game and per minute), vision at Worlds 2017, heralds in LCK 2016, full rune pages in 2018 with the ids Riot later reassigned (8135 Ravenous Hunter before 12.6, 8230 Phase Rush before 16.9) named by the game's version; each fails on a database derived without that fill. Their totals were cross-checked with independent SQL on the base tables and, for one game each, with the raw Riot JSON (totalDamageDealtToChampions, visionScore, perk0..5, riftHeraldKills, gameVersion). The `player-runes` cases (2026-11-21, data-20261121-4) cover one player's runes (player_runes tool): keystones, trees and pages in a scope, on a champion, and the LPL 2019 scope where only the keystone is listed; the champion questions tagged `player-runes` check that a champion's runes stay on its profile. Their totals were cross-checked with independent SQL on v_game_players and game_player_runes. The `abbreviation-scope` cases (2026-11-21, data-20261121) name a team by an abbreviation two teams share, in a scope only the one with fewer games played: NIP in EU LCS 2017 is Ninjas in Pyjamas (not Ninjas in Pyjamas.CN), RYL at Worlds 2019 is Royal Youth (not Royal Club); cross-checked with independent SQL on games and tournaments.",
   "now": "2026-11-14",
   "questions": [
     {
@@ -1509,6 +1509,244 @@
         "summaryIncludes": [
           "Lethal Tempo"
         ]
+      }
+    },
+    {
+      "id": "player-runes-faker-worlds-2019",
+      "question": "runes de Faker aux Worlds 2019",
+      "tags": [
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "player": "Faker",
+          "yearFrom": 2019,
+          "yearTo": 2019,
+          "champion": null,
+          "role": null
+        },
+        "totals": {
+          "games": 14,
+          "wins": 9,
+          "keystone_games": 14,
+          "page_games": 14,
+          "top_keystone": "Fleet Footwork",
+          "top_keystone_games": 3,
+          "top_keystone_wins": 2,
+          "keystones": 8
+        },
+        "summaryIncludes": [
+          "Fleet Footwork (3/14 parties"
+        ]
+      }
+    },
+    {
+      "id": "player-runes-faker-worlds-2019-en",
+      "question": "Faker's runes at Worlds 2019",
+      "locale": "en",
+      "tags": [
+        "english",
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "player": "Faker",
+          "yearFrom": 2019,
+          "yearTo": 2019
+        },
+        "totals": {
+          "games": 14,
+          "keystone_games": 14,
+          "page_games": 14,
+          "top_keystone": "Fleet Footwork"
+        },
+        "summaryIncludes": [
+          "Fleet Footwork (3/14 games"
+        ]
+      }
+    },
+    {
+      "id": "player-runes-chovy-lck-2025",
+      "question": "keystones de Chovy en LCK 2025",
+      "tags": [
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Chovy"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "player": "Chovy",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "totals": {
+          "games": 116,
+          "wins": 87,
+          "keystone_games": 116,
+          "page_games": 116,
+          "top_keystone": "Phase Rush",
+          "top_keystone_games": 42,
+          "top_keystone_wins": 36
+        },
+        "summaryIncludes": [
+          "Phase Rush (42/116 parties"
+        ]
+      }
+    },
+    {
+      "id": "player-runes-chovy-lck-2025-en",
+      "question": "Chovy's keystones in LCK 2025",
+      "locale": "en",
+      "tags": [
+        "english",
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Chovy"
+        ],
+        "league": "LoL Champions Korea",
+        "input": {
+          "player": "Chovy",
+          "yearFrom": 2025,
+          "yearTo": 2025
+        },
+        "totals": {
+          "games": 116,
+          "top_keystone": "Phase Rush",
+          "top_keystone_games": 42
+        }
+      }
+    },
+    {
+      "id": "player-runes-faker-azir",
+      "question": "runes de Faker sur Azir",
+      "tags": [
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Faker"
+        ],
+        "champion": "Azir",
+        "input": {
+          "player": "Faker",
+          "league": null,
+          "champion": "Azir"
+        },
+        "totals": {
+          "games": 202,
+          "wins": 145,
+          "keystone_games": 172,
+          "page_games": 172,
+          "top_keystone": "Lethal Tempo",
+          "top_keystone_games": 71,
+          "top_keystone_wins": 55
+        },
+        "notes": [
+          "toutes compétitions confondues"
+        ]
+      }
+    },
+    {
+      "id": "player-runes-rookie-lpl-2019-keystone-only",
+      "question": "runes de Rookie en LPL 2019",
+      "tags": [
+        "player-runes",
+        "runes"
+      ],
+      "expect": {
+        "route": "player_runes",
+        "players": [
+          "Rookie"
+        ],
+        "league": "Tencent LoL Pro League",
+        "input": {
+          "player": "Rookie",
+          "yearFrom": 2019,
+          "yearTo": 2019
+        },
+        "totals": {
+          "games": 75,
+          "wins": 47,
+          "keystone_games": 72,
+          "page_games": 0,
+          "top_keystone": "Electrocute",
+          "top_keystone_games": 25
+        },
+        "summaryIncludes": [
+          "Seule la keystone est listée"
+        ]
+      }
+    },
+    {
+      "id": "champion-runes-azir-worlds-2025-unchanged",
+      "question": "Runes d'Azir aux Worlds 2025",
+      "tags": [
+        "champion",
+        "runes",
+        "player-runes"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Azir",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "focus": "runes"
+        },
+        "totals": {
+          "picks": 14,
+          "keystone_games": 14,
+          "top_keystone": "Lethal Tempo",
+          "top_keystone_games": 14
+        }
+      }
+    },
+    {
+      "id": "champion-runes-azir-worlds-2025-unchanged-en",
+      "question": "Azir runes at Worlds 2025",
+      "locale": "en",
+      "tags": [
+        "english",
+        "champion",
+        "runes",
+        "player-runes"
+      ],
+      "expect": {
+        "route": "champion_event_stats",
+        "champion": "Azir",
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2025,
+          "yearTo": 2025,
+          "focus": "runes"
+        },
+        "totals": {
+          "picks": 14,
+          "top_keystone": "Lethal Tempo"
+        }
       }
     },
     {
