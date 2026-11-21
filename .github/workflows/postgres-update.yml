@@ -1,7 +1,7 @@
 name: Postgres update
 
 # Daily update of the Postgres (Neon) database. Same ingestion as Data release (Cargo tables in full, Riot game JSON incremental from the previous
-# release's in-game summaries, R2 first, the wiki time-boxed), then `db:load` into Neon instead of a SQLite release:
+# release's in-game summaries and the ones the last run left on R2, R2 first, the wiki time-boxed), then `db:load` into Neon instead of a SQLite release:
 # migrations into a fresh schema, COPY, then a swap in one transaction: no moment without data.
 # The app reads the new data as soon as the load commits, without a redeployment.
 #
