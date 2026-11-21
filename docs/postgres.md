@@ -57,8 +57,9 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
 - **GitHub** : `NEON_DATABASE_OWNER_URL` (propriétaire, hôte direct) charge, `NEON_DATABASE_URL` (`farsight_app`)
   vérifie.
 - **Mise à jour** (`.github/workflows/postgres-update.yml`) : chaque jour à 05:23 UTC et à la demande, depuis `main`
-  seulement. Elle reprend les résumés in-game que le run précédent a laissés sur R2 (`derived/ingame.jsonl.zst`, réécrit
-  à la fin de chaque run ; sans cet objet, tout est recalculé depuis le JSON Riot de R2, une dizaine de minutes), relit
+  seulement. Elle reprend les résumés in-game de la dernière Data release, complétés par ceux que le run précédent a
+  laissés sur R2 (`derived/ingame.jsonl.zst`, réécrit à la fin de chaque run : les parties arrivées depuis la release ne
+  sont pas recalculées), relit
   Leaguepedia en entier (environ 17 minutes), complète le JSON Riot des nouvelles parties (R2 d'abord, puis le wiki, 30 minutes au plus) et Data
   Dragon, lance `db:load` puis pose la question de référence sur Neon. L'app lit les nouvelles données au plus
   5 minutes après le chargement. Elle partage le groupe de concurrence `leaguepedia-ingestion` avec la Data release :

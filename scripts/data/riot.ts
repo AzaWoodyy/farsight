@@ -203,13 +203,14 @@ export async function pullSummaries(remote: ObjectStore, file = INGAME_FILE): Pr
 }
 
 /**
- * Writes the local summaries (latest line per game, sorted by key) to R2,
- * unless they are what `pullSummaries` read. Returns whether R2 holds them
+ * Writes the local summaries (latest line per game, in the order of the file:
+ * of two summaries of one game, the derivation keeps the first) to R2, unless
+ * they are what `pullSummaries` read. Returns whether R2 holds them
  * now: a failed upload only costs the next run the summaries of this one.
  */
 export async function pushSummaries(remote: ObjectStore, pulled: PulledSummaries | null, file = INGAME_FILE): Promise<boolean> {
-  const lines = existsSync(file) ? [...latestLines(readFileSync(file, "utf8"))].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : [];
-  const text = Buffer.from(lines.map(([, line]) => `${line.raw}\n`).join(""));
+  const lines = existsSync(file) ? [...latestLines(readFileSync(file, "utf8")).values()] : [];
+  const text = Buffer.from(lines.map((line) => `${line.raw}\n`).join(""));
 
   if (!lines.length || sha256(text) === pulled?.sha256) return true;
 

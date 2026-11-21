@@ -370,7 +370,7 @@ test("a machine without summaries takes them from R2, reads no game, and uploads
   }
 });
 
-test("the summaries of a run are written to R2 with the ones it started from, sorted by game", async () => {
+test("the summaries of a run are written to R2 after the ones it started from, in the order of the file", async () => {
   const objects = new Map([[rawGameKey("SUM_B"), encodeRawGame(game("SUM_B"))]]);
   const r2 = fakeR2(objects);
   const seed = join(dir, "summaries-grow-seed.jsonl");
@@ -387,7 +387,8 @@ test("the summaries of a run are written to R2 with the ones it started from, so
 
     expect(await pushSummaries(r2.store, pulled, ingameFile)).toBe(true);
     const stored = zstdDecompressSync(objects.get(SUMMARIES_KEY)!).toString("utf8").trim().split("\n").map((l) => IngameLine.parse(JSON.parse(l)));
-    expect(stored.map((l) => [l.key, l.status])).toEqual([["SUM_A", "ok"], ["SUM_B", "ok"], ["SUM_C", "ok"]]);
+    expect(stored.map((l) => [l.key, l.status])).toEqual([["SUM_C", "ok"], ["SUM_A", "ok"], ["SUM_B", "ok"]]);
+    expect([...loadIngame(ingameFile).keys()]).toEqual(["SUM_C", "SUM_A", "SUM_B"]);
   } finally {
     r2.stop();
   }
