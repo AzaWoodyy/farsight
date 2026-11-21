@@ -544,8 +544,9 @@ Ils ne coûtent jamais d'appel au modèle : une lecture SQL et, pour l'image, so
 rendu, mis en cache par le CDN cinq minutes. Le code limite `/api/card` à 300
 requêtes par IP et par 10 minutes, par instance, et les pages `/q` et `/en/q`
 (où mènent ces liens) à 300 autres, partagées entre les deux (`link`) : un lien
-limité garde la carte de la page d'accueil, jamais une page d'erreur. La carte
-d'une question est calculée au plus une fois par cinq minutes et par instance.
+limité garde la carte de la page d'accueil, jamais une page d'erreur. Chaque
+instance garde la carte de 500 questions au plus pendant cinq minutes, et
+recalcule dès la demande suivante celle dont le calcul a échoué.
 `/api/card` redirige (308) toute autre chaîne de requête vers son adresse
 canonique, `?l=<langue>&q=<question>`, celle que nomment les métadonnées : un
 paramètre en plus n'ouvre pas une nouvelle entrée du CDN. Aucune règle du
