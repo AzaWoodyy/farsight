@@ -674,7 +674,8 @@ Ce qui part chez Langfuse, une trace `answer-question` par question :
 - des tags pour filtrer : `empty-result`, `error`, `out-of-scope`,
   `missing-data`, `no-query`, `sql-fallback`, `self-corrected`, `llm`,
   `llm-error`, `llm-quota`, `low-confidence`, `unresolved-mention`,
-  `ambiguous-alias` ;
+  `ambiguous-alias`, et la langue de la réponse, `locale:fr` ou `locale:en`
+  (aussi en métadonnée `locale` de chaque observation) ;
 - le pouce haut ou bas de l'interface, en score booléen `response_rating`
   (`POST /api/feedback`).
 

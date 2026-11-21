@@ -9,12 +9,14 @@ import {
   recordOutcome,
   STEP_SPANS,
   TRACE_NAME,
+  localeTag,
   traceQuestion,
   traceStep,
   unconsumedWords,
   understandReport,
 } from "../src/lib/agent/trace";
 import type { Answer, Entities, QueryPlan, StepName, StepPart } from "../src/lib/agent/types";
+import type { Locale } from "../src/lib/locale";
 import { FEEDBACK_SCORE, flushTracing, sampleRate, sendFeedback, shutdownTracing, startTracing } from "../src/lib/tracing/langfuse";
 import { MASKED, maskPersonalData } from "../src/lib/tracing/mask";
 
@@ -111,8 +113,8 @@ const model = new MockLanguageModelV4({
 });
 
 /** The question as the route runs it, with one LLM call in the understand step. */
-function runQuestion(outcome: Answer) {
-  return traceQuestion(QUESTION, SESSION, async (traceId) => {
+function runQuestion(outcome: Answer, locale: Locale = "fr") {
+  return traceQuestion(QUESTION, SESSION, locale, async (traceId) => {
     const done = new Map<StepName, StepPart>();
 
     await traceStep(
@@ -161,7 +163,7 @@ test("without the three Langfuse variables tracing stays off", () => {
     import { langfuseConfig, startTracing, flushTracing } from "./src/lib/tracing/langfuse";
     import { traceQuestion } from "./src/lib/agent/trace";
     if (langfuseConfig() !== null || startTracing() !== false) process.exit(1);
-    if (await traceQuestion("test", null, async id => id) !== null) process.exit(2);
+    if (await traceQuestion("test", null, "fr", async id => id) !== null) process.exit(2);
     await flushTracing();
   `], { env, encoding: "utf8", timeout: 5000 });
 
@@ -326,7 +328,7 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(attr(root, "langfuse.observation.type")).toBe("agent");
   expect(attr(root, "langfuse.observation.output")).toBe("Chovy a disputé 8 éditions des Worlds.");
   expect(attr(root, "langfuse.observation.level")).toBe("ERROR");
-  expect(attr(root, "langfuse.trace.tags")).toEqual(["empty-result", "error", "self-corrected", "sql-fallback", "llm", "low-confidence", "unresolved-mention"]);
+  expect(attr(root, "langfuse.trace.tags")).toEqual(["empty-result", "error", "self-corrected", "sql-fallback", "llm", "low-confidence", "unresolved-mention", "locale:fr"]);
   expect(meta(root, "route")).toBe("sql");
   expect(meta(root, "locale")).toBe("fr");
   expect(meta(root, "llmCalls")).toBe(1);
@@ -375,7 +377,7 @@ test("a compressed IPv6 address never reaches an exported span, a game clock doe
   const address = "2001:db8::42";
   const question = `Faker à 12:34 contre Gen.G, mon serveur est ${address}`;
 
-  await traceQuestion(question, SESSION, async (id) => {
+  await traceQuestion(question, SESSION, "fr", async (id) => {
     await traceStep(
       "understand",
       { question },
@@ -402,6 +404,8 @@ test("a compressed IPv6 address never reaches an exported span, a game clock doe
   expect(attr(root, "langfuse.observation.input")).toBe(masked);
   expect(String(attr(root, "langfuse.trace.metadata.question"))).toContain(masked);
   expect(String(attr(generation, "langfuse.observation.input"))).toContain(masked);
+  // No outcome recorded: the language is still tagged, from the opening of the trace.
+  expect(attr(root, "langfuse.trace.tags")).toEqual(["locale:fr"]);
 
   // Nothing exported, name or text attribute, carries the address.
   const exported = JSON.stringify(spans.map((s) => ({ name: s.name, attributes: s.attributes })));
@@ -434,7 +438,7 @@ test("every LLM call of a question hangs in its tree, failures included", async 
     },
   });
 
-  const traceId = await traceQuestion(QUESTION, null, async (id) => {
+  const traceId = await traceQuestion(QUESTION, null, "fr", async (id) => {
     await traceStep(
       "build",
       { question: QUESTION },
@@ -488,7 +492,7 @@ test("every LLM call of a question hangs in its tree, failures included", async 
 test("an exception marks the trace and still reaches the caller", async () => {
   exporter.reset();
 
-  const failed = traceQuestion(QUESTION, null, async () => {
+  const failed = traceQuestion(QUESTION, null, "en", async () => {
     throw new Error("base illisible");
   });
 
@@ -499,7 +503,23 @@ test("an exception marks the trace and still reaches the caller", async () => {
 
   expect(attr(root, "langfuse.observation.level")).toBe("ERROR");
   expect(attr(root, "langfuse.observation.status_message")).toBe("base illisible");
-  expect(attr(root, "langfuse.trace.tags")).toEqual(["error"]);
+  expect(attr(root, "langfuse.trace.tags")).toEqual(["error", "locale:en"]);
+});
+
+test.each(["fr", "en"] as const)("the language of the answer (%s) is a tag and a metadata value of the trace", async (locale) => {
+  exporter.reset();
+
+  await runQuestion(answer({}), locale);
+  await flushTracing();
+  const spans = exporter.getFinishedSpans();
+  const root = spans.find((s) => s.name === TRACE_NAME)!;
+
+  expect(localeTag(locale)).toBe(`locale:${locale}`);
+  expect(attr(root, "langfuse.trace.tags")).toContain(`locale:${locale}`);
+  expect(attr(root, "langfuse.trace.tags")).not.toContain(`locale:${locale === "fr" ? "en" : "fr"}`);
+
+  // Propagated like the question: every observation of the trace carries it.
+  for (const span of spans) expect(JSON.parse(String(attr(span, "langfuse.trace.metadata.locale")))).toBe(locale);
 });
 
 test("a failing export never throws", async () => {

@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       writer.write({ type: "start" });
 
       try {
-        await traceQuestion(question, body.data.sessionId ?? null, (traceId) => {
+        await traceQuestion(question, body.data.sessionId ?? null, body.data.locale, (traceId) => {
           const token = traceId ? signFeedback(traceId) : null;
 
           if (traceId && token) writer.write({ type: "data-trace", id: "trace", data: { traceId, token } });

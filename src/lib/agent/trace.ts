@@ -21,6 +21,7 @@ import {
 import { context, ROOT_CONTEXT } from "@opentelemetry/api";
 import type { LanguageModelCallEndEvent, Telemetry } from "ai";
 import { z } from "zod";
+import type { Locale } from "../locale";
 import { MASKED, maskPersonalData } from "../tracing/mask";
 import { llmStatus } from "./llm";
 import { answerLocale } from "./messages";
@@ -48,8 +49,8 @@ export type StepInput = { question: string } | { sql: string | null; params: Que
 /** LLM usage of one question, summed over its calls. */
 type Usage = { calls: number; errors: number; inputTokens: number; outputTokens: number; costUsd: number };
 
-/** The question being traced: its root observation, its LLM usage and its LLM calls still waiting for an answer. */
-type Scope = { root: LangfuseAgent; usage: Usage; calls: Map<string, LangfuseGeneration> };
+/** The question being traced: its root observation, the language of its answer, its LLM usage and its LLM calls still waiting for an answer. */
+type Scope = { root: LangfuseAgent; locale: Locale; usage: Usage; calls: Map<string, LangfuseGeneration> };
 
 const scope = new AsyncLocalStorage<Scope>();
 
@@ -211,9 +212,12 @@ export function outcomeTags(answer: Answer, entities: Entities, steps: Map<StepN
   return Object.entries(tags).flatMap(([tag, on]) => (on ? [tag] : []));
 }
 
-/** Tags are a trace attribute: set on the root observation before it ends. */
-function setTags(root: LangfuseAgent, tags: string[]) {
-  if (tags.length) root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, tags);
+/** Tag of the language the agent answered in: a Langfuse filter on it lists the questions of one language. */
+export const localeTag = (locale: Locale) => `locale:${locale}`;
+
+/** Tags are a trace attribute: set on the root observation before it ends, always with the language of the answer. */
+function setTags({ root, locale }: Pick<Scope, "root" | "locale">, tags: string[]) {
+  root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...tags, localeTag(locale)]);
 }
 
 /** Called by the agent with its answer: output, tags and metadata of the trace. */
@@ -223,7 +227,7 @@ export function recordOutcome(answer: Answer, entities: Entities, steps: Map<Ste
   if (!current) return;
   const { root, usage } = current;
 
-  setTags(root, outcomeTags(answer, entities, steps, usage));
+  setTags(current, outcomeTags(answer, entities, steps, usage));
   root.update({
     output: answer.summary,
     statusMessage: answer.title,
@@ -250,22 +254,26 @@ export function recordOutcome(answer: Answer, entities: Entities, steps: Map<Ste
  * visitor's conversation, when the browser sent one: Langfuse groups the
  * questions of a conversation under it. `run` receives the trace id when the
  * question is actually traced (tracing on, and sampled), null otherwise: the
- * UI only offers the thumbs when there is a trace to score.
+ * UI only offers the thumbs when there is a trace to score. `locale` is the
+ * language the agent answers in (the one `runAgent` is given): a tag and a
+ * metadata value of the trace.
  */
-export function traceQuestion<T>(question: string, sessionId: string | null, run: (traceId: string | null) => Promise<T>): Promise<T> {
+export function traceQuestion<T>(question: string, sessionId: string | null, locale: Locale, run: (traceId: string | null) => Promise<T>): Promise<T> {
   const traced = () =>
     startActiveObservation(
       TRACE_NAME,
       (root) => {
         root.update({ input: question });
+        // Set from the start: a question that fails before its outcome still says its language.
+        setTags({ root, locale }, []);
 
-        const current: Scope = { root, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 }, calls: new Map() };
+        const current: Scope = { root, locale, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 }, calls: new Map() };
 
         return scope.run(current, async () => {
           try {
             return await run(root.otelSpan.isRecording() ? root.traceId : null);
           } catch (err) {
-            setTags(root, ["error"]);
+            setTags(current, ["error"]);
             root.update({ level: "ERROR", statusMessage: err instanceof Error ? err.message : String(err) });
 
             throw err;
@@ -285,7 +293,7 @@ export function traceQuestion<T>(question: string, sessionId: string | null, run
     // The trace is listed under the start of its question; its root observation keeps the stable name.
     traceName: masked.length > TRACE_NAME_MAX ? `${masked.slice(0, TRACE_NAME_MAX)}…` : masked,
     sessionId: sessionId ?? undefined,
-    metadata: { question: masked.slice(0, QUESTION_MAX) },
+    metadata: { question: masked.slice(0, QUESTION_MAX), locale },
   };
 
   // A root context: the trace never hangs under a span of the web framework.
