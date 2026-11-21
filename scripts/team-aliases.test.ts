@@ -110,3 +110,69 @@ describe("team abbreviations from Leaguepedia", () => {
     expect((await resolveTeam(db, "Karmine Corp Blue Stars"))?.team).toBe("Karmine Corp Blue Stars");
   });
 });
+
+/**
+ * Two teams with one abbreviation, NIP: Ninjas in Pyjamas (EU LCS 2017, on the red side) and Ninjas in Pyjamas.CN, with
+ * more games (LPL 2026). Both played Worlds 2024, and the European team also a qualifier in 2026.
+ */
+async function seedShared() {
+  const db = await testDb();
+  const league = (name: string) => LEAGUES.findIndex((l) => l.name === name) + 1;
+
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  await db.exec(`
+    INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES
+      (1,'EU LCS 2017 Summer','EU LCS 2017 Summer','EU LCS 2017 Summer','season',${league("Europe League Championship Series")},2017),
+      (2,'LPL 2026 Split 1','LPL 2026 Split 1','LPL 2026 Split 1','season',${league("Tencent LoL Pro League")},2026),
+      (3,'Worlds 2024','Worlds 2024','Worlds 2024','main_event',${league("World Championship")},2024),
+      (4,'LEC 2026 Qualifier','LEC 2026 Qualifier','LEC 2026 Qualifier','qualifier',${league("LoL EMEA Championship")},2026);
+    INSERT INTO teams(id,name,short) VALUES (1,'Ninjas in Pyjamas','NIP'),(2,'Ninjas in Pyjamas.CN','NIP'),(3,'Other',NULL);
+  `);
+  let id = 0;
+
+  for (const [tournament, blue, red, games] of [[1, 3, 1, 3], [2, 2, 3, 6], [3, 1, 2, 1], [4, 1, 3, 2]])
+    for (let i = 0; i < games; i++) {
+      id++;
+      await db.run("INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (?,?,?,?,1,?)", id, tournament, blue, red, id);
+    }
+
+  return db;
+}
+
+describe("an abbreviation two teams share", () => {
+  test.each([
+    ["NIP en EU LCS 2017", "Ninjas in Pyjamas"],
+    ["Roster de NIP en LEC 2017", "Ninjas in Pyjamas"],
+    ["NIP roster 2017", "Ninjas in Pyjamas"],
+    ["NIP en LPL 2026", "Ninjas in Pyjamas.CN"],
+  ])("%s names the one team that played in the scope (%s)", async (q, team) => {
+    const db = await seedShared();
+
+    expect((await teamsOf(db, q)).teams).toEqual([team]);
+  });
+
+  test.each([
+    ["NIP aux Worlds 2024", "both played"],
+    ["NIP en LCK 2020", "neither played"],
+    ["NIP en LEC 2026", "a qualifier only"],
+    ["Historique de NIP", "no scope"],
+  ])("%s keeps the team with more games (%s)", async (q) => {
+    const db = await seedShared();
+
+    expect((await teamsOf(db, q)).teams).toEqual(["Ninjas in Pyjamas.CN"]);
+  });
+
+  test("beside the full name of the team with more games, the abbreviation still names the other team", async () => {
+    const db = await seedShared();
+
+    expect((await teamsOf(db, "NIP vs Ninjas in Pyjamas.CN en EU LCS 2017")).teams).toEqual(["Ninjas in Pyjamas", "Ninjas in Pyjamas.CN"]);
+    expect((await teamsOf(db, "Ninjas in Pyjamas.CN vs NIP en EU LCS 2017")).teams).toEqual(["Ninjas in Pyjamas.CN", "Ninjas in Pyjamas"]);
+  });
+
+  test("without a question, the abbreviation names the team with more games", async () => {
+    const db = await seedShared();
+
+    expect(await resolveTeam(db, "NIP")).toMatchObject({ team: "Ninjas in Pyjamas.CN", members: ["Ninjas in Pyjamas.CN"] });
+    expect((await resolveTeam(db, "Ninjas in Pyjamas"))?.team).toBe("Ninjas in Pyjamas");
+  });
+});

@@ -459,8 +459,12 @@ const ALIAS_RANK = { alias: 0, name: 1, curated: 2 } as const;
 
 type AliasKind = keyof typeof ALIAS_RANK;
 
-/** `caps`: an abbreviation that is also an everyday word ("MAD", "FLY"), read as the team only when written in capitals. */
-type TeamEntry = ResolvedTeam & { games: number; curated: boolean; rank: number; caps: boolean };
+/**
+ * `caps`: an abbreviation that is also an everyday word ("MAD", "FLY"), read as the team only when written in capitals.
+ * `others`: the teams with fewer games that share the abbreviation (NIP: Ninjas in Pyjamas beside Ninjas in Pyjamas.CN);
+ * the competition and period of the question pick among them (`inScope`).
+ */
+type TeamEntry = ResolvedTeam & { games: number; curated: boolean; rank: number; caps: boolean; others: ResolvedTeam[] };
 
 type TeamIndex = Map<string, TeamEntry>;
 
@@ -530,9 +534,14 @@ async function readIndexes(db: Db): Promise<Indexes> {
     const games = team.members.reduce((n, m) => n + (gamesOf.get(m) ?? 0), 0);
     const rank = ALIAS_RANK[kind];
     const prev = teams.get(key);
+    // Two teams under one abbreviation: the one with more games is read without a scope, the other is kept for one.
+    const shared = kind === "alias" && prev?.rank === rank && prev.team !== team.team;
 
-    if (!prev || rank > prev.rank || (rank === prev.rank && games > prev.games))
-      teams.set(key, { ...team, games, curated: kind === "curated", rank, caps });
+    if (!prev || rank > prev.rank || (rank === prev.rank && games > prev.games)) {
+      const others = shared ? [{ mention: "", team: prev.team, members: prev.members }, ...prev.others].filter((o) => o.team !== team.team) : [];
+
+      teams.set(key, { ...team, games, curated: kind === "curated", rank, caps, others });
+    } else if (shared && !prev.others.some((o) => o.team === team.team)) prev.others.push(team);
   };
 
   const single = (name: string) => ({ mention: "", team: name, members: [name] });
@@ -621,10 +630,50 @@ async function readIndexes(db: Db): Promise<Indexes> {
 }
 
 export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam | null> {
+  return (await lookupTeam(db, mention))?.team ?? null;
+}
+
+/** The team a mention names without a scope, and the other teams of the same abbreviation (`TeamEntry.others`). */
+async function lookupTeam(db: Db, mention: string): Promise<{ team: ResolvedTeam; others: ResolvedTeam[] } | null> {
   const { teams } = await getIndexes(db);
   const hit = teams.get(normalizeAlias(mention)) ?? teamByEnd(teams, mention);
 
-  return hit ? { mention, team: hit.team, members: hit.members } : null;
+  return hit ? { team: { mention, team: hit.team, members: hit.members }, others: hit.others } : null;
+}
+
+/**
+ * Among the teams of one abbreviation, the only one that played in the competition and period of the question (either
+ * side of a game, qualifiers excluded): NIP in EU LCS 2017 is Ninjas in Pyjamas, not Ninjas in Pyjamas.CN. Without a
+ * scope, or when several teams or none played in it, the team with more games stays.
+ */
+async function inScope(db: Db, team: ResolvedTeam, others: ResolvedTeam[], ctx: Context): Promise<ResolvedTeam> {
+  if (!others.length || (ctx.league == null && ctx.yearFrom == null && ctx.yearTo == null)) return team;
+  const candidates = [team, ...others];
+  const names = [...new Set(candidates.flatMap((c) => c.members))];
+  const members = ctx.league ? leagueMembers(ctx.league, ctx.yearFrom, ctx.yearTo) : [];
+
+  const rows = await selectAll(
+    db,
+    z.object({ name: z.string() }),
+    `SELECT DISTINCT tm.name FROM games g
+     JOIN tournaments t ON t.id = g.tournament_id JOIN leagues l ON l.id = t.league_id
+     JOIN teams tm ON tm.id IN (g.blue_team_id, g.red_team_id)
+     WHERE tm.name IN (${names.map((_, i) => `:n${i}`).join(", ")}) AND t.stage <> 'qualifier'
+       ${members.length ? `AND l.name IN (${members.map((_, i) => `:m${i}`).join(", ")})` : ""}
+       AND (CAST(:yearFrom AS integer) IS NULL OR t.year >= :yearFrom)
+       AND (CAST(:yearTo AS integer) IS NULL OR t.year <= :yearTo)`,
+    {
+      yearFrom: ctx.yearFrom,
+      yearTo: ctx.yearTo,
+      ...Object.fromEntries(names.map((n, i) => [`n${i}`, n])),
+      ...Object.fromEntries(members.map((m, i) => [`m${i}`, m])),
+    },
+  );
+
+  const played = new Set(rows.map((r) => r.name));
+  const found = candidates.filter((c) => c.members.some((m) => played.has(m)));
+
+  return found.length === 1 ? { ...found[0], mention: team.mention } : team;
 }
 
 /**
@@ -728,7 +777,15 @@ function isCommonHandle(mention: string): boolean {
 }
 
 /** `hits`: the players behind each mention, when the rules already looked them up. */
-type Mentions = { players: string[]; teams: ResolvedTeam[]; champion: ResolvedChampion | null; opponentChampion?: ResolvedChampion | null; hits?: Map<string, AliasHit[]> };
+type Mentions = {
+  players: string[];
+  teams: ResolvedTeam[];
+  champion: ResolvedChampion | null;
+  opponentChampion?: ResolvedChampion | null;
+  hits?: Map<string, AliasHit[]>;
+  /** The other teams of an abbreviation, by the mention that names it: the scope of the question picks among them. */
+  otherTeams?: Map<string, ResolvedTeam[]>;
+};
 
 /**
  * Every span of up to four tokens detectMentions may look up as a player alias, so their aliases are read in one query:
@@ -776,7 +833,7 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
 
   const { teams, champions } = await getIndexes(db);
   const hits = await lookupAliases(db, aliasCandidates(tokens.filter((t) => !PAGE_TOKEN.test(t))));
-  const found: Mentions = { players: [], teams: [], champion: null, hits };
+  const found: Mentions = { players: [], teams: [], champion: null, hits, otherTeams: new Map() };
   const used = new Set<number>();
   // Where each mention starts, in tokens: the order of the question.
   const at = new Map<string, number>();
@@ -844,8 +901,12 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
       const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
 
       if (team && !abbreviationOfPlayer && (team.curated || !players.length || team.games >= players[0].games)) {
-        if (!found.teams.some((t) => t.team === team.team)) {
+        // An abbreviation two teams share stays a mention of its own: the scope may name the other team (buildEntities).
+        if (team.others.length || !found.teams.some((t) => t.team === team.team && !found.otherTeams?.has(t.mention))) {
           found.teams.push({ mention, team: team.team, members: team.members });
+
+          if (team.others.length) found.otherTeams?.set(mention, team.others);
+
           at.set(mention, i);
         }
 
@@ -1005,11 +1066,19 @@ async function buildEntities(
     else if (!p) unresolved.push(m);
   }
 
+  const teams: ResolvedTeam[] = [];
+
+  for (const t of mentions.teams) {
+    const team = await inScope(db, t, mentions.otherTeams?.get(t.mention) ?? [], { league, yearFrom, yearTo });
+
+    if (!teams.some((x) => x.team === team.team)) teams.push(team);
+  }
+
   const outOfScope = OUT_OF_SCOPE.exec(question)?.[0] ?? null;
 
   return {
     players,
-    teams: mentions.teams,
+    teams,
     champion: mentions.champion,
     opponentChampion: mentions.opponentChampion ?? null,
     unresolved,
@@ -1088,14 +1157,16 @@ const llmDecider: Decider<Input, Entities> = {
       abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
-    const teams = (await Promise.all(output.teams.map((t) => resolveTeam(db, t)))).filter((t): t is ResolvedTeam => t != null);
+    const found = (await Promise.all(output.teams.map((t) => lookupTeam(db, t)))).filter((t) => t != null);
+    const teams = found.map((t) => t.team);
+    const otherTeams = new Map(found.map((t) => [t.team.mention, t.others]));
 
     const entities = await buildEntities(
       db,
       question,
       now,
       // The LLM may still copy a term's word as a name ("solo" in "solo kills").
-      { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, champion: output.champion ? await resolveChampion(db, output.champion) : null },
+      { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, otherTeams, champion: output.champion ? await resolveChampion(db, output.champion) : null },
       { league: output.league, yearFrom: output.yearFrom, yearTo: output.yearTo },
     );
 
