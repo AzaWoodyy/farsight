@@ -284,9 +284,15 @@ passe aussi à 5 et aucun résumé plus ancien n'est gardé :
   victime ; quand le kill ne correspond pas aux drapeaux de Riot, le premier
   sang est inconnu plutôt qu'un kill plus tardif.
 
-La CI reconstruit depuis l'instantané épinglé : elle attend une release dont
-les résumés sont en dérivation 5, recalculés depuis R2 par le workflow Data
-release (aucun résumé en dérivation 4 n'est réutilisé).
+`ci/data.json` épingle `data-20261121-3`, prerelease de la branche recalculée
+depuis R2 (40 650 parties lues en 13,3 min, aucune absente, aucune ne perd son
+résumé), avec `ci/raw.tar.zst` récupéré juste après elle : la base
+reconstruite est celle de la release, table par table (seul `ingest_runs`
+diffère). Sur le corpus : contradictions tueur/victime 40 → 0, premier sang
+inconnu 29 → 41 (12 parties match-v5 ouvertes par une exécution sans aucun
+drapeau Riot), 74 victimes match-v4 déplacées vers le kill crédité ; à la
+minute, 24 parties perdent l'or/XP/CS à 20 min, 41 les kills d'équipe à
+20 min, une partie tout le bloc à 15 min. L'éval déterministe ne change pas.
 
 ### Première release v4
 
