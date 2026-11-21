@@ -207,7 +207,17 @@ describe("personal data in a question", () => {
     ["serveur [2001:db8::1]:8080 ?", `serveur [${MASKED}]:8080 ?`],
     ["::ffff:192.0.2.1", MASKED],
     ["2001:db8:1:2:3:4:5::", MASKED],
-    ["ip:2001:db8::1, puis fe80::1%eth0.", `ip:${MASKED}, puis ${MASKED}.`],
+    ["ip:2001:db8::1, puis fe80::1%eth0.", `ip:${MASKED}, puis ${MASKED}%eth0.`],
+    ["fe80::1%eth-0", `${MASKED}%eth-0`],
+    [`fe80::1%${"z".repeat(80)}`, `${MASKED}%${"z".repeat(80)}`],
+    ["2001:db8::: exemple", `${MASKED}: exemple`],
+    ["_2001:db8::1_.", `_${MASKED}_.`],
+    ["2001:db8::1...2001:db8::2", `${MASKED}...${MASKED}`],
+    ["Mon IP est 2001:db8::1.Merci", `Mon IP est ${MASKED}.Merci`],
+    ["Mon IP est 2001:db8::1.2e question", `Mon IP est ${MASKED}.2e question`],
+    ["2001:db8::1.2001:db8::2", `${MASKED}.${MASKED}`],
+    ["2001:db8::1:OK", `${MASKED}:OK`],
+    ["::ffff:192.0.2.1:OK", `${MASKED}:OK`],
   ])("%p is masked", (question, masked) => {
     expect(maskPersonalData(question)).toBe(masked);
   });
@@ -222,6 +232,7 @@ describe("personal data in a question", () => {
     "Match à 19:46, T1 2:0 Gen.G",
     "Faker (Lee Sang-hyeok) : bilan 3:1",
     "partie du 2026-11-14T19:46:00.000Z",
+    "SELECT x::int, (::) FROM v_games",
   ])("%p is kept as written", (question) => {
     expect(maskPersonalData(question)).toBe(question);
   });
