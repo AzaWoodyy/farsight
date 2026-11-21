@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, jest, test } from "bun:test";
 import { getCache } from "@vercel/functions";
+import { z } from "zod";
+import realFirstBloods from "./data/fixtures/first-blood.json";
+import { summarizeGame } from "./data/ingame";
 import { TIMELINE_FORMAT } from "../src/lib/sources/timeline";
 import { gameNumberOf, phaseOf, routeQuestion } from "../src/lib/agent/query";
 import type { Entities } from "../src/lib/agent/types";
@@ -142,10 +145,10 @@ test("match-v5: gold difference per frame and every key event, with its team", (
     { s: 262, diff: 5000 },
   ]);
   expect(t.events.map((e) => [e.s, e.kind, e.team, e.detail])).toEqual([
-    // An execution (killer 0) still gives first blood to the victim's opponents.
-    [65, "first_blood", 100, null],
+    // An execution (killer 0) at 65 s is no first blood: the first kill by a champion is.
     [125, "grubs", 200, "3 larves"],
     [175, "dragon", 100, "infernal"],
+    [181, "first_blood", 100, null],
     [189, "ace", 100, null],
     // BUILDING_KILL names the team that lost the building.
     [245, "tower", 100, "extérieure bot"],
@@ -185,6 +188,122 @@ test("match-v4: the same five deaths at level 1 are an ace", () => {
 
   // One ace per wipe, even if the event list repeats a death.
   expect(aces).toEqual([{ s: 128, kind: "ace", team: 200, detail: null }]);
+});
+
+// --- First blood: one credited event for the timeline and the in-game summary ------------------
+
+type FirstBloodCase = { kills: Json[]; killer?: number; team?: 100 | 200; killers?: number[]; denied?: boolean };
+
+/** A game with only `kills` in its timeline and Riot's first-blood flags, match-v5 fields or match-v4 nested stats. */
+function firstBloodGame(version: 4 | 5, { kills, killer, team, killers = killer == null ? [] : [killer], denied = false }: FirstBloodCase): RawGame {
+  const participants = PIDS.map((pid) => {
+    const base = { participantId: pid, teamId: teamOf(pid), championId: pid };
+
+    // Without flags the fields are absent, as in some old match-v4 games.
+    if (!killers.length && !denied) return base;
+    const flag = { firstBloodKill: killers.includes(pid) };
+
+    return version === 5 ? { ...base, ...flag } : { ...base, stats: flag };
+  });
+
+  const teams = [100, 200].map((teamId): Json =>
+    team == null && !denied
+      ? { teamId, win: teamId === 100 }
+      : version === 5
+        ? { teamId, win: teamId === 100, objectives: { champion: { first: teamId === team, kills: 0 } } }
+        : { teamId, win: teamId === 100 ? "Win" : "Fail", firstBlood: teamId === team },
+  );
+
+  return rawGame(version, { gameDuration: version === 5 ? 1500 : 1_500_000, participants, teams }, { frames: [frame(0, 0, [], version === 4), frame(1, 0, kills, version === 4), frame(2, 0, [], version === 4)] });
+}
+
+/** First blood as the timeline and the summary see it: [second, team] of the event, and the victim's pid. */
+function firstBloodOf(game: RawGame) {
+  const event = parseTimeline(game)!.events.find((e) => e.kind === "first_blood");
+  const summary = summarizeGame(game);
+  const victims = summary.players.filter((p) => p.first_blood_victim === 1).map((p) => p.pid);
+
+  return {
+    event: event ? [event.s, event.team] : null,
+    victim: summary.players.every((p) => p.first_blood_victim == null) ? null : victims,
+  };
+}
+
+const execution = (s: number, victimId: number) => kill(s, 0, victimId);
+
+for (const version of [4, 5] as const) {
+  test(`match-v${version}: an execution before the credited kill, both consumers agree on the kill Riot credits`, () => {
+    // As in TRKR1_610063 (below): player 1 executed, the next kill, player 3's, credited by Riot.
+    const game = firstBloodGame(version, { kills: [execution(70, 1), kill(100, 3, 8), kill(110, 8, 3)], killer: 3, team: 100 });
+
+    expect(firstBloodOf(game)).toEqual({ event: [100, 100], victim: [8] });
+  });
+
+  test(`match-v${version}: an ordinary first kill; without Riot flags it still counts`, () => {
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 7, 2), kill(80, 1, 6)], killer: 7, team: 200 }))).toEqual({ event: [70, 200], victim: [2] });
+    expect(firstBloodOf(firstBloodGame(version, { kills: [execution(60, 4), kill(70, 7, 2)] }))).toEqual({ event: [70, 200], victim: [2] });
+  });
+
+  test(`match-v${version}: only executions, or flags that name another kill: no first blood, no victim`, () => {
+    expect(firstBloodOf(firstBloodGame(version, { kills: [execution(70, 1), execution(80, 6)] }))).toEqual({ event: null, victim: null });
+    // Riot credits player 9, the first readable kill is player 3's: unknown, never the later plausible kill.
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8), kill(80, 9, 2)], killer: 9, team: 200 }))).toEqual({ event: null, victim: null });
+    // Killer flag and team flag disagree with each other.
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killer: 3, team: 200 }))).toEqual({ event: null, victim: null });
+    // Two players flagged.
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killers: [3, 4] }))).toEqual({ event: null, victim: null });
+    // Every player and both teams explicitly denied first blood (flags present, all false).
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killers: [], denied: true }))).toEqual({ event: null, victim: null });
+  });
+
+  test(`match-v${version}: an unreadable kill before the first readable one makes first blood unknown`, () => {
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(60, 3, 0), kill(70, 3, 8)], killer: 3, team: 100 }))).toEqual({ event: null, victim: null });
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(60, 3, 4), kill(70, 3, 8)], killer: 3, team: 100 }))).toEqual({ event: null, victim: null });
+    // A kill without a killer id is unreadable, not an execution.
+    expect(firstBloodOf(firstBloodGame(version, { kills: [{ type: "CHAMPION_KILL", timestamp: 60_000, victimId: 2, assistingParticipantIds: [] }, kill(70, 7, 3)] }))).toEqual({ event: null, victim: null });
+  });
+}
+
+/** Real games cut down to their first three kills and Riot's first-blood flags (fixtures/first-blood.json). */
+const FixtureGame = z.object({ key: z.string(), gameId: z.string(), version: z.union([z.literal(4), z.literal(5)]), stats: z.json(), kills: z.array(z.json()) });
+
+function realGame(key: string): RawGame {
+  const g = z.array(FixtureGame).parse(realFirstBloods).find((x) => x.key === key);
+
+  if (!g) throw new Error(`no fixture game ${key}`);
+
+  return { ...rawGame(g.version, g.stats, { frames: [frame(0, 0, [], g.version === 4), frame(1, 0, g.kills, g.version === 4)] }), key: g.key, gameId: g.gameId };
+}
+
+test("match-v5, real games: an execution Riot credits to the team (no player flagged) is the first blood, with no killer", () => {
+  // Worlds 2022: player 8 (red) executed at 3:24, objectives.champion.first for blue, no firstBloodKill.
+  expect(firstBloodOf(realGame("ESPORTSTMNT02_3048494"))).toEqual({ event: [204, 100], victim: [8] });
+  // Worlds 2026: player 5 (blue) executed at 3:24, first blood for red.
+  expect(firstBloodOf(realGame("LOLTMNT02_486481"))).toEqual({ event: [204, 200], victim: [5] });
+  expect(summarizeGame(realGame("LOLTMNT02_486481")).players.map((p) => p.first_blood_kill)).toEqual(Array.from({ length: 10 }, () => 0));
+});
+
+test("match-v4, real game: the execution is skipped, the next kill is the one Riot credits", () => {
+  // 2015 Summer Promotion: player 1 executed at 2:14, player 3 credited at 9:46.
+  expect(firstBloodOf(realGame("TRKR1_610063"))).toEqual({ event: [586, 100], victim: [8] });
+});
+
+test("an execution credited to the team only in match-v5, and only for killerId 0", () => {
+  const teamOnly = { kills: [execution(70, 8), kill(100, 1, 7)], killers: [], denied: true, team: 100 as const };
+
+  expect(firstBloodOf(firstBloodGame(5, teamOnly))).toEqual({ event: [70, 100], victim: [8] });
+  // The same flags in match-v4 never credit an execution: the next kill does not match them either.
+  expect(firstBloodOf(firstBloodGame(4, teamOnly))).toEqual({ event: null, victim: null });
+  // An unknown non-zero killer id is no execution Riot credits.
+  expect(firstBloodOf(firstBloodGame(5, { ...teamOnly, kills: [kill(70, 99, 8), kill(100, 1, 7)] }))).toEqual({ event: null, victim: null });
+});
+
+test("an execution still counts as a death for an ace", () => {
+  // Team 100 dies in 8 s at level 1, the first death an execution: the ace is still team 200's.
+  const kills = [execution(121, 1), kill(123, 6, 2), kill(125, 6, 3), kill(127, 6, 4), kill(129, 7, 5)];
+  const events = parseTimeline(firstBloodGame(5, { kills, killer: 6, team: 200 }))!.events;
+
+  expect(events.map((e) => [e.s, e.kind, e.team])).toEqual([[123, "first_blood", 200], [129, "ace", 200]]);
 });
 
 test("a game without timeline parses to null, a timeline without frames throws", () => {

@@ -259,6 +259,41 @@ release du 20/11/2026 : 39 921 parties lues en 15,8 min). Une partie absente de
 R2 et que le budget du wiki n'atteint pas garde son résumé en dérivation 3
 (compté dans `older_derive`) jusqu'au passage suivant.
 
+### Dérivation 5 : minutes atteintes et premier sang crédité
+
+`DERIVE_VERSION` 5 change deux chiffres existants, donc `DERIVE_COMPATIBLE`
+passe aussi à 5 et aucun résumé plus ancien n'est gardé :
+
+- une statistique à la minute (or, XP, CS, or d'équipe à 10/15/20 min, kills
+  d'équipe à ces minutes, tours à 15 min) n'est remplie que si la durée de la
+  partie, en millisecondes, et sa timeline atteignent la minute. La dernière
+  frame d'une timeline match-v5 est la fin de partie : une partie finie à
+  19:46 en avait une vers 20:00, comptée jusque-là comme l'or à 20 min
+  (14 parties pour l'or à 20 min, 24 pour les kills, 1 à 15 min, toutes en
+  match-v5). La frame est choisie par son temps, plus par son rang ;
+- la victime du premier sang est celle du kill que Riot crédite
+  (`src/lib/sources/first-blood.ts`) : une exécution par une tour ou des
+  sbires n'en est pas un en match-v4 (Riot crédite le kill suivant : les 40
+  parties dont le tueur et la victime étaient du même côté). En match-v5,
+  Riot peut créditer l'exécution elle-même à l'équipe adverse, sans joueur
+  (`firstBloodKill` faux partout, drapeau d'équipe chez l'adversaire de
+  l'exécuté, 77 parties) : le premier sang est alors cette exécution, sans
+  tueur. Le même sélecteur donne
+  l'événement de la timeline (`TIMELINE_FORMAT` 2 : les timelines en cache
+  du format 1 sont ignorées), qui suivait l'adversaire de la première
+  victime ; quand le kill ne correspond pas aux drapeaux de Riot, le premier
+  sang est inconnu plutôt qu'un kill plus tardif.
+
+`ci/data.json` épingle `data-20261121-3`, prerelease de la branche recalculée
+depuis R2 (40 650 parties lues en 13,3 min, aucune absente, aucune ne perd son
+résumé), avec `ci/raw.tar.zst` récupéré juste après elle : la base
+reconstruite est celle de la release, table par table (seul `ingest_runs`
+diffère). Sur le corpus : contradictions tueur/victime 40 → 0, premier sang
+inconnu 29 → 41 (12 parties match-v5 ouvertes par une exécution sans aucun
+drapeau Riot), 74 victimes match-v4 déplacées vers le kill crédité ; à la
+minute, 24 parties perdent l'or/XP/CS à 20 min, 41 les kills d'équipe à
+20 min, une partie tout le bloc à 15 min. L'éval déterministe ne change pas.
+
 ### Première release v4
 
 Le workflow restaure les résumés in-game de la release précédente ; une
