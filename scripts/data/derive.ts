@@ -164,6 +164,47 @@ type Row = z.infer<typeof StoredCargoRow>;
 /** A Cargo field, or a field the row does not have. */
 type Field = CargoValue | undefined;
 
+/**
+ * The summaries in file order, except that the summaries of one game stand together where its first one was, the one
+ * to keep first. A game and its remake, or two Riot games filed under one scoreboard, share a `gameId`, and the
+ * derivation keeps the first one that maps. The order of the file must not make that choice (a recompute from R2
+ * writes the lines as they arrive): the highest `rank` wins, number by number, then the smaller key.
+ */
+export function bestFirst<L extends { key: string }>(all: Iterable<L>, gameOf: (line: L) => number | undefined, rank: (line: L, game: number) => number[]): L[] {
+  const out: L[][] = [];
+  const byGame = new Map<number, L[]>();
+
+  for (const line of all) {
+    const game = gameOf(line);
+    const group = game == null ? undefined : byGame.get(game);
+
+    if (group) {
+      group.push(line);
+      continue;
+    }
+
+    const own = [line];
+
+    if (game != null) byGame.set(game, own);
+    out.push(own);
+  }
+
+  for (const [game, group] of byGame) {
+    if (group.length < 2) continue;
+    const ranks = new Map(group.map((line) => [line.key, rank(line, game)]));
+
+    group.sort((a, b) => {
+      const ra = ranks.get(a.key)!;
+      const rb = ranks.get(b.key)!;
+      const i = ra.findIndex((n, at) => n !== rb[at]);
+
+      return i === -1 ? (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) : rb[i] - ra[i];
+    });
+  }
+
+  return out.flat();
+}
+
 /** Every row of the database, from the raw cache. */
 export function deriveDataset() {
   const store = new Store();
@@ -724,10 +765,18 @@ export function deriveDataset() {
     fill(fillKeystone, "keystones", rune(names[0]), gid, pid);
   };
 
-  const ingame = loadIngame();
+  const scoreboardChampions = new Map([...linesByGame].map(([gid, lines]) => [gid, new Set(lines.map((l) => l.championId))]));
+
+  // Of two summaries of one game, the one with the most champions of the scoreboard, then the longer game.
+  const ingame = bestFirst(
+    loadIngame().values(),
+    (line) => (line.status === "ok" ? gameId.get(line.gameId) : undefined),
+    (line, gid) => (line.status === "ok" ? [line.players.filter((p) => scoreboardChampions.get(gid)?.has(championIdByKey.get(p.championId) ?? -1)).length, line.durationS ?? 0] : [0, 0]),
+  );
+
   const doneGames = new Set<number>();
 
-  for (const line of ingame.values()) {
+  for (const line of ingame) {
     if (line.status !== "ok") {
       ingameCounts[line.status]++;
       continue;
