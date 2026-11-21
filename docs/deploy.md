@@ -334,8 +334,10 @@ précéder le chargement, sans désactiver Deploy :
    couverture in-game.
 3. La **Data release** suivante publie le fichier SQLite v12. `data:package`
    refuse une release sans aucun logo ; `--check-only` se contente d'un
-   avertissement, car l'instantané CI n'a pas encore `team_logo_files.json`.
-   Réépingler ensuite `ci/data.json` et `ci/raw.tar.zst` sur cette release.
+   avertissement, car l'instantané CI v11 n'avait pas `team_logo_files.json`.
+   Réépingler ensuite `ci/data.json` et `ci/raw.tar.zst` sur cette release : fait sur
+   `data-20261121-4`, dont le fichier SQLite est identique, table par table, à la base
+   reconstruite depuis l'instantané, à l'exception de `ingest_runs`.
 
 ### Schéma v11 (migration Postgres 2)
 
