@@ -400,7 +400,7 @@ export function sideOf(question: string): MapSide | null {
   return asked.length === 1 ? asked[0][0] : null;
 }
 
-const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
+const PLAYER_WORDS = word("joueurs?|joueuses?|players?|pros?|laners?|laneurs?");
 
 /** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
 const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]to[- ]head|duels?|matchups?");
@@ -1167,7 +1167,9 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   const forPlayers = !e.teams.length && !e.champion && (noEntity || (e.players.length === 1 && role != null));
 
   // "pires joueurs", "worst mids": the leaderboards only rank from the highest down, and the best would be the opposite answer.
-  if (forPlayers && ranksPlayers && WORST.test(question)) return { kind: "sql", reason: msg().route.playerLowest };
+  // A figure of the Riot data where the scope has none (the LPL) is absent, not a ranking.
+  if (noEntity && ranksPlayers && WORST.test(question))
+    return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? { kind: "sql", reason: msg().route.playerLowest };
 
   // Players ranked on an end-of-game criterion; in-game metrics (gold diff, solo kills...) keep their leaderboard.
   // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a

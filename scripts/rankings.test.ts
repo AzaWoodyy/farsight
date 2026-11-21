@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { guardQuery } from "../src/lib/agent/guard";
-import { withLocale } from "../src/lib/agent/messages";
+import { msg, withLocale } from "../src/lib/agent/messages";
 import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf, toolPlan } from "../src/lib/agent/query";
 import { execute } from "../src/lib/agent/run";
 import { detectMetric } from "../src/lib/agent/metrics";
@@ -160,8 +160,20 @@ describe("routes of the rankings", () => {
     ["worst players at Worlds 2024", WORLDS],
     ["pire joueur de LEC 2025", LEC25],
     ["pires mids aux Worlds 2024", WORLDS],
+    ["worst laners at Worlds 2024", WORLDS],
+    ["pires joueuses aux Worlds 2024", WORLDS],
   ])("the worst players go to generated SQL: %p", async (question, e) => {
     expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  test("a named player called Worst is not a ranking of the worst players", async () => {
+    expect(await route("Worst solo kills as mid at Worlds 2024", { ...WORLDS, players: [player("Worst")] })).not.toMatchObject({ reason: msg().route.playerLowest });
+  });
+
+  test("the worst players on a figure the scope has no Riot data for are absent, not generated SQL", async () => {
+    const lpl = scope("Tencent LoL Pro League", "LPL", 2024);
+
+    expect(await routeQuestion("worst players by solo kills in LPL 2024", lpl, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
   });
 
   test("the best players keep their leaderboard", async () => {

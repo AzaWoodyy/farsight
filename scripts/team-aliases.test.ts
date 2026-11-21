@@ -254,6 +254,10 @@ describe("a superlative before what it ranks", () => {
     ["pires champions aux Worlds 2024", []],
     ["worst players at Worlds 2024", []],
     ["pires mids aux Worlds 2024", []],
+    ["pires midlaneurs aux Worlds 2024", []],
+    ["worst AD carries at Worlds 2024", []],
+    ["worst laners at Worlds 2024", []],
+    ["pires joueuses aux Worlds 2024", []],
     ["Worst aux Worlds 2024", ["Worst"]],
     ["stats de Pires", ["Zentinel"]],
   ])("%p names the players %p", async (question, players) => {

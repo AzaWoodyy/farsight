@@ -92,8 +92,8 @@ const ROLE_PHRASES = phrase(ROLE_WORDS);
  * champions" is not the player Pires; "Worst aux Worlds" still is the player.
  */
 const SUPERLATIVE_PHRASES = phrase(
-  "(?:pires?|worst)(?= (?:champions?|joueurs?|joueuses?|players?|[ée]quipes?|teams?|picks?|bans?|games?|parties?|matchs?|matches|" +
-    "s[ée]ries?|winrates?|kda|tops?|junglers?|mids?|adcs?|bots?|supports?|toplaners?|midlaners?|botlaners?)(?![\\p{L}\\p{N}]))",
+  `(?:pires?|worst)(?= (?:champions?|joueurs?|joueuses?|players?|pros?|laners?|laneurs?|[ée]quipes?|teams?|picks?|bans?|games?|parties?|matchs?|matches|` +
+    `s[ée]ries?|winrates?|kda|tops?|bots?|${ROLE_WORDS})(?![\\p{L}\\p{N}]))`,
 );
 
 /**
