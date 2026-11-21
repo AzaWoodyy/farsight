@@ -14,7 +14,8 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
   comme des nombres.
 - **Schéma** : migrations versionnées en SQL (`db/migrations/NNNN_nom.sql`), appliquées dans l'ordre, chacune dans sa
   transaction, avec une somme de contrôle dans `schema_migrations` (`scripts/db/migrations.ts`). L'app refuse une base
-  dont la dernière migration est antérieure à `PG_MIGRATION` (`src/lib/db/schema.ts`) et accepte une base plus récente :
+  dont la dernière migration est antérieure à `PG_MIGRATION_READ` (`src/lib/db/schema.ts`, `PG_MIGRATION` sauf quand le
+  code tolère l'absence de ce qu'ajoute la dernière, comme `teams.logo` de la migration 3) et accepte une base plus récente :
   une migration ne fait donc qu'ajouter, et garde tout ce que le code précédent lit. Les colonnes texte sont en
   `COLLATE "C"` : mêmes tris et comparaisons qu'en SQLite, quelle que soit la locale du serveur.
 - **Chargement** (`bun run db:load`, `scripts/db/load.ts`) : les lignes viennent de `scripts/data/derive.ts`, le même
@@ -100,7 +101,8 @@ Vercel.
   4. Mettre à jour `DATABASE_URL` sur Vercel et les deux secrets GitHub.
 
 - **Livrer une migration de table ou de vue** : la base doit passer avant le code, sinon le code neuf refuse
-  l'ancienne base.
+  l'ancienne base. Exception : un code qui lit ce qu'ajoute la migration seulement quand c'est là garde
+  `PG_MIGRATION_READ` à la migration précédente, et se déploie avant le chargement (migration 3, `docs/deploy.md`).
   1. Désactiver le workflow Deploy (`gh workflow disable Deploy`), puis merger la PR. Annuler un Deploy déjà lancé ne
      suffit pas : Vercel peut avoir reçu le déploiement, et son build réussit sur l'ancienne base.
   2. Lancer « Postgres update » à la demande depuis `main` et attendre son succès : l'app en place lit la base migrée.

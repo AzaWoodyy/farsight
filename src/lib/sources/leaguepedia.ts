@@ -272,6 +272,75 @@ export async function wikiPages(titles: string[]): Promise<Map<string, WikiPage>
   return out;
 }
 
+const ApiFiles = z.object({
+  query: z
+    .object({
+      pages: z.array(z.object({ title: z.string(), imageinfo: z.array(z.object({ width: z.number() })).optional() })),
+      normalized: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
+      redirects: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
+    })
+    .optional(),
+  error: z.object({ code: z.string(), info: z.string().optional() }).optional(),
+});
+
+/** File names per request: the MediaWiki API limit for an anonymous client. */
+export const FILES_PER_REQUEST = 50;
+
+/**
+ * The wiki's answer for a few file names (no `File:` prefix): each name asked -> the exact name the wiki stores the
+ * file under (its title once normalized and redirected, the name the CDN path is built from), or null when it has no
+ * such file. A name absent from the map was not answered: ask it again.
+ */
+export function parseWikiFiles(names: string[], data: z.infer<typeof ApiFiles>): Map<string, string | null> {
+  const step = (moves: { from: string; to: string }[] | undefined) => new Map((moves ?? []).map((m) => [m.from, m.to]));
+  const normalized = step(data.query?.normalized);
+  const redirected = step(data.query?.redirects);
+  const pages = new Map((data.query?.pages ?? []).map((p) => [p.title, p]));
+  const out = new Map<string, string | null>();
+
+  for (const name of names) {
+    const asked = `File:${name}`;
+    const title = normalized.get(asked) ?? asked;
+    const target = redirected.get(title) ?? title;
+    const page = pages.get(target);
+
+    if (!page) continue;
+    // A file page can outlive its file: only a page with the file's own information counts.
+    out.set(name, page.imageinfo?.length ? page.title.replace(/^File:/, "") : null);
+  }
+
+  return out;
+}
+
+/**
+ * Which of these files exist on the wiki and under which exact name (MediaWiki API, one request for up to
+ * FILES_PER_REQUEST names, under the same throttle as Cargo). File metadata only: no image is downloaded.
+ */
+export async function wikiFiles(names: string[]): Promise<Map<string, string | null>> {
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    formatversion: "2",
+    redirects: "1",
+    prop: "imageinfo",
+    iiprop: "size",
+    maxlag: "5",
+    titles: names.map((n) => `File:${n}`).join("|"),
+  });
+
+  const data = await politeGet(`${API_URL}?${params}`, (text) => {
+    const parsed = ApiFiles.safeParse(JSON.parse(text));
+
+    if (!parsed.success || parsed.data.error?.code === "maxlag") return null;
+
+    if (parsed.data.error) throw new WikiApiError(`${parsed.data.error.code} ${parsed.data.error.info ?? ""}`);
+
+    return parsed.data;
+  });
+
+  return parseWikiFiles(names, data);
+}
+
 /** Runs a Cargo query and follows offset pagination until exhausted. */
 export async function cargoQuery(
   q: CargoQuery,
