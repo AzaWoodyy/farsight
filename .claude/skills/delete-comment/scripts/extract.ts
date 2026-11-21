@@ -31,8 +31,24 @@ function trackedSources(paths: readonly string[]): string[] {
     .filter((file) => !file.startsWith("tools/oxlint/anti-slop/"));
 }
 
-function hasVisibleText(node: { type?: string; value?: string } | undefined): boolean {
-  return node?.type === "JSXText" && (node.value ?? "").trim() !== "";
+type Child = { type?: string; value?: string; expression?: { type?: string }; start: number; end: number };
+
+function isEmptyExpression(node: Child | undefined): boolean {
+  return (
+    node?.type === "JSXExpressionContainer" && node.expression?.type === "JSXEmptyExpression"
+  );
+}
+
+function isSkipped(node: Child | undefined): boolean {
+  return isEmptyExpression(node) || (node?.type === "JSXText" && (node.value ?? "").trim() === "");
+}
+
+function joinsTexts(children: readonly Child[], at: number): boolean {
+  let left = at - 1;
+  let right = at + 1;
+  while (isSkipped(children[left])) left -= 1;
+  while (isSkipped(children[right])) right += 1;
+  return children[left]?.type === "JSXText" && children[right]?.type === "JSXText";
 }
 
 function emptyJsxExpressions(node: object, found: Span[] = []): Span[] {
@@ -40,11 +56,9 @@ function emptyJsxExpressions(node: object, found: Span[] = []): Span[] {
     if (value === null || typeof value !== "object") continue;
     if (Array.isArray(value)) {
       value.forEach((child, at) => {
-        const empty =
-          child?.type === "JSXExpressionContainer" &&
-          child.expression?.type === "JSXEmptyExpression";
-        const betweenText = hasVisibleText(value[at - 1]) && hasVisibleText(value[at + 1]);
-        if (empty && !betweenText) found.push({ start: child.start, end: child.end });
+        if (isEmptyExpression(child) && !joinsTexts(value, at)) {
+          found.push({ start: child.start, end: child.end });
+        }
       });
     }
     emptyJsxExpressions(value, found);

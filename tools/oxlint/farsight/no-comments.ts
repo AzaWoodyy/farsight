@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
 import { defineRule } from "@oxlint/plugins";
@@ -7,6 +8,11 @@ import { isToolingComment } from "./tooling-comments.ts";
 
 const allowed = new Map<string, number>(Object.entries(baseline));
 const ROOT = resolve(import.meta.dirname, "../../..");
+const gone = [...allowed.keys()].filter((file) => !existsSync(resolve(ROOT, file)));
+
+if (gone.length > 0) {
+  throw new Error(`comment-baseline.json names files that no longer exist: ${gone.join(", ")}`);
+}
 
 export const noCommentsRule = defineRule({
   meta: {
