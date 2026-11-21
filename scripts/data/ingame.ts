@@ -4,9 +4,16 @@
  * numbers that go to SQL. The raw JSON stays in object storage.
  *
  * Definitions (the same for v4 and v5, so seasons compare):
- * - `*_10/15/20`: the timeline frame of that minute (frames are one minute
- *   apart); null when the game ended earlier or has no timeline.
- * - `kills_10` / `deaths_10` / `assists_10`: champion kills strictly before 10:00.
+ * - `*_10/15/20` (gold, XP, CS, team gold): the timeline frame of that minute,
+ *   chosen by its time (frames are one minute apart, a few hundred ms late in
+ *   match-v5); null when the game or its timeline ended before the minute, when
+ *   no frame is that close, or without a timeline. The last frame of a match-v5
+ *   timeline is the end of the game: a game over at 19:46 has one about 20:00,
+ *   which is no observation at 20:00.
+ * - team `kills_10/15/20` and `towers_15`: counted strictly before the minute,
+ *   for a game whose duration and timeline both reach it (null otherwise).
+ * - player `kills_10` / `deaths_10` / `assists_10`: champion kills strictly
+ *   before 10:00, whenever the game has a timeline.
  * - `solo_kills`: champion kills with no assisting champion, by a champion
  *   (executions by towers or minions excluded).
  * - `first_blood_*`: Riot's end-of-game flags; the victim comes from the
@@ -37,16 +44,25 @@ import type { Json } from "../../src/lib/json";
 import type { RawGame } from "../../src/lib/sources/riot";
 
 /** Bump when the computation changes: summaries of an older version are recomputed from the raw JSON. */
-export const DERIVE_VERSION = 4;
+export const DERIVE_VERSION = 5;
 
 /**
  * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
  * (dragons and souls from 3, Leaguepedia fallbacks from 4). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
- * it can read the raw JSON, and a published release refuses it.
+ * it can read the raw JSON, and a published release refuses it. Derive 5 changed existing numbers (the minute
+ * statistics of games that ended before the minute), so no older summary is compatible.
  */
-export const DERIVE_COMPATIBLE = 2;
+export const DERIVE_COMPATIBLE = 5;
 
 const MINUTES = [10, 15, 20] as const;
+
+const MINUTE_MS = 60_000;
+
+/** How far from its minute a frame may be and still be that minute's observation. */
+const FRAME_TOLERANCE_MS = 30_000;
+
+/** match-v4 and early v5 report milliseconds in gameDuration for some games, the others seconds. */
+const durationMs = (d: number | undefined) => (d == null ? null : d > 20_000 ? d : d * 1000);
 
 const N = z.number().nullable();
 
@@ -322,11 +338,27 @@ export function summarizeGame(raw: RawGame): IngameOk {
   const names = new Map((stats.participantIdentities ?? []).map((i) => [i.participantId, i.player?.summonerName ?? null]));
   const firstKill = kills[0];
 
-  /** Frame of minute m, if the game lasted that long. */
-  const frameAt = (m: number) => {
-    const f = frames?.[m];
+  const endMs = durationMs(stats.gameDuration);
+  const lastFrameMs = frames?.length ? frames[frames.length - 1].timestamp : null;
 
-    return f && Math.abs(f.timestamp - m * 60_000) < 30_000 ? f : null;
+  /**
+   * Whether the game and its timeline both lasted until minute m, in milliseconds (19:59.9 is not 20:00). The
+   * timeline's last frame stands in for a missing duration.
+   */
+  const reached = (m: number) => lastFrameMs != null && lastFrameMs >= m * MINUTE_MS && (endMs ?? lastFrameMs) >= m * MINUTE_MS;
+
+  /** Frame of minute m: the closest to it in time, if the game lasted that long. */
+  const frameAt = (m: number) => {
+    if (!frames || !reached(m)) return null;
+    let best: (typeof frames)[number] | null = null;
+
+    for (const f of frames) {
+      const gap = Math.abs(f.timestamp - m * MINUTE_MS);
+
+      if (gap < FRAME_TOLERANCE_MS && (!best || gap < Math.abs(best.timestamp - m * MINUTE_MS))) best = f;
+    }
+
+    return best;
   };
 
   const snapshot = (pid: number, m: number) => {
@@ -430,12 +462,12 @@ export function summarizeGame(raw: RawGame): IngameOk {
         : null;
     };
 
-    const killsAt = (m: number) => (frames && frames.length > m ? kills.filter((k) => k.timestamp < m * 60_000 && teamOf.get(k.killerId ?? 0) === t.teamId).length : null);
+    const killsAt = (m: number) => (reached(m) ? kills.filter((k) => k.timestamp < m * MINUTE_MS && teamOf.get(k.killerId ?? 0) === t.teamId).length : null);
 
     // BUILDING_KILL / TURRET_PLATE_DESTROYED name the team that lost the building.
     const towers15 =
-      frames && frames.length > 15
-        ? events.filter((e) => e.type === "BUILDING_KILL" && e.buildingType === "TOWER_BUILDING" && e.timestamp < 900_000 && e.teamId != null && e.teamId !== t.teamId).length
+      reached(15)
+        ? events.filter((e) => e.type === "BUILDING_KILL" && e.buildingType === "TOWER_BUILDING" && e.timestamp < 15 * MINUTE_MS && e.teamId != null && e.teamId !== t.teamId).length
         : null;
 
     return {
@@ -457,7 +489,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
     };
   });
 
-  const duration = stats.gameDuration ?? null;
 
   return {
     status: "ok",
@@ -468,7 +499,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
     statsPage: raw.statsPage,
     hasTimeline: frames != null,
     // match-v4 and early v5 report milliseconds in gameDuration for some games.
-    durationS: duration == null ? null : duration > 20_000 ? Math.round(duration / 1000) : duration,
+    durationS: stats.gameDuration == null ? null : stats.gameDuration > 20_000 ? Math.round(stats.gameDuration / 1000) : stats.gameDuration,
     players,
     teams,
     dragons,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
+import type { Json } from "../../src/lib/json";
 import { RAW_GAME_FORMAT, type RawGame } from "../../src/lib/sources/riot";
 import corpus from "./fixtures/dragons.json";
 import fallbacks from "./fixtures/fallbacks.json";
@@ -210,12 +211,15 @@ test("Leaguepedia's patch of a Riot game version, up to season 14 only", () => {
 });
 
 describe("summaries of an older derive version", () => {
-  test("a line without the dragon fields still parses, and is the oldest version the build keeps", () => {
+  test("a line without the dragon fields still parses", () => {
     const { dragons: _dragons, ...old } = summarizeGame(raw("LOLTMNT05_84144"));
-    const line = IngameLine.parse({ ...old, derive: DERIVE_COMPATIBLE, teams: old.teams.map(({ elder_dragons: _e, dragon_soul: _d, soul: _s, ...t }) => t) });
+    const line = IngameLine.parse({ ...old, derive: 2, teams: old.teams.map(({ elder_dragons: _e, dragon_soul: _d, soul: _s, ...t }) => t) });
 
     expect(line.status === "ok" && line.dragons).toBeUndefined();
-    expect(DERIVE_COMPATIBLE).toBeLessThan(DERIVE_VERSION);
+  });
+
+  test("derive 5 changed existing numbers (minute statistics, first-blood victim): no older summary is kept", () => {
+    expect([DERIVE_VERSION, DERIVE_COMPATIBLE]).toEqual([5, 5]);
   });
 
   test("a derive 3 line, without the Leaguepedia fallbacks of derive 4, still parses", () => {
@@ -229,5 +233,136 @@ describe("summaries of an older derive version", () => {
     });
 
     expect(line.status === "ok" && [line.gameVersion, line.players[0].runes, line.teams[0].heralds]).toEqual([undefined, undefined, undefined]);
+  });
+});
+
+// --- Minute statistics: only for a game that reached the minute ------------------------------
+
+const PIDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const sideOf = (pid: number) => (pid <= 5 ? 100 : 200);
+
+/** A frame at `ms`: every player has 1 000 gold, XP and CS per minute played, plus `extra`. */
+function minuteFrame(ms: number, events: Json[] = [], extra = 0): Json {
+  const value = Math.floor(ms / 60_000) * 1000 + extra;
+  const participantFrames: { [pid: string]: Json } = {};
+
+  for (const pid of PIDS) participantFrames[String(pid)] = { participantId: pid, totalGold: value, xp: value, minionsKilled: value, jungleMinionsKilled: 0 };
+
+  return { timestamp: ms, participantFrames, events };
+}
+
+const championKill = (ms: number, killerId: number, victimId: number) => ({ type: "CHAMPION_KILL", timestamp: ms, killerId, victimId, assistingParticipantIds: [] });
+const towerLost = (ms: number, teamId: number) => ({ type: "BUILDING_KILL", timestamp: ms, killerId: 1, teamId, buildingType: "TOWER_BUILDING" });
+
+/**
+ * A game with one frame per minute up to `fullMinutes` (`lateMs` after each minute, as in match-v5), then the last
+ * frame at `lastMs` (the end of the game in match-v5), and the given duration (seconds, or milliseconds in legacy JSON).
+ * Kills at 5:00, 14:00 and 19:30 by team 100, a tower lost by team 200 at 14:30.
+ */
+function minuteGame(opts: { version?: 4 | 5; duration?: number; fullMinutes: number; lateMs?: number; lastMs?: number | null; skip?: number[]; timeline?: boolean }): RawGame {
+  const { version = 5, duration, fullMinutes, lateMs = 300, lastMs = null, skip = [], timeline = true } = opts;
+  const events = [championKill(300_000, 1, 6), championKill(840_000, 2, 7), towerLost(870_000, 200), championKill(1_170_000, 3, 8)];
+  const times = Array.from({ length: fullMinutes + 1 }, (_, m) => (m === 0 ? 0 : m * 60_000 + lateMs)).filter((_, m) => !skip.includes(m));
+
+  if (lastMs != null) times.push(lastMs);
+
+  // Each event in the first frame after it (the last frame for those after every frame).
+  const frameOf = (e: { timestamp: number }) => {
+    const i = times.findIndex((ms) => ms > e.timestamp);
+
+    return i === -1 ? times.length - 1 : i;
+  };
+
+  const frames = times.map((ms, i) => minuteFrame(ms, events.filter((e) => frameOf(e) === i), ms === lastMs ? 500 : 0));
+
+  const players = { participants: PIDS.map((pid) => ({ participantId: pid, teamId: sideOf(pid), championId: pid })), teams: [{ teamId: 100 }, { teamId: 200 }] };
+  const stats = duration == null ? players : { ...players, gameDuration: duration };
+
+  return {
+    format: RAW_GAME_FORMAT,
+    key: "TEST_MINUTES",
+    gameId: "Test_minutes",
+    version,
+    statsPage: `V${version} data:TEST MINUTES`,
+    timelinePage: timeline ? `V${version} data:TEST MINUTES/Timeline` : null,
+    statsRevid: 1,
+    timelineRevid: timeline ? 2 : null,
+    fetchedAt: "2026-11-21T00:00:00.000Z",
+    stats,
+    timeline: timeline ? { frames } : null,
+  };
+}
+
+const minutes = (g: RawGame) => {
+  const s = summarizeGame(g);
+  const [p] = s.players;
+  const blue = s.teams.find((t) => t.teamId === 100)!;
+
+  return {
+    player: [p.gold_10, p.gold_15, p.gold_20, p.xp_20, p.cs_20],
+    events: [p.kills_10, p.deaths_10],
+    blue: [blue.gold_20, blue.kills_10, blue.kills_15, blue.kills_20, blue.towers_15],
+  };
+};
+
+describe("minute statistics of a game that ended before the minute", () => {
+  test("match-v5 over at 19:46 (G2–Gen.G, MSI 2023): its last frame, about 20:00, is no observation at 20:00", () => {
+    expect(minutes(minuteGame({ duration: 1186, fullMinutes: 19, lastMs: 1_186_622 }))).toEqual({
+      player: [10_000, 15_000, null, null, null],
+      events: [1, 0],
+      blue: [null, 1, 2, null, 1],
+    });
+  });
+
+  test("a game over at exactly 20:00 keeps its 20:00 frame", () => {
+    expect(minutes(minuteGame({ duration: 1200, fullMinutes: 19, lastMs: 1_200_400 })).player).toEqual([10_000, 15_000, 20_500, 20_500, 20_500]);
+    // match-v4: legacy milliseconds duration, frames on the minute, the last one at 20:00.
+    expect(minutes(minuteGame({ version: 4, duration: 1_200_000, fullMinutes: 20, lateMs: 0 })).blue).toEqual([100_000, 1, 2, 3, 1]);
+  });
+
+  test("after 20:00 the 20:00 frame is used, not the end of the game", () => {
+    expect(minutes(minuteGame({ duration: 1250, fullMinutes: 20, lastMs: 1_250_500 }))).toEqual({
+      player: [10_000, 15_000, 20_000, 20_000, 20_000],
+      events: [1, 0],
+      blue: [100_000, 1, 2, 3, 1],
+    });
+  });
+
+  test("19:59.9 is not 20:00: the duration is compared in milliseconds, never rounded up", () => {
+    expect(minutes(minuteGame({ version: 4, duration: 1_199_900, fullMinutes: 20, lateMs: 0 })).blue).toEqual([null, 1, 2, null, 1]);
+  });
+
+  test("over before 15:00: no snapshot, no count at 15 or 20, the 10-minute window still counted", () => {
+    expect(minutes(minuteGame({ duration: 877, fullMinutes: 14, lastMs: 877_649 }))).toEqual({
+      player: [10_000, null, null, null, null],
+      events: [1, 0],
+      blue: [null, 1, null, null, null],
+    });
+  });
+
+  test("a missing frame inside the timeline: each minute is found by its time, a missing minute stays null", () => {
+    expect(minutes(minuteGame({ duration: 1250, fullMinutes: 20, lastMs: 1_250_500, skip: [12] })).player).toEqual([10_000, 15_000, 20_000, 20_000, 20_000]);
+    expect(minutes(minuteGame({ duration: 1250, fullMinutes: 20, lastMs: 1_250_500, skip: [15] })).player).toEqual([10_000, null, 20_000, 20_000, 20_000]);
+  });
+
+  test("without a duration, the timeline's last frame decides", () => {
+    expect(minutes(minuteGame({ fullMinutes: 19, lastMs: 1_186_622 })).blue).toEqual([null, 1, 2, null, 1]);
+    expect(minutes(minuteGame({ fullMinutes: 20, lastMs: 1_250_500 })).blue).toEqual([100_000, 1, 2, 3, 1]);
+  });
+
+  test("a duration past the minute does not make up a timeline that stopped before it", () => {
+    expect(minutes(minuteGame({ duration: 1250, fullMinutes: 19, lastMs: 1_150_000 })).blue).toEqual([null, 1, 2, null, 1]);
+  });
+
+  test("a game without kills keeps true zeros; without a timeline everything is null", () => {
+    const quiet = minuteGame({ duration: 1250, fullMinutes: 20, lastMs: 1_250_500 });
+    const frames = z.object({ frames: z.array(z.object({}).catchall(z.json())) }).parse(quiet.timeline).frames.map((f) => ({ ...f, events: [] }));
+
+    expect(minutes({ ...quiet, timeline: { frames } }).blue).toEqual([100_000, 0, 0, 0, 0]);
+    expect(minutes(minuteGame({ duration: 1250, fullMinutes: 20, timeline: false }))).toEqual({
+      player: [null, null, null, null, null],
+      events: [null, null],
+      blue: [null, null, null, null, null],
+    });
   });
 });
