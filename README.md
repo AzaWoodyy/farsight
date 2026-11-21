@@ -12,13 +12,14 @@ Les questions courantes passent par des outils SQL typés et paramétrés. Le mo
 
 ## Lancer en local
 
-Installer la version de Bun indiquée dans `package.json`, Node 26, `zstd`, `psql` et Docker (ou un serveur Postgres 18), puis :
+Installer la version de Bun indiquée dans `package.json`, Node 26, `zstd`, `psql`, `gh` connecté et Docker (ou un serveur Postgres 18), puis :
 
 ```sh
 bun install --frozen-lockfile
 cp .env.example .env
 bun scripts/ci/data.ts --raw
 docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
+until pg_isready -h localhost -p 5432; do sleep 1; done
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
 psql postgres://postgres:postgres@localhost:5432/postgres -v app_password="'local'" -f db/roles.sql
 DATABASE_OWNER_URL=postgres://postgres:postgres@localhost:5432/postgres bun run db:load
@@ -26,7 +27,7 @@ export DATABASE_URL=postgres://farsight_app:local@localhost:5432/postgres
 bun run dev
 ```
 
-L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts --raw` y restaure, avec `gh` connecté, le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
+L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts --raw` y restaure le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
 
 Sans clé OpenRouter, les outils déterministes restent utilisables et le secours text-to-SQL est explicitement indisponible. Pour activer le modèle, renseigner `OPENROUTER_API_KEY` avec une clé plafonnée ; `OPENROUTER_MODEL` peut remplacer le modèle par défaut. Les valeurs restent exclusivement dans `.env` et ne doivent pas être commitées.
 
@@ -51,10 +52,11 @@ bun run data:package --tag=data-20000101
 ## Vérifier une modification
 
 ```sh
+export TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/farsight_test
 bun run verify
 ```
 
-La commande lance dans l’ordre le lint, les types, les tests en ordre normal et aléatoire, l’eval déterministe hors timeline et le build, et s’arrête au premier échec. Elle demande un serveur Postgres : `TEST_DATABASE_URL` pour les tests (`postgres://postgres:postgres@localhost:5432/farsight_test` avec l’installation ci-dessus), `DATABASE_URL` pour l’eval et le build ([docs/postgres.md](docs/postgres.md)). Pour la lancer à chaque push : `git config core.hooksPath .githooks` (optionnel ; `git push --no-verify` le saute une fois).
+La commande lance dans l’ordre le lint, les types, les tests en ordre normal et aléatoire, l’eval déterministe hors timeline et le build, et s’arrête au premier échec. Elle demande un serveur Postgres : `TEST_DATABASE_URL` pour les tests, `DATABASE_URL` pour l’eval et le build ([docs/postgres.md](docs/postgres.md)). Pour la lancer à chaque push : `git config core.hooksPath .githooks` (optionnel ; `git push --no-verify` le saute une fois).
 
 Les tests sont côté serveur. L’interface se vérifie dans l’application. L’eval lit [eval/questions.json](eval/questions.json), avec une date figée et des attentes attachées au snapshot. Les cas qui nécessitent un modèle sont signalés comme non vérifiés en mode déterministe ; les timelines demandent le JSON local ou R2 et sont exclues de la CI sans secrets.
 
