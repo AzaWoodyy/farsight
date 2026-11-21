@@ -69,3 +69,39 @@ export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redi
     return { page: link, via: "unknown" };
   };
 }
+
+/**
+ * Team identity: one spelling per team whatever the case Leaguepedia wrote it in ("Dplus KIA" on a game,
+ * "Dplus Kia" on its player lines). The page of `Teams` wins; without a page, the first spelling seen. Two pages
+ * that differ only in case stay apart, and so do the names at their case.
+ *
+ * A wiki title always starts with a capital, so a name that differs from its page by the first letter alone
+ * ("paiN Gaming" for the page "PaiN Gaming") is that page as the wiki displays it: the name is kept.
+ */
+export function teamIdentity(pages: Iterable<string>): (name: string) => string {
+  const pageByCase = index([...pages].flatMap((p): [string, string][] => {
+    const page = p.trim();
+
+    return page ? [[fold(page), page]] : [];
+  }));
+
+  const chosen = new Map<string, string>();
+
+  return (raw) => {
+    const name = raw.trim();
+    const key = fold(name);
+    const found = pageByCase.get(key);
+
+    if (found && found.size > 1) return name;
+
+    const known = chosen.get(key);
+
+    if (known != null) return known;
+
+    const page = found && [...found][0];
+    const spelling = page != null && page.slice(1) !== name.slice(1) ? page : name;
+    chosen.set(key, spelling);
+
+    return spelling;
+  };
+}

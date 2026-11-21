@@ -308,8 +308,8 @@ export async function resolvePlayer(
 const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
   { team: "T1", members: ["T1", "SK Telecom T1"], aliases: ["t1", "skt", "skt t1", "sk telecom", "sk telecom t1"] },
   {
-    team: "Dplus KIA",
-    members: ["DAMWON Gaming", "DWG KIA", "Dplus KIA", "Dplus Kia"],
+    team: "Dplus Kia",
+    members: ["DAMWON Gaming", "DWG KIA", "Dplus Kia"],
     aliases: ["dk", "dwg", "damwon", "dwg kia", "dplus", "dplus kia"],
   },
   { team: "Gen.G", members: ["Gen.G", "Samsung Galaxy"], aliases: ["gen.g", "geng", "gen g", "gen", "ssg", "samsung galaxy"] },
