@@ -17,7 +17,9 @@
  * - `solo_kills`: champion kills with no assisting champion, by a champion
  *   (executions by towers or minions excluded).
  * - `first_blood_*`: Riot's end-of-game flags; the victim comes from the
- *   first champion kill of the timeline.
+ *   credited first blood of the timeline (`src/lib/sources/first-blood`: an
+ *   execution is skipped, and the victim is unknown when the kill does not
+ *   match Riot's flags).
  * - `plates`: turret plates destroyed, from the match-v5 timelines (null for
  *   match-v4 ones, which have no plate event, and before patch 9.2).
  * - `dragons`: every dragon kill of the timeline, in order: second, Riot team
@@ -41,6 +43,7 @@
 import { z } from "zod";
 import { dragonKind, soulKind } from "../../src/lib/domain/dragons";
 import type { Json } from "../../src/lib/json";
+import { firstBlood, firstBloodFlags } from "../../src/lib/sources/first-blood";
 import type { RawGame } from "../../src/lib/sources/riot";
 
 /** Bump when the computation changes: summaries of an older version are recomputed from the raw JSON. */
@@ -50,7 +53,8 @@ export const DERIVE_VERSION = 5;
  * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
  * (dragons and souls from 3, Leaguepedia fallbacks from 4). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
  * it can read the raw JSON, and a published release refuses it. Derive 5 changed existing numbers (the minute
- * statistics of games that ended before the minute), so no older summary is compatible.
+ * statistics of games that ended before the minute, the first-blood victim after an execution), so no older summary
+ * is compatible.
  */
 export const DERIVE_COMPATIBLE = 5;
 
@@ -336,7 +340,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
   const plates = raw.version >= 5 && hasPlates(stats.gameVersion) && frames ? events.filter((e) => e.type === "TURRET_PLATE_DESTROYED") : null;
   const teamOf = new Map(stats.participants.map((p) => [p.participantId, p.teamId]));
   const names = new Map((stats.participantIdentities ?? []).map((i) => [i.participantId, i.player?.summonerName ?? null]));
-  const firstKill = kills[0];
+  const credited = firstBlood(kills, teamOf, firstBloodFlags(stats));
 
   const endMs = durationMs(stats.gameDuration);
   const lastFrameMs = frames?.length ? frames[frames.length - 1].timestamp : null;
@@ -430,7 +434,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
       solo_kills: count(kills, (k) => k.killerId === pid && (k.assistingParticipantIds ?? []).length === 0),
       first_blood_kill: bit(s.firstBloodKill),
       first_blood_assist: bit(s.firstBloodAssist),
-      first_blood_victim: firstKill ? (firstKill.victimId === pid ? 1 : 0) : null,
+      first_blood_victim: credited ? (credited.victimId === pid ? 1 : 0) : null,
       double_kills: s.doubleKills ?? null,
       triple_kills: s.tripleKills ?? null,
       quadra_kills: s.quadraKills ?? null,

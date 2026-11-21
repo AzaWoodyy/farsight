@@ -6,8 +6,8 @@
  * Definitions:
  * - gold difference: total gold of team 100 minus team 200 at each frame (one
  *   frame per minute, plus the last one at the end of the game);
- * - first blood: the first champion kill; credited to the victim's opponents
- *   (an execution by a tower or minions still gives it to them);
+ * - first blood: the credited first blood (./first-blood), the killer's team;
+ *   an execution by a tower or minions is not one. None when it is unknown;
  * - towers and inhibitors: BUILDING_KILL names the team that lost the
  *   building, the other team gets it (whoever last hit it, minions included);
  * - dragons, elder, herald, baron, Atakhan: the killer's team (v5 gives it,
@@ -22,10 +22,11 @@
 import { z } from "zod";
 import { DRAGON_LABELS, dragonKind } from "../domain/dragons";
 import type { Json } from "../json";
+import { firstBlood, firstBloodFlags } from "./first-blood";
 import type { RawGame } from "./riot";
 
 /** Bump when the parsed shape or a definition changes: cached timelines of an older format are ignored. */
-export const TIMELINE_FORMAT = 1;
+export const TIMELINE_FORMAT = 2;
 
 export type RiotTeam = 100 | 200;
 
@@ -60,9 +61,16 @@ export type ParsedTimeline = {
 
 const num = z.number().optional();
 
-const Participant = z.object({ participantId: z.number(), teamId: z.number() });
+const flag = z.boolean().optional();
 
-const Team = z.object({ teamId: z.number(), win: z.union([z.boolean(), z.string()]).optional() });
+const Participant = z.object({ participantId: z.number(), teamId: z.number(), firstBloodKill: flag, stats: z.object({ firstBloodKill: flag }).optional() });
+
+const Team = z.object({
+  teamId: z.number(),
+  win: z.union([z.boolean(), z.string()]).optional(),
+  firstBlood: flag,
+  objectives: z.object({ champion: z.object({ first: flag }).optional() }).optional(),
+});
 
 const Stats = z.object({ gameDuration: num, participants: z.array(Participant), teams: z.array(Team) });
 
@@ -198,7 +206,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
   // Respawn time of each dead participant, for aces.
   const deadUntil = new Map<number, number>();
   const aced = new Set<RiotTeam>();
-  let firstBlood = false;
+  const first = firstBlood(all.filter((e) => e.type === "CHAMPION_KILL"), teamOf, firstBloodFlags(stats));
   let lastGrubs: { team: RiotTeam; ms: number; event: TimelineEvent } | null = null;
 
   for (const e of all) {
@@ -207,12 +215,9 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
         const victim = e.victimId ?? 0;
         const victimTeam = teamOf.get(victim);
 
-        if (!victimTeam) break;
+        if (e === first?.event) push(e, "first_blood", asTeam(first.killerTeam));
 
-        if (!firstBlood) {
-          firstBlood = true;
-          push(e, "first_blood", other(victimTeam));
-        }
+        if (!victimTeam) break;
 
         const level = Math.min(18, Math.max(1, levelAt(victim, e.timestamp)));
         deadUntil.set(victim, e.timestamp + BASE_RESPAWN_S[level - 1] * 1000);
