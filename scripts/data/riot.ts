@@ -7,10 +7,16 @@
  * - every downloaded game is one object in data/raw/riot, written atomically;
  * - every summary is one appended line of ingame.jsonl;
  * - a run skips games that already have a current summary, re-derives games
- *   whose raw JSON is cached, and only then goes to the wiki.
+ *   whose raw JSON is cached, and only then goes to the wiki;
+ * - with R2, the summaries are one object beside the raw games, read before a
+ *   run and written back after it, so a machine without data/raw starts from
+ *   the last run's summaries.
  * Stopping the process (Ctrl-C, timeout, budget) loses at most the game in flight.
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { z } from "zod";
 import { type CargoOptions, type CargoRow, cargoQuery, cargoStats, cargoString, wikiPages } from "../../src/lib/sources/leaguepedia";
 import { RAW_GAME_CONTENT_TYPE, RAW_GAME_FORMAT, type RawGame, decodeRawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
@@ -113,6 +119,110 @@ export function loadIngame(file = INGAME_FILE): Map<string, IngameLine> {
   if (broken) console.warn(`  ingame: ${broken} unreadable line(s) in ${file} ignored`);
 
   return out;
+}
+
+// --- Summaries in R2 ----------------------------------------------------------
+
+/** Every summary in one zstd object, beside the raw games it is computed from. */
+export const SUMMARIES_KEY = "derived/ingame.jsonl.zst";
+
+const SUMMARIES_CONTENT_TYPE = "application/zstd";
+
+const sha256 = (body: Uint8Array) => createHash("sha256").update(body).digest("hex");
+
+const LineHead = z.object({ key: z.string(), status: z.string(), derive: z.number().optional() });
+
+/**
+ * Latest line per game, as written: the text and whether it is a current
+ * summary. Read without the schema (`loadIngame` checks a line when it is
+ * used), because parsing 40 000 summaries twice more costs gigabytes.
+ */
+function latestLines(text: string): Map<string, { raw: string; current: boolean }> {
+  const out = new Map<string, { raw: string; current: boolean }>();
+
+  for (const raw of text.split("\n")) {
+    if (!raw.trim()) continue;
+
+    try {
+      const line = LineHead.parse(JSON.parse(raw));
+      out.set(line.key, { raw, current: line.status === "ok" && line.derive === DERIVE_VERSION });
+    } catch {
+      // A line cut by an interrupted append.
+    }
+  }
+
+  return out;
+}
+
+export type PulledSummaries = {
+  /** Lines R2 holds, and how many of them the local file took. */
+  stored: number;
+  taken: number;
+  /** Hash of the object's text, for `pushSummaries` to skip an upload that would change nothing. */
+  sha256: string | null;
+};
+
+/**
+ * Adds to the local file the summaries R2 holds and the file lacks: a game it
+ * has no line for, or one whose local line is not a current summary while R2's
+ * is. A read error throws (the run would otherwise recompute everything and
+ * replace the object); an object that cannot be read back is ignored and
+ * replaced by the next push.
+ */
+export async function pullSummaries(remote: ObjectStore, file = INGAME_FILE): Promise<PulledSummaries> {
+  const body = await remote.get(SUMMARIES_KEY);
+
+  if (!body) return { stored: 0, taken: 0, sha256: null };
+  let text: Buffer;
+
+  try {
+    text = zstdDecompressSync(body);
+  } catch (err) {
+    console.warn(`  ingame: ${SUMMARIES_KEY} in ${remote.label} is unreadable (${err instanceof Error ? err.message : String(err)}), ignored`);
+
+    return { stored: 0, taken: 0, sha256: null };
+  }
+
+  const theirs = latestLines(text.toString("utf8"));
+  const mine = existsSync(file) ? latestLines(readFileSync(file, "utf8")) : new Map<string, { current: boolean }>();
+  const taken: string[] = [];
+
+  for (const [key, line] of theirs) {
+    const local = mine.get(key);
+
+    if (!local || (line.current && !local.current)) taken.push(line.raw);
+  }
+
+  if (taken.length) {
+    mkdirSync(dirname(file), { recursive: true });
+    // The leading newline closes a last line an interrupted append left open.
+    appendFileSync(file, `\n${taken.join("\n")}\n`);
+  }
+
+  return { stored: theirs.size, taken: taken.length, sha256: sha256(text) };
+}
+
+/**
+ * Writes the local summaries (latest line per game, sorted by key) to R2,
+ * unless they are what `pullSummaries` read. Returns whether R2 holds them
+ * now: a failed upload only costs the next run the summaries of this one.
+ */
+export async function pushSummaries(remote: ObjectStore, pulled: PulledSummaries | null, file = INGAME_FILE): Promise<boolean> {
+  const lines = existsSync(file) ? [...latestLines(readFileSync(file, "utf8"))].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : [];
+  const text = Buffer.from(lines.map(([, line]) => `${line.raw}\n`).join(""));
+
+  if (!lines.length || sha256(text) === pulled?.sha256) return true;
+
+  try {
+    await remote.put(SUMMARIES_KEY, zstdCompressSync(text, { params: { [constants.ZSTD_c_compressionLevel]: 10 } }), SUMMARIES_CONTENT_TYPE);
+    console.log(`riot: ${lines.length} in-game summaries written to ${remote.label}`);
+
+    return true;
+  } catch (err) {
+    console.warn(`  ingame: upload of ${SUMMARIES_KEY} failed (${err instanceof Error ? err.message : String(err)}), the next run recomputes what it lacks`);
+
+    return false;
+  }
 }
 
 // --- Download -----------------------------------------------------------------

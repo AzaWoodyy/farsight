@@ -43,7 +43,8 @@ du dépôt, et le build la télécharge avant `next build`.
 demande (**Actions** → **Data release** → **Run workflow**) :
 
 1. Restaure `ingame.jsonl.zst` depuis la release précédente si elle a le même
-   schéma (résumés in-game déjà calculés).
+   schéma (résumés in-game déjà calculés). `data:fetch` y ajoute ceux de R2
+   (`derived/ingame.jsonl.zst`) qui lui manquent, et réécrit cet objet à la fin.
 2. `bun run data:fetch --riot-budget=90` : tables Cargo complètes (environ 200
    requêtes, une à la fois, 3 s d'écart, User-Agent explicite, backoff), puis
    les JSON Riot des parties sans résumé : d'abord lus sur R2 (secrets `R2_*`,
@@ -175,6 +176,14 @@ blood, multi-kills, wards, plaques, premiers objectifs) et les met en SQL. Le
 JSON brut de chaque partie (stats + timeline minute par minute) reste hors
 SQL : un objet gzip par partie, `games/<RiotPlatformGameId>.json.gz`, dans le
 cache local `data/raw/riot` et dans un bucket R2.
+
+Les résumés calculés (une ligne par partie, `data/raw/ingame.jsonl`) sont
+aussi sur R2, en un seul objet zstd : `derived/ingame.jsonl.zst` (environ
+26 Mo). `data:fetch` y prend avant les parties les lignes que le fichier local
+n'a pas, puis réécrit l'objet à la fin s'il a changé. La mise à jour
+quotidienne de Postgres repart de là, sans release. Si l'objet manque ou est
+illisible, les 40 000 résumés sont recalculés depuis les JSON de R2 (une
+dizaine de minutes) et l'objet est réécrit.
 
 Volumes : 28 342 objets, de 15 à 120 Ko chacun (1,2 Go au total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
 lectures par mois).

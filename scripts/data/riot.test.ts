@@ -1,11 +1,12 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
 import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
-import { IngameLine } from "./ingame";
-import { type RiotGameRow, fetchRiotGames, loadIngame } from "./riot";
+import { DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
+import { type RiotGameRow, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries } from "./riot";
 
 /** A minimal S3-compatible server: GET, HEAD, PUT and ListObjectsV2 on one bucket. */
 function fakeR2(objects: Map<string, Uint8Array>) {
@@ -336,4 +337,119 @@ test("the games waiting for a retry count as left when the time budget runs out"
 
   expect(wiki.calls).toEqual([["TEST_40", "TEST_41"]]);
   expect(counts).toMatchObject({ from_wiki: 0, left: 3 });
+});
+
+const noWiki = async () => {
+  throw new Error("the wiki must not be called");
+};
+
+const jsonl = (lines: IngameLine[]) => lines.map((l) => `${JSON.stringify(l)}\n`).join("");
+
+test("a machine without summaries takes them from R2, reads no game, and uploads nothing when nothing changed", async () => {
+  const r2 = fakeR2(new Map());
+  const seed = join(dir, "summaries-seed.jsonl");
+  const ingameFile = join(dir, "summaries-empty", "ingame.jsonl");
+
+  try {
+    writeFileSync(seed, jsonl([summarizeGame(game("SUM_2")), summarizeGame(game("SUM_1"))]));
+    expect(await pushSummaries(r2.store, null, seed)).toBe(true);
+    r2.requests.length = 0;
+
+    const pulled = await pullSummaries(r2.store, ingameFile);
+
+    const counts = await fetchRiotGames([row("SUM_1"), row("SUM_2")], {
+      budgetMinutes: 1, remote: r2.store, rederive: false, local: new FsStore(join(dir, "summaries-empty", "riot")), ingameFile, fetchPages: noWiki,
+    });
+
+    expect(pulled).toMatchObject({ stored: 2, taken: 2 });
+    expect(counts).toMatchObject({ current: 2, from_r2: 0, from_wiki: 0, left: 0 });
+    expect(await pushSummaries(r2.store, pulled, ingameFile)).toBe(true);
+    expect(r2.requests).toEqual([`GET ${SUMMARIES_KEY}`]);
+  } finally {
+    r2.stop();
+  }
+});
+
+test("the summaries of a run are written to R2 with the ones it started from, sorted by game", async () => {
+  const objects = new Map([[rawGameKey("SUM_B"), encodeRawGame(game("SUM_B"))]]);
+  const r2 = fakeR2(objects);
+  const seed = join(dir, "summaries-grow-seed.jsonl");
+  const ingameFile = join(dir, "summaries-grow", "ingame.jsonl");
+
+  try {
+    writeFileSync(seed, jsonl([summarizeGame(game("SUM_C")), summarizeGame(game("SUM_A"))]));
+    await pushSummaries(r2.store, null, seed);
+
+    const pulled = await pullSummaries(r2.store, ingameFile);
+    await fetchRiotGames([row("SUM_A"), row("SUM_B"), row("SUM_C")], {
+      budgetMinutes: 1, remote: r2.store, rederive: false, local: new FsStore(join(dir, "summaries-grow", "riot")), ingameFile, fetchPages: noWiki,
+    });
+
+    expect(await pushSummaries(r2.store, pulled, ingameFile)).toBe(true);
+    const stored = zstdDecompressSync(objects.get(SUMMARIES_KEY)!).toString("utf8").trim().split("\n").map((l) => IngameLine.parse(JSON.parse(l)));
+    expect(stored.map((l) => [l.key, l.status])).toEqual([["SUM_A", "ok"], ["SUM_B", "ok"], ["SUM_C", "ok"]]);
+  } finally {
+    r2.stop();
+  }
+});
+
+test("a local line gives way to R2 only when R2 has a current summary and the local file does not", async () => {
+  const r2 = fakeR2(new Map());
+  const seed = join(dir, "summaries-merge-seed.jsonl");
+  const ingameFile = join(dir, "summaries-merge.jsonl");
+  const ok = (key: string) => summarizeGame(game(key));
+  const old = (key: string) => ({ ...ok(key), derive: DERIVE_VERSION - 1 });
+  const missing = (key: string, reason: string): IngameLine => ({ status: "missing", key, gameId: key, checkedAt: "2026-11-20T00:00:00.000Z", reason });
+
+  try {
+    writeFileSync(seed, jsonl([ok("M_OLD"), ok("M_MISSING"), missing("M_OK", "r2"), old("M_BOTH_OLD"), missing("M_BOTH_MISSING", "r2"), ok("M_NEW")]));
+    await pushSummaries(r2.store, null, seed);
+    // The local file ends on a line an interrupted append left open.
+    writeFileSync(ingameFile, `${jsonl([old("M_OLD"), missing("M_MISSING", "local"), ok("M_OK"), { ...old("M_BOTH_OLD"), durationS: 1 }, missing("M_BOTH_MISSING", "local")])}{"status":"ok","key":"M_CUT`);
+
+    expect(await pullSummaries(r2.store, ingameFile)).toMatchObject({ stored: 6, taken: 3 });
+    const merged = loadIngame(ingameFile);
+
+    expect([...merged.keys()].sort()).toEqual(["M_BOTH_MISSING", "M_BOTH_OLD", "M_MISSING", "M_NEW", "M_OK", "M_OLD"]);
+    expect(merged.get("M_OLD")).toMatchObject({ status: "ok", derive: DERIVE_VERSION });
+    expect(merged.get("M_MISSING")).toMatchObject({ status: "ok", derive: DERIVE_VERSION });
+    expect(merged.get("M_NEW")).toMatchObject({ status: "ok" });
+    expect(merged.get("M_OK")).toMatchObject({ status: "ok" });
+    expect(merged.get("M_BOTH_OLD")).toMatchObject({ durationS: 1 });
+    expect(merged.get("M_BOTH_MISSING")).toMatchObject({ reason: "local" });
+  } finally {
+    r2.stop();
+  }
+});
+
+test("unreadable summaries on R2 are ignored and replaced; a failed read stops the run, a failed upload does not", async () => {
+  const objects = new Map([[SUMMARIES_KEY, new TextEncoder().encode("not zstd")]]);
+  const r2 = fakeR2(objects);
+  const ingameFile = join(dir, "summaries-broken.jsonl");
+
+  const failing: ObjectStore = {
+    label: "failing",
+    get: async () => {
+      throw new Error("R2 GET: HTTP 500");
+    },
+    put: async () => {
+      throw new Error("R2 PUT: HTTP 500");
+    },
+    has: async () => false,
+    list: async () => [],
+  };
+
+  try {
+    writeFileSync(ingameFile, jsonl([summarizeGame(game("SUM_X"))]));
+    const pulled = await pullSummaries(r2.store, ingameFile);
+
+    expect(pulled).toEqual({ stored: 0, taken: 0, sha256: null });
+    expect(await pushSummaries(r2.store, pulled, ingameFile)).toBe(true);
+    expect((await pullSummaries(r2.store, join(dir, "summaries-broken-2.jsonl"))).taken).toBe(1);
+
+    await expect(pullSummaries(failing, ingameFile)).rejects.toThrow("HTTP 500");
+    expect(await pushSummaries(failing, null, ingameFile)).toBe(false);
+  } finally {
+    r2.stop();
+  }
 });

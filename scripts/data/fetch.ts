@@ -15,7 +15,8 @@
  * set (parallel, outside --riot-budget), else downloaded from the wiki and
  * uploaded to R2; cached as one object per game under data/raw/riot, summarized
  * into data/raw/ingame.jsonl. The first catch-up is about 28 000 games (8-9 h)
- * and resumes where it stopped.
+ * and resumes where it stopped. With R2, the summaries R2 holds and this
+ * machine lacks are taken first, and the file is written back to R2 at the end.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
  * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: `data:build` keeps the
@@ -43,7 +44,7 @@ import {
   cargoString,
 } from "../../src/lib/sources/leaguepedia";
 import { remoteStoreFromEnv } from "../../src/lib/storage";
-import { fetchRiotGameList, fetchRiotGames } from "./riot";
+import { fetchRiotGameList, fetchRiotGames, pullSummaries, pushSummaries } from "./riot";
 import { scheduleQuery } from "./schedule";
 import { fetchTeamLogoFiles } from "./team-logos";
 import {
@@ -359,9 +360,16 @@ async function riot(opts: CargoOptions) {
   save("riot_games", list);
   const remote = remoteStoreFromEnv();
   console.log(`riot: raw JSON cached locally${remote ? `, read from and uploaded to ${remote.label}` : " (R2 not configured: wiki only, no upload)"}`);
-  const counts = await fetchRiotGames(list, { budgetMinutes: riotBudget, remote, rederive });
+  const pulled = remote ? await pullSummaries(remote) : null;
 
-  return Object.fromEntries(Object.entries(counts).map(([k, v]) => [`riot_${k}`, v]));
+  if (pulled?.stored) console.log(`riot: ${pulled.stored} in-game summaries in ${remote?.label}, ${pulled.taken} missing here`);
+  const counts = await fetchRiotGames(list, { budgetMinutes: riotBudget, remote, rederive });
+  const pushed = remote ? await pushSummaries(remote, pulled) : null;
+
+  return {
+    ...Object.fromEntries(Object.entries(counts).map(([k, v]) => [`riot_${k}`, v])),
+    ...(pulled && { riot_summaries_from_r2: pulled.taken, riot_summaries_upload_errors: pushed ? 0 : 1 }),
+  };
 }
 
 // --- Modes --------------------------------------------------------------------

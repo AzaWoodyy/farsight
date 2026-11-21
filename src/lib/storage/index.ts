@@ -5,9 +5,10 @@ import { writeFileAtomic } from "../fs-atomic";
 
 /**
  * Object storage for the per-game Riot JSON (end-of-game stats and the
- * minute-by-minute timeline). They stay out of SQL: the SQLite file only holds
+ * minute-by-minute timeline). They stay out of SQL: the database only holds
  * what ingestion computes from them, and a game's detail is read one object at
- * a time.
+ * a time. Ingestion also keeps there the summaries it computes from them, as
+ * one object (scripts/data/riot.ts).
  *
  * Two implementations behind one interface:
  * - `FsStore`: a local directory. It is the ingestion cache (data/raw/riot)
