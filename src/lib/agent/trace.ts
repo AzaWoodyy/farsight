@@ -23,6 +23,7 @@ import type { LanguageModelCallEndEvent, Telemetry } from "ai";
 import { z } from "zod";
 import { MASKED, maskPersonalData } from "../tracing/mask";
 import { llmStatus } from "./llm";
+import { answerLocale } from "./messages";
 import type { Route } from "./query";
 import type { Answer, Entities, QueryPlan, StepName, StepPart, TraceStatus } from "./types";
 
@@ -229,6 +230,8 @@ export function recordOutcome(answer: Answer, entities: Entities, steps: Map<Ste
     level: [...steps.values()].some((s) => s.status === "error") ? "ERROR" : "DEFAULT",
     metadata: {
       route: answer.meta.route,
+      // The language of the page that asked: candidate eval cases are replayed in it (scripts/eval-candidates.ts).
+      locale: answerLocale(),
       rowCount: answer.meta.rowCount,
       attempts: answer.meta.attempts,
       unread: answer.meta.unread,
