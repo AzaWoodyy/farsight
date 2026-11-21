@@ -1152,7 +1152,7 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
     // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
     if (figure) return { kind: "sql", reason: msg().route.championFigureUnsorted(figure) };
 
-    // "champions les moins joués", "pires champions": the tool has no ascending order, and the highest would be the opposite answer.
+    // "champions les moins joués", "champions avec le pire winrate": the tool has no ascending order, and the highest would be the opposite answer.
     if (LOWEST.test(question)) return { kind: "sql", reason: msg().route.championLowest };
 
     return championRankingRoute(question, e);
