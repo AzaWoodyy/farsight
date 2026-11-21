@@ -5,7 +5,9 @@ import { cardFonts } from "./card-font";
 import { Mark } from "./logo";
 import { PALETTE, SITE } from "./site";
 
-export const shareAlt = (locale: Locale) => `${SITE.name} : ${SHELL[locale].tagline}`;
+const ALT_SEPARATOR: Record<Locale, string> = { fr: " : ", en: ": " };
+
+export const shareAlt = (locale: Locale) => `${SITE.name}${ALT_SEPARATOR[locale]}${SHELL[locale].tagline}`;
 
 /** Share card of a language: the mark and name, the tagline, and three real questions, on the dark palette. */
 export async function shareCard(locale: Locale, size: { width: number; height: number }) {

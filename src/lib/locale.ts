@@ -12,17 +12,20 @@ export const NO_DATA: Record<Locale, string> = { fr: "n/d", en: "n/a" };
 
 const numberFormats = new Map<string, Intl.NumberFormat>();
 
-/** Numbers as the language writes them ("1 233,5" / "1,233.5"), with at most `digits` decimals. */
-export function numberFormat(locale: Locale, digits: number): Intl.NumberFormat {
-  const key = `${locale}:${digits}`;
+/** Numbers as the language writes them ("1 233,5" / "1,233.5"), with at most `digits` decimals and at least `minDigits`. */
+export function numberFormat(locale: Locale, digits: number, minDigits = 0): Intl.NumberFormat {
+  const key = `${locale}:${digits}:${minDigits}`;
   const cached = numberFormats.get(key);
 
   if (cached) return cached;
-  const format = new Intl.NumberFormat(INTL_TAG[locale], { maximumFractionDigits: digits });
+  const format = new Intl.NumberFormat(INTL_TAG[locale], { minimumFractionDigits: minDigits, maximumFractionDigits: digits });
   numberFormats.set(key, format);
 
   return format;
 }
+
+/** Thousands with one fixed decimal, as the gold gap of a timeline: "1,0k" / "1.0k". */
+export const thousands = (locale: Locale, n: number): string => `${numberFormat(locale, 1, 1).format(n / 1000)}k`;
 
 /** Dates as the language writes them, always in UTC: a game has one date, whoever reads it. */
 export const dateFormat = (locale: Locale, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>

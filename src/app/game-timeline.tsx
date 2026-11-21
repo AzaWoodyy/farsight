@@ -1,6 +1,7 @@
-import { useUi } from "./i18n/locale-context";
+import { useLocale, useUi } from "./i18n/locale-context";
 import type { Ui } from "./i18n/ui";
 import type { Side, TimelineView } from "@/lib/agent/types";
+import { type Locale, thousands } from "@/lib/locale";
 
 const W = 720;
 const H = 220;
@@ -12,7 +13,7 @@ const SIDE_CLS: Record<Side, string> = { blue: "text-blue", red: "text-red" };
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-const gold = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${(Math.abs(n) / 1000).toFixed(1)}k`;
+const gold = (n: number, locale: Locale) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${thousands(locale, Math.abs(n))}`;
 
 function eventText(e: TimelineView["events"][number], t: Ui["timeline"]): string {
   if (e.kind === "grubs") return e.detail ?? t.events.grubs;
@@ -22,6 +23,7 @@ function eventText(e: TimelineView["events"][number], t: Ui["timeline"]): string
 
 export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
   const ui = useUi();
+  const locale = useLocale();
   const { marks } = ui.timeline;
   const end = Math.max(t.durationS ?? 0, t.gold.at(-1)?.s ?? 0, 60);
   const peak = Math.max(2000, ...t.gold.map((g) => Math.abs(g.diff)));
@@ -57,7 +59,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full"
           role="img"
-          aria-label={ui.timeline.chart(t.blue, t.red, at15 ? gold(at15.diff) : null)}
+          aria-label={ui.timeline.chart(t.blue, t.red, at15 ? gold(at15.diff, locale) : null)}
         >
           <defs>
             <clipPath id="gold-blue">
@@ -72,7 +74,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
             <g key={v}>
               <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} className="stroke-line" strokeDasharray="2 4" />
               <text x={PAD.left - 6} y={y(v) + 3} textAnchor="end" className={`text-[10px] ${v > 0 ? "fill-blue" : "fill-red"}`}>
-                {gold(v)}
+                {gold(v, locale)}
               </text>
             </g>
           ))}
@@ -98,7 +100,7 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
           <path d={line} fill="none" className="stroke-foreground" strokeWidth={1.5} strokeLinejoin="round" />
           {t.gold.map((g) => (
             <circle key={g.s} cx={x(g.s)} cy={y(g.diff)} r={2.2} className="fill-foreground">
-              <title>{`${clock(g.s)} : ${gold(g.diff)} (${g.diff === 0 ? ui.timeline.tie : name(g.diff > 0 ? "blue" : "red")})`}</title>
+              <title>{`${clock(g.s)} : ${gold(g.diff, locale)} (${g.diff === 0 ? ui.timeline.tie : name(g.diff > 0 ? "blue" : "red")})`}</title>
             </circle>
           ))}
 
