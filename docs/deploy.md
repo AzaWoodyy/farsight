@@ -541,10 +541,16 @@ l'ajout d'une troisième a été refusé par Vercel avec un 402 (option payante)
 Aperçus de liens : `GET /api/card` (l'image d'une réponse) et les liens
 `/?q=…`, `/en?q=…` sont lus par les robots des messageries, donc sans BotID.
 Ils ne coûtent jamais d'appel au modèle : une lecture SQL et, pour l'image, son
-rendu, mis en cache par le CDN pour la durée du déploiement. Le code limite
-`/api/card` à 300 requêtes par IP et par 10 minutes, par instance. Aucune
-règle du firewall ne plafonne `/api/card` : une troisième règle n'est pas
-disponible sur le plan Hobby (402).
+rendu, mis en cache par le CDN cinq minutes. Le code limite `/api/card` à 300
+requêtes par IP et par 10 minutes, par instance, et les pages `/q` et `/en/q`
+(où mènent ces liens) à 300 autres, partagées entre les deux (`link`) : un lien
+limité garde la carte de la page d'accueil, jamais une page d'erreur. La carte
+d'une question est calculée au plus une fois par cinq minutes et par instance.
+`/api/card` redirige (308) toute autre chaîne de requête vers son adresse
+canonique, `?l=<langue>&q=<question>`, celle que nomment les métadonnées : un
+paramètre en plus n'ouvre pas une nouvelle entrée du CDN. Aucune règle du
+firewall ne plafonne ces routes : une troisième règle n'est pas disponible sur
+le plan Hobby (402).
 
 ### 2. BotID
 

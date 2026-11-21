@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { getLlm, withoutLlm } from "../src/lib/agent/llm";
-import { cardOf } from "../src/lib/agent/share";
+import { cardOf, clearShareCards, rememberCard, type ShareCard } from "../src/lib/agent/share";
 import type { ChampionRankingInput } from "../src/lib/agent/tools";
 import type { Answer, ResultRow, SeriesDetail } from "../src/lib/agent/types";
 
@@ -212,4 +212,56 @@ test("a run for a card never gets the model, whatever the key", () => {
     if (key === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = key;
   }
+});
+
+describe("one computation per question and five minutes", () => {
+  const card: ShareCard = { title: "Chovy", line: "", heading: "Chovy", duel: null, top: [], metric: "", figures: [] };
+
+  test("the same question shares one run; another question, or five minutes later, runs again", async () => {
+    clearShareCards();
+    let runs = 0;
+    const compute = async () => (runs++, card);
+    const now = 1_800_000_000_000;
+
+    const first = rememberCard("fr\nChovy", compute, now);
+    expect(rememberCard("fr\nChovy", compute, now + 299_999)).toBe(first);
+    expect(await first).toBe(card);
+    expect(runs).toBe(1);
+
+    await rememberCard("en\nChovy", compute, now);
+    expect(runs).toBe(2);
+
+    await rememberCard("fr\nChovy", compute, now + 300_000);
+    expect(runs).toBe(3);
+  });
+
+  test("a run that throws reads null and is not kept", async () => {
+    clearShareCards();
+
+    let runs = 0;
+
+    const failing = async (): Promise<ShareCard | null> => {
+      runs++;
+
+      throw new Error("database down");
+    };
+
+    expect(await rememberCard("fr\nChovy", failing)).toBeNull();
+    expect(await rememberCard("fr\nChovy", async () => (runs++, card))).toBe(card);
+    expect(runs).toBe(2);
+  });
+
+  test("at most 500 questions: the oldest is forgotten first", async () => {
+    clearShareCards();
+    let runs = 0;
+    const compute = async () => (runs++, card);
+
+    for (let i = 0; i <= 500; i++) await rememberCard(`fr\n${i}`, compute);
+    expect(runs).toBe(501);
+
+    await rememberCard("fr\n500", compute);
+    expect(runs).toBe(501);
+    await rememberCard("fr\n0", compute);
+    expect(runs).toBe(502);
+  });
 });

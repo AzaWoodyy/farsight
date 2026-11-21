@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { z } from "zod";
 import { shareCard } from "@/lib/agent/share";
+import { rateLimited } from "@/lib/http/request-policy";
 import { CARD_SIZE } from "./brand/answer-card";
 import { SITE } from "./brand/site";
 import { type Locale, OG_LOCALE, PATHS } from "./i18n/locales";
@@ -28,11 +30,16 @@ export async function answerMetadata(locale: Locale, search: Record<string, stri
   const question = q == null ? null : questionIn(`?${new URLSearchParams({ q })}`);
 
   // The answer reads the database over the network and the clock: rendered per request, never while prerendering.
-  if (question) await connection();
+  if (!question) return home;
 
-  const card = question ? await shareCard(question, locale) : null;
+  await connection();
 
-  if (!question || !card) return home;
+  // Limited like the image, per IP: a limited link keeps the home page's card, never an error page.
+  if (rateLimited(new Request("https://link.invalid/", { headers: await headers() }), "link")) return home;
+
+  const card = await shareCard(question, locale);
+
+  if (!card) return home;
 
   const text = { title: card.title, description: card.line };
   const image = { url: `${cardOrigin()}/api/card?${new URLSearchParams({ l: locale, q: question })}`, ...CARD_SIZE, alt: card.title };

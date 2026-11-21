@@ -135,9 +135,52 @@ export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCa
   return card;
 }
 
-/** The card of a question, computed by the rules alone: a link preview never calls the model. */
-export async function shareCard(question: string, locale: Locale = DEFAULT_LOCALE): Promise<ShareCard | null> {
-  const answer = await withoutLlm(() => runAgent(question, () => {}, undefined, undefined, locale)).catch(() => null);
+type Remembered = { at: number; card: Promise<ShareCard | null> };
 
-  return answer && cardOf(answer, locale);
+const cards = new Map<string, Remembered>();
+
+/** As long as the app's other caches: the database is reloaded without a deployment and read within five minutes. */
+const CARD_TTL_MS = 5 * 60 * 1_000;
+const MAX_CARDS = 500;
+
+/**
+ * The card under `key`, computed once per five minutes on this instance: the link's page and its image, and every
+ * crawler that opens the same link, share one pipeline run. A computation that throws is forgotten and reads null.
+ */
+export function rememberCard(key: string, compute: () => Promise<ShareCard | null>, now = Date.now()): Promise<ShareCard | null> {
+  const known = cards.get(key);
+
+  if (known && now - known.at < CARD_TTL_MS) return known.card;
+
+  // Re-inserting an expired key moves it to the end of the insertion order.
+  if (known) cards.delete(key);
+
+  // A full table forgets its oldest entry: a Map iterates in insertion order.
+  if (cards.size >= MAX_CARDS) {
+    const oldest = cards.keys().next().value;
+
+    if (oldest !== undefined) cards.delete(oldest);
+  }
+
+  const entry: Remembered = { at: now, card: Promise.resolve(null) };
+  entry.card = compute().catch(() => {
+    if (cards.get(key) === entry) cards.delete(key);
+
+    return null;
+  });
+  cards.set(key, entry);
+
+  return entry.card;
+}
+
+/** Forgets every remembered card (tests). */
+export function clearShareCards() {
+  cards.clear();
+}
+
+/** The card of a question, computed by the rules alone: a link preview never calls the model. */
+export function shareCard(question: string, locale: Locale = DEFAULT_LOCALE): Promise<ShareCard | null> {
+  return rememberCard(`${locale}\n${question}`, async () =>
+    cardOf(await withoutLlm(() => runAgent(question, () => {}, undefined, undefined, locale)), locale),
+  );
 }
