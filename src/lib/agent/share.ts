@@ -5,23 +5,13 @@ import { withoutLlm } from "./llm";
 import { runAgent } from "./run";
 import type { Answer, TableCell } from "./types";
 
-/**
- * What the preview of a link to an answer shows (`/?q=…` pasted in a chat): the page's title and description,
- * and the figures its image draws. Everything comes from the answer, nothing from the visitor's text.
- */
 export type ShareCard = {
-  /** The answer's own title, written from the resolved entities. */
   title: string;
-  /** The first sentence of the summary: the description of the link, and the body of an image without figures. */
   line: string;
-  /** What the image writes above its figures: the title, or the part of it the figures do not already say. */
   heading: string;
-  /** Two sides and their score: one series, two teams, two players. */
   duel: { a: string; b: string; scoreA: number; scoreB: number; caption: string } | null;
-  /** The head of a ranking, and what its values count ("bans", "KDA"). */
   top: { rank: number; name: string; value: string; icon: string | null }[];
   metric: string;
-  /** The key figures of a player's or a team's history. */
   figures: { label: string; value: string }[];
 };
 
@@ -42,17 +32,11 @@ const LABELS: Record<Locale, { faced: (games: number) => string; series: (n: num
   },
 };
 
-/** What the history tools count over the scope (player_event_history, team_history). */
 const HistoryTotals = z.object({ events: z.number(), wins: z.number(), losses: z.number() });
 
 const LINE_MAX = 200;
 const TOP = 3;
 
-/**
- * A period that ends a sentence: a capital letter or a number follows it (not "Gen.G", not "66.7 %"). Two
- * periods are followed by one without ending anything: the rank of a list (": 1. PSG Talon, 2. T1"), which a
- * ranking's summary writes after a separator, and a French month ("9 nov. 2025").
- */
 const SENTENCE_END = /(?<![:;,]\s\d{1,2})(?<!\b(?:janv|févr|avr|juil|sept|oct|nov|déc))\.(?=\s+[\p{Lu}\d]|\s*$)/u;
 
 function firstSentence(text: string): string {
@@ -62,7 +46,6 @@ function firstSentence(text: string): string {
   return sentence.length > LINE_MAX ? `${sentence.slice(0, LINE_MAX - 1).trimEnd()}…` : sentence;
 }
 
-/** The first rows of a ranked table and the column that ranks them, when the answer says which one it is. */
 function ranking(answer: Answer, locale: Locale): Pick<ShareCard, "top" | "metric"> | null {
   const { table } = answer;
 
@@ -92,11 +75,6 @@ function ranking(answer: Answer, locale: Locale): Pick<ShareCard, "top" | "metri
   return { metric: table.columns[at], top: table.rows.slice(0, TOP).map((r) => ({ rank: Number(r[0]), name: String(r[1] ?? ""), value: text(r[at] ?? null), icon: null })) };
 }
 
-/**
- * The card of an answer, or null when the link keeps the site's own card: a typed tool must have answered,
- * with rows, without a word left unread and without a player picked among homonyms without certainty. An answer
- * in doubt is not put on an image, and the null is what `shareCard` remembers for its question.
- */
 export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCard | null {
   const { meta } = answer;
 
@@ -116,10 +94,8 @@ export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCa
   } else if (one) {
     card.heading = one.label;
 
-    // A forfeit has no score to draw: the title names its winner.
     if (!one.forfeitedBy) card.duel = { a: one.teamA, b: one.teamB, scoreA: one.winsA, scoreB: one.winsB, caption: one.bestOf ? `BO${one.bestOf}` : "" };
   } else if (answer.rows.length) {
-    // The tool's own counts, the ones its summary writes: a tournament played for two teams is two rows.
     const totals = HistoryTotals.safeParse(meta.totals).data;
     const best = answer.rows.filter((r) => r.placeNumber != null).toSorted((x, y) => x.placeNumber! - y.placeNumber! || y.year - x.year)[0];
 
@@ -140,23 +116,16 @@ type Remembered = { at: number; card: Promise<ShareCard | null> };
 
 const cards = new Map<string, Remembered>();
 
-/** As long as the app's other caches: the database is reloaded without a deployment and read within five minutes. */
 const CARD_TTL_MS = 5 * 60 * 1_000;
 const MAX_CARDS = 500;
 
-/**
- * The card under `key`, computed once per five minutes on this instance: the link's page and its image, and every
- * crawler that opens the same link, share one pipeline run. A computation that throws is forgotten and reads null.
- */
 export function rememberCard(key: string, compute: () => Promise<ShareCard | null>, now = Date.now()): Promise<ShareCard | null> {
   const known = cards.get(key);
 
   if (known && now - known.at < CARD_TTL_MS) return known.card;
 
-  // Re-inserting an expired key moves it to the end of the insertion order.
   if (known) cards.delete(key);
 
-  // A full table forgets its oldest entry: a Map iterates in insertion order.
   if (cards.size >= MAX_CARDS) {
     const oldest = cards.keys().next().value;
 
@@ -174,12 +143,10 @@ export function rememberCard(key: string, compute: () => Promise<ShareCard | nul
   return entry.card;
 }
 
-/** Forgets every remembered card (tests). */
 export function clearShareCards() {
   cards.clear();
 }
 
-/** The card of a question, computed by the rules alone: a link preview never calls the model. */
 export function shareCard(question: string, locale: Locale = DEFAULT_LOCALE): Promise<ShareCard | null> {
   return rememberCard(`${locale}\n${question}`, async () =>
     cardOf(await withoutLlm(() => runAgent(question, () => {}, undefined, undefined, locale)), locale),

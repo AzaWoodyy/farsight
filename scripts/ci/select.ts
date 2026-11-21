@@ -18,7 +18,6 @@ if (event.pull_request) {
   const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}...${head}`], { encoding: "utf8" }).split("\0").filter(Boolean);
   selected = affected(paths);
 } else if (event.after && /^[a-f0-9]{40}$/.test(event.after)) {
-  // main compares against the last commit whose main run succeeded, so a failed or cancelled run is never skipped.
   const after: string = event.after;
   let green: string[] = [];
 
@@ -37,7 +36,6 @@ if (event.pull_request) {
       return false;
     }
   }, sha => {
-    // The run of that commit used its own select.ts: only a run under this rule proves its range.
     try {
       return execFileSync("git", ["show", `${sha}:scripts/ci/select.ts`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).includes("pushBase(");
     } catch {

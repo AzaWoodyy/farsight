@@ -1,24 +1,3 @@
-/**
- * db:load: (re)build the Postgres database from the raw cache.
- *
- *   bun run db:load                       DATABASE_OWNER_URL (else DATABASE_URL), schema "farsight"
- *   bun run db:load --schema=farsight_ci  another schema (tests, a side-by-side trial)
- *   bun run db:load --allow-older-summaries   keep in-game summaries of an older, compatible derivation (CI's pinned snapshot)
- *   bun run db:load --allow-incomplete        load rows that fail the checks below (a partial local cache)
- *
- * The rows come from scripts/data/derive.ts. They are copied (COPY) into a fresh schema
- * `<schema>_next` built by every migration, analyzed and granted to the app roles, then swapped in by two renames in
- * one transaction: readers see the old data until the commit, then the new data, never a half-loaded schema. The old
- * schema is dropped afterwards. Connect as the owner role, without a transaction pooler (Neon: the direct host).
- *
- * Nothing is written when the rows fail a check of scripts/data/checks.ts (a row without its parent, a league of the
- * scope without a game, a raw file data:fetch did not save, summaries of an older derivation), or when a league
- * would lose rows the live data has, or more than 2 % of the players with a photo are gone (`--allow-shrink`).
- *
- * The swap holds two copies of the data for the time of the load. Where the storage cannot (Neon's free plan: 1 GB for
- * a database of about 570 MB), `--in-place` drops the live schema first and loads it again under the same name: one
- * copy, but the app has no data until the load commits. DATABASE_SIZE_LIMIT_MB picks it when the swap would not fit.
- */
 import pg from "pg";
 import { from as copyFrom } from "pg-copy-streams";
 import { pipeline } from "node:stream/promises";
@@ -39,7 +18,6 @@ if (!url) throw new Error("Set DATABASE_OWNER_URL (or DATABASE_URL locally) to t
 
 if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error(`Invalid schema name ${schema}`);
 
-/** A value in COPY's text format: `\N` for NULL, backslash escapes for the characters that would split a row. */
 const field = (v: Cell) => (v == null ? "\\N" : String(v).replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n").replace(/\r/g, "\\r"));
 
 function* lines(rows: Cell[][], batch = 2_000) {
@@ -66,14 +44,12 @@ const liveBytes = Number((await client.query<{ bytes: string | null }>(
   [schema],
 )).rows[0]?.bytes ?? 0);
 
-// Two copies of about the live size must fit, with a tenth to spare.
 const inPlace = args.includes("--in-place") || (limitMb > 0 && 2 * liveBytes > 0.9 * limitMb * 1e6);
 const next = inPlace ? schema : `${schema}_next`;
 const old = `${schema}_old`;
 
 const liveExists = Boolean((await client.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [schema])).rowCount);
 
-/** What each league holds, counted from the leagues so a league with standings and no game is counted too. */
 const METRICS = ["tournaments", "games", "player lines", "in-game games", "standings"] as const;
 
 type LeagueCounts = Map<string, number[]>;
@@ -96,7 +72,6 @@ async function schemaCounts(name: string): Promise<LeagueCounts> {
   return new Map(rows.map((r) => [r.league, r.counts]));
 }
 
-/** The same counts from the derived rows, before anything is written. */
 function derivedCounts(): LeagueCounts {
   const rowsOf = (table: string) => {
     const t = derived.tables.get(table)!;
@@ -133,7 +108,6 @@ function derivedCounts(): LeagueCounts {
   return counts;
 }
 
-/** Every count of a live league the new data has less of, as "LCK: games 900 → 850". */
 function losses(live: LeagueCounts, fresh: LeagueCounts): string[] {
   return [...live].flatMap(([league, before]) =>
     METRICS.flatMap((metric, i) => {
@@ -154,7 +128,6 @@ function derivedPhotoPlayers(): number {
   return new Set(t.rows.map((r) => r[at])).size;
 }
 
-// In place, the live schema goes before the load: the derived rows are compared with it first, league by league.
 if (inPlace && liveExists && !args.includes("--allow-shrink")) {
   const lost = [...losses(await schemaCounts(schema), derivedCounts()), ...photoLoss(await photoPlayersIn(schema), derivedPhotoPlayers())];
 
@@ -190,7 +163,6 @@ try {
   for (const r of derived.runs)
     await client.query(insertRun, [r.kind, r.started_at, r.finished_at, SCHEMA_VERSION, JSON.stringify(r.row_counts), JSON.stringify({ requests: r.requests, cached_responses: r.cached_responses })]);
 
-  // Recorded as `build`: the day of this run is the data's day (src/lib/db/release.ts).
   await client.query(insertRun, [
     "build", startedAt, new Date().toISOString(), SCHEMA_VERSION,
     JSON.stringify(Object.fromEntries(SCHEMA_TABLES.filter((t) => t !== "ingest_runs").map((t) => [t, rowCounts[t] ?? 0]))),
@@ -205,7 +177,6 @@ try {
   await grantReaders(client, next, SCHEMA_VIEWS);
   const analyzedIn = seconds(analyzeStarted);
 
-  // A partial ingestion must not replace complete data: the staged schema keeps, league by league, what the live one has.
   if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
     const lost = [...losses(await schemaCounts(schema), await schemaCounts(next)), ...photoLoss(await photoPlayersIn(schema), await photoPlayersIn(next))];
 
@@ -215,7 +186,6 @@ try {
     }
   }
 
-  // The swap: two renames in one transaction, then the old schema goes.
   if (!inPlace) {
     await client.query("BEGIN");
     await client.query(`DROP SCHEMA IF EXISTS ${quoteIdent(old)} CASCADE`);

@@ -3,17 +3,6 @@ import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { englishBare, englishIn, frenchIn, frenchNamed } from "../domain/leagues";
 import type { LlmStatus } from "./llm";
 
-/**
- * What the agent writes outside its tools, in each language: the steps of the trace, the notes, and the
- * answers that hold no table (out of scope, missing data, empty, failed). `en` is typed on `fr`, so a text
- * added in one language and forgotten in the other fails the typecheck. A text with a name or a number in it
- * is a function: each language keeps its own word order.
- *
- * The language is the one of the request (`withLocale`), French when nothing sets it: the tests and the eval
- * run without one.
- */
-
-/** French names its deciders itself. */
 const OWN_NAMES: Record<string, string> = {};
 
 const fr = {
@@ -85,7 +74,6 @@ const fr = {
       "Reformule ces faits en une ou deux phrases de synthèse en français, qui répondent à la question. " +
       "Garde exactement leurs chiffres et leur périmètre (compétition, éditions, période) : " +
       "n'ajoute aucun chiffre, aucune période (saison, année en cours…) ni aucune interprétation absente des faits.",
-    /** Key of the facts in the JSON given to the model: named in its language, like the instructions. */
     factsKey: "faits",
     summaryFromAggregates: "synthèse à partir des agrégats",
     summaryRejected: (beyond: string) => `synthèse rejetée, absent des faits : ${beyond}`,
@@ -93,7 +81,6 @@ const fr = {
     outOfScopeSummary: (reason: string, scope: string) => `Question hors périmètre : ${reason}. La base couvre : ${scope}.`,
     noToolFor: (detail: string) => `Aucun outil typé ne couvre cette question (${detail})`,
     routing: "routage",
-    /** No answer, in the visitor's words: the technical reason (no typed tool, no model) stays in the trace. */
     searchGaveNothing: "Je ne sais pas encore répondre à cette question : ma recherche n'a rien donné. Essaie de la reformuler, ou l'une des questions ci-dessous.",
     cannotAnswerYet: "Je ne sais pas encore répondre à cette question. Essaie de la reformuler, ou l'une des questions ci-dessous.",
     noResultFor: (who: string, league: string | null) => `Aucun résultat${who ? ` pour ${who}` : ""}${league ? ` (${league})` : ""} dans la base.`,
@@ -139,7 +126,6 @@ const fr = {
       `classement de champions (tri : ${sort}${total ? " au total" : ""}${role ? `, rôle ${role}` : ""}${side ? `, côté ${side}` : ""})`,
     playerRanking: (role: string | null, criterion: string, side: string | null) => `classement de joueurs${role ? ` du rôle ${role}` : ""} (critère : ${criterion}${side ? `, côté ${side}` : ""})`,
     teamRanking: (criterion: string, ascending: boolean, side: string | null) => `classement d'équipes (critère : ${criterion}${ascending ? ", ordre croissant" : ""}${side ? `, côté ${side}` : ""})`,
-    /** A league of the scope as a sentence names it: "la LPL", "le MSI", "les Worlds". */
     leagueScope: (short: string | null) => (!short ? "cette compétition" : frenchNamed(short)),
     ingameStats: (mention: string) => `les statistiques in-game (${mention})`,
     ingameFor: (what: string, scope: string) => `${what} pour ${scope}`,
@@ -207,20 +193,16 @@ const fr = {
     modelSays: (model: string, text: string) => `${model} : ${text}`,
     leagueDropped: (league: string) => `compétition « ${league} » retirée : la question ne la nomme pas et aucune partie n'y correspond sur la période`,
     dataAbsent: "donnée absente",
-    /** Data the questions ask for and no column holds. */
     concepts: { spells: "les sorts d'invocateur", mvp: "les distinctions MVP et joueur du match" },
-    /** The language of this catalog, as the SQL prompt names it to the model. */
     promptLanguage: "French",
   },
 
   llm: {
-    /** Shown to the user when the answer was produced without the LLM because of the quota. */
     quotaNote: "Le modèle de langage est indisponible pour le moment : les questions les plus libres peuvent rester sans réponse.",
     quotaError: "quota OpenRouter épuisé, bascule en mode déterministe",
   },
 
   decide: {
-    /** A decider as the trace names it; a name without an entry is shown as it is. */
     names: OWN_NAMES,
     failed: (who: string, error: string) => `${who}: erreur (${error})`,
     unavailable: (who: string) => `${who}: indisponible`,
@@ -476,28 +458,20 @@ const en: Messages = {
 
 const MESSAGES: Record<Locale, Messages> = { fr, en };
 
-// The language of the answer follows the request through every step without a parameter on each function.
 const requestLocale = new AsyncLocalStorage<Locale>();
 
 export const withLocale = <T>(locale: Locale, run: () => T): T => requestLocale.run(locale, run);
 
 export const answerLocale = (): Locale => requestLocale.getStore() ?? DEFAULT_LOCALE;
 
-/**
- * A text written where it is used, in the language of the request: the tools build their sentences from many
- * small parts, each one next to the figures it names.
- */
 export const say = <T>(fr: T, en: T): T => (answerLocale() === "fr" ? fr : en);
 
-/** A label kept in a table read later, in both languages. */
 export type Phrase = Record<Locale, string>;
 
 export const phrase = (fr: string, en: string): Phrase => ({ fr, en });
 
 export const tr = (phrase: Phrase): string => phrase[answerLocale()];
 
-/** The agent's texts in the language of the request. */
 export const msg = (): Messages => MESSAGES[answerLocale()];
 
-/** The same texts for a named language, outside a request's run (the stream's own error). */
 export const messagesIn = (locale: Locale): Messages => MESSAGES[locale];

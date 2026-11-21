@@ -1,17 +1,10 @@
-/**
- * What the derived rows must hold before they replace the live data: no row without its parent, no
- * league of the scope without a game, no file `data:fetch` did not save. `db:load` runs them on the rows themselves and
- * refuses a broken or partial ingestion before it writes.
- */
 import type { Cell } from "./derive";
 import { LEAGUES } from "./scope";
 
 export type DerivedTables = Map<string, { columns: string[]; rows: Cell[][] }>;
 
-/** Summaries the derivation left out or kept incomplete (`report.ingame` of the derivation). */
 export type SummaryCounts = { stale_derive: number; older_derive: number };
 
-/** Child rows that must have their parent: [what, child table, child columns, parent table, parent columns]. */
 const PARENTS: [string, string, string[], string, string[]][] = [
   ["tournaments without league", "tournaments", ["league_id"], "leagues", ["id"]],
   ["games without tournament", "games", ["tournament_id"], "tournaments", ["id"]],
@@ -26,7 +19,6 @@ const PARENTS: [string, string, string[], string, string[]][] = [
   ["in-game team rows without game", "game_team_stats", ["game_id"], "game_riot", ["game_id"]],
 ];
 
-/** What an ingestion that lost a file leaves empty: [table, column or null for "any row", what is missing]. */
 const FILLED: [string, string | null, string][] = [
   ["game_riot", null, "no game with in-game stats: data:fetch did not write ingame.jsonl"],
   ["player_images", null, "no player photo: data:fetch did not save player_images.json"],
@@ -35,10 +27,6 @@ const FILLED: [string, string | null, string][] = [
   ["teams", "logo", "no team logo: data:fetch did not save team_logo_files.json"],
 ];
 
-/**
- * Every reason not to load these rows. `allowOlder`: summaries of an older, still compatible derivation are accepted
- * (CI loads a pinned snapshot that cannot be recomputed); production recomputes them from R2 and refuses them.
- */
 export function datasetProblems(tables: DerivedTables, summaries: SummaryCounts, opts: { allowOlder?: boolean; leagues?: number } = {}): string[] {
   const problems: string[] = [];
 
@@ -81,7 +69,6 @@ export function datasetProblems(tables: DerivedTables, summaries: SummaryCounts,
 
   if (leagues.rows.length - empty.length !== expected) problems.push(`${leagues.rows.length - empty.length} leagues with games, scope has ${expected}`);
 
-  // A column the derivation never wrote is not in its table: as empty as a column of NULLs.
   for (const [name, column, missing] of FILLED) {
     const table = tables.get(name);
     const at = column == null ? null : (table?.columns.indexOf(column) ?? -1);
@@ -97,8 +84,4 @@ export function datasetProblems(tables: DerivedTables, summaries: SummaryCounts,
   return problems;
 }
 
-/**
- * The players with a photo the new data lacks, as a loss, when more than 2 % of the live ones are gone: a new load may
- * lose a few photos to wiki edits, and a partial PlayerImages fetch keeps every league's counts.
- */
 export const photoLoss = (before: number, after: number): string[] => (after * 100 < before * 98 ? [`players with a photo ${before} → ${after}`] : []);

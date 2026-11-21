@@ -1,10 +1,3 @@
-/**
- * Icons of the runes the current Data Dragon no longer lists: the runes Riot removed since 2018 (Zombie Ward,
- * Predator, Kleptomancy...) and the stat shards, which `runesReforged.json` never listed. Their images are
- * still served under Data Dragon's unversioned `cdn/img/`, at the paths older versions gave.
- *
- * Read when the database has no icon for a rune, so an old game's rune page shows every rune as an icon.
- */
 const CDN = "https://ddragon.leagueoflegends.com/cdn/img/perk-images";
 
 const PATHS = new Map([
@@ -23,7 +16,6 @@ const PATHS = new Map([
   ["Legend: Tenacity", "Styles/Precision/LegendTenacity/LegendTenacity.png"],
   ["Phase Rush", "Styles/Sorcery/PhaseRush/PhaseRush.png"],
   ["Nullifying Orb", "Styles/Sorcery/NullifyingOrb/Pokeshield.png"],
-  // Stat shards.
   ["Adaptive Force", "StatMods/StatModsAdaptiveForceIcon.png"],
   ["Armor", "StatMods/StatModsArmorIcon.png"],
   ["Attack Speed", "StatMods/StatModsAttackSpeedIcon.png"],
@@ -35,14 +27,12 @@ const PATHS = new Map([
   ["Tenacity and Slow Resist", "StatMods/StatModsTenacityIcon.png"],
 ]);
 
-/** The icon of a rune: the one stored with it, else the one of a removed rune or a stat shard; null when neither. */
 export function runeIcon(name: string, stored: string | null): string | null {
   const path = PATHS.get(name);
 
   return stored ?? (path ? `${CDN}/${path}` : null);
 }
 
-/** The five trees of the page, as Data Dragon's unversioned `cdn/img/` serves their icons (Inspiration is "Whimsy" there). */
 const TREES = new Map([
   ["Domination", "Styles/7200_Domination.png"],
   ["Precision", "Styles/7201_Precision.png"],
@@ -51,7 +41,6 @@ const TREES = new Map([
   ["Resolve", "Styles/7204_Resolve.png"],
 ]);
 
-/** The icon of a rune tree, null for a tree Data Dragon does not name. */
 export function treeIcon(tree: string): string | null {
   const path = TREES.get(tree);
 

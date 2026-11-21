@@ -1,31 +1,3 @@
-/**
- * Proposes candidate eval cases from the production Langfuse traces: the
- * questions that went to generated SQL, got a thumbs down, ended on
- * `missing_data` or left words the rules did not read. Each one is replayed
- * deterministically (rules only, no LLM) to show where it goes today.
- *
- *   bun run eval:candidates                  last 30 days of production
- *   bun run eval:candidates --days=90        a longer window
- *   bun run eval:candidates --env=preview    another Langfuse environment
- *   bun run eval:candidates --no-replay      without the database (route then only)
- *   bun run eval:candidates --out=DIR        another output directory (see below)
- *
- * Privacy, the repository being public: what visitors typed (questions, trace
- * and session ids) is never committed, pushed or quoted in a PR, a commit or
- * a comment. The report is written outside the repository, in
- * ~/.farsight/eval-candidates/ (0700, files 0600); `--out` inside the
- * repository is refused unless git ignores it. The questions are masked again
- * (src/lib/tracing/mask.ts), which does not replace a human review: the
- * script only proposes, Enzo decides what becomes a case of
- * eval/questions.json, reformulated when needed. Tests use synthetic traces
- * only (scripts/eval-candidates.test.ts).
- *
- * Langfuse: read-only calls (GET /api/public/v2/observations and
- * /api/public/v3/scores). Keys come from LANGFUSE_PUBLIC_KEY,
- * LANGFUSE_SECRET_KEY and LANGFUSE_BASE_URL (.env, .env.local, or
- * ~/.farsight/langfuse.env), and are never printed. The replay reads
- * DATABASE_URL like `bun run eval`. Details: docs/eval-candidates.md.
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -52,10 +24,6 @@ const startedAt = new Date().toISOString();
 const stamp = startedAt.replace(/[:.]/g, "-").slice(0, 19);
 const reportFiles = { json: `candidates-${stamp}.json`, md: `candidates-${stamp}.md` };
 
-/**
- * The physical path of `dir`, which may not exist yet: its first existing
- * ancestor resolved through symlinks, then the rest.
- */
 function physical(dir: string): string {
   let existing = dir;
 
@@ -64,7 +32,6 @@ function physical(dir: string): string {
   return join(realpathSync(existing), relative(existing, dir));
 }
 
-/** Git's environment without any GIT_* override (GIT_DIR, GIT_WORK_TREE, GIT_CEILING_DIRECTORIES…): only the path decides the repository. */
 const gitEnv = { ...process.env, LC_ALL: "C" };
 
 for (const name of Object.keys(gitEnv)) if (name.startsWith("GIT_")) Reflect.deleteProperty(gitEnv, name);
@@ -74,12 +41,6 @@ const refuse = (message: string): never => {
   process.exit(1);
 };
 
-/**
- * The report goes into a git checkout (this repository, another worktree of
- * it, any repository) only when git ignores each of its files there. Outside
- * a checkout only when git says so: any other failure of git refuses. Returns
- * the physical directory, the one the report is written to.
- */
 function checkOutDir(dir: string): string {
   const real = physical(dir);
   let existing = real;
@@ -109,7 +70,6 @@ function checkOutDir(dir: string): string {
 
 const reportDir = checkOutDir(outDir);
 
-/** LANGFUSE_* from the environment (Bun reads .env and .env.local), else from ~/.farsight/langfuse.env. */
 function langfuseKeys() {
   const file = join(homedir(), ".farsight", "langfuse.env");
   const fromFile: Record<string, string> = {};
@@ -124,7 +84,6 @@ function langfuseKeys() {
   const read = (name: string) => process.env[name]?.trim() || fromFile[name]?.trim() || "";
   const keys = { publicKey: read("LANGFUSE_PUBLIC_KEY"), secretKey: read("LANGFUSE_SECRET_KEY"), baseUrl: read("LANGFUSE_BASE_URL").replace(/\/+$/, "") };
 
-  // The replay never needs them: out of the environment before the agent is imported.
   for (const name of Object.keys(process.env)) if (name.startsWith("LANGFUSE_")) delete process.env[name];
 
   if (!keys.publicKey || !keys.secretKey || !keys.baseUrl) {
@@ -138,10 +97,8 @@ function langfuseKeys() {
 const keys = langfuseKeys();
 const authorization = `Basic ${Buffer.from(`${keys.publicKey}:${keys.secretKey}`).toString("base64")}`;
 
-/** A text field of Langfuse, empty when absent or of another kind. */
 const Text = z.string().catch("");
 
-/** Root observation `answer-question`: the question in, the summary out, and the metadata `recordOutcome` writes. */
 const Root = z.object({
   traceId: z.string(),
   startTime: z.string(),
@@ -157,15 +114,10 @@ const Root = z.object({
     .catch({ question: "", route: "", unread: [], locale: undefined }),
 });
 
-/** A `response_rating` score: a boolean on its trace. */
 const Score = z.object({ value: z.union([z.boolean(), z.number()]).catch(0), subject: z.object({ kind: z.string(), id: z.string() }).nullish() });
 
 const Page = <T extends z.ZodType>(item: T) => z.object({ data: z.array(item), meta: z.object({ cursor: z.string().nullish() }).partial().nullish() });
 
-/**
- * Every page of a cursor-paginated list of the Langfuse public API, parsed.
- * An error names the path and the status, never the request.
- */
 async function all<T extends z.ZodType>(path: string, query: Record<string, string>, item: T): Promise<z.infer<T>[]> {
   const items: z.infer<T>[] = [];
   let cursor: string | null | undefined;
@@ -201,7 +153,6 @@ const ratings = new Map<string, "up" | "down">();
 for (const s of scores) if (s.subject?.kind === "trace") ratings.set(s.subject.id, s.value === true || s.value === 1 ? "up" : "down");
 
 const traced: TracedQuestion[] = roots.flatMap((r) => {
-  // The root's input is the whole question; the metadata keeps its first 200 characters.
   const question = maskPersonalData(r.input || r.metadata.question).trim();
 
   if (!question) return [];
@@ -225,14 +176,12 @@ const evalCases = EvalFile.parse(JSON.parse(readFileSync(join(repo, "eval", "que
 const merged = candidatesOf(traced);
 const candidates = withoutEvalCases(merged, evalCases);
 
-/** Where the question goes today, on the rules alone. */
 type Now = { route: string; unread: string[]; title: string } | { error: string };
 
 async function replayAll(list: Candidate[]): Promise<Map<string, Now>> {
   const result = new Map<string, Now>();
 
   if (!replay) return result;
-  // Imported after the key is gone, like `bun run eval --deterministic`: the replay never calls a model.
   delete process.env.OPENROUTER_API_KEY;
   const { runAgent } = await import("../src/lib/agent/run");
 
@@ -252,7 +201,6 @@ const now = await replayAll(candidates);
 
 type Status = "still-sql" | "fixed" | "changed" | "same" | "not-replayed";
 
-/** What the replay says of a candidate: still to SQL, now answered by a typed tool without unread word, or else. */
 function statusOf(c: Candidate, n: Now | undefined): Status {
   if (!n || "error" in n) return "not-replayed";
 
@@ -320,15 +268,12 @@ const markdown = [
   "",
 ].join("\n");
 
-// 0700 for the directories it creates; an existing directory keeps its rights, the files are 0600 anyway.
 mkdirSync(reportDir, { recursive: true, mode: 0o700 });
 
-// `wx`: never through a file or a link already there.
 for (const [name, body] of [[reportFiles.json, JSON.stringify({ summary, candidates: report }, null, 2)], [reportFiles.md, markdown]] as const) {
   writeFileSync(join(reportDir, name), body, { mode: 0o600, flag: "wx" });
 }
 
-// Counts only on the terminal: the questions stay in the report.
 console.log(JSON.stringify(summary, null, 2));
 
 console.log(`rapport : ${join(reportDir, reportFiles.md)}`);

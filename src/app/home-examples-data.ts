@@ -1,16 +1,11 @@
 import type { Locale } from "@/lib/locale";
 
-/**
- * Home examples, grouped by what the question is about. Each one is answered by a typed tool without the
- * LLM (checked with `bun run ask`); `display` names the layout the question opens.
- */
 export const CATEGORIES = ["players", "teams", "champions", "games"] as const;
 
 export type Category = (typeof CATEGORIES)[number];
 
 export type Example = { question: string; display: string; category: Category };
 
-/** The same examples in each language, in the same order. The English questions take the same route as the French ones. */
 export const EXAMPLES: Record<Locale, Example[]> = {
   fr: [
     { category: "players", question: "Résultats de Chovy à tous les Worlds", display: "palmarès" },
@@ -62,14 +57,8 @@ export const EXAMPLES: Record<Locale, Example[]> = {
 
 export const byCategory = (locale: Locale, c: Category) => EXAMPLES[locale].filter((e) => e.category === c);
 
-/** Number of rows the home examples drift on. */
 const ROWS = 4;
 
-/**
- * The examples dealt on the rows of the home page. They are first taken one subject after the other, then each
- * round of subjects is dealt one row further than the round before: every row mixes the subjects, and two
- * neighbours seldom look alike.
- */
 export function exampleRows(locale: Locale): Example[][] {
   const groups = CATEGORIES.map((c) => byCategory(locale, c));
   const rounds = Math.max(...groups.map((g) => g.length));

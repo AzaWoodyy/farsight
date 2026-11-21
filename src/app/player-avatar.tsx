@@ -3,10 +3,6 @@
 import { useState } from "react";
 import type { PlayerPhoto } from "@/lib/agent/types";
 
-/**
- * A player's Leaguepedia headshot of the period, or their initials when there is none or it fails
- * to load (Fandom's CDN refuses requests without a Referer). Fixed size, so the row never shifts.
- */
 export function PlayerAvatar({ name, photo, size }: { name: string; photo: PlayerPhoto | null | undefined; size: number }) {
   const [failed, setFailed] = useState(false);
   const box = { width: size, height: size };
@@ -19,7 +15,6 @@ export function PlayerAvatar({ name, photo, size }: { name: string; photo: Playe
     );
 
   return (
-    // Fandom's own thumbnail at the right width: next/image would spend the shared Vercel image quota.
     // oxlint-disable-next-line nextjs/no-img-element
     <img
       src={photo.url}

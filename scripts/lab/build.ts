@@ -1,10 +1,3 @@
-/**
- * Builds the display lab's fixtures: asks the agent every question of the catalogue (src/app/lab/catalog.ts),
- * without the LLM, and writes each answer with its steps to public/lab-fixtures/<id>.json.
- *   bun run lab:build
- *
- * The lab (/lab) is a preview and local tool: a production build skips this and the page answers 404.
- */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LAB_VARIANTS } from "../../src/app/lab/catalog";
@@ -20,7 +13,6 @@ if (process.env.VERCEL_ENV === "production") {
   process.exit(0);
 }
 
-// The lab shows layouts, not model output: rules level only, no credit spent.
 delete process.env.OPENROUTER_API_KEY;
 
 mkdirSync(out, { recursive: true });

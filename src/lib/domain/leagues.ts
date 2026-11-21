@@ -1,11 +1,5 @@
-/**
- * The LES by its full name, in any case, or by its acronym in capitals before a year or after "en", "la", "in",
- * "the" ("classement LES 2026", "Résultats de X en LES"): "les" is a French article. Written without the `i`
- * flag (a case-sensitive part needs no regex modifier, which older browsers cannot parse).
- */
 const LES_CUE = /\b[Ll][Ii][Gg][Aa] [Ee][Ss][Pp][Aa][ÑñNn][Oo][Ll][Aa]( [Dd][Ee] [Ll][Ee][Aa][Gg][Uu][Ee] [Oo][Ff] [Ll][Ee][Gg][Ee][Nn][Dd][Ss])?(?![\p{L}])|\bLES(?= \d{4}\b)|(?<=\b(?:[Ee][Nn]|[Ll][Aa]|[Ii][Nn]|[Tt][Hh][Ee]) )LES\b/u;
 
-/** Fixed ingestion and query scope. Cues are matched by longest text, not declaration order. */
 export const LEAGUES = [
   { name: "World Championship", short: "Worlds", region: "International", international: true, cue: /\b(world championship|worlds?|mondiaux|mondial|championnats? du monde|coupe du monde)\b/i, family: "", from: 2011, to: null },
   { name: "Mid-Season Invitational", short: "MSI", region: "International", international: true, cue: /\b(msi|mid[- ]season invitational)\b/i, family: "", from: 2011, to: null },
@@ -44,20 +38,10 @@ export type LeagueName = (typeof LEAGUES)[number]["name"];
 
 export const LEAGUE_NAMES = LEAGUES.map((l) => l.name);
 
-/**
- * Cross-league competitions of the scope: a team plays them besides its own league (a French team in the
- * LFL and in the EMEA Masters, an LCK team in the KeSPA Cup), so they never name the league a team is in. Worlds, MSI,
- * First Stand and the Esports World Cup are `international`.
- */
 export const CUP_LEAGUES: ReadonlySet<LeagueName> = new Set(["European Masters", "EMEA Masters", "KeSPA Cup"]);
 
-/**
- * Competitions left out of a team's roster unless the question names them: an LCK team fields its academy players at
- * the KeSPA Cup, who would read as substitutes of the main roster. Their games still count everywhere else.
- */
 export const ROSTER_EXCLUDED: ReadonlySet<LeagueName> = new Set(["KeSPA Cup"]);
 
-/** How French names a competition: "les Worlds", "le MSI", "l'EWC", "la LCK". */
 export function frenchArticle(short: string): "les" | "le" | "l'" | "la" {
   if (short === "Worlds" || short.endsWith("Masters")) return "les";
 
@@ -66,10 +50,8 @@ export function frenchArticle(short: string): "les" | "le" | "l'" | "la" {
   return short === "MSI" || short === "First Stand" ? "le" : "la";
 }
 
-/** "les Worlds", "l'EWC", "la LCK". */
 export const frenchNamed = (short: string) => `${frenchArticle(short)}${frenchArticle(short) === "l'" ? "" : " "}${short}`;
 
-/** "aux Worlds", "au MSI", "à l'EWC", "à la KeSPA Cup", "en LCK". */
 export function frenchIn(short: string): string {
   const article = frenchArticle(short);
 
@@ -80,17 +62,14 @@ export function frenchIn(short: string): string {
   return article === "l'" || short.endsWith(" Cup") ? `à ${frenchNamed(short)}` : `en ${short}`;
 }
 
-/** "des Worlds", "du MSI", "de l'EWC", "de la LCK". */
 export function frenchOf(short: string): string {
   const article = frenchArticle(short);
 
   return article === "les" ? `des ${short}` : article === "le" ? `du ${short}` : `de ${frenchNamed(short)}`;
 }
 
-/** English names an international event bare ("at Worlds", "at First Stand") and a league with "the" ("the EWC"). */
 export const englishBare = (short: string) => short === "Worlds" || short === "MSI" || short === "First Stand" || short.endsWith("Masters");
 
-/** "at Worlds", "at First Stand", "at the EWC", "at the KeSPA Cup", "in LCK". */
 export function englishIn(short: string): string {
   if (englishBare(short) && !short.endsWith("Masters")) return `at ${short}`;
 
@@ -99,7 +78,6 @@ export function englishIn(short: string): string {
 
 export const SCOPE_LABEL = LEAGUES.map((l) => l.short).join(", ");
 
-/** Only current family names include historical names; explicit old names keep their meaning. */
 export function leagueMembers(name: string, yearFrom: number | null, yearTo: number | null): string[] {
   if (yearFrom == null && yearTo == null) return [name];
   const league = LEAGUES.find((l) => l.name === name);

@@ -20,7 +20,6 @@ async function fetchFixture(id: string): Promise<Loaded> {
 
     if (!res.ok) return "missing";
 
-    // Written by scripts/lab/build.ts from the agent's own Answer, in the same deployment.
     const fixture: Fixture = await res.json();
 
     return fixture;
@@ -31,7 +30,6 @@ async function fetchFixture(id: string): Promise<Loaded> {
   }
 }
 
-/** A variant's fixture, fetched once: flipping back to a variant already seen is instant. */
 function load(id: string) {
   const hit = cache.get(id);
 
@@ -44,7 +42,6 @@ function load(id: string) {
   return request;
 }
 
-/** The variant on screen is the `?v=` of the address: a reload or a shared link opens the same one. */
 const URL_EVENT = "farsight:lab-url";
 
 function subscribeUrl(onChange: () => void) {
@@ -60,7 +57,6 @@ function subscribeUrl(onChange: () => void) {
 const urlVariant = () => new URLSearchParams(window.location.search).get("v");
 
 export function Lab() {
-  // The server and the first client render show the first variant; the address takes over right after.
   const id = useSyncExternalStore(subscribeUrl, urlVariant, () => null);
   const index = Math.max(0, LAB_VARIANTS.findIndex((v) => v.id === id));
   const [shown, setShown] = useState<{ id: string; fixture: Loaded } | null>(null);
@@ -83,7 +79,6 @@ export function Lab() {
       if (current) setShown({ id: variant.id, fixture });
     });
 
-    // The neighbours are fetched ahead: the arrow keys never wait.
     for (const d of [1, -1]) void load(LAB_VARIANTS[(index + d + LAB_VARIANTS.length) % LAB_VARIANTS.length].id);
 
     return () => {
@@ -93,7 +88,6 @@ export function Lab() {
 
   const fixture = shown?.id === variant.id ? shown.fixture : null;
 
-  // A follow-up that is itself in the catalogue opens that variant; the others have no answer here.
   const onAsk = (q: string) => {
     const i = LAB_VARIANTS.findIndex((v) => !v.state && v.question.toLowerCase() === q.toLowerCase());
 
@@ -104,7 +98,6 @@ export function Lab() {
     <LocaleProvider locale="fr">
     <section>
       <h1 className="sr-only">Lab des affichages : {variant.groupTitle}, {variant.label}</h1>
-      {/* The console's question field, as it sits above an answer; inert here. */}
       <div
         aria-hidden
         className="mt-6 flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3"
@@ -132,7 +125,6 @@ export function Lab() {
             Fixture absente pour « {variant.id} » : lancer <code>bun run lab:build</code>, puis recharger.
           </p>
         ) : (
-          // Keyed: a variant starts from its own initial state (sort order, open tabs), and entrances replay.
           fixture && <Variant key={variant.id} fixture={fixture} state={variant.state} onAsk={onAsk} />
         )}
       </div>
@@ -144,7 +136,6 @@ export function Lab() {
 
 const stepMap = (steps: StepPart[]) => new Map<StepName, StepPart>(steps.map((s) => [s.step, s]));
 
-/** The steps as they stand while `last` is still running: the earlier ones done, the later ones not started. */
 function runningAt(steps: StepPart[], last: StepName) {
   const until = steps.findIndex((s) => s.step === last);
 
@@ -199,7 +190,6 @@ function Variant({ fixture, state, onAsk }: { fixture: Fixture; state?: LabState
     <>
       <AnswerView answer={answer} onAsk={onAsk} />
       <HowIFoundIt steps={stepMap(steps)} running={false} />
-      {/* A made-up trace: the buttons are the real ones, the rating is refused by /api/feedback. */}
       {state === "feedback" && <Feedback traceId="lab" token="lab" />}
     </>
   );

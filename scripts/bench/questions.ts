@@ -1,15 +1,3 @@
-/**
- * Latency of the reference questions (eval/questions.json) through the whole agent, rules only (no LLM call), and a
- * fingerprint of each answer, so two databases can be compared question by question.
- *
- *   bun scripts/bench/questions.ts --out=bench.json                        every question but the timeline ones
- *   bun scripts/bench/questions.ts --out=bench.json --passes=3             the first pass warms up, the others are timed
- *   bun scripts/bench/questions.ts --out=bench.json --answers=answers.json also every answer, to diff two runs
- *   bun scripts/bench/questions.ts --compare=a.json,b.json                 latency of both and the questions that differ
- *
- * The database is the one the app opens (DATABASE_URL). The report says how long the very first question took: on
- * Neon, a database that slept (scale to zero) wakes up for it.
- */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -26,14 +14,12 @@ type Measured = z.infer<typeof Measured>;
 
 type Report = z.infer<typeof Report>;
 
-/** The nearest-rank percentile. */
 const percentile = (values: number[], p: number) => {
   const sorted = values.toSorted((a, b) => a - b);
 
   return sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] : Number.NaN;
 };
 
-/** Each question's median over the timed passes, then the percentiles over the questions. */
 const summary = (r: Report) => {
   const per = r.questions.map((q) => percentile(q.ms.length > 1 ? q.ms.slice(1) : q.ms, 50));
 
@@ -73,7 +59,6 @@ const passes = Number(option("passes") ?? 2);
 
 if (!Number.isSafeInteger(passes) || passes < 2) throw new Error("--passes must be an integer of at least 2 (including the warm-up)");
 
-// Rules only, nothing traced: the figures are the database's and the agent's, not a model's.
 delete process.env.OPENROUTER_API_KEY;
 
 delete process.env.LANGFUSE_PUBLIC_KEY;

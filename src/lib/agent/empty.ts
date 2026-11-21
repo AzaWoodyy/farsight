@@ -1,11 +1,3 @@
-/**
- * Why a query came back empty. An empty result is an answer when the scope
- * the question names explains it: no game at all, games only in regional
- * qualifiers (excluded by default), or a count that is truly zero over the
- * games that hold in-game data. The probes read the scope from the resolved
- * entities, never from the generated SQL, so a wrong filter in that SQL
- * cannot make an empty scope look like a real zero.
- */
 import { z } from "zod";
 import { type Db, selectAll, selectOne } from "../db";
 import { leagueMembers } from "../domain/leagues";
@@ -18,27 +10,17 @@ export type EmptyReason = "no_games" | "qualifier_only" | "zero_count" | "no_ing
 
 export type EmptyExplanation = {
   reason: EmptyReason;
-  /** True when no other query can do better: the self-correction stops. */
   conclusive: boolean;
   title: string;
   summary: string;
-  /** The qualifier games, shown when they are the only ones. */
   table: { columns: string[]; rows: (string | number | null)[][] } | null;
   sources: string[];
 };
 
 type Params = Record<string, string | number>;
 
-/** Most qualifier games listed when they are the only ones of the scope. */
 const SHOWN_GAMES = 20;
 
-/**
- * Filters on the columns v_game_players and the in-game views share, for at
- * most one player and one team. On the player view the player (or, without
- * one, the team) filters the row, with the champion on the same row ("Faker
- * sur Azir"); on the team view the team filters the row and the player and
- * the champion filter the game.
- */
 function scopeFilter(e: Entities, alias: string, view: "player" | "team") {
   const params: Params = {};
   const where: string[] = [];
@@ -83,7 +65,6 @@ function scopeFilter(e: Entities, alias: string, view: "player" | "team") {
   return { where, params };
 }
 
-/** "Faker sur Azir aux Worlds en 2024", "Orianna aux Worlds en 2026", "aux Worlds en 2024". */
 function scopeText(e: Entities) {
   const players = e.players.map((p) => p.player);
   const named = [...players, ...e.teams.map((t) => t.team)].join(say(" et ", " and "));
@@ -94,13 +75,10 @@ function scopeText(e: Entities) {
   return { subject: `${named}${champion}`, where };
 }
 
-/** "de Faker…", "d'Orianna…" / "of Faker…". */
 const of = (s: string) => say(/^[aeiouyhàâéèêîôû]/i.test(s) ? `d'${s}` : `de ${s}`, `of ${s}`);
 
-/** "3 parties" / "3 games", "1 partie" / "1 game". */
 const games = (n: number) => say(`${n} partie${n > 1 ? "s" : ""}`, `${n} game${n === 1 ? "" : "s"}`);
 
-/** "pentakills" → "aucun pentakill", "plaques de tourelle" → "aucune plaque de tourelle" / "no pentakill", "no turret plate". */
 const none = (label: { label: string; en: string }) =>
   say(`${/^(?:plaque|première)/.test(label.label) ? "aucune" : "aucun"} ${label.label.replace(/(kill|blood|plaque)s\b/, "$1")}`, `no ${label.en.replace(/(kill|blood|plate|dragon)s\b/, "$1")}`);
 
@@ -133,7 +111,6 @@ const QualifierMatch = z.object({
 
 const date = (s: number | null) => (s == null ? null : new Date(s * 1000).toISOString().slice(0, 10));
 
-/** The in-game view a generated query reads, and the count columns it sums there. */
 function countedColumns(sql: string): { view: "v_game_player_stats" | "v_game_team_stats"; columns: { column: string; label: string; en: string }[] } | null {
   const view = /\bfrom\s+(v_game_player_stats|v_game_team_stats)\b/i.exec(sql)?.[1]?.toLowerCase();
 
@@ -145,15 +122,9 @@ function countedColumns(sql: string): { view: "v_game_player_stats" | "v_game_te
   return columns.length ? { view, columns } : null;
 }
 
-/**
- * Explains an empty result from the question's scope. `sql` is the query that
- * came back empty: a generated one may sum a count column that is zero.
- * Returns null when the question names no scope at all, or several players or teams.
- */
 export async function explainEmpty(db: Db, entities: Entities, sql: string): Promise<EmptyExplanation | null> {
   const hasScope = entities.players.length || entities.teams.length || entities.champion || entities.league || entities.yearFrom != null || entities.yearTo != null;
 
-  // Several players or teams: their games together, or each one's own? The question does not say, so nothing is concluded.
   if (!hasScope || entities.players.length > 1 || entities.teams.length > 1) return null;
   const { subject, where } = scopeText(entities);
   const scope = [subject, where].filter(Boolean).join(" ");
@@ -184,7 +155,6 @@ export async function explainEmpty(db: Db, entities: Entities, sql: string): Pro
     let table: EmptyExplanation["table"];
     let pages: { tournament: string | null; tournament_page: string }[];
 
-    // A player or a champion: their row of each game. A team or a league alone: one row per game.
     if (entities.players.length || entities.champion) {
       const games = await selectAll(
         db,
@@ -249,7 +219,6 @@ export async function explainEmpty(db: Db, entities: Entities, sql: string): Pro
   if (counted) {
     const stats = scopeFilter(entities, "s", counted.view === "v_game_player_stats" ? "player" : "team");
 
-    // A NULL is a statistic the Riot data does not give (plates before 2020…): each column is a zero only over the games that measure it.
     const sums = counted.columns
       .map((c, i) => `COALESCE(SUM(s.${c.column}), 0) AS c${i}, COUNT(DISTINCT CASE WHEN s.${c.column} IS NOT NULL THEN s.game_id END) AS m${i}`)
       .join(", ");
@@ -262,7 +231,6 @@ export async function explainEmpty(db: Db, entities: Entities, sql: string): Pro
     ))!;
 
     const { games } = row;
-    // The fewest games that measure one of the columns: the sample every zero holds on.
     const measuredGames = Math.min(...counted.columns.map((_, i) => row[`m${i}`]));
     const scopeOf = subject ? of(scope) : where;
 
@@ -309,10 +277,8 @@ export async function explainEmpty(db: Db, entities: Entities, sql: string): Pro
   };
 }
 
-/** Words that link two names ("Orianna vs Azir"): read by no rule, yet no name either. */
 const CONNECTORS = new Set(["vs", "versus", "contre", "against", "face"]);
 
-/** What the question names that nothing recognized: said in every empty answer. */
 export function unrecognizedNote(entities: Entities, unread: string[]): string | null {
   const words = [...new Set([...entities.unresolved, ...unread])].filter((w) => !CONNECTORS.has(w.toLowerCase()));
 

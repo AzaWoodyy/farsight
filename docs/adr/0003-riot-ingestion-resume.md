@@ -1,0 +1,14 @@
+# Riot JSON ingestion: what makes a run safe to interrupt and to repeat
+
+`fetchRiotGames` (`scripts/data/riot.ts`) can be stopped at any time and rerun on any machine. That rests on a few rules about the summaries file, the R2 copy of it, and the order in which a game is stored and summarized.
+
+## Rules
+
+- **A cut line is expected.** An interrupted append can leave the last line of `ingame.jsonl` truncated. `loadIngame` and `latestLines` ignore a line that does not parse instead of failing, and `pullSummaries` starts what it appends with a newline, which closes such an open line before the new ones.
+- **`latestLines` reads without the full schema** (only `key`, `status`, `derive`): `loadIngame` validates a line when it is used, and parsing 40 000 summaries twice more with the schema costs gigabytes of memory.
+- **`pullSummaries`: a read error throws, an unreadable object is ignored.** If the read from R2 fails, the run stops, because it would otherwise recompute everything and replace the object. An object that is there but cannot be decompressed is ignored and replaced by the next push.
+- **`pushSummaries` swallows an upload failure** and returns false: a failed upload only costs the next run the summaries of this one.
+- **No `ok` summary without the object on R2.** A game downloaded from the wiki is cached locally and uploaded before it is summarized; when the upload fails the game gets no summary line and is left for the next run, because an `ok` line would make every later run skip the game and R2 would never get it.
+- **A stored object that cannot be decoded** (`readRaw`) counts as absent: the game is downloaded again.
+- **R2 reads run 16 at a time** (`R2_CONCURRENCY`): no wiki is involved, so the wiki throttle does not apply; 16 is enough to hide the latency and few enough to stay polite.
+- **A game the wiki left out of a multi-game response** (the MediaWiki API size limit: no entry at all, which is not a missing page) is asked once more, alone, before any fresh batch. A retry is always a request of its own, whatever `GAMES_PER_REQUEST`, so that the game is not left out again next to another one. If it is still not served, it is given up for this run (`left`) without a `missing` line, so the next run looks at it again.

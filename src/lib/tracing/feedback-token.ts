@@ -4,7 +4,6 @@ const TRACE_ID = /^[0-9a-f]{32}$/;
 const TOKEN = /^(\d{13})\.([0-9a-f]{64})$/;
 const LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
-/** No signing secret means no feedback controls; never accept unsigned scores. */
 export function signFeedback(traceId: string, now = Date.now()): string | null {
   const secret = process.env.FEEDBACK_SECRET;
 

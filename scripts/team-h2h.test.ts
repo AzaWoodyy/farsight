@@ -46,7 +46,6 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
     try {
       await db.exec(`INSERT INTO teams(id,name) VALUES (1,'DragonX'),(2,'DRX'),(3,'Kiwoom DRX'),(4,'HANJIN BRION'),(5,'OKSavingsBank BRION'),(6,'DN SOOPers'),(7,'Kwangdong Freecs');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id) VALUES (1,1,1,2),(2,1,3,4),(3,1,5,6),(4,1,7,1);`);
-      // Members are the names with games in the database.
 
       for (const [mention, name, members] of [
         ["DRX", "DRX", ["DragonX", "DRX", "Kiwoom DRX"]],
@@ -64,10 +63,6 @@ describe("two teams and an opposing word: their head-to-head, decided by the rul
   });
 });
 
-/**
- * LEC: Karmine Corp against MAD Lions KOI (2024, one Bo1) and Movistar KOI (2025, a Bo3 won 2-1 by MKOI);
- * Worlds 2025: KC beats Movistar KOI 1-0. MAD Lions (an old name) also plays Fnatic, who must not count.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
@@ -109,13 +104,11 @@ describe("head-to-head of two teams on a seeded database", () => {
       expect(out.facts).toContain("3 séries");
       expect(out.facts).toContain("Dernière rencontre : Worlds 2025 · tour 3");
 
-      // The router model may write an old name: the input carries the franchise's current one.
       expect(await TOOLS.head_to_head.normalize(db, { kind: "team", sideA: "kc", sideB: "MAD Lions KOI", league: null, yearFrom: null, yearTo: null })).toMatchObject({
         input: { sideA: "Karmine Corp", sideB: "Movistar KOI" },
       });
       expect(await TOOLS.team_history.normalize(db, { team: "MAD Lions", league: null, yearFrom: null, yearTo: null })).toMatchObject({ input: { team: "Movistar KOI" } });
 
-      // A competition restricts the series and the record.
       const lec = await bindTool(db, { tool: "head_to_head", input: { kind: "team", sideA: "Karmine Corp", sideB: "Movistar KOI", league: "LoL EMEA Championship", yearFrom: null, yearTo: null } });
       const inLec = await lec.format(db, (await db.query(lec.sql, lec.params)));
 
@@ -130,7 +123,6 @@ describe("head-to-head of two teams on a seeded database", () => {
 
     try {
       await seed(db);
-      // Before any team is resolved: the team index is cached per database handle.
       await db.exec(`INSERT INTO teams(id,name) VALUES (6,'Anyone''s Legend');
         INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (7,3,'Round 1',1,1,5,6,1,310);`);
       const order = async (q: string) => (await understandQuestion(db, q, new Date("2026-11-14")))?.result.teams.map((t) => t.team);

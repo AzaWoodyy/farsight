@@ -1,9 +1,5 @@
 import { useUi } from "./i18n/locale-context";
 
-/**
- * The league a team played in over the answer's period, beside its name: "LCK", "LCK CL", or "LFL D2 → LFL"
- * when it moved up. Nothing when the answer has none for that name.
- */
 export function LeagueTag({ leagues }: { leagues?: string[] }) {
   const ui = useUi();
 

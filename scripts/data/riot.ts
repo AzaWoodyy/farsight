@@ -1,18 +1,3 @@
-/**
- * Riot game JSON hosted by Leaguepedia: which games have one (Cargo
- * `PostgameJsonMetadata`), downloading them into the object store, and the
- * in-game summaries (data/raw/ingame.jsonl) that the derivation turns into SQL.
- *
- * Resumable by construction:
- * - every downloaded game is one object in data/raw/riot, written atomically;
- * - every summary is one appended line of ingame.jsonl;
- * - a run skips games that already have a current summary, re-derives games
- *   whose raw JSON is cached, and only then goes to the wiki;
- * - with R2, the summaries are one object beside the raw games, read before a
- *   run and written back after it, so a machine without data/raw starts from
- *   the last run's summaries.
- * Stopping the process (Ctrl-C, timeout, budget) loses at most the game in flight.
- */
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -24,12 +9,9 @@ import { FsStore, type ObjectStore } from "../../src/lib/storage";
 import { DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
 import { INGAME_FILE, LEAGUES, RIOT_CACHE_DIR } from "./scope";
 
-/** Retry pages the wiki did not have after this long. */
 const MISSING_RETRY_DAYS = 30;
 
 export const localRiotStore = () => new FsStore(RIOT_CACHE_DIR);
-
-// --- Which games have Riot JSON -----------------------------------------------
 
 const RIOT_FIELDS = [
   "P.RiotPlatformGameId=Key",
@@ -54,7 +36,6 @@ export type RiotGameRow = z.infer<typeof RiotGameRow>;
 
 const text = (v: CargoRow[string] | undefined) => (v == null || v === "" ? null : String(v));
 
-/** `PostgameJsonMetadata` rows of the scope, one query per league (paginated). */
 export async function fetchRiotGameList(opts: CargoOptions): Promise<RiotGameRow[]> {
   const rows: RiotGameRow[] = [];
   let skipped = 0;
@@ -87,7 +68,6 @@ export async function fetchRiotGameList(opts: CargoOptions): Promise<RiotGameRow
     }
   }
 
-  // A game listed twice keeps its first row.
   const seen = new Set<string>();
   const unique = rows.filter((r) => !seen.has(r.Key) && seen.add(r.Key));
 
@@ -96,9 +76,6 @@ export async function fetchRiotGameList(opts: CargoOptions): Promise<RiotGameRow
   return unique;
 }
 
-// --- Summaries file -----------------------------------------------------------
-
-/** Latest line per game key. A truncated last line (interrupted append) is ignored. */
 export function loadIngame(file = INGAME_FILE): Map<string, IngameLine> {
   const out = new Map<string, IngameLine>();
 
@@ -121,9 +98,6 @@ export function loadIngame(file = INGAME_FILE): Map<string, IngameLine> {
   return out;
 }
 
-// --- Summaries in R2 ----------------------------------------------------------
-
-/** Every summary in one zstd object, beside the raw games it is computed from. */
 export const SUMMARIES_KEY = "derived/ingame.jsonl.zst";
 
 const SUMMARIES_CONTENT_TYPE = "application/zstd";
@@ -132,11 +106,6 @@ const sha256 = (body: Uint8Array) => createHash("sha256").update(body).digest("h
 
 const LineHead = z.object({ key: z.string(), status: z.string(), derive: z.number().optional() });
 
-/**
- * Latest line per game, as written: the text and whether it is a current
- * summary. Read without the schema (`loadIngame` checks a line when it is
- * used), because parsing 40 000 summaries twice more costs gigabytes.
- */
 function latestLines(text: string): Map<string, { raw: string; current: boolean }> {
   const out = new Map<string, { raw: string; current: boolean }>();
 
@@ -147,7 +116,6 @@ function latestLines(text: string): Map<string, { raw: string; current: boolean 
       const line = LineHead.parse(JSON.parse(raw));
       out.set(line.key, { raw, current: line.status === "ok" && line.derive === DERIVE_VERSION });
     } catch {
-      // A line cut by an interrupted append.
     }
   }
 
@@ -155,20 +123,11 @@ function latestLines(text: string): Map<string, { raw: string; current: boolean 
 }
 
 export type PulledSummaries = {
-  /** Lines R2 holds, and how many of them the local file took. */
   stored: number;
   taken: number;
-  /** Hash of the object's text, for `pushSummaries` to skip an upload that would change nothing. */
   sha256: string | null;
 };
 
-/**
- * Adds to the local file the summaries R2 holds and the file lacks: a game it
- * has no line for, or one whose local line is not a current summary while R2's
- * is. A read error throws (the run would otherwise recompute everything and
- * replace the object); an object that cannot be read back is ignored and
- * replaced by the next push.
- */
 export async function pullSummaries(remote: ObjectStore, file = INGAME_FILE): Promise<PulledSummaries> {
   const body = await remote.get(SUMMARIES_KEY);
 
@@ -195,18 +154,12 @@ export async function pullSummaries(remote: ObjectStore, file = INGAME_FILE): Pr
 
   if (taken.length) {
     mkdirSync(dirname(file), { recursive: true });
-    // The leading newline closes a last line an interrupted append left open.
     appendFileSync(file, `\n${taken.join("\n")}\n`);
   }
 
   return { stored: theirs.size, taken: taken.length, sha256: sha256(text) };
 }
 
-/**
- * Writes the local summaries (latest line per game, in the order of the
- * file) to R2, unless they are what `pullSummaries` read. Returns whether R2 holds them
- * now: a failed upload only costs the next run the summaries of this one.
- */
 export async function pushSummaries(remote: ObjectStore, pulled: PulledSummaries | null, file = INGAME_FILE): Promise<boolean> {
   const lines = existsSync(file) ? [...latestLines(readFileSync(file, "utf8")).values()] : [];
   const text = Buffer.from(lines.map((line) => `${line.raw}\n`).join(""));
@@ -225,31 +178,21 @@ export async function pushSummaries(remote: ObjectStore, pulled: PulledSummaries
   }
 }
 
-// --- Download -----------------------------------------------------------------
-
 export type RiotFetchOptions = {
-  /** Stop going to the wiki after this many minutes (null: no limit). Reads from R2 do not count. */
   budgetMinutes: number | null;
-  /** The R2 store, when configured: read before the wiki, and written with each game downloaded from the wiki. */
   remote: ObjectStore | null;
-  /** Recompute every summary from the raw JSON, even current ones. */
   rederive: boolean;
-  /** Overrides for tests: the local cache, the summaries file and the wiki client. */
   local?: ObjectStore;
   ingameFile?: string;
   fetchPages?: typeof wikiPages;
-  /** Clock of the wiki time budget, for tests. */
   now?: () => number;
 };
 
 export type RiotFetchCounts = {
   listed: number;
   current: number;
-  /** Summaries computed from the raw JSON already in the local cache. */
   from_cache: number;
-  /** Games read from R2 (no wiki request). */
   from_r2: number;
-  /** Games downloaded from the wiki. */
   from_wiki: number;
   missing: number;
   invalid: number;
@@ -261,7 +204,6 @@ export type RiotFetchCounts = {
 
 const recent = (iso: string) => Date.now() - Date.parse(iso) < MISSING_RETRY_DAYS * 86400_000;
 
-/** Parallel reads from R2: no wiki involved, so no throttle; enough to hide the latency, few enough to stay polite. */
 const R2_CONCURRENCY = 16;
 
 type Summaries = { file: string; index: Map<string, IngameLine> };
@@ -287,7 +229,6 @@ function summarize(raw: RawGame, summaries: Summaries, counts: RiotFetchCounts) 
   }
 }
 
-/** A stored object, or null when it is absent or unreadable (then downloaded again). */
 function readRaw(body: Uint8Array | null): RawGame | null {
   if (!body) return null;
 
@@ -298,7 +239,6 @@ function readRaw(body: Uint8Array | null): RawGame | null {
   }
 }
 
-/** Games per wiki request: the MediaWiki API serves several pages at once, which halves the request count. */
 const GAMES_PER_REQUEST = Math.min(4, Math.max(1, Number(process.env.RIOT_GAMES_PER_REQUEST || 2)));
 
 const OUTAGE_PAUSE_MS = 5 * 60_000;
@@ -306,7 +246,6 @@ const MAX_OUTAGE_PAUSES = 6;
 
 type Downloaded = { row: RiotGameRow; result: RawGame | { missing: string } | { invalid: string } | null };
 
-/** Stats + timeline pages of a few games in one request; `null` for a game the wiki did not serve this time. */
 async function download(rows: RiotGameRow[], fetchPages: typeof wikiPages): Promise<Downloaded[]> {
   const titles = rows.flatMap((r) => [r.StatsPage, ...(r.TimelinePage ? [r.TimelinePage] : [])]);
   const pages = await fetchPages(titles);
@@ -345,7 +284,6 @@ async function download(rows: RiotGameRow[], fetchPages: typeof wikiPages): Prom
   });
 }
 
-/** Reads the games of `todo` from R2, in parallel. Returns the ones R2 does not have, in their original order. */
 async function readFromR2(todo: RiotGameRow[], remote: ObjectStore, local: ObjectStore, summaries: Summaries, counts: RiotFetchCounts): Promise<RiotGameRow[]> {
   const queue = [...todo];
   const absent = new Set<string>();
@@ -386,11 +324,6 @@ async function readFromR2(todo: RiotGameRow[], remote: ObjectStore, local: Objec
   return todo.filter((r) => absent.has(r.Key));
 }
 
-/**
- * Brings ingame.jsonl up to date with `rows`: cached raw JSON first (no
- * network), then R2 when configured (parallel, before the wiki budget starts),
- * then the wiki, a few games per request, until done or out of budget.
- */
 export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions): Promise<RiotFetchCounts> {
   const local = opts.local ?? localRiotStore();
   const fetchPages = opts.fetchPages ?? wikiPages;
@@ -405,7 +338,6 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   const cached = new Set(await local.list("games"));
   let todo: RiotGameRow[] = [];
 
-  // 1. No network: current summaries, and raw JSON already in the local cache.
   for (const row of rows) {
     const line = index.get(row.Key);
 
@@ -438,24 +370,20 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       `${todo.length} to fetch${opts.remote ? ` (${opts.remote.label} first)` : ""}`,
   );
 
-  // 2. R2: parallel reads, no wiki request, outside the wiki budget.
   if (opts.remote && todo.length) todo = await readFromR2(todo, opts.remote, local, summaries, counts);
 
-  // 3. The wiki, throttled and time-boxed.
   if (todo.length) console.log(`riot: ${todo.length} games to download from the wiki (${GAMES_PER_REQUEST} per request)`);
 
   const now = opts.now ?? Date.now;
   const deadline = opts.budgetMinutes == null ? Infinity : now() + opts.budgetMinutes * 60_000;
   const started = Date.now();
   const total = todo.length;
-  /** Games a response left out: each is asked once more, alone, before any fresh batch. */
   const retries: RiotGameRow[] = [];
   const retried = new Set<string>();
   let done = 0;
   let lastLog = 0;
   let failures = 0;
 
-  /** Caches the game locally and uploads it; false when the upload failed (the game is then left for the next run). */
   const store = async (raw: RawGame, body: Uint8Array): Promise<boolean> => {
     const key = rawGameKey(raw.key);
     await local.put(key, body, RAW_GAME_CONTENT_TYPE);
@@ -486,8 +414,6 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       break;
     }
 
-    // A retry is always a request of its own, whatever the batch size, so that the
-    // game it gave up on is not left out again next to another one.
     const single = retries.length > 0;
     const batch = single ? retries.splice(0, 1) : todo.splice(0, GAMES_PER_REQUEST);
     let downloaded: Downloaded[];
@@ -496,7 +422,6 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       downloaded = await download(batch, fetchPages);
       failures = 0;
     } catch (err) {
-      // The wiki is down or refusing us: pause, then try the same request again; give up after a long outage.
       (single ? retries : todo).unshift(...batch);
 
       if (++failures >= MAX_OUTAGE_PAUSES) throw err;
@@ -507,7 +432,6 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
 
     for (const { row, result } of downloaded) {
       if (result === null) {
-        // Not served (API size limit): once more on its own, then give up for this run.
         if (retried.has(row.Key)) counts.left++;
         else {
           retried.add(row.Key);
@@ -526,7 +450,6 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
         continue;
       }
 
-      // No summary without the object on R2: an `ok` line would make every later run skip the game.
       if (!(await store(result, encodeRawGame(result)))) {
         counts.left++;
         continue;

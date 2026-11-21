@@ -1,31 +1,10 @@
-/**
- * Player identity: the Leaguepedia player page a scoreboard link stands for.
- *
- * `ScoreboardPlayers.Link` is what the scoreboard says, not always the page:
- * the case drifts ("caPs", "RooKie") and an older handle stays on old games
- * ("ZionSpartan" for Darshan). Without this step each spelling is its own
- * player and a career is split between them.
- */
-
 export type Resolution = {
-  /** The player page, or the link itself when nothing (or more than one page) matches. */
   page: string;
-  /**
-   * How the page was found: the link is a page, a page at another case, a
-   * `PlayerRedirects.AllName`, several pages (not merged), or nothing.
-   */
   via: "page" | "case" | "redirect" | "ambiguous" | "unknown";
 };
 
 type Redirect = { name: string; page: string };
 
-// These scoreboard-only handles have no Players/PlayerRedirects row. The
-// matching historical rosters were checked before merging the two spellings:
-// https://lol.fandom.com/wiki/Team_Tempest (William Lyall, including the
-// GeekGoneMad roster of NA LCS 2014 Spring Prequalifier 1) and
-// https://lol.fandom.com/wiki/NA_LCS/2014_Season/Spring_Promotion/Qualifiers/WellPlayed_2/Team_Rosters
-// https://lol.fandom.com/wiki/EU_LCS/2014_Season/Spring_Promotion/Qualifiers/WellPlayed_2
-// (Minde, the single bleiz eSPORTS support across all four scoreboards).
 const VERIFIED_SCOREBOARD_PAGES = ["GeekGoneMAD", "Minde"] as const;
 
 const fold = (s: string) => s.toLowerCase();
@@ -38,12 +17,6 @@ function index(entries: Iterable<[string, string]>) {
   return map;
 }
 
-/**
- * Builds `canonical(link)` from the player pages and their redirects. In
- * order: the exact page, a page at another case, a redirect name, a redirect
- * name at another case. The first step that points to several pages stops
- * the search: two players who share a handle stay apart.
- */
 export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redirect>): (link: string) => Resolution {
   const rows = [...redirects];
   const known = new Set([...pages, ...rows.map((r) => r.page), ...VERIFIED_SCOREBOARD_PAGES]);
@@ -70,14 +43,6 @@ export function playerIdentity(pages: Iterable<string>, redirects: Iterable<Redi
   };
 }
 
-/**
- * Team identity: one spelling per team whatever the case Leaguepedia wrote it in ("Dplus KIA" on a game,
- * "Dplus Kia" on its player lines). The page of `Teams` wins; without a page, the first spelling seen. Two pages
- * that differ only in case stay apart, and so do the names at their case.
- *
- * A wiki title always starts with a capital, so a name that differs from its page by the first letter alone
- * ("paiN Gaming" for the page "PaiN Gaming") is that page as the wiki displays it: the name is kept.
- */
 export function teamIdentity(pages: Iterable<string>): (name: string) => string {
   const pageByCase = index([...pages].flatMap((p): [string, string][] => {
     const page = p.trim();

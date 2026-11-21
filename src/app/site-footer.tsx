@@ -3,20 +3,13 @@ import { LanguageArrival } from "./i18n/language-arrival";
 import { type Locale, PATHS } from "./i18n/locales";
 import { SHELL } from "./i18n/shell";
 
-/** A link inside running text, shared by the footer and the legal page. */
 export const TEXT_LINK = "underline decoration-line underline-offset-2 hover:text-accent";
 
 export const CC_BY_SA_URL = "https://creativecommons.org/licenses/by-sa/3.0/";
 
-/**
- * Riot's boilerplate for third-party products, word for word (developer.riotgames.com/policies/general asks
- * for it "in a location that is readily visible to players"): it stays in English, after a summary in the
- * language of the page when that is another one.
- */
 export const RIOT_BOILERPLATE =
   "Farsight isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.";
 
-/** The footer of every page: sources, then the privacy and Riot notices in one sentence each; the full texts (Riot's boilerplate included) are on the legal page, one click away. */
 export function SiteFooter({ locale }: { locale: Locale }) {
   const { footer } = SHELL[locale];
 
@@ -62,7 +55,6 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           {footer.legal}
         </Link>
       </p>
-      {/* Last in the page, not in the root shell: its effect must run once the page's own text is hydrated. */}
       <LanguageArrival />
     </footer>
   );

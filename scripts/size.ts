@@ -1,29 +1,3 @@
-/**
- * size: measures what each function that reads the database ships (/api/ask,
- * and the functions of a link's preview: /api/card, /q, /en/q) and fails the
- * build above the limits, so a deployment never hits Vercel's 250 MB cap, or
- * when one of them ships the SQLite file (the app reads Postgres). Runs after
- * `next build` (see the `build` script).
- *
- *   bun run size
- *
- * Sources, most exact first, for each function:
- * - after `vercel build`: the function Vercel assembled
- *   (.vercel/output/functions/<route>.func: its own files plus the
- *   `filePathMap` of .vc-config.json), when it is newer than the route trace;
- * - otherwise the traces `next build` writes: the route's own .nft.json plus
- *   the Next server's. A plain `next build` traces the full server
- *   (next-server.js.nft.json); on Vercel (and in `vercel build`) Next traces
- *   the minimal server instead (next-minimal-server.js.nft.json).
- *
- * The Vercel cloud build writes neither server trace before the build command
- * ends: the function is then measured from the route trace alone (the minimal
- * server adds under 1 MB). Without the route trace there is nothing to measure:
- * a warning, and the build goes on.
- *
- * Budget: function under 250 MB uncompressed (warning from 225 MB), and no
- * data/*.sqlite in it.
- */
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
@@ -33,7 +7,6 @@ const NEXT = resolve(ROOT, ".next");
 const FUNCTION_MAX_BYTES = 250e6;
 const FUNCTION_WARN_BYTES = 225e6;
 
-/** A function that reads the database: its route, and the trace `next build` writes for it. */
 const FUNCTIONS = [
   { route: "/api/ask", trace: "server/app/api/ask/route.js.nft.json" },
   { route: "/api/card", trace: "server/app/api/card/route.js.nft.json" },
@@ -48,19 +21,16 @@ const SERVER_TRACES = [resolve(NEXT, "next-server.js.nft.json"), resolve(NEXT, "
 const Trace = z.object({ files: z.array(z.string()) });
 const VcConfig = z.object({ filePathMap: z.record(z.string(), z.string()).default({}) });
 
-/** Where the measured files come from, and the files themselves. */
 type Measure = { source: string; files: string[] };
 
 const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
 
-/** Files a .nft.json trace lists, plus the traced file itself. */
 function traced(trace: string): string[] {
   const files = Trace.parse(JSON.parse(readFileSync(trace, "utf8"))).files.map((f) => resolve(dirname(trace), f));
 
   return [trace.replace(/\.nft\.json$/, ""), ...files];
 }
 
-/** Regular files under a directory, symlinks left out (they point inside it). */
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const path = join(dir, e.name);
@@ -71,7 +41,6 @@ function walk(dir: string): string[] {
   });
 }
 
-/** The function `vercel build` assembled, when it comes from the current `next build`. */
 function vercelOutput(fn: Fn): Measure | null {
   const config = join(fn.func, ".vc-config.json");
 

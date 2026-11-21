@@ -1,29 +1,3 @@
-/**
- * data:fetch: Leaguepedia Cargo + Riot Data Dragon into the raw cache (data/raw).
- *
- *   bun run data:fetch                     full scope, reuses cached responses
- *   bun run data:fetch --refresh           full scope, ignores the cache (monthly rebuild)
- *   bun run data:fetch --incremental       only recent or ongoing tournaments
- *   bun run data:fetch --incremental --days=30
- *   bun run data:fetch --riot-budget=90    stop downloading Riot JSON after 90 min
- *   bun run data:fetch --no-riot           Cargo and Data Dragon only
- *   bun run data:fetch --rederive          recompute every in-game summary from the cached Riot JSON
- *
- * Riot game JSON (stats + timeline, two games per wiki request by default,
- * `RIOT_GAMES_PER_REQUEST`) is downloaded for every game listed in
- * `PostgameJsonMetadata` that has no summary yet: read from R2 first when R2_* is
- * set (parallel, outside --riot-budget), else downloaded from the wiki and
- * uploaded to R2; cached as one object per game under data/raw/riot, summarized
- * into data/raw/ingame.jsonl. The first catch-up is about 28 000 games (8-9 h)
- * and resumes where it stopped. With R2, the summaries R2 holds and this
- * machine lacks are taken first, and the file is written back to R2 at the end.
- *
- * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
- * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: the derivation keeps the
- * series it lists without any scoreboard game (scripts/data/schedule.ts). Every raw response is kept under data/raw/cargo,
- * and the merged datasets under data/raw/*.json feed the derivation. Which team logo files exist is asked again on every
- * run, uncached (about forty MediaWiki API requests, scripts/data/team-logos.ts).
- */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
@@ -77,8 +51,6 @@ if (riotBudget != null && !(riotBudget > 0)) throw new Error("--riot-budget expe
 
 const chunks = <T>(arr: T[], size: number) =>
   Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
-
-// --- Cargo queries ------------------------------------------------------------
 
 const TOURNAMENT_FIELDS = [
   "Tournaments.OverviewPage=Page",
@@ -151,13 +123,6 @@ function linesQuery(where: string, joinTournaments: boolean): CargoQuery {
   };
 }
 
-/**
- * The player rows and redirects behind scoreboard links. A link is what the
- * scoreboard says, not always a player page: an older handle ("ZionSpartan"
- * for Darshan) only exists as a `PlayerRedirects.AllName`, so links are
- * resolved by name first, then the pages they lead to are fetched with the
- * links themselves. The derivation merges on these rows (scripts/data/identity.ts).
- */
 async function fetchPlayers(links: string[], opts: CargoOptions) {
   const players: CargoRow[] = [];
   const redirects: CargoRow[] = [];
@@ -176,7 +141,6 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
     for (const r of rows) resolved.add(String(r.Page));
   }
 
-  // Links first: their batches (and cached responses) stay the same when a page is added.
   const known = new Set(links);
   const pages = [...links, ...[...resolved].filter((p) => !known.has(p))];
   console.log(`  players: ${links.length} links, ${pages.length - links.length} more pages found by name (${progress()})`);
@@ -213,11 +177,6 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
   return { players, redirects };
 }
 
-/**
- * Every Leaguepedia headshot, dated by the tournament it was taken for (about 30 000 rows, a handful of
- * requests). The whole table rather than the players in scope: an image's link may differ in case or be an
- * older handle, and the derivation resolves it like a scoreboard link.
- */
 function fetchPlayerImages(opts: CargoOptions) {
   return cargoQuery(
     {
@@ -230,11 +189,6 @@ function fetchPlayerImages(opts: CargoOptions) {
   );
 }
 
-/**
- * Every team page with its abbreviation (Teams.Short, "KCB"), and every name that redirects to a team page
- * (TeamRedirects, an older name such as "Afreeca Freecs" -> "DN SOOPers"): a few requests for the whole tables.
- * The derivation gives each scoreboard team its abbreviation, and `understand` reads it as an alias.
- */
 async function fetchTeams(opts: CargoOptions) {
   const teams = await cargoQuery(
     { tables: "Teams", fields: ["Teams.OverviewPage=Page", "Teams.Name=Name", "Teams.Short=Short"], orderBy: "Teams.OverviewPage" },
@@ -251,8 +205,6 @@ async function fetchTeams(opts: CargoOptions) {
 
 const linkOf = (l: CargoRow) => String(l.Link ?? l.Name ?? "");
 const asText = (v: CargoValue | undefined) => (v == null || v === "" ? null : String(v));
-
-// --- Data Dragon --------------------------------------------------------------
 
 async function ddragon(path: string, force: boolean): Promise<Json> {
   mkdirSync(DDRAGON_CACHE_DIR, { recursive: true });
@@ -278,11 +230,6 @@ async function ddragon(path: string, force: boolean): Promise<Json> {
 
 const ItemFile = z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) });
 
-/**
- * Latest champion/item/rune/spell data, plus item names and recipes from older
- * patches so retired items still get their original icon and kind. Three patches per season
- * (first, middle, last) are enough to catch nearly every retired item.
- */
 async function fetchDdragon(force: boolean) {
   const versions = z.array(z.string()).parse(await ddragon("/api/versions.json", true)).filter((v) =>
     /^\d+\.\d+\.\d+$/.test(v),
@@ -309,8 +256,6 @@ async function fetchDdragon(force: boolean) {
       legacyItems.push({
         version: v,
         items: Object.fromEntries(Object.entries(file.data).map(([id, it]) => [id, it.name])),
-        // Recipe, tags and price: the derivation classifies retired items (completed, component, consumable...).
-        // An entry that does not parse only loses its kind, never its name and icon.
         meta: Object.fromEntries(Object.entries(file.data).flatMap(([id, it]) => {
           const meta = ItemMeta.safeParse(it);
 
@@ -332,8 +277,6 @@ async function fetchDdragon(force: boolean) {
   };
 }
 
-// --- Datasets -----------------------------------------------------------------
-
 function load(name: Dataset): CargoRow[] {
   const file = datasetFile(name);
 
@@ -346,14 +289,10 @@ function save(name: Dataset, value: Json) {
   writeFileAtomic(datasetFile(name), JSON.stringify(value));
 }
 
-/** Replace the rows of the refreshed pages, keep everything else. */
 function merge(previous: CargoRow[], next: CargoRow[], pages: Set<string>) {
   return [...previous.filter((r) => !pages.has(String(r.Page))), ...next];
 }
 
-// --- Riot game JSON -----------------------------------------------------------
-
-/** The list of games with Riot JSON (refreshed in incremental mode), then the downloads. */
 async function riot(opts: CargoOptions) {
   if (noRiot) return {};
   const list = await fetchRiotGameList(opts);
@@ -371,8 +310,6 @@ async function riot(opts: CargoOptions) {
     ...(pulled && { riot_summaries_from_r2: pulled.taken, riot_summaries_upload_errors: pushed ? 0 : 1 }),
   };
 }
-
-// --- Modes --------------------------------------------------------------------
 
 async function full() {
   console.log(`full fetch${refresh ? " (refresh: cache ignored)" : ""}`);
@@ -461,11 +398,9 @@ async function incrementalFetch() {
     lines: load("lines"),
     players: load("players"),
     redirects: load("redirects"),
-    // Absent from a raw cache fetched before the schedule was: the refreshed pages only, until the next full fetch.
     schedule: existsSync(datasetFile("schedule")) ? load("schedule") : [],
   };
 
-  // The tournament list is one request: always refresh it.
   const tournaments = await cargoQuery(tournamentsQuery, fresh);
   const leagueByName = new Map<string, (typeof LEAGUES)[number]>(LEAGUES.map((l) => [l.name, l]));
   const recent: string[] = [];
@@ -513,8 +448,6 @@ async function incrementalFetch() {
 
   console.log(`refetched: ${results.length} standings, ${games.length} games, ${lines.length} player lines, ${schedule.length} scheduled matches`);
 
-  // Links to look up: spellings never seen before, and older links that no
-  // player page or redirect name covers (fetched before links were resolved by name).
   const known = new Set(previous.players.map((p) => String(p.Page)));
   const lineLinks = new Set(previous.lines.map(linkOf));
 

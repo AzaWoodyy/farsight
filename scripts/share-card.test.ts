@@ -4,7 +4,6 @@ import { cardOf, clearShareCards, rememberCard, type ShareCard } from "../src/li
 import type { ChampionRankingInput } from "../src/lib/agent/tools";
 import type { Answer, ResultRow, SeriesDetail } from "../src/lib/agent/types";
 
-/** An answer a typed tool gave, with rows and nothing left unread: the only kind that gets a card. */
 function answer(over: Partial<Omit<Answer, "meta">> = {}, meta: Partial<Answer["meta"]> = {}): Answer {
   return {
     title: "Chovy — Worlds",
@@ -31,7 +30,6 @@ function answer(over: Partial<Omit<Answer, "meta">> = {}, meta: Partial<Answer["
     meta: {
       route: "player_event_history",
       sqlAvailable: false,
-      // Only its presence is read (a typed tool answered), and `sort` by a champion ranking.
       input: ranked("picks"),
       players: [],
       teams: [],

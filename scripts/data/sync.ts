@@ -1,14 +1,3 @@
-/**
- * data:sync: upload the Riot game JSON of the local cache (data/raw/riot) to
- * the R2 bucket, skipping the objects it already holds. Used once after the
- * first local catch-up, and to retry uploads that failed during a fetch.
- *
- *   bun run data:sync              upload what R2 does not have
- *   bun run data:sync --dry-run    only count
- *
- * Needs R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY
- * (docs/deploy.md). One listing request per 1000 objects, one PUT per upload.
- */
 import { RAW_GAME_CONTENT_TYPE } from "../../src/lib/sources/riot";
 import { remoteStoreFromEnv } from "../../src/lib/storage";
 import { localRiotStore } from "./riot";

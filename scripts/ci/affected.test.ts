@@ -47,14 +47,11 @@ test("a push on main is compared with the newest validated ancestor, and with no
   const always = () => true;
 
   expect(pushBase([newest, older], after, isAncestor, always)).toBe(newest);
-  // A commit force-pushed away from main is no longer an ancestor.
   expect(pushBase(["e".repeat(40), older], after, isAncestor, always)).toBe(older);
-  // A re-run of the pushed commit itself is not a base.
   expect(pushBase([after, oldest], after, always, always)).toBe(oldest);
   expect(pushBase(["not-a-sha", "A".repeat(40), oldest], after, isAncestor, always)).toBe(oldest);
   expect(pushBase([], after, isAncestor, always)).toBeNull();
   expect(pushBase(["e".repeat(40)], after, isAncestor, always)).toBeNull();
-  // A green run from before this rule may have skipped a failed range: the first push under the rule runs every check.
   expect(pushBase([newest, older], after, isAncestor, sha => sha === older)).toBe(older);
   expect(pushBase([newest, older], after, isAncestor, () => false)).toBeNull();
 });

@@ -8,7 +8,6 @@ import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
 import { DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
 import { type RiotGameRow, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries } from "./riot";
 
-/** A minimal S3-compatible server: GET, HEAD, PUT and ListObjectsV2 on one bucket. */
 function fakeR2(objects: Map<string, Uint8Array>) {
   const requests: string[] = [];
 
@@ -44,7 +43,6 @@ function fakeR2(objects: Map<string, Uint8Array>) {
   return { store, requests, stop: () => server.stop(true) };
 }
 
-/** One game, 2 players, 11 one-minute frames: enough for summarizeGame. */
 function game(key: string): RawGame {
   const frame = (m: number) => ({
     timestamp: m * 60_000,
@@ -119,7 +117,6 @@ test("a game missing locally but present on R2 is read from R2, with no wiki req
     expect(wikiCalls).toEqual([]);
     expect(counts).toMatchObject({ from_r2: 1, from_wiki: 0, from_cache: 0, r2_errors: 0, left: 0 });
     expect(r2.requests).toContain(`GET ${rawGameKey("TEST_1")}`);
-    // Cached locally, byte for byte, and summarized.
     expect(Buffer.from((await local.get(rawGameKey("TEST_1")))!).equals(Buffer.from(objects.get(rawGameKey("TEST_1"))!))).toBe(true);
     const line = loadIngame(ingameFile).get("TEST_1");
     expect(line?.status).toBe("ok");
@@ -181,11 +178,9 @@ test("a game whose upload to R2 fails is left for the next run", async () => {
   });
 
   expect(counts).toMatchObject({ upload_errors: 1, uploaded: 0, from_wiki: 0, left: 1 });
-  // No summary line, so the next run looks at the game again; the raw JSON stays in the local cache.
   expect(loadIngame(ingameFile).get("TEST_3")).toBeUndefined();
   expect(await local.get(rawGameKey("TEST_3"))).not.toBeNull();
 
-  // A machine that keeps the local cache summarizes it without the wiki (and `data:sync` uploads it).
   const r2 = fakeR2(new Map());
 
   try {
@@ -228,14 +223,8 @@ test("an R2 request that never gets an answer is aborted after the store's timeo
   }
 });
 
-/** The game a page title belongs to: "V5 data:TEST 10/Timeline" → "TEST_10". */
 const gameOf = (title: string) => title.replace(/^V5 data:/, "").replace(/\/Timeline$/, "").replace(" ", "_");
 
-/**
- * A wiki that leaves the games of `omitted` out of every multi-game response (no
- * entry at all, not a missing-page marker) and serves them only when asked alone;
- * the games of `never` are left out of every response. Records the games of each request.
- */
 function omittingWiki(omitted: string[], never: string[] = []) {
   const calls: string[][] = [];
 
@@ -275,7 +264,6 @@ test("two games left out of a grouped response are each asked again alone, and s
   expect(okLines(ingameFile).map((l) => `${l.key}:${l.status}`)).toEqual(["TEST_10:ok", "TEST_11:ok"]);
   expect(await local.get(rawGameKey("TEST_11"))).not.toBeNull();
 
-  // The next run skips them.
   wiki.calls.length = 0;
   const again = await fetchRiotGames([row("TEST_10"), row("TEST_11")], opts);
   expect(wiki.calls).toEqual([]);
@@ -311,7 +299,6 @@ test("a game left out again when asked alone is left for the next run, with no s
   expect(counts).toMatchObject({ from_wiki: 0, left: 1, missing: 0, invalid: 0 });
   expect(loadIngame(ingameFile).get("TEST_30")).toBeUndefined();
 
-  // The next run looks at it again.
   wiki.calls.length = 0;
   expect(await fetchRiotGames([row("TEST_30")], opts)).toMatchObject({ left: 1 });
   expect(wiki.calls).toEqual([["TEST_30"], ["TEST_30"]]);
@@ -405,7 +392,6 @@ test("a local line gives way to R2 only when R2 has a current summary and the lo
   try {
     writeFileSync(seed, jsonl([ok("M_OLD"), ok("M_MISSING"), missing("M_OK", "r2"), old("M_BOTH_OLD"), missing("M_BOTH_MISSING", "r2"), ok("M_NEW")]));
     await pushSummaries(r2.store, null, seed);
-    // The local file ends on a line an interrupted append left open.
     writeFileSync(ingameFile, `${jsonl([old("M_OLD"), missing("M_MISSING", "local"), ok("M_OK"), { ...old("M_BOTH_OLD"), durationS: 1 }, missing("M_BOTH_MISSING", "local")])}{"status":"ok","key":"M_CUT`);
 
     expect(await pullSummaries(r2.store, ingameFile)).toMatchObject({ stored: 6, taken: 3 });

@@ -5,7 +5,6 @@ import { CC_BY_SA_URL, RIOT_BOILERPLATE, TEXT_LINK } from "../site-footer";
 const CONTACT_URL = "https://www.enzoneault.dev";
 const LICENSE_URL = "https://github.com/AzaWoodyy/farsight/blob/main/LICENSE";
 
-/** Day the text below last changed: shown on the page and sent as `lastmod` in the sitemap. Change it with the text. */
 export const LEGAL_UPDATED = "2026-11-15";
 
 const updatedOn = (tag: string) => new Intl.DateTimeFormat(tag, { dateStyle: "long", timeZone: "UTC" }).format(new Date(LEGAL_UPDATED));
@@ -13,10 +12,8 @@ const updatedOn = (tag: string) => new Intl.DateTimeFormat(tag, { dateStyle: "lo
 type Legal = {
   title: string;
   description: string;
-  /** Where the visitor is, in the header. */
   trail: string;
   updated: string;
-  /** Name of the table of contents, for screen readers. */
   toc: string;
   sections: { id: string; label: string; body: ReactNode }[];
 };
@@ -29,7 +26,6 @@ function Ext({ href, children, rel = "noreferrer" }: { href: string; children: R
   );
 }
 
-/** The host's postal address, with its country written in the language of the page. */
 function Host({ country }: { country: string }) {
   return (
     <address className="border-l border-line pl-4 not-italic">
@@ -49,7 +45,6 @@ function Host({ country }: { country: string }) {
   );
 }
 
-/** Riot's notices, word for word: they stay in English in every language. */
 function RiotNotices() {
   return (
     <blockquote lang="en" className="space-y-2 border-l border-line pl-4 text-muted">

@@ -15,10 +15,6 @@ const scope = (extra: Partial<Entities> = {}): Entities => ({
 const faker: ResolvedPlayer = { mention: "Faker", player: "Faker", matchedAlias: "Faker", realName: null, nativeName: null, otherCandidates: [], ambiguity: null };
 const champion = (name: string) => ({ mention: name, champion: name });
 
-/**
- * Worlds 2024: one qualifier game (Faker on Azir) and two main event games with
- * Riot data and no pentakill (Faker on Orianna), the second with a quadrakill.
- */
 async function fresh() {
   const db = await testDb();
   const league = LEAGUES.find((l) => l.name === WORLDS)!;
@@ -51,7 +47,6 @@ const PENTAS =
 
 const generated = (sql: string): QueryPlan => ({ intent: "sql", tool: null, sql, params: {}, attempt: 1, relaxed: [] });
 
-// A network call would mean the model corrector ran: an explained empty result must not ask it.
 const realFetch = globalThis.fetch;
 let fetches = 0;
 
@@ -115,7 +110,6 @@ test("a statistic the Riot data does not give is no zero", async () => {
   const db = await fresh();
 
   try {
-    // plates is NULL in every game: the data does not measure it.
     const why = await explainEmpty(db, scope(), PENTAS.replaceAll("penta_kills", "plates"));
 
     expect(why?.reason).toBe("unexplained");
@@ -129,7 +123,6 @@ test("a column without data does not hide another column's positive total", asyn
   const db = await fresh();
 
   try {
-    // Game 2: Chovy has a pentakill and no plate data; Faker has neither.
     await db.exec("UPDATE game_player_stats SET penta_kills = 1 WHERE game_id = 2 AND player_id = 2; UPDATE game_player_stats SET plates = 0 WHERE player_id = 1");
     const why = await explainEmpty(db, scope(), "SELECT SUM(penta_kills), SUM(plates) FROM v_game_player_stats HAVING SUM(penta_kills) > 5");
 

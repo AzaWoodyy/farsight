@@ -1,7 +1,3 @@
-/**
- * Ask the agent from the terminal and print each step + the answer.
- *   bun run ask "résultats de Chovy à tous les Worlds"
- */
 import { runAgent } from "../src/lib/agent/run";
 import type { StepPart } from "../src/lib/agent/types";
 

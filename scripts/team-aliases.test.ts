@@ -4,11 +4,6 @@ import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
-/**
- * Karmine Corp, its academy Karmine Corp Blue and their second academy Karmine Corp Blue Stars, with their Leaguepedia
- * abbreviations; a player called Blue; RED Canids, whose abbreviation is an everyday word; Gamers Two ("GT"), too short;
- * Splyce Vipers ("SVP", a chat shorthand); Wizards ("WIZ"), with more games than the player Wiz; DRX and Kiwoom DRX ("KRX").
- */
 async function seed() {
   const db = await testDb();
 
@@ -111,10 +106,6 @@ describe("team abbreviations from Leaguepedia", () => {
   });
 });
 
-/**
- * Two teams with one abbreviation, NIP: Ninjas in Pyjamas (EU LCS 2017, on the red side) and Ninjas in Pyjamas.CN, with
- * more games (LPL 2026). Both played Worlds 2024, and the European team also a qualifier in 2026.
- */
 async function seedShared() {
   const db = await testDb();
   const league = (name: string) => LEAGUES.findIndex((l) => l.name === name) + 1;
@@ -177,10 +168,6 @@ describe("an abbreviation two teams share", () => {
   });
 });
 
-/**
- * Jin Air Green Wings and its two 2014 teams of five words, Falcons and Stealths; Falcons (Spanish Team), named by the last
- * word of one of them; a team of six words and another named by its first four.
- */
 async function seedLong() {
   const db = await testDb();
 
@@ -230,7 +217,6 @@ describe("a team name longer than four words", () => {
   });
 });
 
-/** Zentinel, whose real name Kevin Pires indexes the alias "pires", and Worst, whose handle is a superlative. */
 async function seedSuperlatives() {
   const db = await testDb();
 

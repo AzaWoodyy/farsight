@@ -1,0 +1,23 @@
+# In-game statistics: one definition for match-v4 and match-v5
+
+The in-game numbers stored in SQL (`game_player_stats`, `game_team_stats`, `game_dragons`) are computed once at ingestion by `summarizeGame` in `scripts/data/ingame.ts`, from the Riot JSON of a game (end-of-game stats plus timeline, in the match-v4 or the match-v5 shape). The definitions are the same for both shapes, so seasons compare, and a value the data cannot measure is NULL, never 0. The raw JSON stays in object storage.
+
+## Rules
+
+- **Minute snapshots** (`gold_10/15/20`, `xp_*`, `cs_*`, team `gold_*`): the timeline frame of that minute, chosen by its time and not by its index. Frames are one minute apart and a few hundred milliseconds late in match-v5; a frame counts as the minute's observation only within `FRAME_TOLERANCE_MS` (30 s). The value is NULL when the game or its timeline ended before the minute, when no frame is that close, or without a timeline.
+- **The last match-v5 frame is the end of the game, not a minute**: a game over at 19:46 has a frame at about 20:00, which is no observation at 20:00. `reached(m)` therefore requires both the game duration and the last frame to reach minute m, compared in milliseconds (19:59.9 is not 20:00); the timeline's last frame stands in for a missing duration.
+- **Team `kills_10/15/20` and `towers_15`**: counted strictly before the minute, only for a game whose duration and timeline both reach it (NULL otherwise).
+- **Player `kills_10` / `deaths_10` / `assists_10`**: champion kills strictly before 10:00, whenever the game has a timeline (no `reached` condition).
+- **`solo_kills`**: champion kills with no assisting champion, by a champion; executions by towers or minions are excluded.
+- **`first_blood_*`**: Riot's end-of-game flags. The victim comes from the credited first blood of the timeline (`src/lib/sources/first-blood`): an execution is skipped, and the victim is unknown (NULL) when the kill does not match Riot's flags.
+- **`plates`**: turret plates destroyed, from match-v5 timelines only. match-v4 timelines have no plate event, even after plates existed, and plates start at patch 9.2 (`hasPlates`): NULL in both cases.
+- **Building events name the loser**: in `BUILDING_KILL` and `TURRET_PLATE_DESTROYED`, `teamId` is the team that lost the building. Towers and plates of a team are the events whose `teamId` is the other team.
+- **`dragons`**: every dragon kill of the timeline, in order: second of the game, Riot team, element (NULL before the elements, patch 6.9); NULL without a timeline. `elder_dragons`: elder dragons a team killed (NULL without a timeline).
+- **`dragon_soul` / `soul`**: the soul goes to the first team with four elemental dragons (`SOUL_DRAGONS`), from patch 9.23 (`hasSouls`). match-v5 timelines say so with `DRAGON_SOUL_GIVEN` and a team; the same event with team 0 only announces the element of the map and is ignored. Without that event the count of elemental dragons is used. NULL without a timeline or before patch 9.23.
+- **`damage` and `vision`** (fallbacks for the many 2018-2020 games whose Leaguepedia scoreboard lacks them): NULL for every participant when no participant of the game has a non-zero value, because the field was not tracked yet; a 0 would read as a measurement.
+- **`runes`**: rune ids in Leaguepedia's order: keystone, three primary runes, two secondary runes, then the stat shards offense, flex, defense; `primary_tree` / `secondary_tree` are the two tree ids. From patch 8.23 (`hasShards`) a page has its three shards: a page without them is incomplete (NULL), not a page of six runes. Before 8.23 the page is six ids. When the game version does not read as major.minor, only a page with its shards is trusted. NULL before Runes Reforged or when any slot is missing (id absent or 0).
+- **`heralds`**: Rift Heralds a team killed, from Riot's end-of-game count; NULL before the Herald (patch 5.22, `hasHeralds`).
+- **`gameVersion`** is Riot's full game version ("9.11.276.3025"). `leaguepediaPatch` turns it into Leaguepedia's patch ("9.11") for a game whose scoreboard has none, only up to season 14: from 2025 Riot's versions (15.x) and Leaguepedia's patches (25.x, 25.S1.1) are numbered apart, so it returns null.
+- **`gameDuration` has two units**: match-v4 and early match-v5 report milliseconds for some games and seconds for the others. A value above 20 000 is read as milliseconds (`durationMs`, and `durationS` in the summary).
+- **Riot sides**: `teamId` 100 is blue, 200 is red; any other value is not a side (`riotSide`).
+- **Wrapped JSON**: a match-v5 stats or timeline document may come wrapped as `{ metadata, info }`; `unwrap` reads `info` when it is there.

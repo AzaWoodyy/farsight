@@ -20,7 +20,6 @@ import type { Locale } from "../src/lib/locale";
 import { FEEDBACK_SCORE, flushTracing, sampleRate, sendFeedback, shutdownTracing, startTracing } from "../src/lib/tracing/langfuse";
 import { MASKED, maskPersonalData } from "../src/lib/tracing/mask";
 
-/** Conversation id as the browser makes it up. */
 const SESSION = "2b6f0cff-4e0f-4e5c-9d2a-6a4b8f3c1d7e";
 
 const QUESTION = "bilan de Chovy et Zzyzx aux Worlds, réponse à jean.dupont@example.com";
@@ -100,7 +99,6 @@ const steps = (execute: StepPart["status"] = "ok", confidence = 0.9) =>
 
 const noLlm = { calls: 0, errors: 0 };
 
-/** Stands for the OpenRouter call: same model id, usage and billed cost as a real answer. */
 const model = new MockLanguageModelV4({
   provider: "openrouter",
   modelId: "anthropic/claude-haiku-5.5",
@@ -113,7 +111,6 @@ const model = new MockLanguageModelV4({
   }),
 });
 
-/** The question as the route runs it, with one LLM call in the understand step. */
 function runQuestion(outcome: Answer, locale: Locale = "fr") {
   return traceQuestion(QUESTION, SESSION, locale, async (traceId) => {
     const done = new Map<StepName, StepPart>();
@@ -149,13 +146,9 @@ function runQuestion(outcome: Answer, locale: Locale = "fr") {
 
 const attr = (span: ReadableSpan, key: string) => span.attributes[key];
 
-/** A metadata value as Langfuse reads it back (the SDK exports each one JSON-encoded). */
 const meta = (span: ReadableSpan, key: string) => JSON.parse(String(span.attributes[`langfuse.observation.metadata.${key}`]));
 
-// Tracing off -------------------------------------------------------------------
-
 test("without the three Langfuse variables tracing stays off", () => {
-  // A fresh process proves the off state independently of the initialized singleton.
   const env = { ...process.env };
 
   for (const key of ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL"]) delete env[key];
@@ -187,8 +180,6 @@ test("no score is sent while tracing is off", async () => {
   expect(await sendFeedback({ traceId: "a".repeat(32), value: 1 }, send)).toBe(false);
   expect(called).toBe(false);
 });
-
-// Signals ------------------------------------------------------------------------
 
 test("sample rate: a ratio between 0 and 1, everything by default", () => {
   expect(sampleRate(undefined)).toBe(1);
@@ -264,8 +255,6 @@ test("tags name what went wrong", () => {
   ]);
 });
 
-// Exported spans -----------------------------------------------------------------
-
 let exporter = new InMemorySpanExporter();
 const originalExport = exporter.export;
 const envKeys = ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_SAMPLE_RATE", "LANGFUSE_TRACING_ENVIRONMENT"] as const;
@@ -297,7 +286,6 @@ afterEach(async () => {
 
 
 test("a step outside a question's trace is run without an observation", async () => {
-  // The card of a link preview runs the agent for a crawler: not a question, so nothing goes to Langfuse.
   const result = await traceStep("understand", { question: QUESTION }, async () => entities, (e) => understandReport(QUESTION, e, undefined));
 
   await flushTracing();
@@ -318,14 +306,12 @@ test("a question is one trace: root, step observations and the LLM generation", 
   const execute = named(STEP_SPANS.execute);
   const generation = named("extract-entities");
 
-  // One trace, started from scratch, whose id is the one the UI scores.
   expect(traceId).toBe(root.spanContext().traceId);
   expect(new Set(spans.map((s) => s.spanContext().traceId)).size).toBe(1);
   expect(root.parentSpanContext).toBeUndefined();
   expect(understand.parentSpanContext?.spanId).toBe(root.spanContext().spanId);
   expect(execute.parentSpanContext?.spanId).toBe(root.spanContext().spanId);
 
-  // Root: question in, summary out, tags and metadata to filter on.
   expect(attr(root, "langfuse.observation.type")).toBe("agent");
   expect(attr(root, "langfuse.observation.output")).toBe("Chovy a disputé 8 éditions des Worlds.");
   expect(attr(root, "langfuse.observation.level")).toBe("ERROR");
@@ -336,12 +322,10 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(meta(root, "llmInputTokens")).toBe(412);
   expect(meta(root, "llmCostUsd")).toBe(0.00061);
 
-  // Personal data typed in the question never leaves the process.
   expect(attr(root, "langfuse.observation.input")).toBe("bilan de Chovy et Zzyzx aux Worlds, réponse à [masqué]");
   expect(JSON.stringify(spans.map((s) => s.attributes))).not.toContain("jean.dupont");
   expect(JSON.stringify(spans.map((s) => s.attributes))).not.toContain("example.com");
 
-  // Steps: their level, decision and outputs.
   expect(attr(understand, "langfuse.observation.level")).toBe("WARNING");
   expect(meta(understand, "confidence")).toBe(0.7);
   expect(meta(understand, "unconsumed")).toEqual(["bilan", "aux", "réponse"]);
@@ -352,7 +336,6 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(String(attr(execute, "langfuse.observation.output"))).toContain('"rowCount":0,"attempts":2');
   expect(meta(execute, "retries")).toBe(1);
 
-  // The LLM call: one generation, directly under its step, named after the call.
   expect(spans).toHaveLength(4);
   expect(generation.parentSpanContext?.spanId).toBe(understand.spanContext().spanId);
   expect(attr(generation, "langfuse.observation.type")).toBe("generation");
@@ -362,7 +345,6 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(String(attr(generation, "langfuse.observation.input"))).toContain('"role":"user"');
   expect(JSON.parse(String(attr(generation, "langfuse.observation.output")))).toEqual({ role: "assistant", content: '{"players":["Chovy"]}' });
 
-  // The conversation and a readable name are on every observation of the trace.
   for (const span of spans) {
     expect(attr(span, "session.id")).toBe(SESSION);
     expect(attr(span, "langfuse.trace.name")).toBe("bilan de Chovy et Zzyzx aux Worlds, réponse à [masqué]");
@@ -370,7 +352,6 @@ test("a question is one trace: root, step observations and the LLM generation", 
 
   expect(root.name).toBe(TRACE_NAME);
 
-  // Every observation says which question it belongs to.
   for (const span of spans) expect(String(attr(span, "langfuse.trace.metadata.question"))).toContain("bilan de Chovy");
 });
 
@@ -405,10 +386,8 @@ test("a compressed IPv6 address never reaches an exported span, a game clock doe
   expect(attr(root, "langfuse.observation.input")).toBe(masked);
   expect(String(attr(root, "langfuse.trace.metadata.question"))).toContain(masked);
   expect(String(attr(generation, "langfuse.observation.input"))).toContain(masked);
-  // No outcome recorded: the language is still tagged, from the opening of the trace.
   expect(attr(root, "langfuse.trace.tags")).toEqual(["locale:fr"]);
 
-  // Nothing exported, name or text attribute, carries the address.
   const exported = JSON.stringify(spans.map((s) => ({ name: s.name, attributes: s.attributes })));
 
   expect(exported).toContain("12:34");
@@ -419,7 +398,6 @@ test("a compressed IPv6 address never reaches an exported span, a game clock doe
 test("every LLM call of a question hangs in its tree, failures included", async () => {
   exporter.reset();
 
-  /** Answers with a tool call, as the router does. */
   const router = new MockLanguageModelV4({
     provider: "openrouter",
     modelId: "anthropic/claude-haiku-5.5",
@@ -472,19 +450,16 @@ test("every LLM call of a question hangs in its tree, failures included", async 
   const under = (parent: string) => spans.filter((s) => s.parentSpanContext?.spanId === idOf(parent)).map((s) => s.name);
   const levels = (name: string) => spans.filter((s) => s.name === name).map((s) => attr(s, "langfuse.observation.level") ?? "DEFAULT");
 
-  // One trace, one root, nothing outside the tree.
   expect(new Set(spans.map((s) => s.spanContext().traceId))).toEqual(new Set([traceId!]));
   expect(spans.filter((s) => !s.parentSpanContext).map((s) => s.name)).toEqual([TRACE_NAME]);
   expect(under(TRACE_NAME).toSorted()).toEqual([STEP_SPANS.build, STEP_SPANS.execute]);
 
-  // Two calls in the build step, then the failed repair under the execute step.
   expect(under(STEP_SPANS.build)).toEqual(["pick-tool", "generate-sql"]);
   expect(levels("pick-tool")).toEqual(["DEFAULT"]);
   expect(under(STEP_SPANS.execute)).toEqual(["repair-sql"]);
   expect(levels("repair-sql")).toEqual(["ERROR"]);
   expect(attr(spans.find((s) => s.name === "repair-sql")!, "langfuse.observation.status_message")).toContain("clé refusée");
 
-  // A tool call is kept on the assistant message.
   const picked = spans.findLast((s) => s.name === "pick-tool")!;
 
   expect(JSON.parse(String(attr(picked, "langfuse.observation.output"))).tool_calls[0].function).toEqual({ name: "team_history", arguments: '{"team":"T1"}' });
@@ -519,7 +494,6 @@ test.each(["fr", "en"] as const)("the language of the answer (%s) is a tag and a
   expect(attr(root, "langfuse.trace.tags")).toContain(`locale:${locale}`);
   expect(attr(root, "langfuse.trace.tags")).not.toContain(`locale:${locale === "fr" ? "en" : "fr"}`);
 
-  // Propagated like the question: every observation of the trace carries it.
   for (const span of spans) expect(JSON.parse(String(attr(span, "langfuse.trace.metadata.locale")))).toBe(locale);
 });
 
@@ -531,8 +505,6 @@ test("a failing export never throws", async () => {
   await runQuestion(answer({}));
   await flushTracing();
 });
-
-// Feedback score -----------------------------------------------------------------
 
 test("a thumbs down is a boolean score on the trace", async () => {
   process.env.LANGFUSE_BASE_URL = "https://langfuse.test/";

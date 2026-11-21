@@ -1,7 +1,3 @@
-/**
- * A fresh, empty Postgres schema for one test: every table and view of the migrations, no row. Each test database is
- * its own schema on TEST_DATABASE_URL (a local server, the CI service container), dropped on close.
- */
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { type Db, type SqlInput } from "../../src/lib/db";
@@ -10,11 +6,8 @@ import { SCHEMA_VIEWS } from "../../src/lib/db/schema";
 import { grantReaders, migrate, quoteIdent, readMigrations } from "../db/migrations";
 
 export type TestDb = Db & {
-  /** The schema, on TEST_DATABASE_URL. */
   readonly schema: string;
-  /** Statements without parameters (seeding), run in order. */
   exec(sql: string): Promise<void>;
-  /** One statement with positional parameters. */
   run(sql: string, ...params: SqlInput[]): Promise<void>;
   close(): Promise<void>;
 };
@@ -29,7 +22,6 @@ export const testDatabaseUrl = () => {
   return url;
 };
 
-/** `empty: true` creates the schema without any table. */
 export async function testDb({ empty = false }: { empty?: boolean } = {}): Promise<TestDb> {
   const url = testDatabaseUrl();
   const schema = `test_${randomBytes(6).toString("hex")}`;

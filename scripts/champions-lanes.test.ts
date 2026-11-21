@@ -36,7 +36,6 @@ describe("roles, French and English", () => {
     ["les tops de LCK", "Top"],
   ] as const)("%s → %s", (q, role) => expect(roleOf(q)).toBe(role));
 
-  // "top 5" is a ranking, "mid-season" a competition: no role.
   test.each(["top 5 des équipes", "mid-season invitational", "Top Esports en LPL"])("%s → no role", (q) => expect(roleOf(q)).toBeNull());
 });
 
@@ -73,7 +72,6 @@ describe("champion questions route to the champion tools, decided by the rules",
 
   test("a figure the ranking does not sort by goes to generated SQL", async () => {
     for (const [q, e] of [
-      // The lowest figure, two figures at once, a figure of the game: not the ranking's figure, highest first.
       ["champion avec le moins de morts par partie aux Worlds 2024", WORLDS24],
       ["champions avec le plus de kills et d'assists par partie en LCK 2024", LCK24],
       ["champions avec le plus de kills et d'or par partie en LCK 2024", LCK24],
@@ -138,7 +136,6 @@ describe("lane questions: a role, an explicit criterion", () => {
     for (const [q, min] of [
       ["meilleurs mids LEC 2025 avec au moins 50 parties", 50],
       ["best mids LEC 2025 with at least 50 games", 50],
-      // The minimum is inclusive: "more than 50" starts at 51.
       ["meilleurs mids LEC 2025 avec plus de 50 parties", 51],
       ["best mids LEC 2025 with more than 50 games", 51],
     ] as const)
@@ -149,7 +146,6 @@ describe("lane questions: a role, an explicit criterion", () => {
     });
   });
 
-  // A role with a comparison or ranking word gives the role's leaderboard, never the competition's standings.
   test.each([
     ["comparaison des mid au worlds 2026", scope("World Championship", "Worlds", 2026), "Mid"],
     ["compare les junglers LCK 2025", scope("LoL Champions Korea", "LCK", 2025), "Jungle"],
@@ -164,7 +160,6 @@ describe("lane questions: a role, an explicit criterion", () => {
     const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { role, criterion: "kda", league: e.league } } });
-    // Every word read: the rules' pick is not put in doubt.
     expect(route.kind === "tool" && route.unread).toBeFalsy();
     expect(route.kind === "tool" && route.confidence).toBeGreaterThanOrEqual(0.8);
   });
@@ -188,10 +183,6 @@ describe("lane questions: a role, an explicit criterion", () => {
   });
 });
 
-/**
- * LEC 2025, four games (one without Riot data and of unknown length):
- * Caps (Mid, G2) plays Azir three times against Humanoid (Mid, Fnatic), once Orianna; Fnatic bans Ahri twice.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
@@ -226,7 +217,6 @@ async function seed(db: TestDb) {
 async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
   const tool = await bindTool(db, call);
 
-  // Typed queries go through the same guard as generated ones.
   expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
   return tool.format(db, (await db.query(tool.sql, tool.params)));
@@ -241,11 +231,9 @@ describe("tools on a seeded season", () => {
       const lec = { league: "LoL EMEA Championship" as const, yearFrom: 2025, yearTo: 2025, minPicks: null, side: null };
       const out = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "picks", role: null } });
 
-      // The figures of the picks beside them (per minute, lane, players) have their own test in rankings.test.ts.
       const head = (rows: (typeof out.table & {})["rows"], n = 7) => rows.map((r) => r.slice(0, n));
 
       expect(out.table!.columns.slice(0, 7)).toEqual(["rank", "champion", "picks", "bans", "presence", "winrate", "kda"]);
-      // Azir: 4 picks (3 Caps + 1 Humanoid), 2 wins, (10 kills + 15 assists) / 9 deaths; ties go to the name.
       expect(head(out.table!.rows.slice(0, 3))).toEqual([
         [1, "Azir", 4, 0, 100, 50, 2.78],
         [2, "Orianna", 4, 0, 100, 50, 3.33],
@@ -263,16 +251,13 @@ describe("tools on a seeded season", () => {
       expect(head(tops.table!.rows)).toEqual([[1, "Gnar", 2, 0, 50, 50, 1.5]]);
       expect(tops.facts).toContain("bans et présence tous rôles confondus");
 
-      // Winrate needs a minimum of picks: 3 by default here (2 % of 4 games, at least 3).
       const winrate = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "winrate", role: null } });
 
       expect(winrate.table!.rows.map((r) => r[1])).toEqual(["Azir", "Orianna"]);
       expect(winrate.facts).toContain("minimum 3 picks");
 
-      // A per-game average needs 5 picks by default: nobody here has them.
       expect((await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "deaths", role: null } })).table!.rows).toEqual([]);
 
-      // One more column for the average; Gnar (2 picks, 2 deaths a game) stays under the minimum asked.
       const deaths = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "deaths", role: null, minPicks: 3 } });
 
       expect(deaths.table!.columns.slice(0, 8)).toEqual(["rank", "champion", "deaths", "picks", "bans", "presence", "winrate", "kda"]);
@@ -283,7 +268,6 @@ describe("tools on a seeded season", () => {
       expect(deaths.facts).toContain("1. Azir (2,25 morts par partie, 4 picks");
       expect(deaths.facts).toContain("Critère : morts par partie, en moyenne, minimum 3 picks.");
 
-      // Games without the figure are left out of the average, not counted as zero.
       const damage = await run(db, { tool: "champion_ranking", input: { total: false, ...lec, sort: "damage", role: null, minPicks: 1 } });
 
       expect(damage.table!.rows.slice(0, 2).map((r) => [r[1], r[2]])).toEqual([["Azir", 25000], ["Orianna", 19667]]);
@@ -302,9 +286,7 @@ describe("tools on a seeded season", () => {
 
       expect(p).toMatchObject({ champion: "Azir", picks: 4, bans: 0, wins: 2, games: 4, kda: 2.78, roles: [{ role: "Mid", games: 4 }] });
       expect(p.players.map((x) => [x.player, x.games, x.wins, x.kda])).toEqual([["Caps", 3, 2, 3.43], ["Humanoid", 1, 0, 0.5]]);
-      // Damage is missing on game 4: averaged over the three games that have it, and said so.
       expect(p.averages.find((a) => a.key === "damage")).toMatchObject({ value: 25000, counted: 3 });
-      // Riot data on games 1 to 3 only.
       expect(p.averages.find((a) => a.key === "gold_diff_15")).toMatchObject({ value: 100, counted: 3, signed: true });
       expect(out.facts).toContain("dégâts sur 3");
       expect(out.totals).toMatchObject({ picks: 4, kda: 2.78, top_player: "Caps", main_role: "Mid", gold_diff_15: 100 });
@@ -320,7 +302,6 @@ describe("tools on a seeded season", () => {
       await seed(db);
       const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
 
-      // Playoffs of the same year and a 2024 season: two games each, Azir neither picked nor banned.
       await db.run("INSERT INTO tournaments(id,page,event_page,stage,league_id,year) VALUES (2,'LEC25P','LEC25P','playoffs',?,2025),(3,'LEC24','LEC24','season',?,2024)", lec, lec);
       await db.exec(`
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,length_s,played_at)
@@ -332,13 +313,10 @@ describe("tools on a seeded season", () => {
 
       const season = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: 2025, yearTo: 2025 , focus: null} });
 
-      // 4 picks over the 6 games of 2025, not over the 4 of the only edition with Azir.
       expect(season.totals).toMatchObject({ picks: 4, games: 6, events: 1 });
       expect(season.facts).toContain("sur les 6 parties du périmètre (présence 67 %)");
-      // The table keeps one row per edition with the champion, at the edition's own presence.
       expect(season.table!.rows).toEqual([[2025, "LEC25", 4, 4, 0, 100, "2-2", 50, "Caps ×3, Humanoid ×1"]]);
 
-      // No period: the 2024 season widens the scope beyond Azir's years, and the sentence says so.
       const all = await run(db, { tool: "champion_event_stats", input: { champion: "Azir", league: "LoL EMEA Championship", yearFrom: null, yearTo: null , focus: null} });
 
       expect(all.totals).toMatchObject({ games: 8 });
@@ -361,20 +339,16 @@ describe("tools on a seeded season", () => {
         ["Caps", 4, 4, 75, 100],
         ["Humanoid", 4, 2.13, 25, -100],
       ]);
-      // DPM over the games with both damage and length: Caps 75 000 damage in 5 700 s.
       expect(out.table!.rows[0][col("DPM")]).toBe(789);
-      // Kill participation: Caps (12 kills + 16 assists) / G2's 15 kills (the seed's teams are incomplete, hence above 100 %).
       expect(out.table!.rows[0][col("KP %")]).toBe(186.7);
       expect(out.facts).toContain("selon le critère KDA ((kills + assists) / morts, sur toutes leurs parties), minimum 2 parties");
       expect(out.facts).toContain("Écart d'or à 15 min calculé sur les 6 parties avec données Riot seulement (sur 8)");
 
-      // No champion in the season's standings and its games are the newest: in progress, said with the figures.
       expect(out.facts).toContain("LEC25 en cours : chiffres sur les 4 parties jouées jusqu'au");
       expect(out.totals.in_progress).toBe("yes");
       await db.exec("INSERT INTO tournament_results VALUES (1, 1, '1', 1, NULL)");
       expect((await run(db, { tool: "player_leaderboard", input: { ...input, criterion: "kda" } })).totals.in_progress).toBe("no");
 
-      // Top laners have a single game each: below the default minimum, so nobody until it is lowered.
       const tops = await bindTool(db, { tool: "player_leaderboard", input: { ...input, role: "Top", minGames: null, criterion: "kda" } });
 
       expect((await db.query(tops.sql, tops.params))).toEqual([]);
@@ -432,7 +406,6 @@ describe("champion layout detection", () => {
   });
 
   test("anything else stays a plain table", () => {
-    // Another text column (a player), no champion column, or names that are not champions.
     expect(detectChampionRanking({ columns: ["champion", "player", "games"], rows: [["Azir", "Faker", 3]] }, icons)).toBeNull();
     expect(detectChampionRanking({ columns: ["player", "games"], rows: [["Faker", 3]] }, icons)).toBeNull();
     expect(detectChampionRanking({ columns: ["champion", "games"], rows: [["T1", 3], ["Gen.G", 2]] }, icons)).toBeNull();

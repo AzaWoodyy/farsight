@@ -4,11 +4,6 @@ import { absoluteUrl, SITE } from "./site";
 
 const author = { "@type": "Person", "@id": "https://enzoneault.dev/#person", name: "Enzo Neault", url: "https://www.enzoneault.dev" };
 
-/**
- * Structured data of the home page (schema.org): the site, and the application it is. Static: no answer
- * has its own URL, so there is nothing per question to describe. One site, described on each home page in
- * the language of that page.
- */
 const jsonLd = (locale: Locale) => ({
   "@context": "https://schema.org",
   "@graph": [
@@ -17,8 +12,6 @@ const jsonLd = (locale: Locale) => ({
       "@id": `${SITE.url}/#website`,
       url: SITE.url,
       name: SITE.name,
-      // The name Google may show instead of the bare domain, and its accepted alternatives: the brand as it is
-      // searched ("farsight lol") and the domain.
       alternateName: [`${SITE.name} LoL`, new URL(SITE.url).host],
       description: SHELL[locale].description,
       inLanguage: locale,
@@ -50,5 +43,4 @@ const jsonLd = (locale: Locale) => ({
   ],
 });
 
-/** The JSON-LD as an inline script body, `<` escaped so no string can close the script tag. */
 export const jsonLdScript = (locale: Locale) => JSON.stringify(jsonLd(locale)).replace(/</g, "\\u003c");

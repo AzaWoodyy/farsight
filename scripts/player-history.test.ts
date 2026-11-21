@@ -5,10 +5,6 @@ import { readSchema } from "../src/lib/db";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
-/**
- * Faker (T1) against Gen.G. LCK 2024: Spring Season (games at 100 and 110), then Spring Playoffs (game at 200),
- * pages whose names sort the other way round. Worlds: one page in 2023 (no game date) and one in 2024.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
@@ -52,7 +48,6 @@ async function history(input: { league: "LoL Champions Korea" | "World Champions
     await seed(db);
     const tool = await bindTool(db, { tool: "player_event_history", input: { player: "Faker", ...input } });
 
-    // Typed queries go through the same guard as generated ones.
     expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
     return await tool.format(db, (await db.query(tool.sql, tool.params)));
@@ -65,7 +60,6 @@ describe("player_event_history on a seeded history", () => {
   test("a league year lists its pages in the order they were played and counts them as tournaments", async () => {
     const out = await history({ league: "LoL Champions Korea", yearFrom: 2024, yearTo: 2024 });
 
-    // By name, Spring Playoffs would come before Spring Season.
     expect(out.rows!.map((r) => r.event)).toEqual(["LCK/2024 Season/Spring Season", "LCK/2024 Season/Spring Playoffs"]);
     expect(out.facts).toContain("Faker a disputé 2 tournois de la LCK");
     expect(out.totals).toMatchObject({ events: 2 });

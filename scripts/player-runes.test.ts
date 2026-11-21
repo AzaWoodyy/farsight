@@ -51,7 +51,6 @@ describe("a player's rune questions route to player_runes, decided by the rules"
     const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "player_runes", input } });
-    // Every word read: the LLM router is not asked to second-guess it.
     expect(route.kind === "tool" && route.unread).toBeFalsy();
   });
 
@@ -85,10 +84,6 @@ describe("a player's rune questions route to player_runes, decided by the rules"
   });
 });
 
-/**
- * LCK 2025, three games of Faker (Mid, T1): Azir twice with the same full page (a win, a loss), Orianna once with the
- * keystone alone (a win). Another player's page on game 1 never counts.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const lck = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL Champions Korea'"))[0]!.id);
@@ -121,7 +116,6 @@ async function seed(db: TestDb) {
 async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
   const tool = await bindTool(db, call);
 
-  // Typed queries go through the same guard as generated ones.
   expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
   return tool.format(db, await db.query(tool.sql, tool.params));
@@ -143,13 +137,11 @@ describe("player_runes on a seeded season", () => {
         ["Lethal Tempo", "Precision", 2, 1, "/lt.png"],
         ["Electrocute", "Domination", 1, 1, "/el.png"],
       ]);
-      // Primary trees over the keystones, secondary trees over the full pages.
       expect(r.trees).toEqual([
         { tree: "Precision", part: "primary", games: 2, wins: 1 },
         { tree: "Domination", part: "primary", games: 1, wins: 1 },
         { tree: "Sorcery", part: "secondary", games: 2, wins: 1 },
       ]);
-      // A shard without a Data Dragon icon gets the unversioned one.
       expect(r.runes.find((x) => x.rune === "Attack Speed")).toMatchObject({ kind: "shard", games: 2, icon: expect.stringContaining("StatModsAttackSpeedIcon") });
       expect(r.pages).toEqual([
         {
@@ -169,7 +161,6 @@ describe("player_runes on a seeded season", () => {
       expect(out.title).toBe("Runes de Faker — LCK 2025");
       expect(out.facts).toContain("Runes de Faker (en LCK en 2025) sur 3 parties, keystones les plus fréquentes : Lethal Tempo (2/3 parties, 67 %, 50 % de victoires), Electrocute (1/3 parties, 33 %, 100 % de victoires).");
       expect(out.facts).toContain("Page la plus fréquente (hors fragments) : Lethal Tempo, Presence of Mind, Legend: Alacrity, Cut Down, Manaflow Band, Scorch (2/2 parties).");
-      // The table lists the runes by part of the page.
       expect(out.table!.rows.map((row) => row[0])).toEqual(["keystone", "keystone", "primaire", "primaire", "primaire", "secondaire", "secondaire", "fragment", "fragment", "fragment"]);
       expect(out.totals).toMatchObject({ games: 3, keystone_games: 3, page_games: 2, top_keystone: "Lethal Tempo", top_keystone_games: 2, top_secondary_tree: "Sorcery", top_champion: "Azir" });
       expect(out.followUps).toEqual(["Runes de Faker sur Azir en LCK 2025", "Runes d'Azir en LCK 2025", "Champion pool de Faker en LCK 2025"]);
@@ -209,7 +200,6 @@ describe("player_runes on a seeded season", () => {
 
       expect(out.runes).toMatchObject({ games: 3, keystoneGames: 0, runes: [], trees: [], pages: [] });
       expect(out.runes!.notes).toEqual(["Leaguepedia ne liste aucune rune pour ces parties (aucune avant la saison 2018)."]);
-      // No rune: no follow-up about runes.
       expect(out.followUps.some((f) => f.startsWith("Runes"))).toBe(false);
 
       const tool = await bindTool(db, { tool: "player_runes", input: { player: "Faker", ...LCK25, yearFrom: 2024, yearTo: 2024 } });

@@ -22,10 +22,6 @@ import {
 } from "./types";
 
 
-/**
- * Competitions and games outside the fixed scope. Named explicitly so the
- * agent says "not covered" instead of answering about something else.
- */
 const OUT_OF_SCOPE =
   /\b(lla|tcl|lco|lcl|opl|lms|lst|lck cl? ?vietnam|valorant|vct|dota ?2?|counter[- ]strike|cs ?go|cs2|overwatch|fortnite|teamfight tactics|tft|wild rift|rocket league|fifa)\b/i;
 
@@ -52,54 +48,32 @@ const STOPWORDS = new Set(
   ).split(/\s+/),
 );
 
-/** "champ", "champion(s)" and their near typos ("chamion", "champoin"); read only inside a pool phrase. */
 const CHAMP = "champ(?:ion|oin|ino|ian|io|on|in)?s?|champ?ions?|chapions?|chmap(?:ion)?s?|cahmp(?:ion)?s?";
 
-/** "pool" and its near typos ("pol", "poool"); read only next to a champion word. */
 const POOL_WORD = "pools?|pol|poll|poo+ls?|pooll";
 
-/**
- * A champion pool asked in either order, with "champ" or a near typo: "champion pool", "champ pool",
- * "champs pool", "championpool", "pool champ", "pool champion", "pool de champions", "pool of champions".
- */
 export const CHAMPION_POOL = `(?:${CHAMP})[- ]?(?:${POOL_WORD})|(?:${POOL_WORD})[- ](?:(?:de|d'|des|of) ?)?(?:${CHAMP})`;
 
-/** "pool" alone: with a handle and nothing else ("pool Bin") it still asks for a champion pool. */
 const BARE_POOL = /^pools?$/i;
 
-/** Words that make a question about LoL esports even without a known entity. */
 export const LOL_DOMAIN = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${CHAMPION_POOL}|lol|league of legends|esports?|e-sports?|joueurs?|players?|[ée]quipes?|teams?|champions?|tournois?|tournaments?|` +
     `parties|games?|matchs?|splits?|playoffs|picks?|bans?|bot|kills?|pentakills?|kda|assists?|d[ée]g[âa]ts|${ROLE_WORDS})(?![\\p{L}\\p{N}])`,
   "iu",
 );
 
-/**
- * Stat and game terms. Their words are never entity aliases: in "solo kills"
- * the word "solo" is part of the term, not the player Solo. A handle used on
- * its own ("Solo aux Worlds") is still resolved.
- */
 const TERM_PHRASES =
   /(?<![\p{L}\p{N}])(?:(?:solo|double|triple|quadra|penta|multi) ?kills?|first ?(?:blood|tower|dragon|baron|pick)|premier sang|kill participation|vision score|score de vision|solo ?q(?:ueue)?|(?:top|mid|bot|side) ?lanes?|(?:blue|red) side|c[ôo]t[ée] (?:bleu|rouge)|parts? (?:des? |aux |de l['’]|d['’])(?:d[ée]g[âa]ts|or|golds?)|(?:damage|dmg|gold) share|(?:(?:pires?|worst) )?match[- ]?ups?|formes? r[ée]centes?|last \d* ?(?:games?|matches)|en ce moment|ces derniers temps|derni[èe]re?s? (?:\d+ )?(?:parties?|games?|matchs?)|(?:gold|cs|xp) ?diff(?:erence)?s?|early game|late game|dragon souls?|[âa]mes? (?:du|de|des) (?:dragons?|drakes?)|premiers? (?:dragons?|drakes?)|types? de (?:dragons?|drakes?)|[ée]l[ée]ments? (?:du|de|des) (?:dragons?|drakes?)|(?:dragons?|drakes?) (?:ancestra(?:l|ux)|[ée]l[ée]mentaires?|infernal|infernaux|des oc[ée]ans|des montagnes|des nuages|hextech|chemtech)|(?:elder|infernal|ocean|mountain|cloud|hextech|chemtech) (?:dragons?|drakes?)|baron steals?|first ?(?:herald|inhib(?:itor)?)s?|turret plates?|control wards?|\d+ ?min(?:utes?)?|top ?\d+|premi(?:er|[eè]re)s? (?:dragon|drake|baron|nashor|h[ée]raut|tourelle|tour|sang)s?)(?![\p{L}\p{N}])/giu;
 
 const phrase = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "giu");
 
-/** Role words are never entity aliases either: "adc" and "mid" are also player handles. */
 const ROLE_PHRASES = phrase(ROLE_WORDS);
 
-/**
- * A superlative right before what it ranks is never a handle either: "pires
- * champions" is not the player Pires; "Worst aux Worlds" still is the player.
- */
 const SUPERLATIVE_PHRASES = phrase(
   `(?:pires?|worst)(?= (?:champions?|joueurs?|joueuses?|players?|pros?|laners?|laneurs?|[ée]quipes?|teams?|picks?|bans?|games?|parties?|matchs?|matches|` +
     `s[ée]ries?|winrates?|kda|tops?|bots?|${ROLE_WORDS})(?![\\p{L}\\p{N}]))`,
 );
 
-/**
- * Seasons named relative to today ("l'an dernier", "this season"), as an
- * offset in years. A LoL season is a calendar year.
- */
 const RELATIVE_YEARS = [
   {
     offset: -1,
@@ -115,25 +89,20 @@ const YEAR = /\b((?:19|20)\d{2})\b/g;
 
 const blank = (text: string, pattern: RegExp) => text.replace(pattern, (m) => " ".repeat(m.length));
 
-/** Statistics of a game: with a handle that is an everyday word ("KDA de Life"), they make the question about esport. */
 const STAT_WORDS = phrase(
   "kda|kills?|deaths?|assists?|cs|farm|golds?|d[ée]g[âa]ts|damage|wards?|dragons?|drakes?|barons?|heralds?|nashor|" +
     "tourelles?|towers?|pentakills?|quadrakills?|win ?rate|keystone|runes?",
 );
 
-/** The question with its stat, game, role and relative-season terms blanked out, for alias lookups ("last" is also a handle). */
 function maskTerms(question: string): string {
   return [SUPERLATIVE_PHRASES, TERM_PHRASES, ROLE_PHRASES, ...RELATIVE_YEARS.map((r) => r.pattern)].reduce(blank, question);
 }
 
-/** True when a mention only occurs inside a stat or game term of the question. */
 function onlyInTerms(question: string, mention: string): boolean {
   const m = mention.toLowerCase();
 
   return question.toLowerCase().includes(m) && !maskTerms(question).toLowerCase().includes(m);
 }
-
-// Players -----------------------------------------------------------------------
 
 const AliasHit = z.object({
   id: z.number(),
@@ -149,10 +118,6 @@ type AliasHit = z.infer<typeof AliasHit>;
 
 const CountRow = z.object({ n: z.number() });
 
-/**
- * Nicknames that designate one player without doubt, by normalized alias and
- * Leaguepedia page. Only read when no alias of the database matches.
- */
 const NICKNAMES = new Map([
   ["goat", "Faker"],
   ["thegoat", "Faker"],
@@ -165,10 +130,6 @@ const NICKNAMES = new Map([
 const ALIAS_HIT = `p.id, p.page AS player, p.ign, p.real_name, p.native_name,
        (SELECT COUNT(*) FROM game_players g WHERE g.player_id = p.id) AS games`;
 
-/**
- * The players behind each mention, in one query for every mention of a question: each alias, or the page of a
- * nickname for a mention no alias matches. Most played first.
- */
 async function lookupAliases(db: Db, mentions: string[]): Promise<Map<string, AliasHit[]>> {
   const found = new Map<string, AliasHit[]>(mentions.map((m) => [m, []]));
   const aliases = [...new Set(mentions.map(normalizeAlias))];
@@ -199,20 +160,14 @@ async function lookupAliases(db: Db, mentions: string[]): Promise<Map<string, Al
     const nickname = NICKNAMES.get(alias);
     const page = nickname ? byPage.get(nickname) : undefined;
 
-    // A nickname names its player only when no alias of the database matches.
     found.set(mention, hits.length || !page ? hits : [{ ...hit(page), raw: mention }]);
   }
 
   return found;
 }
 
-/** Up to three words, then a parenthesis: how a Leaguepedia page tells homonyms apart ("Knight (Zhuo Ding)"). */
 const PAGE_MENTION = /(?<![\p{L}\p{N}])((?:[\p{L}\p{N}][\p{L}\p{N}.\-&]* ){1,3})\(([^()]{2,60})\)/gu;
 
-/**
- * The players a question writes by their page, as the answers name a homonym or a teammate: that page exactly, never a
- * homonym. The longest page wins ("Hide on bush (…)" before "bush (…)"); where each one starts in the question.
- */
 async function pageMentions(db: Db, question: string): Promise<{ page: string; index: number; hit: AliasHit }[]> {
   const spans = [...question.matchAll(PAGE_MENTION)].flatMap((m) => {
     const words = m[1].trim().split(" ");
@@ -237,7 +192,6 @@ async function pageMentions(db: Db, question: string): Promise<{ page: string; i
   const byPage = new Map(rows.map((r) => [r.player, r]));
   const out: { page: string; index: number; hit: AliasHit }[] = [];
 
-  // Spans of one parenthesis come longest first: keep the first page found for each parenthesis.
   for (const s of spans) {
     const hit = byPage.get(s.page);
     const end = s.index + s.page.length;
@@ -269,15 +223,8 @@ async function contextGames(db: Db, playerId: number, ctx: Context): Promise<num
   return row?.n ?? 0;
 }
 
-/** Games ratio above which the most played homonym is a safe pick. */
 const CLEAR_MARGIN = 3;
 
-/**
- * Picks the most likely player behind an alias, in order: exact case of the
- * handle ("caPs" vs "Caps") if that player played in the context, games in
- * the competition / period of the question, then total games. Never silent: the ambiguity is returned so the
- * answer can say who was picked and offer the others.
- */
 export async function resolvePlayer(
   db: Db,
   mention: string,
@@ -307,7 +254,6 @@ export async function resolvePlayer(
     let reason: string;
     const rank = (a: PlayerCandidate, b: PlayerCandidate) => b.contextGames - a.contextGames || b.games - a.games;
 
-    // Exact case wins, unless that player never played in the context of the question.
     if (exact.length === 1 && (!hasContext || exact[0].contextGames > 0)) {
       candidates.sort((a, b) => Number(b.exactCase) - Number(a.exactCase) || rank(a, b));
       chosenBy = "case";
@@ -353,9 +299,6 @@ export async function resolvePlayer(
   };
 }
 
-// Teams and champions -----------------------------------------------------------
-
-/** Renamed teams grouped under their current name, with common shorthands. */
 const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
   { team: "T1", members: ["T1", "SK Telecom T1"], aliases: ["t1", "skt", "skt t1", "sk telecom", "sk telecom t1"] },
   {
@@ -385,7 +328,6 @@ const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
     members: ["Fredit BRION", "BRION", "OKSavingsBank BRION", "HANJIN BRION"],
     aliases: ["bro", "brion", "fredit brion", "oksavingsbank brion", "hanjin brion"],
   },
-  // MVP Ozone became Samsung Galaxy Ozone, renamed Samsung Galaxy White in 2014; its sister team was Samsung Galaxy Blue.
   {
     team: "Samsung White",
     members: ["MVP Ozone", "Samsung Ozone", "Samsung White"],
@@ -460,27 +402,16 @@ const CHAMPION_SHORTHANDS = {
 
 const ROLE_NAMES = new Set(["top", "jungle", "mid", "bot", "support", "adc"]);
 
-/**
- * How an alias names its team, weakest first: an abbreviation or a form derived from it (`alias`), the team's own name
- * (`name`), a curated shorthand (`curated`). On the same alias the stronger kind wins, then the team with more games.
- */
 const ALIAS_RANK = { alias: 0, name: 1, curated: 2 } as const;
 
 type AliasKind = keyof typeof ALIAS_RANK;
 
-/**
- * `caps`: an abbreviation that is also an everyday word ("MAD", "FLY"), read as the team only when written in capitals.
- * `others`: the teams with fewer games that share the abbreviation (NIP: Ninjas in Pyjamas beside Ninjas in Pyjamas.CN);
- * the competition and period of the question pick among them (`inScope`).
- */
 type TeamEntry = ResolvedTeam & { games: number; curated: boolean; rank: number; caps: boolean; others: ResolvedTeam[] };
 
 type TeamIndex = Map<string, TeamEntry>;
 
-/** `teamWidth`: the most tokens a team alias takes (`tokenize`), the longest span detectMentions reads as a team. */
 type Indexes = { teams: TeamIndex; champions: Map<string, string>; teamWidth: number };
 
-/** The words of a question as detectMentions reads them, and of a team alias to know how many it takes. */
 function tokenize(text: string): string[] {
   return text
     .replace(/[’']/g, " ")
@@ -490,7 +421,6 @@ function tokenize(text: string): string[] {
 }
 
 
-/** Three-letter words and chat shorthands ("per", "svp", "pts"), English and French, too short for the common word list: an abbreviation among them is read in capitals only. */
 const SHORT_WORDS = new Set(
   `ace afk all and ans any are art ask ate bad ban bar bed bet big bis bit bon bot box boy bus but buy can car cat
    col cop cow cry cup cut dan day des dia did die dig dmg dog dry due ear eat egg elo end era est eux exp eye fac
@@ -503,13 +433,8 @@ const SHORT_WORDS = new Set(
    vie vip vos war was way who why win won yes yet you`.split(/\s+/),
 );
 
-/** A league's short name ("PCS") names the league, never the team that shares it (Project Conquerors). */
 const LEAGUE_SHORTS = new Set(LEAGUES.map((l) => normalizeAlias(l.short)));
 
-/**
- * A team's Leaguepedia abbreviation as an alias ("KCB"): null when it is too short to mean the team (two letters without a
- * digit: "AT", "GO"), a role or grammar word, or a league's short name; `caps` when it is also an everyday word.
- */
 function abbreviation(short: string): { caps: boolean } | null {
   const norm = normalizeAlias(short);
 
@@ -518,18 +443,15 @@ function abbreviation(short: string): { caps: boolean } | null {
   return { caps: COMMON_WORDS.has(norm) || SHORT_WORDS.has(norm) };
 }
 
-/** "Karmine Corp Blue Stars" -> "Karmine Corp Blue Star": the plural last word of a name of several words, written in the singular. */
 function singular(name: string): string | null {
   const m = /^(.+\s\p{L}{3,}[^s\s])s$/iu.exec(name.trim());
 
   return m ? m[1] : null;
 }
 
-/** Team and champion aliases, read once per database handle and kept for CACHE_MS. */
 const getIndexes = cachedRead(readIndexes);
 
 async function readIndexes(db: Db): Promise<Indexes> {
-  // Teams with games, then those known only from series without a scoreboard (series_results), with 0 games.
   const all = await selectAll(
     db,
     z.object({ name: z.string(), short: z.string().nullable(), games: z.number() }),
@@ -554,7 +476,6 @@ async function readIndexes(db: Db): Promise<Indexes> {
     const games = team.members.reduce((n, m) => n + (gamesOf.get(m) ?? 0), 0);
     const rank = ALIAS_RANK[kind];
     const prev = teams.get(key);
-    // Two teams under one abbreviation: the one with more games is read without a scope, the other is kept for one.
     const shared = kind === "alias" && prev?.rank === rank && prev.team !== team.team;
 
     if (!prev || rank > prev.rank || (rank === prev.rank && games > prev.games)) {
@@ -574,7 +495,6 @@ async function readIndexes(db: Db): Promise<Indexes> {
       .replace(/^Team\s+/i, "")
       .replace(/\s+(Esports|e-Sports|Gaming|Esport)$/i, "");
 
-    // "Top Esports" is not "top": a bare role word names the role (TES and Top Esports still name the team).
     if (normalizeAlias(short).length >= 3 && !ROLE_NAMES.has(normalizeAlias(short))) add(short, single(name), "name");
   }
 
@@ -591,11 +511,8 @@ async function readIndexes(db: Db): Promise<Indexes> {
     for (const a of [...f.aliases, ...f.members]) add(a, team, "curated");
   }
 
-  // Abbreviations, then the names a team of the same organization is called by its parent's abbreviation:
-  // "Karmine Corp Blue Stars" is also "KCBS", "KC Blue Stars", "KCB Stars", and "Blue Star" in the singular.
   const abbreviations = new Map<string, string[]>();
 
-  // A member of a curated franchise keeps the franchise's names: "KRX" (Kiwoom DRX) counts every DRX game, like "DRX".
   for (const { name, short } of rows) {
     const abbr = short ? abbreviation(short) : null;
 
@@ -625,10 +542,6 @@ async function readIndexes(db: Db): Promise<Indexes> {
     }
   }
 
-  // A team known only from the schedule is named by its full name alone, never one that a question reads by accident:
-  // an everyday word, or a team with games followed by a grammar word ("T1 a gagné" is "t1a" once normalized, the name
-  // of a T1 academy team that has no scoreboard). "Afreeca Freecs Academy B" stays a name, and so does a Hangul name of
-  // two syllables ("떡상"), which the two-letter rule of abbreviations is not about.
   const played = new Set(rows.map((r) => normalizeAlias(r.name)));
 
   for (const { name } of all.filter((r) => r.games === 0)) {
@@ -654,7 +567,6 @@ export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam
   return (await lookupTeam(db, mention))?.team ?? null;
 }
 
-/** The team a mention names without a scope, and the other teams of the same abbreviation (`TeamEntry.others`). */
 async function lookupTeam(db: Db, mention: string): Promise<{ team: ResolvedTeam; others: ResolvedTeam[] } | null> {
   const { teams } = await getIndexes(db);
   const hit = teams.get(normalizeAlias(mention)) ?? teamByEnd(teams, mention);
@@ -662,11 +574,6 @@ async function lookupTeam(db: Db, mention: string): Promise<{ team: ResolvedTeam
   return hit ? { team: { mention, team: hit.team, members: hit.members }, others: hit.others } : null;
 }
 
-/**
- * Among the teams of one abbreviation, the only one that played in the competition and period of the question (either
- * side of a game, qualifiers excluded): NIP in EU LCS 2017 is Ninjas in Pyjamas, not Ninjas in Pyjamas.CN. Without a
- * scope, or when several teams or none played in it, the team with more games stays.
- */
 async function inScope(db: Db, team: ResolvedTeam, others: ResolvedTeam[], ctx: Context): Promise<ResolvedTeam> {
   if (!others.length || (ctx.league == null && ctx.yearFrom == null && ctx.yearTo == null)) return team;
   const candidates = [team, ...others];
@@ -697,11 +604,6 @@ async function inScope(db: Db, team: ResolvedTeam, others: ResolvedTeam[], ctx: 
   return found.length === 1 ? { ...found[0], mention: team.mention } : team;
 }
 
-/**
- * The end of one team's name, in two words or more ("Blue Stars" for Karmine Corp Blue Stars), when no other team's
- * name ends the same way. Only for a mention the model already read as a team: the rules never guess from a name's end.
- * A team known only from the schedule (no game) is read by its full name alone.
- */
 function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   const words = mention.trim().split(/\s+/);
 
@@ -716,7 +618,6 @@ function teamByEnd(teams: TeamIndex, mention: string): TeamEntry | null {
   return found.size === 1 ? [...found.values()][0] : null;
 }
 
-/** Franchises with several names that have games in the database, under their current name. */
 export async function renamedTeams(db: Db): Promise<{ team: string; members: string[] }[]> {
   const teams = await Promise.all(FRANCHISES.map((f) => resolveTeam(db, f.team)));
 
@@ -729,7 +630,6 @@ export async function resolveChampion(db: Db, mention: string): Promise<Resolved
   return name ? { mention, champion: name } : null;
 }
 
-/** At most one edit apart (insertion, deletion, substitution or two swapped neighbours): "oriana" and "Orianna". */
 function oneEditApart(a: string, b: string): boolean {
   if (a === b || Math.abs(a.length - b.length) > 1) return a === b;
 
@@ -747,10 +647,6 @@ function oneEditApart(a: string, b: string): boolean {
   return short.slice(i) === long.slice(i + 1);
 }
 
-/**
- * A champion misspelled by one letter ("oriana", "lucain"), when exactly one champion is that close.
- * `opponent` reads the champion set against one already named: four letters and an everyday word are enough there ("lock").
- */
 function resolveChampionTypo(champions: Map<string, string>, mention: string, opponent = false): ResolvedChampion | null {
   const norm = normalizeAlias(mention);
   const min = opponent ? OPPONENT_TYPO_MIN : CHAMPION_TYPO_MIN;
@@ -763,55 +659,39 @@ function resolveChampionTypo(champions: Map<string, string>, mention: string, op
   return names.size === 1 ? { mention, champion: [...names][0] } : null;
 }
 
-/** Shorter words are too often another word one letter away ("Zoe", "Sion"). */
 const CHAMPION_TYPO_MIN = 5;
 
-/** Next to a champion and a matchup word, a four-letter word one letter away is the opponent ("oriana vs lock"). */
 const OPPONENT_TYPO_MIN = 4;
 
-/** Grammar words one letter away from a champion, that follow one in a sentence ("Azir when", "Azir sont"). */
 const NOT_OPPONENTS = new Set(
   "agir annee aren done driven else given gone hard juin name none real rely rien seen sent sept sert sets sinon sons sont soon tell then thin well when zero".split(" "),
 );
 
-/** Also the name of a team (Winners, 2015-2021): read as that team only when the question names no competition. */
 const WINNERS = /^winners?$/;
 
-/** A matchup word: the opponent may then follow the champion directly ("match up oriana lock"). */
 const MATCHUP_CUE = /(?<![\p{L}\p{N}])match[- ]?ups?(?![\p{L}\p{N}])/iu;
 
-/** The connector between two champions, as a token ("oriana vs lock"). */
 const VERSUS_TOKENS = new Set(["vs", "versus", "contre", "against"]);
 
-// Mentions ----------------------------------------------------------------------
-
-/** The token a player page stands for in the question while mentions are read (`pageMentions`). */
 const PAGE_PREFIX = "farsightpage";
 const PAGE_TOKEN = new RegExp(`^${PAGE_PREFIX}\\d+$`);
 const pageToken = (i: number) => `${PAGE_PREFIX}${i}`;
 
-/** A handle that is an everyday word, or three Latin characters or fewer. */
 function isCommonHandle(mention: string): boolean {
   const alias = normalizeAlias(mention);
 
   return /^[a-z0-9]{1,3}$/.test(alias) || COMMON_WORDS.has(alias);
 }
 
-/** `hits`: the players behind each mention, when the rules already looked them up. */
 type Mentions = {
   players: string[];
   teams: ResolvedTeam[];
   champion: ResolvedChampion | null;
   opponentChampion?: ResolvedChampion | null;
   hits?: Map<string, AliasHit[]>;
-  /** The other teams of an abbreviation, by the mention that names it: the scope of the question picks among them. */
   otherTeams?: Map<string, ResolvedTeam[]>;
 };
 
-/**
- * Every span of up to four tokens detectMentions may look up as a player alias, so their aliases are read in one query:
- * the same filters as the detection, before it knows which tokens a longer name takes.
- */
 function aliasCandidates(tokens: string[]): string[] {
   const out = new Set<string>();
 
@@ -828,18 +708,11 @@ function aliasCandidates(tokens: string[]): string[] {
   return [...out];
 }
 
-/**
- * Rule-based detection: longest n-gram that matches a known champion, team or
- * player alias, outside stat and game terms. On the same words a champion wins over a player ("Ahri"), and
- * a team wins over a player when it is a known shorthand or has more games.
- */
 async function detectMentions(db: Db, question: string): Promise<Mentions> {
   const { league, mention: leagueMention } = detectLeague(question);
 
-  // A league written by its full name ("Liga Española de League of Legends") is no player or team: its words are set aside.
   const asked = leagueMention?.includes(" ") ? question.replace(leagueMention, " ".repeat(leagueMention.length)) : question;
 
-  // A player written by their page is that player: the page becomes one placeholder token, read before anything else.
   const pages = await pageMentions(db, asked);
   let marked = asked;
 
@@ -852,7 +725,6 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
   const hits = await lookupAliases(db, aliasCandidates(tokens.filter((t) => !PAGE_TOKEN.test(t))));
   const found: Mentions = { players: [], teams: [], champion: null, hits, otherTeams: new Map() };
   const used = new Set<number>();
-  // Where each mention starts, in tokens: the order of the question.
   const at = new Map<string, number>();
 
   tokens.forEach((t, i) => {
@@ -865,11 +737,8 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
     used.add(i);
   });
   const byPage = new Set(pages.map((p) => p.page));
-  // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
 
-  // Four words ("Royal Never Give Up"), or the longest team name ("Jin Air Green Wings Stealths"): a longer span is only
-  // a team, read from the index already in memory (players are looked up up to four words, champions are shorter).
   for (let size = Math.min(tokens.length, Math.max(4, teamWidth)); size >= 1; size--) {
     for (let i = 0; i + size <= tokens.length; i++) {
       const span = Array.from({ length: size }, (_, k) => i + k);
@@ -899,7 +768,6 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
         continue;
       }
 
-      // A second champion: the one the first is set against ("Azir contre Orianna").
       if (champion && !found.opponentChampion && champion.champion !== found.champion?.champion) {
         found.opponentChampion = champion;
         at.set(mention, i);
@@ -907,19 +775,15 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
         continue;
       }
 
-      // "MSI winners", "winners of the LCK": the winners of the competition named, not the team Winners.
       if (WINNERS.test(norm) && league) continue;
 
       const hit = teams.get(norm);
-      // "mad" in a sentence is the word; "MAD" is the team.
       const team = hit?.caps && mention !== mention.toUpperCase() ? undefined : hit;
       const players = norm.length >= (isHangulOrHan ? 2 : 3) ? hits.get(mention) ?? [] : [];
 
-      // An abbreviation that is also a player's handle names the player, unless written in capitals ("Wiz", "WIZ").
       const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
 
       if (team && !abbreviationOfPlayer && (team.curated || !players.length || team.games >= players[0].games)) {
-        // An abbreviation two teams share stays a mention of its own: the scope may name the other team (buildEntities).
         if (team.others.length || !found.teams.some((t) => t.team === team.team && !found.otherTeams?.has(t.mention))) {
           found.teams.push({ mention, team: team.team, members: team.members });
 
@@ -941,7 +805,6 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
     }
   }
 
-  // A word left over that is one letter away from a champion ("oriana"): not a player, a team or an everyday word.
   for (let i = 0; i < tokens.length && !(found.champion && found.opponentChampion); i++) {
     if (used.has(i) || /\d/.test(tokens[i])) continue;
     const champion = resolveChampionTypo(champions, tokens[i]);
@@ -958,9 +821,6 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
     used.add(i);
   }
 
-  // The opponent of a champion, misspelled and short or an everyday word ("oriana vs lock"): only in a question about
-  // champions alone, right after or before "vs", or next to the champion after "match up", so that "lock" or "then"
-  // in a normal question stays a word ("Azir lock in vs G2").
   if (found.champion && !found.opponentChampion && !found.players.length && !found.teams.length) {
     const matchup = MATCHUP_CUE.test(question);
 
@@ -981,9 +841,6 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
     }
   }
 
-  // A handle that is also an everyday word ("Paris", "Life") or very short
-  // ("Bin") names a player in a question about esport, or when the question
-  // says nothing else ("résultats de Knight"): not in "la météo à Paris".
   if (found.players.some((m) => !byPage.has(m) && isCommonHandle(m))) {
     const esport =
       found.teams.length > 0 ||
@@ -999,25 +856,19 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
     if (!esport && !alone) found.players = found.players.filter((m) => byPage.has(m) || !isCommonHandle(m));
   }
 
-  // Next to a team, "top", "sup" or "jg" name its player at that role ("top fpx 2019"), not the handle Top or Sup.
   if (found.teams.length) found.players = found.players.filter((m) => byPage.has(m) || !SHORT_ROLE_MENTION.test(m));
 
-  // Keep the order of the question (it decides sides in a head-to-head).
   const pos = (m: string) => at.get(m) ?? Number.MAX_SAFE_INTEGER;
   found.players.sort((a, b) => pos(a) - pos(b));
   found.teams.sort((a, b) => pos(a.mention) - pos(b.mention));
 
-  // Longer names are read first ("Lee Sin" before "Azir"): the champion the question names first stays the subject.
   if (found.champion && found.opponentChampion && pos(found.opponentChampion.mention) < pos(found.champion.mention))
     [found.champion, found.opponentChampion] = [found.opponentChampion, found.champion];
 
   return found;
 }
 
-// Competition and period ----------------------------------------------------------
 
-
-/** "l'an dernier", "cette saison": the years they mean today, and whether one follows "depuis" / "since". */
 function relativeYears(question: string, now: Date) {
   return RELATIVE_YEARS.flatMap((r) => {
     const m = new RegExp(r.pattern.source, "iu").exec(question);
@@ -1034,7 +885,6 @@ function detectPeriod(question: string, now: Date) {
 
   if (years.length === 1 && relative.length === 1) return { yearFrom: years[0], yearTo: relative[0].since ? null : years[0] };
   const year = "\\s+((?:19|20)\\d{2})\\b";
-  // "depuis 2016" and "jusqu'en 2020" include the year named; "après 2016" and "avant 2020" do not.
   const since = new RegExp(`\\b(?:depuis|since|from)${year}`, "i").exec(question);
   const after = new RegExp(`\\b(?:apr[eè]s|after)${year}`, "i").exec(question);
   const until = new RegExp(`\\b(?:until|jusqu'?en)${year}`, "i").exec(question);
@@ -1069,7 +919,6 @@ async function buildEntities(
 ): Promise<Entities> {
   const rulesLeague = detectLeague(question);
   const rulesPeriod = detectPeriod(question, now);
-  // A period the rules read (written years, or a relative season resolved against `now`) is kept: the LLM does not know today's date.
   const dated = rulesPeriod.yearFrom != null || rulesPeriod.yearTo != null;
   const yearFrom = overrides.yearFrom !== undefined && !dated ? overrides.yearFrom : rulesPeriod.yearFrom;
   const yearTo = overrides.yearTo !== undefined && !dated ? overrides.yearTo : rulesPeriod.yearTo;
@@ -1112,7 +961,6 @@ async function buildEntities(
 
 type Input = { db: Db; question: string; now: Date };
 
-/** Level 1: regex + alias tables. Confident when every entity is found without doubt. */
 const rulesDecider: Decider<Input, Entities> = {
   level: "rules",
   name: "regex + alias",
@@ -1153,7 +1001,6 @@ const LlmEntities = z.object({
   yearTo: z.number().int().nullable(),
 });
 
-/** Level 3: the LLM extracts mentions; they are still resolved against the alias tables. */
 const llmDecider: Decider<Input, Entities> = {
   level: "llm",
   name: "OpenRouter",
@@ -1183,7 +1030,6 @@ const llmDecider: Decider<Input, Entities> = {
       db,
       question,
       now,
-      // The LLM may still copy a term's word as a name ("solo" in "solo kills").
       { players: output.players.filter((p) => !onlyInTerms(question, p)), teams, otherTeams, champion: output.champion ? await resolveChampion(db, output.champion) : null },
       { league: output.league, yearFrom: output.yearFrom, yearTo: output.yearTo },
     );
@@ -1199,16 +1045,10 @@ const llmDecider: Decider<Input, Entities> = {
   },
 };
 
-/** `now` dates the relative seasons of the question ("l'an dernier"); tests pass a fixed date. */
 export function understandQuestion(db: Db, question: string, now: Date = new Date()) {
   return decide({ db, question, now }, [rulesDecider, llmDecider], { threshold: 0.8 });
 }
 
-/**
- * What the understand step read in the question, blanked out: entity
- * mentions, the competition, years and relative seasons. `read` counts
- * them, one per mention.
- */
 export function maskUnderstood(question: string, e: Entities) {
   let read = 0;
   let rest = question;
@@ -1223,7 +1063,6 @@ export function maskUnderstood(question: string, e: Entities) {
 
   const mentions = [...e.players.map((p) => p.mention), ...e.teams.map((t) => t.mention), e.champion?.mention, e.opponentChampion?.mention, e.leagueMention];
 
-  // Mentions are rebuilt from tokens: "Kai Sa" was written "Kai'Sa". Whole words only: "TL" is not the one in "botlaner".
   for (const m of mentions)
     if (m) take(new RegExp(`(?<![\\p{L}\\p{N}])${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s'’]+")}(?![\\p{L}\\p{N}])`, "iu"));
 

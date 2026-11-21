@@ -1,0 +1,139 @@
+# Architecture decision records
+
+One file per decision area, numbered in the order they were written down. The code carries no comments (`farsight/no-comments`): a non-obvious decision is recorded here, and a new one takes the next number.
+
+## Data ingestion and derivation
+
+- [Reading Leaguepedia: what the wiki's answers mean](0001-leaguepedia-client.md)
+- [Player lookups in data:fetch keep their batches and catch up on older links](0002-fetch-incremental-lookups.md)
+- [Riot JSON ingestion: what makes a run safe to interrupt and to repeat](0003-riot-ingestion-resume.md)
+- [Riot game JSON: two shapes, and what their events really say](0004-riot-match-json-shapes.md)
+- [Mapping Riot participants onto Leaguepedia lines](0005-riot-participant-mapping.md)
+- [Ranking the in-game summaries of one game against its scoreboard](0006-riot-summary-fit.md)
+- [In-game summaries: derive versions and what an older line may lack](0007-ingame-summary-versions.md)
+- [In-game statistics: one definition for match-v4 and match-v5](0008-ingame-stat-definitions.md)
+- [First blood: one definition, unknown rather than guessed](0009-first-blood-definition.md)
+- [Game timeline: what each event means and how it is read from Riot JSON](0010-timeline-definitions.md)
+- [The derivation tolerates an older raw cache; the load refuses what it leaves empty](0011-raw-cache-tolerance-and-load-checks.md)
+- [Two derivations of the same raw cache give the same rows](0012-deterministic-derivation.md)
+- [Identity edge cases in the derivation: same-game links, given names, team spellings and abbreviations](0013-player-and-team-identity.md)
+- [Team name spelling and logo file lookup at ingestion](0014-team-names-and-logo-lookup.md)
+- [Which Leaguepedia headshots become a player's photos](0015-player-photos-derivation.md)
+- [Tournament year, event pages and which schedule matches are kept](0016-tournaments-and-series.md)
+- [Matching schedule matches to scoreboard series](0017-schedule-series-matching.md)
+- [A tournament's stage is read from its Leaguepedia page name](0018-tournament-stage-classification.md)
+- [Item kinds, item icons and summoner spells from Data Dragon](0019-data-dragon-items-and-spells.md)
+- [Classifying items from Data Dragon: completed, boots, component, starter, consumable](0020-item-kind-classification.md)
+- [Rune pages are stored only when complete, and a rune's tree is voted](0021-rune-pages-and-trees.md)
+- [Rune names from Riot ids for games without a scoreboard rune page](0022-rune-names-from-riot-ids.md)
+- [Paths chosen at runtime and what a store may log](0023-runtime-paths-and-stores.md)
+
+## Database and generated SQL
+
+- [db:load guards and how migrations are applied](0024-db-load-and-migrations.md)
+- [What the Postgres adapter does on top of the driver](0025-postgres-driver-adapter.md)
+- [Running generated SQL: one deadline, bounded slots, server-side cuts, dropped connections](0026-generated-sql-execution.md)
+- [Static SQL guard: read as Postgres reads, refuse what it would read otherwise](0027-sql-guard-static-pass.md)
+- [Generated SQL runs inside a wrapper, and brackets are code](0028-generated-sql-wrapper-and-brackets.md)
+
+## Reading the question
+
+- [Decision cascade: rules first, the LLM only when they are not confident](0029-decision-cascade.md)
+- [Everyday words that are also player handles](0030-common-words-list.md)
+- [Words of a question that are never read as a player, team or champion](0031-question-reading-guards.md)
+- [Period words and superlatives when reading a question](0032-question-reading-traps.md)
+- [The period of a question is read by the rules, not by the LLM](0033-period-reading.md)
+- [Resolving a player mention: aliases, nicknames, pages and homonyms](0034-player-mention-resolution.md)
+- [How the team alias index decides what names a team](0035-team-alias-index.md)
+- [Team names written by the router model are normalized, within limits](0036-router-model-team-names.md)
+- [Reading misspelled champions, matchups and champion pools](0037-champion-typos-and-matchups.md)
+- [League cues, the LES acronym, and competitions that are not a team's league](0038-league-cues-and-cups.md)
+- [Reading role words without mistaking rankings, teams and handles](0039-role-words.md)
+- [Cue words that look like another intent](0040-cue-word-exceptions.md)
+- [In-game metrics: how questions name them and how they aggregate](0041-ingame-metric-cues.md)
+- [A tool is put in doubt by the words it did not read](0042-unread-words-doubt.md)
+
+## Routing and the agent run
+
+- [Order of the rules in the router](0043-route-precedence.md)
+- [The competition used when the question names none](0044-default-competition.md)
+- [What a ranking sorts by, and what it refuses](0045-ranking-criteria-and-order.md)
+- [When the router answers that the data is missing](0046-missing-data-routes.md)
+- [Finding the team of a player for a roster question](0047-player-team-roster.md)
+- [Checks on what the LLM router and the SQL generator return](0048-llm-router-and-sql-repair.md)
+- [LLM calls: no reasoning budget, prompts in one language, technical reasons kept in the trace](0049-llm-prompts-and-visitor-wording.md)
+- [Per-request state travels in AsyncLocalStorage](0050-request-scoped-context.md)
+- [Rules of the execute and format steps](0051-execute-and-format-rules.md)
+
+## Typed tools and answers
+
+- [How the typed tools build and run their SQL](0052-tool-sql-conventions.md)
+- [Query shapes the typed tools need to stay fast on Postgres](0053-tool-query-performance.md)
+- [Which stages count as the competition, and what a regular season is](0054-competition-stages-and-regular-season.md)
+- [Finding the final, semifinal or play-in of an event from Leaguepedia tabs](0055-series-phases.md)
+- [Finding the final and the semifinals of a competition from Leaguepedia tabs](0056-series-stage-detection.md)
+- [Saying when a ranking covers an edition still being played](0057-in-progress-editions.md)
+- [Ranking thresholds, totals and what the router's input is corrected to](0058-ranking-thresholds-and-input-normalization.md)
+- [Rankings only go from the highest down, and what their answers hand on must stay readable](0059-ranking-tool-limits.md)
+- [Which season a roster shows and who counts as a starter](0060-team-roster-rules.md)
+- [A team can be written two ways inside one game](0061-team-name-drift-on-player-lines.md)
+- [Reading items and rune pages from Leaguepedia's scoreboards](0062-champion-items-and-runes.md)
+- [Denominators of item, spell and rune shares](0063-build-share-denominators.md)
+- [What the Riot game data does not hold, and how the tools count around it](0064-ingame-data-gaps.md)
+- [What an empty result means, and which filters a tool may drop](0065-empty-results-and-relaxations.md)
+- [An empty result is explained from the question's scope, not from the SQL](0066-empty-result-explanation.md)
+- [Table columns the answer layouts read by name](0067-layout-column-contract.md)
+- [When a result table is drawn as a champion ranking or a two-player comparison](0068-result-table-layouts.md)
+- [How follow-up questions and source lists are chosen](0069-follow-ups-and-sources.md)
+- [Where the fields of an answer's views come from](0070-answer-view-sources.md)
+- [The LLM's summary is checked against the facts it was given](0071-summary-rephrasing-check.md)
+- [Years and dates in questions and answers](0072-time-in-answers.md)
+- [Which season pages carry a title (the LCK 2025 format)](0073-lck-2025-titles.md)
+- [Team badges: which logo and which league a team name gets](0074-team-badges.md)
+- [Answer card: what it draws and how it is remembered](0075-share-card-rules.md)
+
+## Tracing
+
+- [Langfuse tracing: where it is registered and how it is tested](0076-langfuse-tracing-setup.md)
+- [How a question becomes one Langfuse trace](0077-langfuse-trace-structure.md)
+- [What Langfuse metadata can carry, and what is masked first](0078-langfuse-metadata-limits.md)
+- [Masking personal data before it reaches a trace](0079-trace-masking.md)
+
+## Pages and interface
+
+- [Plain <img> instead of next/image, in two places](0080-plain-img-elements.md)
+- [URLs of the images Leaguepedia hosts](0081-wiki-image-urls.md)
+- [Facts about Riot, Data Dragon and Leaguepedia assets the code depends on](0082-external-images-and-game-data.md)
+- [The chat and the answer views load after the home page, without next/dynamic](0083-console-lazy-modules.md)
+- [Console and chat engine: who holds the question and the state](0084-console-chat-state.md)
+- [The address bar is the question on screen](0085-question-address-history.md)
+- [Link to an answer: how its page, metadata and image are served](0086-answer-link-pages.md)
+- [Nothing moves on the answer screen while an answer comes](0087-answer-screen-layout-stability.md)
+- [Answer views keep their place when the visitor switches view](0088-answer-view-layout.md)
+- [When a table answer becomes a card, and when it gets a team header](0089-answer-table-layouts.md)
+- [Display thresholds and domain rules of the answer views](0090-answer-view-display-rules.md)
+- [Accessibility constraints of the answer views](0091-answer-view-accessibility.md)
+- [One live region announces the progress and the end of a run](0092-console-status-announcements.md)
+- [Player versus view: both players always face each other](0093-versus-view-layout.md)
+- [Home examples are real typed-tool questions in a fixed order](0094-home-examples.md)
+- [Changing language is a full page load, animated by the page that arrives](0095-language-switch-arrival.md)
+- [Text catalogs of the pages, and the texts that stay in English](0096-page-text-catalogs.md)
+- [What the root shell does before the first paint](0097-root-shell-first-paint.md)
+- [Theme: one function, inlined before the first paint](0098-theme-inline-script.md)
+- [Theme switch: a wipe line over a view transition, right before hydration](0099-theme-toggle-wipe.md)
+- [zod runs jitless in the browser](0100-zod-jitless-client.md)
+- [Vercel Analytics and Speed Insights: the React components, in production only](0101-vercel-analytics-components.md)
+- [Structured data of the home page](0102-site-structured-data.md)
+- [Metadata, hreflang, sitemap dates and robots](0103-search-metadata-and-sitemap.md)
+- [Display lab: stable variant ids and a made-up trace](0104-display-lab-fixtures.md)
+
+## Build, CI and operations
+
+- [Security headers are static and set in next.config.ts](0105-security-headers.md)
+- [The in-code rate limit: per instance, bounded, second to the firewall](0106-instance-rate-limit.md)
+- [Functions never ship the data/ directory](0107-function-tracing-excludes-data.md)
+- [How `bun run size` measures a function](0108-function-size-measurement.md)
+- [CI on main compares a push with the newest validated ancestor](0109-ci-push-range-and-snapshot.md)
+- [Invariants the backend tests rely on](0110-backend-test-invariants.md)
+- [The eval scores only what could run, and a gate that ran nothing fails](0111-eval-scoring-without-llm.md)
+- [eval:candidates: keeping visitor questions and keys out of the repository and the logs](0112-eval-candidates-report-safety.md)

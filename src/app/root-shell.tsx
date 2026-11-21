@@ -9,9 +9,6 @@ import type { Locale } from "./i18n/locales";
 import { QUESTION_LINK_SCRIPT } from "./question-link";
 import "./globals.css";
 
-// The whole page is set in Geist Mono: Geist Sans would only add a preloaded font nobody reads.
-// symbols2 holds the box-drawing dashes of the headings ("── joueurs"): preloaded with latin, or they are drawn
-// in a fallback font first and the heading shifts sideways when that file arrives.
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "symbols2"] });
 
 export const VIEWPORT: Viewport = {
@@ -21,22 +18,14 @@ export const VIEWPORT: Viewport = {
   ],
 };
 
-/**
- * The document every page is drawn in. Each language has its own root layout (`(fr)/layout.tsx`,
- * `en/layout.tsx`) so that `<html lang>` is right in the static HTML; both render this.
- */
 export function RootShell({ locale, children }: { locale: Locale; children: ReactNode }) {
   return (
-    // The theme script sets attributes on <html> before hydration (see brand/theme).
     <html lang={locale} className={`${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
-        {/* Before the first paint: the page must hear `pagereveal` to animate a language change. */}
         <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
-        {/* Before the first paint too: a page opened on a link to an answer does not show the home screen first. */}
         <script dangerouslySetInnerHTML={{ __html: QUESTION_LINK_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
-        {/* First in the body: the stored theme is applied before anything is painted. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {children}
         <SiteAnalytics />

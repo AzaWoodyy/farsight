@@ -8,7 +8,6 @@ import { createPool, numberParameters, type PgPool } from "../src/lib/db/postgre
 import { grantReaders } from "./db/migrations";
 import { testDatabaseUrl, testDb, type TestDb } from "./fixtures/test-db";
 
-/** A view over a table it hides, as v_game_players hides the base tables; 300 rows. */
 let db: TestDb;
 let pool: PgPool;
 let schema: Record<string, string[]>;
@@ -22,7 +21,6 @@ beforeAll(async () => {
 
   await admin.connect();
   await grantReaders(admin, db.schema, ["v_game_players"]).finally(() => admin.end());
-  // Enough connections for every generated query at once, plus the one that waits for a slot.
   pool = createPool(testDatabaseUrl(), { schema: db.schema, max: MAX_SQL_CHILDREN + 2 });
   schema = await readSchema(db);
 });
@@ -44,16 +42,12 @@ test("guard rejects writes, unauthorized reads, server functions, recursive CTEs
     "SELECT player FROM v_game_players /* unfinished", "SELECT 'unterminated", "SELECT (1", "SELECT 1)",
     "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<2) SELECT * FROM c",
     "SELECT * FROM generate_series(1, 1000000000)",
-    // Read otherwise by Postgres: an escape string ends at E'\'', a dollar quote ends where the pass sees a string.
     "SELECT E'\\'' AS a, length(set_config('role', 'farsight_app', true)) AS b, ''' AS c",
     "SELECT $$'$$ AS a, length(set_config('role', 'farsight_app', true)) AS b, ' AS c'",
     "SELECT 1 AS n /* /* */ , pg_sleep(1) */",
-    // Brackets are an array to Postgres: what they hold is code, read by the pass.
     "SELECT (ARRAY[pg_sleep(1)])[1] AS n",
     "SELECT (ARRAY[1, length(set_config('role', 'farsight_app', true))])[1] AS n",
-    // A comment Postgres ends at a lone carriage return: the call after it runs.
     "SELECT 1 AS n -- note\rUNION ALL SELECT length(set_config('role', 'farsight_app', true))",
-    // An escaped name hides set_config, which would give the session's own role back.
     `SELECT U&"set_confi\\0067"('role', 'farsight_app', true)`, `SELECT u&"query_to_xm\\006c"('SELECT 1', true, true, '')`,
   ];
 
@@ -73,7 +67,6 @@ test("the database refuses what the guard cannot see: base tables, writes and se
   await expect(executeGeneratedQuery("SELECT * FROM players", [], { pool })).rejects.toThrow(/not allowed|permission denied/i);
   await expect(executeGeneratedQuery("SELECT p.* FROM v_game_players v, players p", [], { pool })).rejects.toThrow(/not allowed|permission denied/i);
   await expect(executeGeneratedQuery("SELECT pg_read_file('/etc/passwd') AS f", [], { pool })).rejects.toThrow(/permission denied/i);
-  // The wrapper makes any statement a SELECT of a subquery: a write cannot even be parsed there.
   await expect(executeGeneratedQuery("DELETE FROM v_game_players RETURNING *", [], { pool })).rejects.toThrow(/syntax error/i);
   expect(await executeGeneratedQuery("SELECT COUNT(*) AS games FROM v_game_players", [], { pool })).toEqual([{ games: 300 }]);
 });
@@ -83,7 +76,6 @@ test("generated SQL caps rows and bytes on the server", async () => {
 
   if (!guarded.ok) throw new Error(guarded.issues.join("; "));
   expect((await executeGeneratedQuery(guarded.sql, [], { pool })).length).toBe(MAX_ROWS);
-  // An independent cap even for a query without the LIMIT wrapper.
   expect((await executeGeneratedQuery("SELECT player FROM v_game_players", [], { pool })).length).toBe(MAX_ROWS);
   await expect(executeGeneratedQuery("SELECT repeat('x', 3000000) AS big FROM v_game_players LIMIT 1", [], { pool })).rejects.toThrow(/size limit/);
 });
@@ -113,7 +105,6 @@ const SLOW_SQL = "SELECT count(*) AS n FROM v_game_players a, v_game_players b, 
 
 test("generated queries beyond the cap wait and share the deadline", async () => {
   const slow = Array.from({ length: MAX_SQL_CHILDREN }, () => executeGeneratedQuery(SLOW_SQL, [], { pool }));
-  // Trivial, but it waits for a slot until the shared deadline.
   const queued = executeGeneratedQuery("SELECT 1 AS n", [], { pool });
   const settled = await Promise.allSettled([...slow, queued]);
 
@@ -123,7 +114,6 @@ test("generated queries beyond the cap wait and share the deadline", async () =>
     if (result.status === "rejected") expect(result.reason).toBeInstanceOf(SqlTimeoutError);
   }
 
-  // Every slot was released.
   expect(await executeGeneratedQuery("SELECT 1 AS n", [], { pool })).toEqual([{ n: 1 }]);
 }, SQL_TIMEOUT_MS + 6_000);
 

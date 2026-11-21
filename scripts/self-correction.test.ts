@@ -6,14 +6,12 @@ import type { Entities, StepPart } from "../src/lib/agent/types";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
-// Empty results of typed tools only: the rules corrector relaxes them and the model corrector gives up before any call.
 const entities: Entities = {
   players: [], teams: [], champion: null, unresolved: [], league: null, leagueShort: null, leagueMention: null, yearFrom: null, yearTo: null, split: null, outOfScope: null,
 };
 
 const WORLDS = "World Championship";
 
-/** One Worlds 2023 game of T1 against Gen.G, with Riot data and team stats for both sides. */
 async function seed(db: TestDb) {
   const league = LEAGUES.find((l) => l.name === WORLDS)!;
 
@@ -42,7 +40,6 @@ async function run(db: TestDb, first: Awaited<ReturnType<typeof plan>>) {
   return { ...result, notes, last };
 }
 
-// A network call would mean the model corrector ran: the test must stay hermetic.
 const realFetch = globalThis.fetch;
 let fetches = 0;
 
@@ -71,7 +68,6 @@ test("gives up after three attempts once every relaxation came back empty", asyn
     expect(out.plan.relaxed).toEqual(["period", "league"]);
     expect(out.notes).toHaveLength(2);
     expect(out.last.state).toBe("done");
-    // An empty result is no failure of the query: a warning, not an error.
     expect(out.last.status).toBe("warn");
     expect(out.last.title).toBe("Aucune ligne après 3 tentatives");
     expect(out.last.entries.filter((e) => e.title.startsWith("Auto-correction"))).toHaveLength(2);
@@ -126,7 +122,6 @@ test("succeeds at once when the scope has games", async () => {
     const out = await run(db, await plan(db, { league: WORLDS, yearFrom: 2023, yearTo: 2023 }));
 
     expect(out.problem).toBeNull();
-    // One season row and the total row.
     expect(out.rows).toHaveLength(2);
     expect(out.plan.attempt).toBe(1);
     expect(out.plan.relaxed).toEqual([]);
@@ -138,7 +133,6 @@ test("succeeds at once when the scope has games", async () => {
   }
 });
 
-/** Faker in the seeded T1 lineup: the Worlds 2023 game is his only one. */
 async function seedPlayer(db: TestDb) {
   await seed(db);
   await db.exec(`

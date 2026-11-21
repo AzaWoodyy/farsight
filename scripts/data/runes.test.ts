@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
 
-/** A few ids of the current Data Dragon (16.23), as the derivation reads them. */
 const current = new Map([
   [8135, "Treasure Hunter"],
   [8230, "Stormraider's Surge"],
@@ -26,7 +25,6 @@ test("a renamed id takes the name of the game's patch", () => {
     ["Treasure Hunter", "Phase Rush"],
     ["Treasure Hunter", "Stormraider's Surge"],
   ]);
-  // Worlds 2024 (14.18): Legend: Haste, as Leaguepedia writes it.
   expect(runeName(9105, "14.18.617.4123", current)).toBe("Legend: Haste");
 });
 

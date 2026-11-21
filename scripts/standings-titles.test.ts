@@ -7,11 +7,6 @@ import { testDb, type TestDb } from "./fixtures/test-db";
 
 const LCK = "LoL Champions Korea";
 
-/**
- * One LCK year in the 2025 format: a Cup stored as `season` but ending in a final, regular-season rounds whose
- * playoffs carry another split, the playoffs, and a page without games that has a winner (a monthly academy page).
- * Alpha wins the Cup and leads Rounds 1-2; Gamma leads Rounds 3-5; Delta wins the playoffs; Echo the academy page.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const league = Number((await db.query("SELECT id FROM leagues WHERE name = ?", [LCK]))[0]!.id);

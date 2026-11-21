@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { type DerivedTables, datasetProblems, photoLoss } from "./checks";
 import type { Cell } from "./derive";
 
-/** A complete, tiny dataset: one league, one game, every raw file present. */
 function dataset(change: Record<string, { columns: string[]; rows: Cell[][] }> = {}): DerivedTables {
   return new Map(
     Object.entries({
@@ -76,6 +75,5 @@ test("rows derived without ingame.jsonl are refused: a first load has no live da
 test("a load keeps at least 98 % of the players with a photo", () => {
   expect(photoLoss(3_472, 3_403)).toEqual([]);
   expect(photoLoss(3_472, 3_402)).toEqual(["players with a photo 3472 → 3402"]);
-  // A first load, and photos arriving on a database that had none.
   expect([photoLoss(0, 0), photoLoss(0, 120)]).toEqual([[], []]);
 });

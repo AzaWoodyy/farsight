@@ -1,10 +1,7 @@
-/** sessionStorage key: when the visitor clicked the language switch, read once by the page that follows. */
 const KEY = "farsight-lang-switch";
 
-/** Marks the links of the language switch: a click on one of them is a language change. */
 export const LANG_SWITCH_ATTR = "data-lang-switch";
 
-/** A page reached through the language switch, until its letters have settled (see language-arrival). */
 export type LanguageArrival = { transition: ViewTransition | null };
 
 declare global {
@@ -13,13 +10,6 @@ declare global {
   }
 }
 
-/**
- * Runs in `<head>`, before the first paint. A language change is a full page load between two documents, so
- * the page that leaves notes the click and the one that arrives reads it. Where the browser animates between
- * documents (the `@view-transition` rule of globals.css), the old page stays on screen until the new one is
- * ready to shuffle its letters; any other navigation is shown at once. In `<head>` because `pagereveal` fires
- * with the first paint: a script in the body can be too late to hear it.
- */
 export const ARRIVAL_SCRIPT = `(function(){
 var k=${JSON.stringify(KEY)},t=0;
 try{t=+sessionStorage.getItem(k)||0;sessionStorage.removeItem(k)}catch(e){}

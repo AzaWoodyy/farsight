@@ -2,7 +2,6 @@ import { ContentPage } from "../content-page";
 import type { Locale } from "../i18n/locales";
 import { LEGAL } from "./content";
 
-/** The legal page of a language. The texts are in `content`. */
 export function LegalPage({ locale }: { locale: Locale }) {
   const { title, trail, updated, toc, sections } = LEGAL[locale];
 

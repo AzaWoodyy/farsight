@@ -3,26 +3,11 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { AwsClient } from "aws4fetch";
 import { writeFileAtomic } from "../fs-atomic";
 
-/**
- * Object storage for the per-game Riot JSON (end-of-game stats and the
- * minute-by-minute timeline). They stay out of SQL: the database only holds
- * what ingestion computes from them, and a game's detail is read one object at
- * a time. Ingestion also keeps there the summaries it computes from them, as
- * one object (scripts/data/riot.ts).
- *
- * Two implementations behind one interface:
- * - `FsStore`: a local directory. It is the ingestion cache (data/raw/riot)
- *   and the store used by tests and local runs.
- * - `R2Store`: a Cloudflare R2 bucket through its S3-compatible API, signed
- *   with aws4fetch. Configured by the R2_* variables (docs/deploy.md).
- */
 export interface ObjectStore {
-  /** Short description for logs (never contains a secret). */
   readonly label: string;
   get(key: string): Promise<Uint8Array | null>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   has(key: string): Promise<boolean>;
-  /** Every key under `prefix`. */
   list(prefix: string): Promise<string[]>;
 }
 
@@ -41,8 +26,6 @@ export class FsStore implements ObjectStore {
     this.label = `fs:${root}`;
   }
 
-  // turbopackIgnore: the root is chosen at runtime (local cache in development);
-  // without it the tracer would ship the whole project with the /api/ask function.
   private path(key: string) {
     return resolve(/*turbopackIgnore: true*/ this.root, checkKey(key));
   }
@@ -53,7 +36,6 @@ export class FsStore implements ObjectStore {
     return existsSync(file) ? new Uint8Array(readFileSync(file)) : null;
   }
 
-  /** Written to a temporary file then renamed, so an interrupted run never leaves half an object. */
   async put(key: string, body: Uint8Array, _contentType: string) {
     const file = this.path(key);
     mkdirSync(dirname(file), { recursive: true });
@@ -82,9 +64,7 @@ export type R2Config = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
-  /** Override for tests or a jurisdiction endpoint (default https://<account>.r2.cloudflarestorage.com). */
   endpoint?: string;
-  /** Per-request limit; an upload gets four times as long (default 30 s). */
   timeoutMs?: number;
 };
 
@@ -150,7 +130,6 @@ export class R2Store implements ObjectStore {
     return true;
   }
 
-  /** ListObjectsV2, 1000 keys per request. */
   async list(prefix: string) {
     const keys: string[] = [];
     let token: string | null = null;
@@ -175,7 +154,6 @@ export class R2Store implements ObjectStore {
 const decodeXml = (s: string) =>
   s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 
-/** The R2 settings from the environment, or null when any of them is missing. */
 export function r2ConfigFromEnv(env: Record<string, string | undefined> = process.env): R2Config | null {
   const accountId = env.R2_ACCOUNT_ID || "";
   const bucket = env.R2_BUCKET || "";
@@ -187,13 +165,6 @@ export function r2ConfigFromEnv(env: Record<string, string | undefined> = proces
   return { accountId, bucket, accessKeyId, secretAccessKey, endpoint: env.R2_ENDPOINT || undefined };
 }
 
-/**
- * The read-only R2 settings the app uses at runtime (the game timeline tool):
- * the same account and bucket, with an Object Read only token of its own
- * (R2_READ_*). The read-write R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY of
- * ingestion are never read here, so a deployment cannot hold a write key by
- * accident. Null when any of them is missing.
- */
 export function r2ReadConfigFromEnv(env: Record<string, string | undefined> = process.env): R2Config | null {
   return r2ConfigFromEnv({
     R2_ACCOUNT_ID: env.R2_ACCOUNT_ID,
@@ -204,7 +175,6 @@ export function r2ReadConfigFromEnv(env: Record<string, string | undefined> = pr
   });
 }
 
-/** R2 when it is configured, null otherwise. */
 export function remoteStoreFromEnv(): R2Store | null {
   const config = r2ConfigFromEnv();
 

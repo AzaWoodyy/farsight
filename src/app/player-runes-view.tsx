@@ -7,15 +7,12 @@ import { compareText } from "@/lib/locale";
 import { ChampionIcon, compareFigures, Gauge, ITEM_WINRATE_MIN_GAMES, Label, SetupLine, SortHeader, useFigures } from "./champion-view";
 import { useLocale, useUi } from "./i18n/locale-context";
 
-/** A stat shard's icon is nearly white: it gets a plate on a light page. */
 const toneOf = (kind: RuneKind) => (kind === "shard" ? "light" : undefined);
 
 type KeystoneKey = "rune" | "games" | "winrate";
 
-/** A win rate shown from this many games, as in the champion's build: below it, one game swings it too much. */
 const winrateOf = (games: number, wins: number) => (games >= ITEM_WINRATE_MIN_GAMES ? (100 * wins) / games : null);
 
-/** The win rate of a line; below the threshold, the record instead, muted, and why to screen readers. */
 function Winrate({ games, wins }: { games: number; wins: number }) {
   const ui = useUi();
   const wr = winrateOf(games, wins);
@@ -39,7 +36,6 @@ function Winrate({ games, wins }: { games: number; wins: number }) {
   );
 }
 
-/** A section heading in the console's style, with the count it is read over. */
 function Heading({ id, children, count }: { id: string; children: string; count?: string }) {
   return (
     <h3 id={id} className="text-[11px] text-muted">
@@ -49,11 +45,6 @@ function Heading({ id, children, count }: { id: string; children: string; count?
   );
 }
 
-/**
- * One player's runes: who and where on top, then the keystones in large (sortable), the trees of the page, the
- * runes of each tree and the most frequent pages when the scoreboards list whole pages. A scope where only the
- * keystone is known (2018, 2019, the LPL until 2020) shows its keystones and primary trees and says the rest is absent.
- */
 export function PlayerRunesView({ r, fallback }: { r: PlayerRunes; fallback: ReactNode }) {
   const ui = useUi();
   const t = ui.runes;
@@ -136,7 +127,6 @@ export function PlayerRunesView({ r, fallback }: { r: PlayerRunes; fallback: Rea
   );
 }
 
-/** The keystones, large: icon, name and tree, share of the games with a keystone, games and win rate; sortable on each. */
 function Keystones({ keystones, of }: { keystones: ChampionRune[]; of: number }) {
   const ui = useUi();
   const locale = useLocale();
@@ -181,7 +171,6 @@ function Keystones({ keystones, of }: { keystones: ChampionRune[]; of: number })
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <ChampionIcon name={k.rune} src={k.icon} size={36} />
               <div className="min-w-0 flex-1">
-                {/* The tree wraps under the name on a phone rather than cutting it. */}
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                   <span className="text-sm leading-tight" translate="no">
                     {k.rune}
@@ -212,7 +201,6 @@ function Keystones({ keystones, of }: { keystones: ChampionRune[]; of: number })
   );
 }
 
-/** The primary trees (over the keystones) and the secondary ones (over the full pages), side by side from a tablet up. */
 function Trees({ trees, keystoneGames, pageGames }: { trees: RuneTree[]; keystoneGames: number; pageGames: number }) {
   const ui = useUi();
   const t = ui.runes;
@@ -251,14 +239,12 @@ function Trees({ trees, keystoneGames, pageGames }: { trees: RuneTree[]; keyston
 
 const PAGE_PARTS = ["primary", "secondary", "shard"] as const;
 
-/** The primary and secondary runes grouped by tree, and the shards, one part at a time: share of the games with a full page. */
 function RunesByTree({ runes, of }: { runes: ChampionRune[]; of: number }) {
   const ui = useUi();
   const t = ui.runes;
   const parts = PAGE_PARTS.filter((k) => runes.some((r) => r.kind === k));
   const [part, setPart] = useState<(typeof PAGE_PARTS)[number]>(parts[0] ?? "primary");
   const shown = runes.filter((r) => r.kind === part);
-  // Trees by their most taken rune; the shards have none and form one group.
   const groups = [...new Set(shown.map((r) => r.tree ?? ""))].map((tree) => ({ tree, runes: shown.filter((r) => (r.tree ?? "") === tree) }));
 
   return (
@@ -303,7 +289,6 @@ function RunesByTree({ runes, of }: { runes: ChampionRune[]; of: number }) {
   );
 }
 
-/** The most frequent pages without the shards: the keystone large, the primary runes, a gap, the secondary ones. */
 function Pages({ r }: { r: PlayerRunes }) {
   const ui = useUi();
   const t = ui.runes;

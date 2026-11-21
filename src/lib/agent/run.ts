@@ -28,7 +28,6 @@ export type Emit = (event: AgentEvent) => void;
 
 const entry = (e: Omit<TraceEntry, "at">): TraceEntry => ({ ...e, at: new Date().toISOString() });
 
-/** Trace line for a `decide()` outcome: what was decided, at which level, with what confidence. */
 const decisionEntry = <T>(d: DecideOutcome<T>, title: string, status: TraceStatus = "ok", extra?: string): TraceEntry =>
   entry({
     status,
@@ -38,7 +37,6 @@ const decisionEntry = <T>(d: DecideOutcome<T>, title: string, status: TraceStatu
     detail: [extra, d.reason, msg().run.cascade(describeAttempts(d.attempts))].filter(Boolean).join("\n"),
   });
 
-/** A step streamed to the UI: opened as `running`, updated in place, closed as `done`. */
 class Step {
   private part: StepPart;
   constructor(
@@ -62,7 +60,6 @@ class Step {
   }
 }
 
-/** Notes and follow-ups for aliases shared by several players: never a silent pick. */
 function ambiguityNotes(question: string, entities: Entities) {
   const notes: string[] = [];
   const followUps: string[] = [];
@@ -84,7 +81,6 @@ function ambiguityNotes(question: string, entities: Entities) {
   return { notes, followUps, ambiguities };
 }
 
-// 1. Understand ---------------------------------------------------------------
 async function understand(db: Db, question: string, emit: Emit, now: Date) {
   const m = msg().run;
   const step = new Step("understand", m.analysing, emit);
@@ -135,8 +131,6 @@ async function understand(db: Db, question: string, emit: Emit, now: Date) {
   return entities;
 }
 
-// 2. Build (typed tool or text-to-SQL) + guard ---------------------------------
-/** `missing` collects the data the database does not hold (rules or text-to-SQL); the answer then gives no figure. */
 async function build(db: Db, question: string, entities: Entities, route: Route, emit: Emit, notes: string[], missing: string[]) {
   const step = new Step("build", msg().run.building, emit);
   const m = msg().run;
@@ -197,14 +191,11 @@ async function build(db: Db, question: string, entities: Entities, route: Route,
   return plan;
 }
 
-// 3. Execute + self-correct ----------------------------------------------------
 type Problem = CorrectInput["problem"];
 
 type Attempt = { rows: SqlRow[]; problem: null } | { rows: null; problem: Problem };
 
-/** One guarded run of a plan: its rows, or the problem the corrector has to fix. */
 async function attempt(db: Db, schema: Record<string, string[]>, plan: QueryPlan, step: Step): Promise<Attempt> {
-  // Generated SQL may only read the v_* views; typed tools also read small lookup tables.
   const guard = guardQuery(schema, plan.sql, { objects: plan.tool ? ALLOWED_OBJECTS : VIEWS });
 
   if (!guard.ok) {
@@ -224,7 +215,6 @@ async function attempt(db: Db, schema: Record<string, string[]>, plan: QueryPlan
 
   const started = performance.now();
 
-  // Throws when the request was cancelled: no SQL for a visitor who left.
   llmSignal();
 
   try {
@@ -267,8 +257,6 @@ export async function execute(db: Db, question: string, entities: Entities, firs
       return { rows, plan, problem: null, empty: null };
     }
 
-    // An empty generated query whose scope explains it: another query would come back empty too. A typed tool whose
-    // scope holds no game at all says so too: its relaxations would answer for a period or a competition not asked.
     const empty = problem.kind === "empty" && (!plan.tool || !plan.relaxed.length) ? await explainEmpty(db, entities, plan.sql) : null;
 
     if (empty?.conclusive && (!plan.tool || empty.reason === "no_games")) {
@@ -279,7 +267,6 @@ export async function execute(db: Db, question: string, entities: Entities, firs
     }
 
     if (problem.kind === "timeout" || plan.attempt >= MAX_ATTEMPTS) {
-      // An empty result is no failure of the query: the answer then says what the scope holds.
       step.done(problem.kind === "empty" ? "warn" : "error", problem.kind === "empty" ? m.noRowsAfter(plan.attempt) : m.givenUpAfter(plan.attempt));
 
       return { rows: [], plan, problem, empty: null };
@@ -300,17 +287,12 @@ export async function execute(db: Db, question: string, entities: Entities, firs
   }
 }
 
-// 4. Format -------------------------------------------------------------------
-
-/** A generated-SQL cell as shown in the table: text, number or empty; anything else as text. */
 const Cell = z.union([z.string(), z.number(), z.null()]).catch((ctx) => String(ctx.value));
 
-/** Page-like columns of a generated result, used as Leaguepedia sources when present. */
 const PageColumns = z
   .object({ event_page: z.string().optional().catch(undefined), tournament_page: z.string().optional().catch(undefined), player: z.string().optional().catch(undefined) })
   .transform((r) => [r.event_page, r.tournament_page, r.player]);
 
-/** `facts`: the tool's own sentence, built from the aggregates of the question's scope. */
 type SummaryInput = { question: string; facts: string };
 
 const templateSummary: Decider<SummaryInput, string> = {
@@ -322,8 +304,6 @@ const templateSummary: Decider<SummaryInput, string> = {
 const llmSummary: Decider<SummaryInput, string> = {
   level: "llm",
   name: "rédaction",
-  // Only the facts go to the model: the raw rows carry no scope (a 10-1 row
-  // is one Worlds edition, not "this season"), so the model could misread them.
   run: async ({ question, facts }) => {
     const llm = getLlm();
 
@@ -344,14 +324,12 @@ const llmSummary: Decider<SummaryInput, string> = {
     if (!sentence) return null;
     const beyond = claimsBeyondFacts(sentence, facts, question);
 
-    // Thrown so the trace shows why the template sentence was kept.
     if (beyond.length) throw new Error(msg().run.summaryRejected(beyond.join(", ")));
 
     return { result: sentence, confidence: 0.85, level: "llm", reason: llm.id };
   },
 };
 
-/** Icons of the champions a generated table names, read from the database (same Data Dragon version for all). */
 async function championIcons(db: Db, columns: string[], raw: SqlRow[]): Promise<Record<string, string>> {
   const column = columns.find((c) => CHAMPION_COLUMN.test(c));
 
@@ -376,8 +354,6 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
   if (route.kind === "out_of_scope")
     return m.outOfScopeSummary(route.reason.replace(/\.$/, ""), SCOPE_LABEL);
 
-  // In the visitor's words: which part of the agent gave up (no typed tool, no model for the generated query)
-  // is in the trace, for who opens it.
   if (!plan) return llmStatus() === "ready" ? m.searchGaveNothing : m.cannotAnswerYet;
 
   const who = [...entities.players.map((p) => p.player), ...entities.teams.map((t) => t.team), entities.champion?.champion]
@@ -389,7 +365,6 @@ function emptySummary(entities: Entities, route: Route, plan: QueryPlan | null):
 
 const ROUTE_LABEL: Partial<Record<Route["kind"], AnswerMeta["route"]>> = { out_of_scope: "out_of_scope", sql: "sql" };
 
-/** Says which data is missing and what the database does hold. States no figure. */
 function missingSummary(missing: string[], route: Route): string {
   const m = msg().run;
   const head = m.missingHead([...new Set(missing)].join(", "));
@@ -397,11 +372,6 @@ function missingSummary(missing: string[], route: Route): string {
   return head + (route.kind === "missing" && route.coverage ? m.missingForScope : m.missingInGeneral);
 }
 
-/** Every view empty: what an answer holds before a tool or a table fills it. */
-/**
- * The players an answer is about, profiled on the scope it ran on (a relaxation may have widened the one asked):
- * both sides of a comparison, the one player of a player's statistics. Their photo heads the answer.
- */
 export async function answerProfiles(db: Db, call: ToolCall): Promise<PlayerProfile[]> {
   switch (call.tool) {
     case "player_comparison":
@@ -500,7 +470,6 @@ async function format(
   }
 
   if (!raw.length || !plan) {
-    // What the scope holds says why nothing came back; a typed tool is explained once its relaxations are spent.
     const why = explained ?? (plan ? await explainEmpty(db, entities, plan.sql) : null);
     const unrecognized = route.kind === "out_of_scope" ? null : unrecognizedNote(entities, meta.unread);
     const summary = [why?.summary ?? emptySummary(entities, route, plan), unrecognized].filter(Boolean).join(" ");
@@ -526,7 +495,6 @@ async function format(
     };
   }
 
-  // Text-to-SQL result: generic table.
   if (!plan.tool) {
     const columns = Object.keys(raw[0]);
     const table = { columns, rows: raw.map((r) => columns.map((c) => Cell.parse(r[c]))) };
@@ -540,12 +508,9 @@ async function format(
       title: question,
       summary: m.generatedSummary(raw.length),
       table,
-      // A column of champion names gets the champion layout, with their icons.
       icons: { ...badges.icons, ...(await championIcons(db, columns, raw)) },
       iconTones: badges.tones,
       teamLeagues: badges.leagues,
-      // The named players: the comparison layouts show their team and role next to the generated table, and one
-      // player alone heads the answer with their photo.
       profiles: entities.players.length ? await playerProfiles(db, entities.players.map((p) => p.player), entities) : [],
       sources: pages.length
         ? pages.slice(0, 15).map((p) => ({ label: `Leaguepedia — ${p}`, url: wikiUrl(p) }))
@@ -580,8 +545,6 @@ async function format(
 
   const call = plan.tool.call;
   const profiles = await answerProfiles(db, call);
-  // The period the answer covers: the one the tool chose, else the one it ran on (a relaxation may have widened
-  // the one asked), else the question's.
   const period = out.period ?? PeriodInput.safeParse(input).data ?? entities;
   const badges = await teamBadges(db, teamNames(out, meta.teams), period, out.roster ? { [out.roster.team]: out.roster.names } : {});
 
@@ -610,15 +573,8 @@ async function format(
   };
 }
 
-/** The period of a tool input that has one. */
 const PeriodInput = z.object({ yearFrom: z.number().nullable(), yearTo: z.number().nullable() });
 
-/**
- * Runs the four steps, emitting each step's progress and the final answer.
- * Each step is one observation of the question's trace.
- * `now` dates the relative seasons of the question ("l'an dernier"); the eval passes a fixed date.
- * `locale` is the language the answer is written in: the one of the page that asks.
- */
 export function runAgent(question: string, emit: Emit, now: Date = new Date(), signal?: AbortSignal, locale: Locale = DEFAULT_LOCALE): Promise<Answer> {
   return withLocale(locale, () => withLlmSignal(signal, () => run(question, emit, now)));
 }
@@ -626,7 +582,6 @@ export function runAgent(question: string, emit: Emit, now: Date = new Date(), s
 async function run(question: string, emit: Emit, now: Date): Promise<Answer> {
   const db = openDb();
   const notes: string[] = [];
-  // The last state of each step, as streamed: what its observation reports.
   const steps = new Map<StepName, StepPart>();
 
   const traced: Emit = (event) => {

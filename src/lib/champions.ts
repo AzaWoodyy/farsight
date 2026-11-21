@@ -2,13 +2,6 @@ import { z } from "zod";
 import type { Answer, TableCell } from "./agent/types";
 import { DEFAULT_LOCALE, type Locale, NO_DATA, numberFormat, percent, sameLabel } from "./locale";
 
-/**
- * Reads a result table as a champion ranking, when it is one: a column of champion names that have an
- * icon, numeric columns, and no other text column. Works for the champion_ranking tool and for generated
- * tables ("champions les plus bannis"); anything else stays a plain table.
- */
-
-/** Column names that hold a champion's name. */
 export const CHAMPION_COLUMN = /^(champion|champion_name|champ|champions|nom_champion)$/i;
 
 export const RANK_COLUMN = /^(rank|rang|position|#)$/i;
@@ -19,12 +12,10 @@ export type ChampionRankingLine = { rank: number; champion: string; icon: string
 
 export type ChampionRanking = {
   metrics: ChampionMetric[];
-  /** Index of the metric the ranking is ordered by: it gets the bar. */
   primary: number;
   lines: ChampionRankingLine[];
 };
 
-/** Column name → its label (one text when both languages say it the same) and whether it is a percentage. */
 const LABELS: [RegExp, Record<Locale, string>, boolean][] = [
   [/^(picks?|nb_picks|pick_count|times_picked)$/, sameLabel("picks"), false],
   [/^(bans?|nb_bans|ban_count|times_banned)$/, sameLabel("bans"), false],
@@ -62,7 +53,6 @@ function metricOf(column: string, locale: Locale): ChampionMetric {
 
   const key = column.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
-  // A total over the scope (champion_ranking): the figure's own label, never a percentage ("total_first_blood" counts them).
   if (key.startsWith("total_")) {
     const base = labelOf(key.slice(6)) ?? key.slice(6).replace(/_/g, " ");
 
@@ -80,10 +70,6 @@ const numberOf = (v: TableCell) => Finite.safeParse(v).data ?? null;
 
 const textOf = (v: TableCell) => z.string().min(1).safeParse(v).data ?? null;
 
-/**
- * The ranking order a tool was asked for, when it has one (champion_ranking): the column the champion layout
- * gives its bar to. A total is its own column ("total_deaths"), beside the per-game figure of the same name.
- */
 export function championSortKey(input: Answer["meta"]["input"]): string | undefined {
   if (!input || !("sort" in input)) return undefined;
 
@@ -97,7 +83,6 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
 
   if (nameIndex < 0) return null;
 
-  // Most names must be known champions: a column called "champion" holding something else is not a ranking.
   const names = table.rows.map((r) => textOf(r[nameIndex]));
 
   if (names.some((n) => n == null) || names.filter((n) => icons[n!]).length < Math.ceil(names.length / 2)) return null;
@@ -110,7 +95,6 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
 
     const cells = table.rows.map((r) => r[i]);
 
-    // Another text column (a player, a team...): the table is about something else than champions alone.
     if (cells.some((v) => v != null && numberOf(v) == null)) return null;
 
     if (cells.some((v) => v != null)) metricIndexes.push(i);
@@ -127,7 +111,6 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
     values: metricIndexes.map((i) => numberOf(r[i])),
   }));
 
-  // The ordering metric: the one the tool says, else the first one that never increases down the table.
   const hinted = sortKey ? metrics.findIndex((m) => m.key === sortKey) : -1;
 
   const sorted = metrics.findIndex((_, m) =>
@@ -137,7 +120,6 @@ export function detectChampionRanking(table: Answer["table"], icons: Record<stri
   return { metrics, primary: hinted >= 0 ? hinted : Math.max(0, sorted), lines };
 }
 
-/** "1 233", "43,9 %", "n/d" */
 export function formatChampionValue(v: number | null, isPercent: boolean, locale: Locale = DEFAULT_LOCALE): string {
   if (v == null) return NO_DATA[locale];
   const number = numberFormat(locale, 2);

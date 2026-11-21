@@ -41,7 +41,6 @@ describe("champion pool questions route to champion_pool, decided by the rules",
     const route = await routeQuestion(q, e, SCHEMA, COVERAGE);
 
     expect(route).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_pool", input } });
-    // Every word read: the LLM router is not asked to second-guess it.
     expect(route.kind === "tool" && route.unread).toBeFalsy();
   });
 
@@ -57,7 +56,6 @@ describe("champion pool questions route to champion_pool, decided by the rules",
     "championpool Bin",
     "champion-pool Bin",
     "pool Bin",
-    // Near typos.
     "chamion pool Bin",
     "champoin pool Bin",
     "champion pol Bin",
@@ -102,18 +100,14 @@ describe("champion pool questions route to champion_pool, decided by the rules",
 
 describe("the other rules keep their questions", () => {
   test.each([
-    // Two players or two teams set against each other: comparison and head-to-head first.
     ["champion pool de Faker vs Chovy", scope({ players: ["Faker", "Chovy"] }), "player_comparison"],
     ["Faker contre Chovy", scope({ players: ["Faker", "Chovy"] }), "player_comparison"],
     ["T1 vs Gen.G", scope({ teams: [team("T1"), team("Gen.G")] }), "head_to_head"],
-    // No player or team: the champion ranking and the role leaderboards.
     ["champions les plus joués en LEC 2025", scope({ ...LEC, year: 2025 }), "champion_ranking"],
     ["quels champions sont les plus bannis aux Worlds 2024", scope({ ...WORLDS, year: 2024 }), "champion_ranking"],
     ["meilleurs mids LEC 2025", scope({ ...LEC, year: 2025 }), "player_leaderboard"],
-    // A player or a team without a pool word: their history.
     ["résultats de Chovy aux Worlds", scope({ players: ["Chovy"], ...WORLDS }), "player_event_history"],
     ["palmarès de T1", scope({ teams: [team("T1")] }), "team_history"],
-    // A team and a roster word or a role alone: its roster.
     ["roster de T1 en 2024", scope({ teams: [team("T1")], year: 2024 }), "team_roster"],
     ["qui jouait chez Fnatic en 2018", scope({ teams: [team("Fnatic")], year: 2018 }), "team_roster"],
     ["adc de T1", scope({ teams: [team("T1")] }), "team_roster"],
@@ -155,10 +149,6 @@ describe("a pool phrase is a LoL cue: a short or everyday handle next to it is a
   });
 });
 
-/**
- * LEC 2025 Spring and Summer, three games G2 – Fnatic: Caps (Mid, G2) plays Azir twice and Orianna once,
- * BrokenBlade (Top, G2) plays Gnar then Azir; Humanoid (Mid, Fnatic) plays Orianna. Game 3 has no death count for Caps.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
@@ -189,7 +179,6 @@ async function seed(db: TestDb) {
 async function run(db: TestDb, call: Parameters<typeof bindTool>[1]) {
   const tool = await bindTool(db, call);
 
-  // Typed queries go through the same guard as generated ones.
   expect(guardQuery(await readSchema(db), tool.sql).ok).toBe(true);
 
   return tool.format(db, (await db.query(tool.sql, tool.params)));
@@ -206,7 +195,6 @@ describe("champion_pool on a seeded season", () => {
       const out = await run(db, { tool: "champion_pool", input: { subject: "player", name: "Caps", ...LEC25 } });
 
       expect(out.table!.columns).toEqual(["rank", "champion", "games", "wins", "losses", "winrate", "kda", "share"]);
-      // Azir: 2 games, 2 wins; KDA (5 + 5) / 1 = 10, game 3 has no deaths so it counts in neither side.
       expect(out.table!.rows).toEqual([
         [1, "Azir", 2, 2, 0, 100, 10, 66.7],
         [2, "Orianna", 1, 0, 1, 0, 1, 33.3],
@@ -235,7 +223,6 @@ describe("champion_pool on a seeded season", () => {
       const g2 = await run(db, { tool: "champion_pool", input: { subject: "team", name: "G2 Esports", ...LEC25 } });
 
       expect(g2.table!.columns.at(-1)).toBe("players");
-      // 3 games, 5 picks (BrokenBlade is not in game 3): Azir 3 (Caps ×2, BrokenBlade ×1), Gnar 1 win, Orianna 1 loss.
       expect(g2.table!.rows.map((r) => [r[1], r[2], r[3], r[7], r[8]])).toEqual([
         ["Azir", 3, 2, 60, "Caps ×2, BrokenBlade ×1"],
         ["Gnar", 1, 1, 20, "BrokenBlade ×1"],

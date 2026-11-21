@@ -1,13 +1,3 @@
-/**
- * Everyday French and English words, as normalized aliases: the 5 000 most
- * frequent words of each language in the OpenSubtitles 2018 frequency lists
- * (hermitdave/FrequencyWords, CC BY-SA 4.0), accents stripped, four letters
- * or more (shorter handles are always treated as ambiguous). First names and
- * cities are in there too ("paris", "peter").
- *
- * A player handle found in this list ("Paris", "Life", "Knight") only names
- * a player in a question about esport: see `detectMentions`.
- */
 export const COMMON_WORDS = new Set(
   (
     "aaron abandon abandoned abandonne abandonner abattre abattu abby ability able aboard abord about above abri " +

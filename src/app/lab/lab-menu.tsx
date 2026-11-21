@@ -6,15 +6,6 @@ import { z } from "zod";
 import { LAB_GROUPS, LAB_VARIANTS } from "./catalog";
 import "./lab.css";
 
-/**
- * The lab's floating menu: harness chrome, not part of the design under review. A dark glass pill at the
- * bottom of the screen (same on a light or a dark page, so it never reads as the product), with the list of
- * every tool and variation above it, and a notes pad kept in this browser.
- *
- *   ← →      previous / next variation        /   open the list and search
- *   N        notes on this variation          Esc close
- *   H        hide / show the menu (it floats over the end of the page)
- */
 const NOTES_KEY = "farsight-lab-notes";
 
 const Notes = z.record(z.string(), z.string());
@@ -23,7 +14,6 @@ type Notes = z.infer<typeof Notes>;
 
 const NOTES_EVENT = "farsight:lab-notes";
 
-// The notes as stored (a JSON string), also kept here so they survive a browser that refuses localStorage.
 let stored: string | null = null;
 
 function storedNotes() {
@@ -66,7 +56,6 @@ function parseNotes(raw: string): Notes {
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Every note, as a list to paste back: the variation, its address in the lab, the question, the remark. */
 const notesMarkdown = (notes: Notes) =>
   LAB_VARIANTS.filter((v) => notes[v.id]?.trim())
     .map((v) => `- **${v.groupTitle} · ${v.label}** (\`/lab?v=${v.id}\`, « ${v.question} »)\n${notes[v.id].trim().replace(/^/gm, "  ")}`)
@@ -85,7 +74,6 @@ export function LabMenu({ index, onSelect }: { index: number; onSelect: (i: numb
   const variant = LAB_VARIANTS[index];
   const noted = Object.values(notes).filter((n) => n.trim()).length;
 
-  // Opening a panel puts the caret where typing is expected; the list also scrolls to the variation on screen.
   useEffect(() => {
     if (panel === "list") {
       search.current?.focus();
