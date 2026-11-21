@@ -250,7 +250,8 @@ runes dans `ScoreboardPlayers`, alors que leur JSON Riot les a. Depuis
 champions, le score de vision, la page de runes (ids Riot dans l'ordre de
 Leaguepedia, et les deux arbres), les hérauts par équipe et `gameVersion`.
 L'ajout ne change aucun chiffre existant : `DERIVE_COMPATIBLE` reste à 2, la
-CI garde les résumés épinglés (dérivation 3) sans ces champs. Une release les
+CI a gardé les résumés épinglés (dérivation 3) sans ces champs jusqu'à
+l'épinglage de `data-20261121`, en dérivation 4. Une release les
 recalcule tous depuis R2 puisqu'elle refuse un résumé plus ancien, et la mise à
 jour Postgres aussi, chaque jour jusqu'à la première release en dérivation 4 :
 environ 16 min de lectures R2 en parallèle, hors du budget du wiki (Data
@@ -293,10 +294,10 @@ La migration ne fait qu'ajouter une table et une vue : le code en place
 
 La **Data release** suivante publie le fichier SQLite v11. `data:package` refuse
 une release sans aucune de ces séries ; `--check-only` se contente d'un
-avertissement. `ci/data.json` épingle encore `data-20261120-6` (v10), et
-`ci/raw.tar.zst` contient déjà `schedule.json` : la CI charge Postgres depuis
-l'instantané brut, et reconstruit le fichier SQLite v11 hors ligne jusqu'au
-ré-épinglage sur la première release v11.
+avertissement. `ci/data.json` épingle `data-20261121`, la première release
+v11 (résumés in-game de la dérivation 4), avec `ci/raw.tar.zst` récupéré juste
+après elle : la CI ne reconstruit plus le fichier SQLite hors ligne à chaque
+exécution.
 
 ### Première release v10
 

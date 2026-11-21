@@ -1,30 +1,30 @@
 {
   "repository": "AzaWoodyy/farsight",
-  "tag": "data-20261120-6",
-  "schemaVersion": 10,
+  "tag": "data-20261121",
+  "schemaVersion": 11,
   "database": {
     "asset": "lol.sqlite.zst",
-    "sha256": "60fc0d40be6c6b0dd53b0196393c1241de83f200cb7ded27a431464c1fd064d6",
-    "uncompressedSha256": "3f2525fb23fa3527b876a530326dea3fc4fd061677abc06689d58d2fa7b4085d"
+    "sha256": "98e4d2db90f84ef08ff6beeda442afc435d7b0b97adcd64ef3d03dbf480f2be2",
+    "uncompressedSha256": "53645cc269f150319de65338dc2a40366a60fa78e61d326240deeca43e291aa6"
   },
   "ingame": {
     "asset": "ingame.jsonl.zst",
-    "sha256": "8cb1c9c5a0b475a96598f081e15360d40e4ae1b11880d69755ef33df0556ff56"
+    "sha256": "893c28e53a5e9a83d36faf45d27aa3f736191a680d7cb3626166abfe673ffac1"
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "4c04c4cdc200ccf05c940435ef9ef472293954827584b963a343d37559fb6ec9",
+    "sha256": "65dde00fef073adb2efb9f62cb514f2ddcc98647151be6b0482d92e6e2f126df",
     "files": {
       "tournaments.json": "8215893a3e359bf78bbbc3cb71eb78dc1df8450e523f4c6d33e191e1fce9edc3",
       "results.json": "1d29c5bc95801ba14113e6ed8a5ac9c7d58ab1a6e763b44291d20a335369c782",
       "games.json": "620653bc1de651d95c4193acce8b533a04b27f49f1b539c1061833218f7442a9",
       "lines.json": "71830a9628d375127aa82151e60cb89cb79de560975224650e8683dd372bb1cf",
-      "players.json": "394d284b95cf5732c4ee895428f963b10e335d67e2850eb6ddee024b4d357a96",
+      "players.json": "c02c3f90e0ec60d1db1a3fee88eae3dafed37e677bfa5727e4fdfce355680661",
       "redirects.json": "5600d53cc4d0048367eb6a4f6a8e65044aaae83526d897feb255e17c6e7e9a99",
-      "player_images.json": "2ac7ad76b741677cfb01fd3fbcde400afad4ccd8d2c01d03c9e179ef0bcabc87",
+      "player_images.json": "4b65a54dcc6cd7d889447ce505ff08dd665a025b89e536acc38c6e812430beac",
       "ddragon.json": "e945a32e0b277111faa5df68d92ac05a33be9c298deb6716e59a04696ed8ab77",
       "riot_games.json": "d5fd3805262e2fa80aa28c11f830b7ef7ec574052151fc367002343d081f572f",
-      "runs.json": "10bc080661817fb31d6954aec035f52e5baa0b323ddedc6d4f4632749d9d76bd",
+      "runs.json": "f0ef908fd50341c24b9843286c6ebcf827ef954b7ba38a8e691aae99c94b11d6",
       "teams.json": "626dd34461dd773e4e8f23824fabd21fe4381f3981c1c9dba94be6d9e6a22350",
       "team_redirects.json": "63adbf0d6f9af7db99271bbfc93c7880cfb27d51f33bf99886a59084a9cab0f8",
       "schedule.json": "fef8abc3f614563ebf8e4d2b3c5cfcb00eec0c13e917003baed2e18d00147213"
