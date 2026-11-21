@@ -250,7 +250,8 @@ runes dans `ScoreboardPlayers`, alors que leur JSON Riot les a. Depuis
 champions, le score de vision, la page de runes (ids Riot dans l'ordre de
 Leaguepedia, et les deux arbres), les hérauts par équipe et `gameVersion`.
 L'ajout ne change aucun chiffre existant : `DERIVE_COMPATIBLE` reste à 2, la
-CI garde les résumés épinglés (dérivation 3) sans ces champs. Une release les
+CI a gardé les résumés épinglés (dérivation 3) sans ces champs jusqu'à
+l'épinglage de `data-20261121`, en dérivation 4. Une release les
 recalcule tous depuis R2 puisqu'elle refuse un résumé plus ancien, et la mise à
 jour Postgres aussi, chaque jour jusqu'à la première release en dérivation 4 :
 environ 16 min de lectures R2 en parallèle, hors du budget du wiki (Data
