@@ -184,8 +184,10 @@ n'a pas, puis réécrit l'objet à la fin s'il a changé. La mise à jour
 quotidienne de Postgres y trouve les parties arrivées depuis la dernière
 release. L'objet garde l'ordre du fichier : de deux résumés d'une même partie
 (une partie et son remake), la dérivation garde le premier. Si l'objet manque ou est
-illisible, les 40 000 résumés sont recalculés depuis les JSON de R2 (une
-dizaine de minutes) et l'objet est réécrit.
+illisible, le run garde les résumés qu'il a déjà (ceux de la release
+restaurée, ou du fichier local), recalcule les autres depuis les JSON de R2
+(une dizaine de minutes pour les 40 000, sur une machine qui n'en a aucun) et
+réécrit l'objet.
 
 Volumes : 28 342 objets, de 15 à 120 Ko chacun (1,2 Go au total), dans l'offre gratuite de R2 (10 Go, 1 M d'écritures et 10 M de
 lectures par mois).
