@@ -1,9 +1,7 @@
-/** Unknown paths run every code check; only data inputs and dependencies rebuild SQLite. */
-export const CHECKS = ["lint", "typecheck", "test", "eval", "build", "database"] as const;
+/** Unknown paths run every check; the checks that read data load Postgres from the pinned snapshot. */
+export const CHECKS = ["lint", "typecheck", "test", "eval", "build"] as const;
 
 export type Check = (typeof CHECKS)[number];
-
-export const CODE_CHECKS = CHECKS.filter(check => check !== "database");
 
 const CODE: Check[] = ["lint", "typecheck"];
 
@@ -15,32 +13,21 @@ export function affected(paths: string[]): Set<Check> {
 
     if (/^(docs\/.*|[^/]+\.md|LICENSE)$/.test(path)) checks = [];
     else if (["package.json", "bun.lock", "ci/data.json", "ci/raw.tar.zst"].includes(path) || path.startsWith("data/")) checks = CHECKS;
-    else if (path === "tsconfig.json" || /^(\.github\/|scripts\/ci\/|ci\/|\.githooks\/)/.test(path)) checks = CODE_CHECKS;
+    else if (path === "tsconfig.json" || /^(\.github\/|scripts\/ci\/|ci\/|\.githooks\/)/.test(path)) checks = CHECKS;
     else if (path.endsWith(".test.ts")) checks = [...CODE, "test"];
     else if (/^scripts\/data\/(fetch|sync)\.ts$/.test(path)) checks = [...CODE, "test"];
     else if (/^(scripts\/data\/|src\/lib\/sources\/|src\/lib\/domain\/)/.test(path) || path === "src/lib/aliases.ts" || path === "src/lib/db/schema.ts") checks = CHECKS;
-    else if (path.startsWith("src/lib/")) checks = CHECKS.filter(check => check !== "database");
+    else if (path.startsWith("src/lib/")) checks = CHECKS;
     else if (path.startsWith("eval/") || path === "scripts/eval.ts") checks = [...CODE, "eval"];
     else if (path === "scripts/size.ts") checks = [...CODE, "build"];
     else if (/^(src\/|public\/)/.test(path) || ["next.config.ts", "vercel.json"].includes(path)) checks = [...CODE, "build"];
     else if (path === "oxlint.config.ts" || path.startsWith("tools/oxlint/")) checks = ["lint"];
-    else checks = CODE_CHECKS;
+    else checks = CHECKS;
 
     for (const check of checks) selected.add(check);
   }
 
   return selected;
-}
-
-/**
- * The pinned snapshot holds the database of its schema version. While the code expects another one (a schema change
- * merged before the snapshot is re-pinned to a release of the new schema), every check that opens the database
- * rebuilds it offline from the snapshot's raw data.
- */
-export function withSnapshotSchema(selected: Set<Check>, snapshotSchema: number, codeSchema: number): Set<Check> {
-  if (snapshotSchema === codeSchema || !(selected.has("eval") || selected.has("build"))) return selected;
-
-  return new Set([...selected, "database"]);
 }
 
 /**

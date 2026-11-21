@@ -1,8 +1,9 @@
 # Postgres (Neon)
 
 L'app lit Postgres à `DATABASE_URL`, sur Neon en production, depuis le 20/11/2026 (#135). Les données se mettent à jour
-chaque jour sans redéploiement. La Data release continue de publier chaque lundi un fichier SQLite versionné des mêmes
-lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depuis SQLite.
+chaque jour sans redéploiement. Il n'y a plus de fichier SQLite ni de Data release hebdomadaire : Postgres et R2 sont
+les deux seuls endroits où vivent les données. Ce document décrit le fonctionnement, l'exploitation et le passage
+depuis SQLite.
 
 ## Fonctionnement
 
@@ -18,11 +19,10 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
   code tolère l'absence de ce qu'ajoute la dernière, comme `teams.logo` de la migration 3) et accepte une base plus récente :
   une migration ne fait donc qu'ajouter, et garde tout ce que le code précédent lit. Les colonnes texte sont en
   `COLLATE "C"` : mêmes tris et comparaisons qu'en SQLite, quelle que soit la locale du serveur.
-- **Chargement** (`bun run db:load`, `scripts/db/load.ts`) : les lignes viennent de `scripts/data/derive.ts`, le même
-  calcul que le fichier SQLite de la Data release. Elles sont copiées (`COPY`) dans un schéma neuf `farsight_next`
+- **Chargement** (`bun run db:load`, `scripts/db/load.ts`) : les lignes viennent de `scripts/data/derive.ts`.
+  Elles sont copiées (`COPY`) dans un schéma neuf `farsight_next`
   construit par toutes les migrations, analysées et ouvertes aux rôles de l'app.
-  - Avant toute écriture, les lignes dérivées passent les contrôles de `scripts/data/checks.ts`, ceux que `data:package`
-    faisait sur le fichier SQLite : pas de ligne sans son parent, pas de ligue du périmètre sans partie, aucun fichier
+  - Avant toute écriture, les lignes dérivées passent les contrôles de `scripts/data/checks.ts` : pas de ligne sans son parent, pas de ligue du périmètre sans partie, aucun fichier
     que `data:fetch` n'aurait pas enregistré (résumés in-game, photos, sigles, calendrier, logos), aucun résumé in-game d'une
     dérivation plus ancienne. `--allow-older-summaries` garde les résumés d'une dérivation ancienne encore compatible
     (la CI, dont le snapshot épinglé ne se recalcule pas) ; `--allow-incomplete` charge quand même (cache local partiel).
@@ -49,7 +49,7 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
   (`aws-eu-central-1`). `next.config.ts` lit les chiffres de la page « comment ça marche » et la date du sitemap dans
   Postgres au démarrage du build : `DATABASE_URL` doit être défini pour le build.
 - **CI** : un Postgres 18 en conteneur de service, chargé par `db:load` depuis le snapshot épinglé (`ci/data.json` :
-  `ci/raw.tar.zst` et `ingame.jsonl.zst` de la release épinglée). Mêmes données à chaque run, sans compte externe.
+  `ci/raw.tar.zst` et `ingame.jsonl.zst` de la release GitHub épinglée, gardée pour cet usage). Mêmes données à chaque run, sans compte externe.
 
 ## En production
 
@@ -62,13 +62,11 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
 - **GitHub** : `NEON_DATABASE_OWNER_URL` (propriétaire, hôte direct) charge, `NEON_DATABASE_URL` (`farsight_app`)
   vérifie.
 - **Mise à jour** (`.github/workflows/postgres-update.yml`) : chaque jour à 05:23 UTC et à la demande, depuis `main`
-  seulement. Elle reprend les résumés in-game de la dernière Data release, complétés par ceux que le run précédent a
-  laissés sur R2 (`derived/ingame.jsonl.zst`, réécrit à la fin de chaque run : les parties arrivées depuis la release ne
-  sont pas recalculées), relit
+  seulement. Elle reprend les résumés in-game que le run précédent a laissés sur R2 (`derived/ingame.jsonl.zst`, réécrit
+  à la fin de chaque run ; si l'objet manque, ils sont recalculés depuis les JSON de R2, une dizaine de minutes), relit
   Leaguepedia en entier (environ 17 minutes), complète le JSON Riot des nouvelles parties (R2 d'abord, puis le wiki, 30 minutes au plus) et Data
   Dragon, lance `db:load` puis pose la question de référence sur Neon. L'app lit les nouvelles données au plus
-  5 minutes après le chargement. Elle partage le groupe de concurrence `leaguepedia-ingestion` avec la Data release :
-  une seule ingestion à la fois. GitHub coupe un cron après 60 jours sans activité sur un dépôt public : le réactiver
+  5 minutes après le chargement. Une seule ingestion à la fois (groupe de concurrence `leaguepedia-ingestion`). GitHub coupe un cron après 60 jours sans activité sur un dépôt public : le réactiver
   depuis l'onglet Actions.
 - **Deploy** ne dépend plus des données : il déploie après la CI de `main`, ou à la demande.
 
@@ -131,7 +129,6 @@ bun run verify
 
 - **Données** : relancer `db:load` depuis un cache brut plus ancien, ou restaurer la base Neon à un instant donné, dans
   la fenêtre d'historique du plan.
-- **Code** : revenir avant #135 remet le fichier SQLite embarqué, téléchargé depuis la Data release par `data:pull`.
 
 ## Passage depuis SQLite (20/11/2026)
 

@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { createSchema, createQuerySchema, QUERY_DDL, SCHEMA_OBJECTS, SCHEMA_VERSION, TABLE_DDL } from "../../src/lib/db/schema";
-import { derivationProblems } from "./artifact";
 
 describe("database schema contract", () => {
   test("DDL changes require reviewing the schema version and its fingerprint together", () => {
@@ -30,22 +29,5 @@ describe("database schema contract", () => {
     } finally {
       db.close();
     }
-  });
-});
-
-describe("release derivation consistency", () => {
-  test("refuses stale summaries and a build made by an older definition", () => {
-    expect(derivationProblems({ deriveVersion: 2, staleDerive: 0, olderDerive: 0 }, 2)).toEqual([]);
-    expect(derivationProblems({ deriveVersion: 2, staleDerive: 3, olderDerive: 0 }, 2)).toHaveLength(1);
-    expect(derivationProblems({ deriveVersion: 1, staleDerive: 0, olderDerive: 0 }, 2)).toHaveLength(1);
-    expect(derivationProblems({ deriveVersion: null, staleDerive: 0, olderDerive: 0 }, 2)).toHaveLength(1);
-  });
-
-  test("summaries of an older compatible definition pass the offline check only", () => {
-    const facts = { deriveVersion: 3, staleDerive: 0, olderDerive: 12 };
-
-    expect(derivationProblems(facts, 3)).toHaveLength(1);
-    expect(derivationProblems(facts, 3, { allowOlder: true })).toEqual([]);
-    expect(derivationProblems({ ...facts, staleDerive: 1 }, 3, { allowOlder: true })).toHaveLength(1);
   });
 });

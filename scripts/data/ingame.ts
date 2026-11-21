@@ -31,7 +31,7 @@
  *   same event with team 0 only announces the element of the map); the count
  *   is used otherwise. Null without a timeline or before patch 9.23.
  *
- * From derive 4, what Leaguepedia's scoreboard lacks on many 2018-2020 games, for `data:build` to fall back on:
+ * From derive 4, what Leaguepedia's scoreboard lacks on many 2018-2020 games, for the derivation to fall back on:
  * - `damage`: damage dealt to champions; `vision`: vision score. Null when no participant of the game has a
  *   non-zero value (the field was not tracked yet).
  * - `runes`: the rune ids in Leaguepedia's order, keystone, three primary runes, two secondary runes, then the stat
@@ -51,7 +51,7 @@ export const DERIVE_VERSION = 5;
 
 /**
  * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
- * (dragons and souls from 3, Leaguepedia fallbacks from 4). `data:build` keeps it with these columns NULL; `data:fetch` recomputes it as soon as
+ * (dragons and souls from 3, Leaguepedia fallbacks from 4). The derivation keeps it with these columns NULL; `data:fetch` recomputes it as soon as
  * it can read the raw JSON, and a published release refuses it. Derive 5 changed existing numbers (the minute
  * statistics of games that ended before the minute, the first-blood victim after an execution), so no older summary
  * is compatible.

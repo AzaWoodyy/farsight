@@ -1,5 +1,5 @@
 /**
- * Shared configuration for `data:fetch` and `data:build`: paths, the fixed
+ * Shared configuration for `data:fetch` and the derivation (`db:load`): paths, the fixed
  * league scope, and the tournament classifier.
  */
 import { resolve } from "node:path";
@@ -21,9 +21,8 @@ export const INGAME_FILE = resolve(RAW_DIR, "ingame.jsonl");
 
 /** One JSON file per Data Dragon response. */
 export const DDRAGON_CACHE_DIR = resolve(RAW_DIR, "ddragon");
-export const DB_FILE = resolve(ROOT, process.env.DATABASE_PATH || "data/lol.sqlite");
 
-/** Consolidated datasets written by `data:fetch`, read by `data:build`. */
+/** Consolidated datasets written by `data:fetch`, read by the derivation (`db:load`). */
 export const DATASETS = [
   "tournaments",
   "results",

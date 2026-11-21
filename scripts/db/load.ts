@@ -1,12 +1,12 @@
 /**
- * db:load: (re)build the Postgres database from the raw cache, the Postgres counterpart of data:build.
+ * db:load: (re)build the Postgres database from the raw cache.
  *
  *   bun run db:load                       DATABASE_OWNER_URL (else DATABASE_URL), schema "farsight"
  *   bun run db:load --schema=farsight_ci  another schema (tests, a side-by-side trial)
  *   bun run db:load --allow-older-summaries   keep in-game summaries of an older, compatible derivation (CI's pinned snapshot)
  *   bun run db:load --allow-incomplete        load rows that fail the checks below (a partial local cache)
  *
- * The rows come from scripts/data/derive.ts, as for the SQLite file. They are copied (COPY) into a fresh schema
+ * The rows come from scripts/data/derive.ts. They are copied (COPY) into a fresh schema
  * `<schema>_next` built by every migration, analyzed and granted to the app roles, then swapped in by two renames in
  * one transaction: readers see the old data until the commit, then the new data, never a half-loaded schema. The old
  * schema is dropped afterwards. Connect as the owner role, without a transaction pooler (Neon: the direct host).
@@ -180,7 +180,7 @@ try {
   for (const r of derived.runs)
     await client.query(insertRun, [r.kind, r.started_at, r.finished_at, SCHEMA_VERSION, JSON.stringify(r.row_counts), JSON.stringify({ requests: r.requests, cached_responses: r.cached_responses })]);
 
-  // Recorded as `build`, as data:build does: the day of this run is the data's day (src/lib/db/release.ts).
+  // Recorded as `build`: the day of this run is the data's day (src/lib/db/release.ts).
   await client.query(insertRun, [
     "build", startedAt, new Date().toISOString(), SCHEMA_VERSION,
     JSON.stringify(Object.fromEntries(SCHEMA_TABLES.filter((t) => t !== "ingest_runs").map((t) => [t, rowCounts[t] ?? 0]))),

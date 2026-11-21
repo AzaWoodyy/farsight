@@ -1,12 +1,12 @@
 name: Postgres update
 
-# Daily update of the Postgres (Neon) database. Same ingestion as Data release (Cargo tables in full, Riot game JSON incremental from the previous
-# release's in-game summaries and the ones the last run left on R2, R2 first, the wiki time-boxed), then `db:load` into Neon instead of a SQLite release:
-# migrations into a fresh schema, COPY, then a swap in one transaction: no moment without data.
-# The app reads the new data as soon as the load commits, without a redeployment.
+# Daily update of the Postgres (Neon) database: the Cargo tables in full, the Riot game JSON incremental (the in-game
+# summaries of the previous run are read from R2, a new game from R2 then from the wiki, time-boxed), then `db:load`
+# into Neon: checks on the derived rows, migrations into a fresh schema, COPY, then a swap in one transaction: no
+# moment without data. The app reads the new data as soon as the load commits, without a redeployment.
 #
 # Secrets: NEON_DATABASE_OWNER_URL (owner role, direct host) for the load, NEON_DATABASE_URL (farsight_app, pooled
-# host) for the check, and the R2_* secrets of Data release. On a public repository GitHub disables a schedule after
+# host) for the check, and the R2_* secrets (read-write token of the bucket). On a public repository GitHub disables a schedule after
 # 60 days without activity: re-enable it from the Actions tab if it stops.
 
 on:
@@ -22,7 +22,7 @@ on:
 permissions:
   contents: read
 
-# Shared with Data release: one Leaguepedia ingestion at a time (one request at a time, from this repository).
+# One Leaguepedia ingestion at a time (one request at a time, from this repository).
 concurrency:
   group: leaguepedia-ingestion
   cancel-in-progress: false
@@ -46,22 +46,6 @@ jobs:
           bun-version-file: package.json
 
       - run: bun install --frozen-lockfile
-
-      - name: Restore the in-game summaries of the newest data release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          previous=$(gh release list --exclude-drafts --exclude-pre-releases --limit 50 --json tagName,publishedAt \
-            --jq '[.[] | select(.tagName | startswith("data-"))] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
-          if [ -n "$previous" ]; then
-            gh release download "$previous" --pattern manifest.json --pattern ingame.jsonl.zst --dir data/previous
-            schema=$(bun -e 'import { SCHEMA_VERSION } from "./scripts/data/scope"; console.log(SCHEMA_VERSION)')
-            if jq -e --argjson s "$schema" '.schema_version == $s and .ingame != null' data/previous/manifest.json >/dev/null; then
-              mkdir -p data/raw
-              zstd -d -q data/previous/ingame.jsonl.zst -o data/raw/ingame.jsonl
-              echo "restored $(wc -l < data/raw/ingame.jsonl) in-game summaries from $previous"
-            fi
-          fi
 
       - name: Fetch Leaguepedia, Riot game JSON and Data Dragon
         env:

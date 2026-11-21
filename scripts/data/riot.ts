@@ -1,7 +1,7 @@
 /**
  * Riot game JSON hosted by Leaguepedia: which games have one (Cargo
  * `PostgameJsonMetadata`), downloading them into the object store, and the
- * in-game summaries (data/raw/ingame.jsonl) that `data:build` turns into SQL.
+ * in-game summaries (data/raw/ingame.jsonl) that the derivation turns into SQL.
  *
  * Resumable by construction:
  * - every downloaded game is one object in data/raw/riot, written atomically;
