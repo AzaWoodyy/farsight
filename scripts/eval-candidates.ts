@@ -64,6 +64,9 @@ function physical(dir: string): string {
   return join(realpathSync(existing), relative(existing, dir));
 }
 
+/** Git's environment without any GIT_* override (GIT_DIR, GIT_WORK_TREE, GIT_CEILING_DIRECTORIES…): only the path decides the repository. */
+const gitEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))), LC_ALL: "C" };
+
 const refuse = (message: string): never => {
   console.error(`--out : ${message} ; le rapport n'y est jamais écrit`);
   process.exit(1);
@@ -81,7 +84,7 @@ function checkOutDir(dir: string): string {
 
   while (!existsSync(existing)) existing = dirname(existing);
 
-  const found = spawnSync("git", ["-C", existing, "rev-parse", "--show-toplevel"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  const found = spawnSync("git", ["-C", existing, "rev-parse", "--show-toplevel"], { encoding: "utf8", env: gitEnv });
 
   if (found.status !== 0) {
     if (found.status === 128 && found.stderr.includes("not a git repository")) return real;
@@ -93,7 +96,7 @@ function checkOutDir(dir: string): string {
 
   for (const name of Object.values(reportFiles)) {
     try {
-      execFileSync("git", ["-C", top, "check-ignore", "-q", "--", join(real, name)], { stdio: "ignore" });
+      execFileSync("git", ["-C", top, "check-ignore", "-q", "--", join(real, name)], { stdio: "ignore", env: gitEnv });
     } catch {
       refuse(`${dir} est dans un dépôt git qui n'ignore pas ${name}`);
     }
