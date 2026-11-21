@@ -28,21 +28,33 @@ export function strip(source: string, comments: readonly Extracted[]): string {
     if (text.slice(comment.start, comment.end) !== comment.text) {
       throw new Error(`${comment.file}:${comment.line} moved since the extraction; extract again`);
     }
-    const { start, end } = comment.jsx ?? comment;
+    const ownLine = (span: { start: number; end: number }) => {
+      const from = text.lastIndexOf("\n", span.start - 1) + 1;
+      const newline = text.indexOf("\n", span.end);
+      const to = newline === -1 ? text.length : newline;
+      const alone = text.slice(from, span.start).trim() === "" && text.slice(span.end, to).trim() === "";
+      return alone ? { from, to } : null;
+    };
+    const line = (comment.jsx ? ownLine(comment.jsx) : null) ?? ownLine(comment);
+    if (line) {
+      text = `${text.slice(0, line.from)}${MARK}${text.slice(line.to)}`;
+      continue;
+    }
+    const { start, end } = comment;
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     const newline = text.indexOf("\n", end);
     const lineEnd = newline === -1 ? text.length : newline;
     const before = text.slice(lineStart, start);
     const after = text.slice(end, lineEnd);
-    if (before.trim() === "" && after.trim() === "") {
-      text = `${text.slice(0, lineStart)}${MARK}${text.slice(lineEnd)}`;
-    } else if (after.trim() === "") {
+    if (after.trim() === "") {
       text = `${text.slice(0, lineStart)}${before.trimEnd()}${text.slice(lineEnd)}`;
     } else if (comment.text.includes("\n")) {
       text = `${text.slice(0, start)}\n${text.slice(end)}`;
     } else {
-      const glued = /[\w$]$/u.test(before) && /^[\w$]/u.test(after);
-      text = `${text.slice(0, start)}${glued ? " " : ""}${text.slice(end)}`;
+      const inBraces = comment.jsx !== null;
+      const spaced = inBraces || /\s$/u.test(before) || /^\s/u.test(after);
+      const doubled = /\s$/u.test(before) && after.startsWith(" ");
+      text = `${text.slice(0, start)}${spaced ? "" : " "}${text.slice(doubled ? end + 1 : end)}`;
     }
   }
 

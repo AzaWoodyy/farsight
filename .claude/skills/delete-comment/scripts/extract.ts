@@ -56,12 +56,18 @@ export function commentsOf(file: string): Omit<Extracted, "id">[] {
   const hash = createHash("sha256").update(source).digest("hex");
   const parsed = parseSync(file, source);
   const containers = emptyJsxExpressions(parsed.program);
+  const alone = (span: Span, text: string) => source.slice(span.start + 1, span.end - 1).trim() === text;
   return parsed.comments
     .filter((comment) => !isToolingComment(comment.value))
     .map((comment) => ({
       hash,
       jsx:
-        containers.find((span) => span.start <= comment.start && comment.end <= span.end) ?? null,
+        containers.find(
+          (span) =>
+            span.start <= comment.start &&
+            comment.end <= span.end &&
+            alone(span, source.slice(comment.start, comment.end)),
+        ) ?? null,
       file,
       start: comment.start,
       end: comment.end,
