@@ -13,7 +13,7 @@
  *
  * Nothing is written when the rows fail a check of scripts/data/checks.ts (a row without its parent, a league of the
  * scope without a game, a raw file data:fetch did not save, summaries of an older derivation), or when a league
- * would lose rows the live data has (`--allow-shrink`).
+ * would lose rows the live data has, or more than 2 % of the players with a photo are gone (`--allow-shrink`).
  *
  * The swap holds two copies of the data for the time of the load. Where the storage cannot (Neon's free plan: 1 GB for
  * a database of about 570 MB), `--in-place` drops the live schema first and loads it again under the same name: one
@@ -144,9 +144,25 @@ function losses(live: LeagueCounts, fresh: LeagueCounts): string[] {
   );
 }
 
+/** A new load may lose a few photos to wiki edits, not more: a partial PlayerImages fetch keeps every league's counts. */
+const MIN_PHOTOS_RATIO = 0.98;
+
+const photoPlayersIn = async (name: string) =>
+  (await client.query<{ n: number }>(`SELECT COUNT(DISTINCT player_id)::integer AS n FROM ${quoteIdent(name)}.player_images`)).rows[0].n;
+
+function derivedPhotoPlayers(): number {
+  const t = derived.tables.get("player_images")!;
+  const at = t.columns.indexOf("player_id");
+
+  return new Set(t.rows.map((r) => r[at])).size;
+}
+
+/** The players with a photo the new data lacks, as a loss, when more than 2 % of the live ones are gone. */
+const photoLoss = (before: number, after: number) => (after < Math.floor(before * MIN_PHOTOS_RATIO) ? [`players with a photo ${before} → ${after}`] : []);
+
 // In place, the live schema goes before the load: the derived rows are compared with it first, league by league.
 if (inPlace && liveExists && !args.includes("--allow-shrink")) {
-  const lost = losses(await schemaCounts(schema), derivedCounts());
+  const lost = [...losses(await schemaCounts(schema), derivedCounts()), ...photoLoss(await photoPlayersIn(schema), derivedPhotoPlayers())];
 
   if (lost.length) {
     await client.end();
@@ -197,7 +213,7 @@ try {
 
   // A partial ingestion must not replace complete data: the staged schema keeps, league by league, what the live one has.
   if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
-    const lost = losses(await schemaCounts(schema), await schemaCounts(next));
+    const lost = [...losses(await schemaCounts(schema), await schemaCounts(next)), ...photoLoss(await photoPlayersIn(schema), await photoPlayersIn(next))];
 
     if (lost.length) {
       await client.query(`DROP SCHEMA ${quoteIdent(next)} CASCADE`);

@@ -17,7 +17,7 @@ Installer la version de Bun indiquée dans `package.json`, Node 26, `zstd`, `psq
 ```sh
 bun install --frozen-lockfile
 cp .env.example .env
-bun scripts/ci/data.ts --raw
+bun scripts/ci/data.ts
 docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
 until pg_isready -h localhost -p 5432; do sleep 1; done
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
@@ -27,7 +27,7 @@ export DATABASE_URL=postgres://farsight_app:local@localhost:5432/postgres
 bun run dev
 ```
 
-L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts --raw` y restaure le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
+L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts` y restaure le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
 
 Sans clé OpenRouter, les outils déterministes restent utilisables et le secours text-to-SQL est explicitement indisponible. Pour activer le modèle, renseigner `OPENROUTER_API_KEY` avec une clé plafonnée ; `OPENROUTER_MODEL` peut remplacer le modèle par défaut. Les valeurs restent exclusivement dans `.env` et ne doivent pas être commitées.
 

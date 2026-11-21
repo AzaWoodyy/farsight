@@ -93,7 +93,9 @@ de preview restent manuels (`vercel deploy`).
 ### Revenir à des données précédentes
 
 Restaurer la base Neon à un instant donné, ou relancer `db:load` depuis un
-cache brut plus ancien (`docs/postgres.md`, « Retour arrière »).
+cache brut plus ancien (`docs/postgres.md`, « Retour arrière »). Un cache plus
+ancien a moins de parties : le garde par ligue refuse ce chargement sans
+`--allow-shrink`, à passer après avoir vérifié le cache.
 
 ## Données in-game (JSON Riot, R2)
 
@@ -150,8 +152,10 @@ envoyer le cache sur R2 (n'envoie que les objets absents du bucket).
    lancer `bun run data:sync`.
 5. GitHub → dépôt → **Settings** → **Secrets and variables** → **Actions** :
    les quatre mêmes secrets (`R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`,
-   `R2_SECRET_ACCESS_KEY`). Sans eux le workflow marche, mais n'envoie pas les
-   nouvelles parties sur R2.
+   `R2_SECRET_ACCESS_KEY`). Le workflow « Postgres update » les exige et
+   s'arrête sans eux : les résumés in-game et les JSON des parties ne viennent
+   que de R2. Un objet de résumés absent ou illisible déclenche un recalcul
+   depuis les JSON de R2 ; une lecture R2 refusée ou en erreur arrête le run.
 6. Vercel : voir « Timeline d'une partie » ci-dessous. Le token d'écriture de
    l'ingestion ne va jamais sur Vercel.
 
@@ -226,7 +230,7 @@ passe aussi à 5 et aucun résumé plus ancien n'est gardé :
   victime ; quand le kill ne correspond pas aux drapeaux de Riot, le premier
   sang est inconnu plutôt qu'un kill plus tardif.
 
-`ci/data.json` épingle `data-20261121-3`, prerelease de la branche recalculée
+À l'époque de la dérivation 5, `ci/data.json` épinglait `data-20261121-3` (remplacée depuis par `data-20261121-4`), prerelease de la branche recalculée
 depuis R2 (40 650 parties lues en 13,3 min, aucune absente, aucune ne perd son
 résumé), avec `ci/raw.tar.zst` récupéré juste après elle : la base
 reconstruite est celle de la release, table par table (seul `ingest_runs`

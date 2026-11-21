@@ -47,6 +47,18 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # Without R2 the run would start from no summary and download every game from the wiki.
+      - name: Require the R2 secrets
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          for name in R2_ACCOUNT_ID R2_BUCKET R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is not set"; exit 1; fi
+          done
+
       - name: Fetch Leaguepedia, Riot game JSON and Data Dragon
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
