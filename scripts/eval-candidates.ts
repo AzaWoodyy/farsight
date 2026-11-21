@@ -26,7 +26,7 @@
  * ~/.farsight/langfuse.env), and are never printed. The replay reads
  * DATABASE_URL like `bun run eval`. Details: docs/eval-candidates.md.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -64,35 +64,45 @@ function physical(dir: string): string {
   return join(realpathSync(existing), relative(existing, dir));
 }
 
+const refuse = (message: string): never => {
+  console.error(`--out : ${message} ; le rapport n'y est jamais écrit`);
+  process.exit(1);
+};
+
 /**
  * The report goes into a git checkout (this repository, another worktree of
- * it, any repository) only when git ignores each of its files there.
+ * it, any repository) only when git ignores each of its files there. Outside
+ * a checkout only when git says so: any other failure of git refuses. Returns
+ * the physical directory, the one the report is written to.
  */
-function checkOutDir(dir: string) {
+function checkOutDir(dir: string): string {
   const real = physical(dir);
   let existing = real;
 
   while (!existsSync(existing)) existing = dirname(existing);
 
-  let top: string;
+  const found = spawnSync("git", ["-C", existing, "rev-parse", "--show-toplevel"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
 
-  try {
-    top = execFileSync("git", ["-C", existing, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return;
+  if (found.status !== 0) {
+    if (found.status === 128 && found.stderr.includes("not a git repository")) return real;
+
+    return refuse(`git ne dit pas si ${dir} est dans un dépôt`);
   }
+
+  const top = found.stdout.trim();
 
   for (const name of Object.values(reportFiles)) {
     try {
       execFileSync("git", ["-C", top, "check-ignore", "-q", "--", join(real, name)], { stdio: "ignore" });
     } catch {
-      console.error(`--out : ${dir} est dans un dépôt git qui n'ignore pas ${name} ; le rapport n'y est jamais écrit`);
-      process.exit(1);
+      refuse(`${dir} est dans un dépôt git qui n'ignore pas ${name}`);
     }
   }
+
+  return real;
 }
 
-checkOutDir(outDir);
+const reportDir = checkOutDir(outDir);
 
 /** LANGFUSE_* from the environment (Bun reads .env and .env.local), else from ~/.farsight/langfuse.env. */
 function langfuseKeys() {
@@ -306,14 +316,14 @@ const markdown = [
 ].join("\n");
 
 // 0700 for the directories it creates; an existing directory keeps its rights, the files are 0600 anyway.
-mkdirSync(outDir, { recursive: true, mode: 0o700 });
+mkdirSync(reportDir, { recursive: true, mode: 0o700 });
 
 // `wx`: never through a file or a link already there.
 for (const [name, body] of [[reportFiles.json, JSON.stringify({ summary, candidates: report }, null, 2)], [reportFiles.md, markdown]] as const) {
-  writeFileSync(join(outDir, name), body, { mode: 0o600, flag: "wx" });
+  writeFileSync(join(reportDir, name), body, { mode: 0o600, flag: "wx" });
 }
 
 // Counts only on the terminal: the questions stay in the report.
 console.log(JSON.stringify(summary, null, 2));
 
-console.log(`rapport : ${join(outDir, reportFiles.md)}`);
+console.log(`rapport : ${join(reportDir, reportFiles.md)}`);
