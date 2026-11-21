@@ -3,11 +3,17 @@
  *
  *   bun run db:load                       DATABASE_OWNER_URL (else DATABASE_URL), schema "farsight"
  *   bun run db:load --schema=farsight_ci  another schema (tests, a side-by-side trial)
+ *   bun run db:load --allow-older-summaries   keep in-game summaries of an older, compatible derivation (CI's pinned snapshot)
+ *   bun run db:load --allow-incomplete        load rows that fail the checks below (a partial local cache)
  *
  * The rows come from scripts/data/derive.ts, as for the SQLite file. They are copied (COPY) into a fresh schema
  * `<schema>_next` built by every migration, analyzed and granted to the app roles, then swapped in by two renames in
  * one transaction: readers see the old data until the commit, then the new data, never a half-loaded schema. The old
  * schema is dropped afterwards. Connect as the owner role, without a transaction pooler (Neon: the direct host).
+ *
+ * Nothing is written when the rows fail a check of scripts/data/checks.ts (a row without its parent, a league of the
+ * scope without a game, a raw file data:fetch did not save, summaries of an older derivation), or when a league
+ * would lose rows the live data has (`--allow-shrink`).
  *
  * The swap holds two copies of the data for the time of the load. Where the storage cannot (Neon's free plan: 1 GB for
  * a database of about 570 MB), `--in-place` drops the live schema first and loads it again under the same name: one
@@ -18,6 +24,7 @@ import { from as copyFrom } from "pg-copy-streams";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { DERIVE_VERSION } from "../data/ingame";
+import { datasetProblems } from "../data/checks";
 import { type Cell, deriveDataset } from "../data/derive";
 import { SCHEMA_TABLES, SCHEMA_VERSION, SCHEMA_VIEWS } from "../../src/lib/db/schema";
 import { grantReaders, migrate, quoteIdent } from "./migrations";
@@ -45,6 +52,11 @@ const t0 = performance.now();
 const startedAt = new Date().toISOString();
 const derived = deriveDataset();
 const derivedIn = seconds(t0);
+const problems = datasetProblems(derived.tables, derived.report.ingame, { allowOlder: args.includes("--allow-older-summaries") });
+
+if (problems.length && args.includes("--allow-incomplete")) console.warn(`db:load: loading despite ${problems.length} failed check(s):\n  - ${problems.join("\n  - ")}`);
+else if (problems.length) throw new Error(`db:load: ${problems.length} check(s) failed, nothing written:\n  - ${problems.join("\n  - ")}`);
+
 const client = new pg.Client({ connectionString: url });
 
 await client.connect();

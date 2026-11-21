@@ -88,12 +88,13 @@ jobs:
         run: |
           bun run data:build
           bun run data:package --check-only
+      # The pinned summaries cannot be recomputed here: after a DERIVE_VERSION bump they stay at the older, compatible one.
       - name: Load Postgres from the snapshot (roles, migrations, rows)
         if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'
         run: |
           psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE farsight_test"
           psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v app_password="'ci-app'" -f db/roles.sql
-          bun run db:load
+          bun run db:load --allow-older-summaries
       # Complete type checking before Next rewrites generated route types.
       - name: Typecheck
         if: steps.changes.outputs.typecheck == 'true'
