@@ -40,7 +40,7 @@ function isEmptyExpression(node: Child | undefined): boolean {
 }
 
 function isSkipped(node: Child | undefined): boolean {
-  return isEmptyExpression(node) || (node?.type === "JSXText" && (node.value ?? "").trim() === "");
+  return isEmptyExpression(node) || (node?.type === "JSXText" && /^[ \t\r\n]*$/u.test(node.value ?? ""));
 }
 
 function joinsTexts(children: readonly Child[], at: number): boolean {
