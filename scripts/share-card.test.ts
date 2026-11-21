@@ -60,14 +60,21 @@ const series = (over: Partial<SeriesDetail> = {}): SeriesDetail => ({
   ...over,
 });
 
+const homonym = { mention: "Peanut", chosen: "Peanut", alternatives: ["Peanut (Yoon Wang-ho)"], uncertain: false };
+
 describe("which answers get a card", () => {
   test.each<[string, Partial<Answer["meta"]>]>([
     ["no typed tool answered (generated SQL, out of scope)", { input: null }],
     ["no row", { rowCount: 0 }],
     ["a word of the question was not read", { unread: ["progressé"] }],
     ["an explained empty result", { empty: "no_games" }],
+    ["a player picked among homonyms without certainty", { ambiguities: [{ ...homonym, uncertain: true }] }],
   ])("none when %s", (_, meta) => {
     expect(cardOf(answer({}, meta))).toBeNull();
+  });
+
+  test("a player picked among homonyms with certainty keeps the card", () => {
+    expect(cardOf(answer({}, { ambiguities: [{ ...homonym, uncertain: false }] }))).not.toBeNull();
   });
 
   test("the answer's title and first sentence, never more", () => {
@@ -249,6 +256,16 @@ describe("one computation per question and five minutes", () => {
     expect(await rememberCard("fr\nChovy", failing)).toBeNull();
     expect(await rememberCard("fr\nChovy", async () => (runs++, card))).toBe(card);
     expect(runs).toBe(2);
+  });
+
+  test("an uncertain pick is remembered as no card: a later crawler of the same link gets none either", async () => {
+    clearShareCards();
+    let runs = 0;
+    const uncertain = async () => (runs++, cardOf(answer({}, { ambiguities: [{ ...homonym, uncertain: true }] })));
+
+    expect(await rememberCard("fr\nPeanut", uncertain)).toBeNull();
+    expect(await rememberCard("fr\nPeanut", uncertain)).toBeNull();
+    expect(runs).toBe(1);
   });
 
   test("at most 500 questions: the oldest is forgotten first", async () => {

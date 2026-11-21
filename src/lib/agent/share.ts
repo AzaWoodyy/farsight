@@ -94,12 +94,13 @@ function ranking(answer: Answer, locale: Locale): Pick<ShareCard, "top" | "metri
 
 /**
  * The card of an answer, or null when the link keeps the site's own card: a typed tool must have answered,
- * with rows and without a word left unread. An answer in doubt is not put on an image.
+ * with rows, without a word left unread and without a player picked among homonyms without certainty. An answer
+ * in doubt is not put on an image, and the null is what `shareCard` remembers for its question.
  */
 export function cardOf(answer: Answer, locale: Locale = DEFAULT_LOCALE): ShareCard | null {
   const { meta } = answer;
 
-  if (!meta.input || meta.rowCount === 0 || meta.unread.length > 0 || meta.empty) return null;
+  if (!meta.input || meta.rowCount === 0 || meta.unread.length > 0 || meta.empty || meta.ambiguities.some((a) => a.uncertain)) return null;
 
   const t = LABELS[locale];
   const card: ShareCard = { title: answer.title, line: firstSentence(answer.summary), heading: answer.title, duel: null, top: [], metric: "", figures: [] };
