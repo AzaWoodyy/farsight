@@ -27,9 +27,9 @@
  * DATABASE_URL like `bun run eval`. Details: docs/eval-candidates.md.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { LOCALES } from "../src/lib/locale";
 import { maskPersonalData } from "../src/lib/tracing/mask";
@@ -48,17 +48,47 @@ if (!Number.isFinite(days) || days <= 0) {
   process.exit(1);
 }
 
-/** A directory inside the repository is accepted only when git ignores what goes in it. */
-function checkOutDir(dir: string) {
-  const inside = relative(repo, dir);
+const startedAt = new Date().toISOString();
+const stamp = startedAt.replace(/[:.]/g, "-").slice(0, 19);
+const reportFiles = { json: `candidates-${stamp}.json`, md: `candidates-${stamp}.md` };
 
-  if (inside.startsWith("..") || resolve(repo, inside) !== dir) return;
+/**
+ * The physical path of `dir`, which may not exist yet: its first existing
+ * ancestor resolved through symlinks, then the rest.
+ */
+function physical(dir: string): string {
+  let existing = dir;
+
+  while (!existsSync(existing)) existing = dirname(existing);
+
+  return join(realpathSync(existing), relative(existing, dir));
+}
+
+/**
+ * The report goes into a git checkout (this repository, another worktree of
+ * it, any repository) only when git ignores each of its files there.
+ */
+function checkOutDir(dir: string) {
+  const real = physical(dir);
+  let existing = real;
+
+  while (!existsSync(existing)) existing = dirname(existing);
+
+  let top: string;
 
   try {
-    execFileSync("git", ["check-ignore", "-q", join(inside, "report.json")], { cwd: repo, stdio: "ignore" });
+    top = execFileSync("git", ["-C", existing, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
-    console.error(`--out : ${inside || "."} est dans le dépôt et git ne l'ignore pas ; le rapport n'y est jamais écrit`);
-    process.exit(1);
+    return;
+  }
+
+  for (const name of Object.values(reportFiles)) {
+    try {
+      execFileSync("git", ["-C", top, "check-ignore", "-q", "--", join(real, name)], { stdio: "ignore" });
+    } catch {
+      console.error(`--out : ${dir} est dans un dépôt git qui n'ignore pas ${name} ; le rapport n'y est jamais écrit`);
+      process.exit(1);
+    }
   }
 }
 
@@ -244,7 +274,7 @@ const report = candidates.map((c) => {
 const count = <T>(xs: T[], f: (x: T) => boolean) => xs.filter(f).length;
 
 const summary = {
-  generatedAt: new Date().toISOString(),
+  generatedAt: startedAt,
   environment,
   since,
   traces: traced.length,
@@ -275,17 +305,15 @@ const markdown = [
   "",
 ].join("\n");
 
+// 0700 for the directories it creates; an existing directory keeps its rights, the files are 0600 anyway.
 mkdirSync(outDir, { recursive: true, mode: 0o700 });
 
-chmodSync(outDir, 0o700);
-
-const stamp = summary.generatedAt.replace(/[:.]/g, "-").slice(0, 19);
-
-for (const [name, body] of [[`candidates-${stamp}.json`, JSON.stringify({ summary, candidates: report }, null, 2)], [`candidates-${stamp}.md`, markdown]] as const) {
-  writeFileSync(join(outDir, name), body, { mode: 0o600 });
+// `wx`: never through a file or a link already there.
+for (const [name, body] of [[reportFiles.json, JSON.stringify({ summary, candidates: report }, null, 2)], [reportFiles.md, markdown]] as const) {
+  writeFileSync(join(outDir, name), body, { mode: 0o600, flag: "wx" });
 }
 
 // Counts only on the terminal: the questions stay in the report.
 console.log(JSON.stringify(summary, null, 2));
 
-console.log(`rapport : ${join(outDir, `candidates-${stamp}.md`)}`);
+console.log(`rapport : ${join(outDir, reportFiles.md)}`);
