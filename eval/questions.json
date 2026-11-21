@@ -8177,6 +8177,141 @@
         ],
         "attempts": 1
       }
+    },
+    {
+      "id": "champion-ranking-split-spring",
+      "question": "Champions les plus joués en LEC Spring 2024",
+      "tags": [
+        "lec",
+        "champion",
+        "ranking",
+        "split"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "sort": "picks",
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "split": "Spring"
+        },
+        "unread": [],
+        "totals": {
+          "leader": "Nautilus",
+          "leader_picks": 40,
+          "games": 88
+        },
+        "summaryIncludes": [
+          "Champions les plus joués au split Spring en LEC en 2024 (88 parties)",
+          "1. Nautilus (40 picks"
+        ],
+        "summaryExcludes": [
+          "Rell (131"
+        ]
+      }
+    },
+    {
+      "id": "en-champion-ranking-split-summer",
+      "question": "Most played champions LEC Summer 2024",
+      "locale": "en",
+      "tags": [
+        "lec",
+        "champion",
+        "ranking",
+        "split",
+        "english"
+      ],
+      "expect": {
+        "route": "champion_ranking",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "sort": "picks",
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "split": "Summer"
+        },
+        "unread": [],
+        "totals": {
+          "leader": "Corki",
+          "leader_picks": 46,
+          "games": 89
+        },
+        "summaryIncludes": [
+          "Most played champions in the Summer split in LEC in 2024 (89 games)",
+          "1. Corki (46 picks"
+        ],
+        "summaryExcludes": [
+          "Rell (131",
+          "parties"
+        ]
+      }
+    },
+    {
+      "id": "player-leaderboard-split-summer",
+      "question": "meilleurs mids LEC Summer 2024",
+      "tags": [
+        "lec",
+        "player",
+        "ranking",
+        "split"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "criterion": "kda",
+          "role": "Mid",
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "split": "Summer"
+        },
+        "unread": [],
+        "totals": {
+          "leader": "Caps",
+          "leader_value": 4.09,
+          "leader_games": 25,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "Meilleurs mids au split Summer en LEC en 2024",
+          "Caps (G2 Esports) : 4,09, 25 parties"
+        ]
+      }
+    },
+    {
+      "id": "en-player-leaderboard-split-spring",
+      "question": "Best ADCs LEC Spring 2024",
+      "locale": "en",
+      "tags": [
+        "lec",
+        "player",
+        "ranking",
+        "split",
+        "english"
+      ],
+      "expect": {
+        "route": "player_leaderboard",
+        "league": "LoL EMEA Championship",
+        "input": {
+          "criterion": "kda",
+          "role": "Bot",
+          "yearFrom": 2024,
+          "yearTo": 2024,
+          "split": "Spring"
+        },
+        "unread": [],
+        "totals": {
+          "leader": "Flakked",
+          "leader_value": 5.5,
+          "leader_games": 17,
+          "min_games": 10
+        },
+        "summaryIncludes": [
+          "in the Spring split in LEC in 2024",
+          "Flakked"
+        ]
+      }
     }
   ]
 }

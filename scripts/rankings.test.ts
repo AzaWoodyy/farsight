@@ -681,3 +681,130 @@ describe("rankings on a seeded season", () => {
       expect(await read("Azir vs Jaxx")).toMatchObject({ champion: { champion: "Azir" }, opponentChampion: null });
     }));
 });
+
+/**
+ * LEC 2024 over two splits of the same league and year. Spring (2 games): Caps wins both on Azir against Humanoid
+ * (Orianna, then Jax), Locke banned in the first. Summer (3 games): Humanoid on Orianna every time, Caps on Gnar, Jax
+ * and Gnar, Humanoid wins two. Over the year Orianna leads the picks (4 of 5 games) and Humanoid the kills (14 to 13);
+ * Azir leads Spring (2 picks) and Caps its kills (10), Orianna leads Summer (3 picks) and Humanoid its kills (12).
+ */
+async function seededSplits<T>(body: (db: TestDb) => Promise<T>): Promise<T> {
+  const db = await testDb();
+
+  try {
+    for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+    const lec = Number((await db.query("SELECT id FROM leagues WHERE name = 'LoL EMEA Championship'"))[0]!.id);
+
+    await db.run(
+      "INSERT INTO tournaments(id,page,event_page,stage,league_id,year,split) VALUES (1,'LEC24 Spring','LEC24 Spring','season',?,2024,'Spring'),(2,'LEC24 Summer','LEC24 Summer','season',?,2024,'Summer')",
+      lec,
+      lec,
+    );
+    await db.exec(`
+      INSERT INTO teams(id,name) VALUES (1,'G2 Esports'),(2,'Fnatic');
+      INSERT INTO players(id,page) VALUES (1,'Caps'),(2,'Humanoid');
+      INSERT INTO champions VALUES (1,'Azir',NULL),(2,'Orianna',NULL),(3,'Gnar',NULL),(4,'Jax',NULL),(5,'Locke',NULL);
+      INSERT INTO games(id,tournament_id,tab,blue_team_id,red_team_id,winner_side,length_s,played_at)
+        VALUES (1,1,'Week 1',1,2,1,1800,1704067200),(2,1,'Week 1',1,2,1,1800,1704153600),
+               (3,2,'Week 1',1,2,2,1800,1717200000),(4,2,'Week 1',1,2,2,1800,1717286400),(5,2,'Week 2',1,2,1,1800,1717372800);
+      INSERT INTO game_draft VALUES (1,2,1,1,5);
+      -- game_id, player_id, team_id, side, role, champion_id, win, kills, deaths, assists, gold, cs, damage, vision, keystone
+      INSERT INTO game_players(game_id,player_id,team_id,side,role,champion_id,win,kills,deaths,assists,gold,cs,damage,vision,keystone_id) VALUES
+        (1,1,1,1,'Mid',1,1,5,1,5,15000,300,30000,30,NULL),(1,2,2,2,'Mid',2,0,1,3,2,12000,270,18000,25,NULL),
+        (2,1,1,1,'Mid',1,1,5,1,5,15000,300,30000,30,NULL),(2,2,2,2,'Mid',4,0,1,3,2,12000,270,18000,25,NULL),
+        (3,1,1,1,'Mid',3,0,1,3,2,12000,270,18000,25,NULL),(3,2,2,2,'Mid',2,1,4,1,5,15000,300,30000,30,NULL),
+        (4,1,1,1,'Mid',4,0,1,3,2,12000,270,18000,25,NULL),(4,2,2,2,'Mid',2,1,4,1,5,15000,300,30000,30,NULL),
+        (5,1,1,1,'Mid',3,1,1,3,2,12000,270,18000,25,NULL),(5,2,2,2,'Mid',2,0,4,1,5,15000,300,30000,30,NULL);
+    `);
+
+    return await body(db);
+  } finally {
+    await db.close();
+  }
+}
+
+describe("rankings of one split", () => {
+  const LEC24 = scope("LoL EMEA Championship", "LEC", 2024);
+  const year = { league: "LoL EMEA Championship" as const, yearFrom: 2024, yearTo: 2024 };
+  const picks = { ...year, sort: "picks" as const, total: false, role: null, side: null, minPicks: null };
+  const kills = { ...year, role: null, criterion: "kills" as const, minGames: null, side: null };
+
+  test("the split of the question reaches the champion and player rankings; without one, the whole season", async () => {
+    for (const split of ["Spring", "Summer", null] as const) {
+      const e = { ...LEC24, split };
+
+      expect(await route("champions les plus joués en LEC 2024", e)).toMatchObject({ kind: "tool", call: { tool: "champion_ranking", input: { ...year, sort: "picks", split } } });
+      expect(await route("joueurs avec le plus de kills en LEC 2024", e)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard", input: { ...year, criterion: "kills", split } } });
+    }
+
+    // The split word is read: the question keeps the typed tool.
+    expect(await route("champions les plus joués en LEC Spring 2024", { ...LEC24, split: "Spring" })).toMatchObject({ kind: "tool", confidence: 0.9, call: { tool: "champion_ranking" } });
+    expect(await route("meilleurs mids LEC Summer 2024", { ...LEC24, split: "Summer" })).toMatchObject({ kind: "tool", confidence: 0.85, call: { tool: "player_leaderboard", input: { role: "Mid", split: "Summer" } } });
+  });
+
+  test("champion ranking: picks, bans, presence and sources of the split's games only", () =>
+    seededSplits(async (db) => {
+      const spring = await run(db, { tool: "champion_ranking", input: { ...picks, split: "Spring" } });
+      const summer = await run(db, { tool: "champion_ranking", input: { ...picks, split: "Summer" } });
+      const whole = await run(db, { tool: "champion_ranking", input: picks });
+      const nulled = await run(db, { tool: "champion_ranking", input: { ...picks, split: null } });
+      const row = (out: typeof spring, champion: string) => Object.fromEntries(out.table!.columns.map((c, i) => [c, out.table!.rows.find((r) => r[1] === champion)?.[i]]));
+
+      expect(spring.totals).toMatchObject({ leader: "Azir", leader_picks: 2, games: 2 });
+      expect(summer.totals).toMatchObject({ leader: "Orianna", leader_picks: 3, games: 3 });
+      expect(whole.totals).toMatchObject({ leader: "Orianna", leader_picks: 4, games: 5 });
+      expect(nulled).toEqual(whole);
+
+      // A ban of Spring counts over Spring's two games, not the year's five; Summer never saw it.
+      expect(row(spring, "Locke")).toMatchObject({ bans: 1, presence: 50 });
+      expect(row(whole, "Locke")).toMatchObject({ bans: 1, presence: 20 });
+      expect(row(summer, "Locke").bans).toBeUndefined();
+
+      expect(spring.title).toBe("Champions les plus joués — LEC 2024 Spring");
+      expect(spring.facts).toStartWith("Champions les plus joués au split Spring en LEC en 2024 (2 parties) : 1. Azir (2 picks");
+      expect(spring.sources.map((s) => s.label)).toContain("Leaguepedia — LEC24 Spring");
+      expect(spring.sources.map((s) => s.label)).not.toContain("Leaguepedia — LEC24 Summer");
+      expect(whole.title).toBe("Champions les plus joués — LEC 2024");
+
+      const en = await withLocale("en", () => run(db, { tool: "champion_ranking", input: { ...picks, split: "Summer" } }));
+
+      expect(en.title).toBe("Most played champions — LEC 2024 Summer");
+      expect(en.facts).toStartWith("Most played champions in the Summer split in LEC in 2024 (3 games): 1. Orianna (3 picks");
+    }));
+
+  test("player leaderboard: games, totals and sources of the split's games only", () =>
+    seededSplits(async (db) => {
+      const spring = await run(db, { tool: "player_leaderboard", input: { ...kills, split: "Spring" } });
+      const summer = await run(db, { tool: "player_leaderboard", input: { ...kills, split: "Summer" } });
+      const whole = await run(db, { tool: "player_leaderboard", input: kills });
+
+      expect(spring.totals).toMatchObject({ leader: "Caps", leader_value: 10, leader_games: 2 });
+      expect(summer.totals).toMatchObject({ leader: "Humanoid", leader_value: 12, leader_games: 3 });
+      expect(whole.totals).toMatchObject({ leader: "Humanoid", leader_value: 14, leader_games: 5 });
+
+      expect(spring.title).toEndWith("(LEC 2024 Spring)");
+      expect(spring.facts).toContain("au split Spring en LEC en 2024");
+      expect(spring.sources.map((s) => s.label)).not.toContain("Leaguepedia — LEC24 Summer");
+      // The comparison it leads to reads no split.
+      expect(spring.followUps[0]).toBe("Caps vs Humanoid en LEC en 2024");
+
+      const en = await withLocale("en", () => run(db, { tool: "player_leaderboard", input: { ...kills, split: "Summer" } }));
+
+      expect(en.title).toEndWith("(LEC 2024 Summer)");
+      expect(en.facts).toContain("in the Summer split in LEC in 2024");
+    }));
+
+  test("a split without a game widens to the whole season and says so", () =>
+    seededSplits(async (db) => {
+      const champions = (await bindTool(db, { tool: "champion_ranking", input: { ...picks, split: "Winter" } })).relaxations(LEC24);
+      const players = (await bindTool(db, { tool: "player_leaderboard", input: { ...kills, split: "Winter" } })).relaxations(LEC24);
+
+      expect(champions.map((r) => r.key)).toEqual(["split", "period"]);
+      expect(players.map((r) => r.key)).toEqual(["split", "period"]);
+      expect(champions[0].note).toBe("Aucune partie au split Winter : classement sur toute la saison.");
+
+      const widened = await champions[0].next();
+
+      await expect(widened.format(db, await db.query(widened.sql, widened.params))).resolves.toMatchObject({ totals: { leader: "Orianna", games: 5 }, title: "Champions les plus joués — LEC 2024" });
+    }));
+});
