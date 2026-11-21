@@ -176,3 +176,56 @@ describe("an abbreviation two teams share", () => {
     expect((await resolveTeam(db, "Ninjas in Pyjamas"))?.team).toBe("Ninjas in Pyjamas");
   });
 });
+
+/**
+ * Jin Air Green Wings and its two 2014 teams of five words, Falcons and Stealths; Falcons (Spanish Team), named by the last
+ * word of one of them; a team of six words and another named by its first four.
+ */
+async function seedLong() {
+  const db = await testDb();
+
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  await db.exec(`
+    INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (1,'Champions 2014 Spring','Champions 2014 Spring','Champions 2014 Spring','season',1,2014);
+    INSERT INTO teams(id,name,short) VALUES (1,'Jin Air Green Wings','JAG'),(2,'Jin Air Green Wings Falcons','JAG.F'),(3,'Jin Air Green Wings Stealths','JAG.S'),
+      (4,'Falcons (Spanish Team)','FAL'),(5,'Amber Basalt Cobalt Dune Ember Fjord',NULL),(6,'Amber Basalt Cobalt Dune',NULL),(7,'Other',NULL);
+  `);
+  let id = 0;
+
+  for (const [team, games] of [[1, 6], [2, 2], [3, 2], [4, 3], [5, 2], [6, 4]])
+    for (let i = 0; i < games; i++) {
+      id++;
+      await db.run("INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (?,1,?,7,1,?)", id, team, id);
+    }
+
+  return db;
+}
+
+describe("a team name longer than four words", () => {
+  test.each([
+    ["Roster de Jin Air Green Wings Stealths en 2014", "Jin Air Green Wings Stealths"],
+    ["Roster de Jin Air Green Wings Falcons en 2014", "Jin Air Green Wings Falcons"],
+    ["Jin Air Green Wings Stealths roster 2014", "Jin Air Green Wings Stealths"],
+    ["Roster de Jin Air Green Wings en 2014", "Jin Air Green Wings"],
+    ["Historique de Falcons", "Falcons (Spanish Team)"],
+    ["Historique de Amber Basalt Cobalt Dune Ember Fjord", "Amber Basalt Cobalt Dune Ember Fjord"],
+    ["Historique de Amber Basalt Cobalt Dune", "Amber Basalt Cobalt Dune"],
+  ])("%s names %s", async (q, team) => {
+    const db = await seedLong();
+
+    expect(await teamsOf(db, q)).toEqual({ teams: [team], players: [] });
+  });
+
+  test("two long names in a versus question keep their order", async () => {
+    const db = await seedLong();
+
+    expect((await teamsOf(db, "Jin Air Green Wings Falcons vs Jin Air Green Wings Stealths")).teams).toEqual([
+      "Jin Air Green Wings Falcons",
+      "Jin Air Green Wings Stealths",
+    ]);
+    expect((await teamsOf(db, "Jin Air Green Wings Stealths contre Jin Air Green Wings Falcons en 2014")).teams).toEqual([
+      "Jin Air Green Wings Stealths",
+      "Jin Air Green Wings Falcons",
+    ]);
+  });
+});

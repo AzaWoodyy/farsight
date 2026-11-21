@@ -468,7 +468,17 @@ type TeamEntry = ResolvedTeam & { games: number; curated: boolean; rank: number;
 
 type TeamIndex = Map<string, TeamEntry>;
 
-type Indexes = { teams: TeamIndex; champions: Map<string, string> };
+/** `teamWidth`: the most tokens a team alias takes (`tokenize`), the longest span detectMentions reads as a team. */
+type Indexes = { teams: TeamIndex; champions: Map<string, string>; teamWidth: number };
+
+/** The words of a question as detectMentions reads them, and of a team alias to know how many it takes. */
+function tokenize(text: string): string[] {
+  return text
+    .replace(/[’']/g, " ")
+    .split(/[^\p{L}\p{N}.\-&]+/u)
+    .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
+    .filter(Boolean);
+}
 
 
 /** Three-letter words and chat shorthands ("per", "svp", "pts"), English and French, too short for the common word list: an abbreviation among them is read in capitals only. */
@@ -526,6 +536,7 @@ async function readIndexes(db: Db): Promise<Indexes> {
 
   const gamesOf = new Map(rows.map((r) => [r.name, r.games]));
   const teams: TeamIndex = new Map();
+  let teamWidth = 0;
 
   const add = (alias: string, team: ResolvedTeam, kind: AliasKind, caps = false) => {
     const key = normalizeAlias(alias);
@@ -541,6 +552,7 @@ async function readIndexes(db: Db): Promise<Indexes> {
       const others = shared ? [{ mention: "", team: prev.team, members: prev.members }, ...prev.others].filter((o) => o.team !== team.team) : [];
 
       teams.set(key, { ...team, games, curated: kind === "curated", rank, caps, others });
+      teamWidth = Math.max(teamWidth, tokenize(alias).length);
     } else if (shared && !prev.others.some((o) => o.team === team.team)) prev.others.push(team);
   };
 
@@ -626,7 +638,7 @@ async function readIndexes(db: Db): Promise<Indexes> {
   for (const [alias, name] of Object.entries(CHAMPION_SHORTHANDS))
     if ([...champions.values()].includes(name)) champions.set(normalizeAlias(alias), name);
 
-  return { teams, champions };
+  return { teams, champions, teamWidth };
 }
 
 export async function resolveTeam(db: Db, mention: string): Promise<ResolvedTeam | null> {
@@ -825,13 +837,9 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
   for (const [i, p] of [...pages.entries()].toSorted(([, a], [, b]) => b.index - a.index))
     marked = `${marked.slice(0, p.index)}${pageToken(i)}${marked.slice(p.index + p.page.length)}`;
 
-  const tokens = maskTerms(marked)
-    .replace(/[’']/g, " ")
-    .split(/[^\p{L}\p{N}.\-&]+/u)
-    .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
-    .filter(Boolean);
+  const tokens = tokenize(maskTerms(marked));
 
-  const { teams, champions } = await getIndexes(db);
+  const { teams, champions, teamWidth } = await getIndexes(db);
   const hits = await lookupAliases(db, aliasCandidates(tokens.filter((t) => !PAGE_TOKEN.test(t))));
   const found: Mentions = { players: [], teams: [], champion: null, hits, otherTeams: new Map() };
   const used = new Set<number>();
@@ -851,8 +859,9 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
 
-  // Four words: the longest names of the scope ("Royal Never Give Up").
-  for (let size = 4; size >= 1; size--) {
+  // Four words ("Royal Never Give Up"), or the longest team name ("Jin Air Green Wings Stealths"): a longer span is only
+  // a team, read from the index already in memory (players are looked up up to four words, champions are shorter).
+  for (let size = Math.min(tokens.length, Math.max(4, teamWidth)); size >= 1; size--) {
     for (let i = 0; i + size <= tokens.length; i++) {
       const span = Array.from({ length: size }, (_, k) => i + k);
 
