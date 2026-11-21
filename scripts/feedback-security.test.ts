@@ -50,6 +50,15 @@ test("ask allows 30 questions per IP and per 10-minute window", () => {
   expect(rateLimited(req, "ask", now + 600_000)).toBe(false);
 });
 
+test("a link's pages allow 300 previews per IP, counted apart from the image", () => {
+  const req = new Request("https://link.invalid/", { headers: { "x-real-ip": "192.0.2.140" } });
+  const now = 2_100_000_000_000;
+
+  for (let i = 0; i < 300; i++) expect(rateLimited(req, "link", now)).toBe(false);
+  expect(rateLimited(req, "link", now)).toBe(true);
+  expect(rateLimited(req, "card", now)).toBe(false);
+});
+
 test("a full rate-limit table still serves a new address", () => {
   const now = 2_000_000_000_000;
   const visitor = (ip: string) => new Request("https://example.com", { headers: { "x-real-ip": ip } });

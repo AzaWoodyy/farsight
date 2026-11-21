@@ -8,10 +8,11 @@ const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_BUCKETS = 10_000;
 
 /**
- * Requests per IP and per window; `ask` mirrors the Vercel firewall rule in docs/deploy.md. `card` is wider:
- * the previews of many visitors' links come from the few addresses of one chat service.
+ * Requests per IP and per window; `ask` mirrors the Vercel firewall rule in docs/deploy.md. `card` (the image) and
+ * `link` (the pages `/q` and `/en/q` a link to an answer opens) are wider: the previews of many visitors' links come
+ * from the few addresses of one chat service.
  */
-export const RATE_LIMITS = { ask: 30, feedback: 30, card: 300 } as const;
+export const RATE_LIMITS = { ask: 30, feedback: 30, card: 300, link: 300 } as const;
 
 /** Instance-local limit supplements Vercel's shared firewall. No IP is logged or traced. */
 export function rateLimited(req: Request, route: keyof typeof RATE_LIMITS, now = Date.now()): boolean {
