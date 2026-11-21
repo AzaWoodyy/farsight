@@ -19,7 +19,6 @@ beforeAll(async () => {
     await db.run("INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (?,?,?,?,?,?,?)", i + 1, `T${i}`, `T${i}`, `${short} ${year}`, "season", league(short), year);
   await db.exec(`INSERT INTO teams(id,name) VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted'),
     (10,'Nova Esports (Thai Team)'),(11,'Nova Esports (Taiwanese Team)'),(12,'DRX'),(13,'Awesome'),(14,'Awesome (Awesome Spear Academy)')`);
-  // Logo files as the wiki stores them; two teams answer to "Nova Esports", each with its own logo.
   await db.exec(`UPDATE teams SET logo = CASE id WHEN 1 THEN 'Climberslogo square.png' WHEN 3 THEN 'Griffin (Korean Team)logo square.png'
     WHEN 5 THEN 'T1logo square.png' WHEN 10 THEN 'Nova Esports (Thai Team)logo square.png' WHEN 11 THEN 'Nova Esportslogo square.png' WHEN 12 THEN 'DRXlogo square.png'
     WHEN 13 THEN 'Awesomelogo square.png' WHEN 14 THEN 'Awesome Spearlogo square.png' END`);
@@ -33,25 +32,19 @@ beforeAll(async () => {
     }
   };
 
-  // Climbers: LFL D2 in 2023, up to the LFL in 2024, with the EMEA Masters, Worlds and one stand-in game in the LEC.
   await games(1, 1, 20);
   await games(1, 2, 30);
   await games(1, 3, 25);
   await games(1, 4, 1);
   await games(1, 5, 10);
   await games(3, 6, 10);
-  // The same team under its old name (2014) and its current one (2015).
   await games(4, 8, 10);
   await games(5, 6, 10);
-  // A name only taken in 2025.
   await games(6, 7, 10);
-  // A team of a league out of the scope: a few LFL games beside its EMEA Masters run.
   await games(7, 2, 2);
   await games(7, 3, 25);
-  // Relegated within its latest season: the LFL, then the LFL D2 the same year.
   await games(8, 2, 10);
   await games(8, 9, 10, 30_000);
-  // Years in the LFL D2, then promoted: its latest season is all LFL, though the LFL is under a tenth of its career.
   await games(9, 1, 50);
   await games(9, 2, 4);
 });

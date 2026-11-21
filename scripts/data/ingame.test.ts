@@ -6,10 +6,6 @@ import corpus from "./fixtures/dragons.json";
 import fallbacks from "./fixtures/fallbacks.json";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION, IngameLine, leaguepediaPatch, summarizeGame } from "./ingame";
 
-/**
- * Real games (Leaguepedia's Riot JSON, Worlds 2014 to 2026), cut down to what the dragons read: the patch, who is on
- * which side, Riot's own dragon count per team, and the dragon and soul events of the timeline.
- */
 const Game = z.object({
   key: z.string(),
   event: z.string(),
@@ -109,13 +105,8 @@ describe("dragons and souls of real games", () => {
   });
 });
 
-/**
- * Two real games cut down to their end-of-game stats: LCK 2019 (match-v4, a game whose Leaguepedia scoreboard has no
- * damage, vision or runes) and Worlds 2024 (match-v5).
- */
 const Fallback = z.object({ key: z.string(), version: z.number(), stats: z.record(z.string(), z.json()) });
 
-/** What the tests edit in a match-v4 game, the rest kept as is. */
 const V4Game = z.object({ participants: z.array(z.object({ stats: z.record(z.string(), z.number()) }).catchall(z.json())) }).catchall(z.json());
 
 function statsOnly(key: string): RawGame {
@@ -183,7 +174,6 @@ describe("what Leaguepedia's scoreboard may lack, from the Riot JSON", () => {
     expect(s.players[0].runes).toBeNull();
     expect(s.players[1].runes).toEqual([8010, 9111, 9104, 8014, 8473, 8451, 5008, 5008, 5001]);
 
-    // A version that does not read as major.minor counts as none.
     const odd = summarizeGame({ ...g, stats: { ...stats, gameVersion: "8.23x" } });
 
     expect(odd.players[1].runes).toHaveLength(9);
@@ -236,12 +226,9 @@ describe("summaries of an older derive version", () => {
   });
 });
 
-// --- Minute statistics: only for a game that reached the minute ------------------------------
-
 const PIDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const sideOf = (pid: number) => (pid <= 5 ? 100 : 200);
 
-/** A frame at `ms`: every player has 1 000 gold, XP and CS per minute played, plus `extra`. */
 function minuteFrame(ms: number, events: Json[] = [], extra = 0): Json {
   const value = Math.floor(ms / 60_000) * 1000 + extra;
   const participantFrames: { [pid: string]: Json } = {};
@@ -254,11 +241,6 @@ function minuteFrame(ms: number, events: Json[] = [], extra = 0): Json {
 const championKill = (ms: number, killerId: number, victimId: number) => ({ type: "CHAMPION_KILL", timestamp: ms, killerId, victimId, assistingParticipantIds: [] });
 const towerLost = (ms: number, teamId: number) => ({ type: "BUILDING_KILL", timestamp: ms, killerId: 1, teamId, buildingType: "TOWER_BUILDING" });
 
-/**
- * A game with one frame per minute up to `fullMinutes` (`lateMs` after each minute, as in match-v5), then the last
- * frame at `lastMs` (the end of the game in match-v5), and the given duration (seconds, or milliseconds in legacy JSON).
- * Kills at 5:00, 14:00 and 19:30 by team 100, a tower lost by team 200 at 14:30.
- */
 function minuteGame(opts: { version?: 4 | 5; duration?: number; fullMinutes: number; lateMs?: number; lastMs?: number | null; skip?: number[]; timeline?: boolean }): RawGame {
   const { version = 5, duration, fullMinutes, lateMs = 300, lastMs = null, skip = [], timeline = true } = opts;
   const events = [championKill(300_000, 1, 6), championKill(840_000, 2, 7), towerLost(870_000, 200), championKill(1_170_000, 3, 8)];
@@ -266,7 +248,6 @@ function minuteGame(opts: { version?: 4 | 5; duration?: number; fullMinutes: num
 
   if (lastMs != null) times.push(lastMs);
 
-  // Each event in the first frame after it (the last frame for those after every frame).
   const frameOf = (e: { timestamp: number }) => {
     const i = times.findIndex((ms) => ms > e.timestamp);
 
@@ -316,7 +297,6 @@ describe("minute statistics of a game that ended before the minute", () => {
 
   test("a game over at exactly 20:00 keeps its 20:00 frame", () => {
     expect(minutes(minuteGame({ duration: 1200, fullMinutes: 19, lastMs: 1_200_400 })).player).toEqual([10_000, 15_000, 20_500, 20_500, 20_500]);
-    // match-v4: legacy milliseconds duration, frames on the minute, the last one at 20:00.
     expect(minutes(minuteGame({ version: 4, duration: 1_200_000, fullMinutes: 20, lateMs: 0 })).blue).toEqual([100_000, 1, 2, 3, 1]);
   });
 

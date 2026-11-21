@@ -1,17 +1,3 @@
-/**
- * Decision cascade shared by the four steps.
- *
- * Each decision point lists its deciders from cheapest to most expensive:
- *
- *   rules  regex, alias table, typed query templates (free, ~1 ms)
- *   llm    OpenRouter, only when the cheaper levels are not confident enough
- *
- * `decide()` runs them in order and stops at the first result whose
- * confidence reaches the threshold. A decider that is unavailable (no key, no
- * model) or fails returns null and the cascade moves on, except when the
- * request itself was cancelled: that error is rethrown. When nobody reaches
- * the threshold, the most confident result wins.
- */
 import { describeLlmError, requestAborted } from "./llm";
 import { msg } from "./messages";
 
@@ -19,10 +5,8 @@ export type DecisionLevel = "rules" | "llm";
 
 export type Decision<T> = {
   result: T;
-  /** 0..1, self-reported by the decider. */
   confidence: number;
   level: DecisionLevel;
-  /** Short human-readable explanation, shown in the trace. */
   reason?: string;
 };
 
@@ -55,7 +39,6 @@ export async function decide<I, O>(
     try {
       decision = await d.run(input);
     } catch (err) {
-      // A cancelled request is not a failed decider: stop the cascade and the pipeline.
       if (requestAborted()) throw err;
       const error = err instanceof Error ? err : new Error(String(err));
       attempts.push({ name: d.name, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
@@ -74,7 +57,6 @@ export async function decide<I, O>(
   return best ? { ...best, attempts } : null;
 }
 
-/** One-line description of the cascade, for the trace. */
 export function describeAttempts(attempts: DecisionAttempt[]): string {
   const m = msg().decide;
 

@@ -9,11 +9,6 @@ export const metadata: Metadata = { title: "404 · Farsight" };
 
 export const viewport = VIEWPORT;
 
-/**
- * The 404 of any address no page answers. Each language has its own root layout, so an unmatched URL has no
- * layout to be drawn in: Next serves this one document for all of them, without knowing the address. It is
- * therefore written in both languages, the default one first.
- */
 export default function GlobalNotFound() {
   return (
     <RootShell locale="fr">

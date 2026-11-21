@@ -1,0 +1,20 @@
+# The address bar is the question on screen
+
+A question lives in the address (`/?q=…`, `/en?q=…`), so that the address is always a link to what is on screen and back / forward move between questions. `Console` in `src/app/agent-console.tsx` writes it (`setAddressQuestion`) and follows it (`followAddress`).
+
+The question on screen is the `q` of the home page's address (`/?q=…`, `/en?q=…`), handled by `src/app/question-link.ts`. The console reads and writes the address in the browser only; a link runs its question through the same `POST /api/ask` as a typed one, so it gets BotID, the rate limit and the length limit. The server reads `q` once, when a link is opened, for the metadata of its preview, computed without the model.
+
+## Rules
+
+- `ask(q, address)` and `restart(address)` take `"push"` or `"keep"`. A question asked on the page pushes a new history entry; a question read from the address (a link opened cold, back, forward) leaves the address as it is. Pushing in the second case would break the back button.
+- A `q` nobody could have typed (empty, too long, malformed: `addressQuestion()` returns null) is the home screen, and `followAddress` removes it from the address with a `replace`, not a new entry.
+- The answers of the visit are kept by question (`answers`, at most `KEPT_ANSWERS` = 20, the oldest dropped first), so back and forward show an answer again without asking the agent, and paying for it, twice.
+- `followAddress` runs in a layout effect, not an effect: a link shows its question at the first paint of the console instead of flashing the home screen first.
+- A page the browser prerenders ahead of a visit (address bar prediction, speculation rules) asks nothing until it is shown: while `document.prerendering` is true the console waits for `prerenderingchange`. Otherwise a visit that never happens would run the agent.
+- The layout effect sets state from the address, which the `react-hooks/set-state-in-effect` rule flags. The suppression is deliberate: the address is state held outside React, and reading it is what this effect is for.
+- `questionIn` decodes strictly, by hand: no `q`, an empty one, a duplicate, one longer than the field accepts, one with a control character or with a broken percent-escape all give null. `URLSearchParams` is not used there because it lets a broken escape through as text; a literal percent sign must be written `%25`. The key can also be written `%71`, and bare or empty `q` keys count as duplicates.
+- `setAddressQuestion` pushes a new history entry, so back and forward walk through the questions asked; `replace` only corrects an entry (a `q` nobody can ask). It uses the native History API, which Next takes in: nothing is requested from the server.
+- `QUESTION_LINK_SCRIPT` runs in `<head>`. The static HTML of a home page is the home screen; on a link the visitor came for an answer, so the script sets `data-question-link` on `<html>` before the first paint and `globals.css` keeps the console hidden until it has read the address (`questionLinkRead`), instead of flashing the home screen first.
+- `/q` and `/en/q` render the same `HomePage`, whose body reads nothing from the request; only `generateMetadata` reads the address. The `PerRequest` component (`await connection()` under `<Suspense>`) is there to say the page is rendered per request on purpose. Removing it lets the page be prerendered and the previews lose their answer.
+- `HomeLink` (`src/app/home-link.tsx`): on the home page itself, a plain click on the logo does not navigate. It dispatches `HOME_EVENT`, and the console, which owns the question of the address, takes `?q=` out, so the home screen is one history step back from the answer. Modified clicks navigate as usual.
+- `LocaleLink` (`src/app/i18n/locale-link.tsx`): the static HTML holds the plain address of the page in the other language, which is what a crawler reads. In the browser, a home page showing an answer links to the same question in the other language, and the question is kept in the `href` itself (not added in a click handler) so that a new tab or a copied link carry it too.

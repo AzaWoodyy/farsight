@@ -80,10 +80,6 @@ describe("a stage of a competition routes to its series", () => {
   });
 });
 
-/**
- * Worlds 2025: the LPL Regional Finals (a qualifier under the Worlds league, tab "Finals") and the main event's final, a Bo5
- * T1 3-2 KT. MSI 2024: a double-elimination bracket without a "Semifinals" tab (Bracket Round 3, Bracket Round 4, Finals).
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
@@ -137,16 +133,13 @@ describe("series tool on a seeded database", () => {
 
       const [g1] = out.series!.series[0].games!;
 
-      // Sides, winner, duration, picks Top → Support (page names shortened) and bans with their icons.
       expect(g1).toMatchObject({ n: 1, blue: "KT Rolster", red: "T1", winner: "red", durationS: 2170, patch: "25.2" });
       expect(g1.picks.red.map((p) => [p.role, p.player, p.champion])).toEqual([["Top", "Doran", "Azir"], ["Mid", "Faker", "Taliyah"]]);
       expect(g1.picks.blue.map((p) => [p.player, p.icon])).toEqual([["Bdd", "https://ddragon/Ryze.png"]]);
       expect(g1.bans).toEqual({ blue: [{ champion: "Azir", icon: null }], red: [{ champion: "Ryze", icon: "https://ddragon/Ryze.png" }] });
-      // The game with Riot data links its own page; the others the tournament page.
       expect(g1.source.url).toBe("https://lol.fandom.com/wiki/V5_data%3ALOLTMNT01_1");
       expect(out.series!.series[0].games![1].source.url).toBe("https://lol.fandom.com/wiki/2025_Season_World_Championship/Main_Event");
       expect(out.table?.rows).toHaveLength(5);
-      // A follow-up recap names both teams, so it opens a game of this series.
       expect(out.followUps[0]).toBe("Récap de la game 5 de T1 vs KT Rolster, la finale des Worlds 2025");
     } finally {
       await db.close();

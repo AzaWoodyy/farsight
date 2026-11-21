@@ -2,13 +2,8 @@ import type { PlayerProfile } from "@/lib/agent/types";
 import { useUi } from "./i18n/locale-context";
 import { PlayerAvatar } from "./player-avatar";
 
-/** Teams shown before the "+n": a long career would push the line past a phone's width. */
 const TEAMS = 3;
 
-/**
- * Who a player's statistics are about: their photo of the period, main role and teams over the scope of the answer.
- * The photo links to its Leaguepedia file page, which names its author and licence.
- */
 export function PlayerHeader({ p }: { p: PlayerProfile }) {
   const ui = useUi();
   const extra = p.teams.length - TEAMS;

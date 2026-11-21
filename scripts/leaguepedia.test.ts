@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { type CargoQuery, type CargoRow, PAGE_SIZE, USER_AGENT, cargoQuery, cargoStats, resetThrottle, transport, wikiPages } from "../src/lib/sources/leaguepedia";
 
-/** The minimum gap between two request starts, whatever LEAGUEPEDIA_DELAY_MS says. */
 const MIN_DELAY_MS = 2000;
 
 type Scripted = Response | Error;
@@ -18,12 +17,10 @@ let requests: { url: URL; at: number }[] = [];
 let queue: Scripted[] = [];
 let cacheDir = "";
 
-/** Queues the next answers of the fake wiki, in order. */
 function script(...answers: Scripted[]): void {
   queue.push(...answers);
 }
 
-/** A MediaWiki API answer, as `wikiPages` reads it. */
 type ApiAnswer = {
   query?: {
     pages: { title: string; missing?: boolean; revisions?: { revid: number; timestamp: string; slots: { main: { content: string } } }[] }[];
@@ -36,7 +33,6 @@ const json = (body: CargoRow[] | ApiAnswer, init?: ResponseInit) => new Response
 
 const query = (tables: string): CargoQuery => ({ tables, fields: [`${tables}.N=N`] });
 
-/** Retry tests log a warning per attempt; keep the test output readable. */
 function quiet(): void {
   console.warn = () => {};
 }
@@ -56,10 +52,8 @@ beforeEach(() => {
     clock += ms;
   };
 
-  // Never forwards: an unscripted request fails the test instead of reaching the wiki.
   transport.fetch = async (url, init) => {
     expect(new Headers(init.headers).get("User-Agent")).toBe(USER_AGENT);
-    // Every request carries a timeout, so a stalled connection cannot hang the run.
     expect(init.signal).toBeInstanceOf(AbortSignal);
     requests.push({ url: new URL(url), at: clock });
     const next = queue.shift();
@@ -115,7 +109,6 @@ test("a cached query makes no request, refresh asks the wiki again", async () =>
   script(json([{ N: 2 }]));
   expect(await cargoQuery(query("Cached"), { cacheDir, refresh: true })).toEqual([{ N: 2 }]);
   expect(requests).toHaveLength(2);
-  // The refreshed answer replaced the cached one.
   expect(await cargoQuery(query("Cached"), { cacheDir })).toEqual([{ N: 2 }]);
 });
 
@@ -144,7 +137,6 @@ test("an unexpected 200 answer is retried after a backoff of twice the delay", a
 
   expect(await cargoQuery(query("Html"), { cacheDir })).toEqual([{ N: 1 }]);
   expect(requests).toHaveLength(2);
-  // One backoff (2 × delay), and the next request starts right after it.
   expect(sleeps).toHaveLength(1);
   expect(sleeps[0]).toBeGreaterThanOrEqual(2 * MIN_DELAY_MS);
   expect(requests[1].at - requests[0].at).toBe(sleeps[0]);

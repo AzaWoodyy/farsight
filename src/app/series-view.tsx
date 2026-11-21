@@ -5,7 +5,6 @@ import type { SeriesDetail, SeriesGame, SeriesList, SeriesPick, Side } from "@/l
 import { dateFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
 
-/** Up to this many series, every one opens on its games; a longer phase (Swiss rounds) lists them closed. */
 const OPEN_UP_TO = 4;
 
 const SIDE_TEXT: Record<Side, string> = { blue: "text-blue", red: "text-red" };
@@ -22,10 +21,6 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60))
 
 const winnerName = (g: SeriesGame) => (g.winner === "blue" ? g.blue : g.winner === "red" ? g.red : null);
 
-/**
- * Series as best-of units: the score and the format first, then every game with its sides, winner, running
- * score, duration, picks and bans, and its Leaguepedia page. The games stay below in the sortable table.
- */
 export function SeriesView({ list, table }: { list: SeriesList; table: ReactNode }) {
   const ui = useUi();
   const open = list.series.length <= OPEN_UP_TO;
@@ -56,7 +51,6 @@ export function SeriesView({ list, table }: { list: SeriesList; table: ReactNode
 function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
   const ui = useUi();
   const date = dateFormat(useLocale(), { day: "numeric", month: "short", year: "numeric" });
-  // A series known only from the schedule lists its declared winner first, whatever the score it wrote.
   const lead = s.scheduleOnly ? "a" : s.winsA === s.winsB ? null : s.winsA > s.winsB ? "a" : "b";
 
   const header = (
@@ -65,7 +59,6 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
         {s.teamA}
       </span>
       <span className="text-2xl tabular-nums" title={s.forfeitedBy ? ui.schedule.forfeit(s.forfeitedBy) : undefined}>
-        {/* The series winner comes first: a forfeit reads W – FF. */}
         <span className={lead === "a" ? "text-accent" : ""}>{s.forfeitedBy ? "W" : s.winsA}</span>
         <span className="px-1 text-muted">–</span>
         <span className={lead === "b" ? "text-accent" : ""}>{s.forfeitedBy ? "FF" : s.winsB}</span>
@@ -107,8 +100,6 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
       </section>
     );
 
-  // Header and meta stay outside the summary: a link inside a summary (a button) is unreliable for assistive
-  // technology, so only the games line folds the series.
   return (
     <section aria-label={`${s.teamA} ${s.winsA}-${s.winsB} ${s.teamB}`} className="border border-line">
       {header}
@@ -130,7 +121,6 @@ function SeriesBlock({ s, open }: { s: SeriesDetail; open: boolean }) {
   );
 }
 
-/** One game: sides, winner, running score, duration, patch, then each side's picks (Top → Support) and bans. */
 function GameRow({ g, s, before }: { g: SeriesGame; s: SeriesDetail; before: SeriesGame[] }) {
   const ui = useUi();
   const won = (team: string) => [...before, g].filter((x) => winnerName(x) === team).length;
@@ -232,7 +222,6 @@ function ChampionIcon({ name, icon, size, side }: { name: string | null; icon: s
       </span>
     );
 
-  // Data Dragon icons: next/image would spend the Vercel Hobby image-optimization quota without any LCP gain.
   // oxlint-disable-next-line nextjs/no-img-element
   return <img src={icon} alt={name} title={name} width={size} height={size} loading="lazy" className={`shrink-0 border ${border}`} style={{ width: size, height: size }} />;
 }

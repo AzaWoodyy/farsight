@@ -1,10 +1,3 @@
-/**
- * In-game metrics: what the questions call them, which column holds them in
- * v_game_player_stats / v_game_team_stats, and how they aggregate. They come
- * from the Riot JSON Leaguepedia hosts, so they exist only for the games it
- * covers (none in the LPL): v_ingame_coverage says which.
- */
-
 import { say } from "./messages";
 
 export const MINUTES = [10, 15, 20] as const;
@@ -48,19 +41,12 @@ export const TEAM_METRICS = [
 
 export type TeamMetric = (typeof TEAM_METRICS)[number];
 
-/**
- * `sum`: a count, ranked by total. `avg`: ranked by the per-game average.
- * `rate`: a 0/1 flag, ranked by the share of games.
- */
 export type Aggregate = "sum" | "avg" | "rate";
 
 type MetricDef = {
-  /** French label for tables and sentences. */
   label: string;
-  /** The same in English. */
   en: string;
   aggregate: Aggregate;
-  /** Column; for a snapshot metric, the column prefix (`gold_diff` → `gold_diff_15`). */
   column: string;
   snapshot?: true;
 };
@@ -96,7 +82,6 @@ export const TEAM_METRIC_DEFS: Record<TeamMetric, MetricDef> = {
   gold_diff: { label: "écart d'or d'équipe", en: "team gold difference", aggregate: "avg", ...at("gold_diff") },
   kills_before_10: { label: "kills avant 10 min", en: "kills before 10 min", aggregate: "avg", column: "kills_10" },
   plates: { label: "plaques de tourelle prises", en: "turret plates taken", aggregate: "avg", column: "plates" },
-  // Over the games where a soul could be taken and the timeline says who took it (dragon_soul is NULL otherwise).
   dragon_soul: { label: "âme du dragon", en: "dragon soul", aggregate: "rate", column: "dragon_soul" },
   elder_dragons: { label: "dragons ancestraux", en: "elder dragons", aggregate: "sum", column: "elder_dragons" },
 };
@@ -105,23 +90,16 @@ export function metricColumn(def: MetricDef, minute: Minute | null): string {
   return def.snapshot ? `${def.column}_${minute ?? 15}` : def.column;
 }
 
-/** A metric as the answers name it, in the language of the request. */
 export function metricLabel(def: MetricDef, minute: Minute | null): string {
   return say(def.snapshot ? `${def.label} à ${minute ?? 15} min` : def.label, def.snapshot ? `${def.en} at ${minute ?? 15} min` : def.en);
 }
 
-/** Dragon elements as questions name them ("infernal", "des océans", "mountain"). */
 const ELEMENTS = "infernale?s?|infernaux|(?:des |de l'|d')?oc[ée]ans?|(?:des |de la )?montagnes?|mountains?|(?:des |du )?nuages?|clouds?|hextech|chemtech|techno-?chimiques?";
 
 const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "iu");
 
-/**
- * At N minutes: "à 15 min", "at 10", "15 minutes", "@20", "10'". Any minute, held or not: the caller says
- * when the data has none at that minute. Unicode edges, not `\b`: `\b` is ASCII, so "à 10" and "@20" never matched it.
- */
 export const MINUTE = /(?<![\p{L}\p{N}])(?:(?:à|a|at|@)\s*(\d{1,2})(?:\s*(?:min(?:ute)?s?|'))?(?![\p{L}\p{N}])|(\d{1,2})\s*(?:min(?:ute)?s?(?!\p{L})|'))/iu;
 
-/** The minute a question asks about, whether the data has it or not. */
 export function detectMinute(question: string): number | null {
   const n = MINUTE.exec(question)?.slice(1).find(Boolean);
 
@@ -130,17 +108,11 @@ export function detectMinute(question: string): number | null {
 
 export const heldMinute = (n: number | null): Minute | null => MINUTES.find((m) => m === n) ?? null;
 
-/** Whether a metric is a snapshot at a minute (gold, CS, XP and their differences). */
 export const isSnapshot = (cue: Pick<MetricCue, "player" | "team">): boolean =>
   (cue.player != null && PLAYER_METRIC_DEFS[cue.player].snapshot === true) || (cue.team != null && TEAM_METRIC_DEFS[cue.team].snapshot === true);
 
-/** "à 25 min": any minute when it says "min", so a minute the data does not hold is still read as one. */
 const AT_MINUTE = "(?:à|a|at|@) ?\\d{1,2} ?(?:min(?:ute)?s?|')";
 
-/**
- * Question cues, most specific first. `player` / `team`: the metric each
- * subject maps to (team-only cues such as "premier dragon" have no player metric).
- */
 const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | null }[] = [
   { pattern: word("solo ?kills?"), player: "solo_kills", team: null },
   { pattern: word("penta ?kills?|pentas?"), player: "penta_kills", team: null },
@@ -183,19 +155,12 @@ const CUES: { pattern: RegExp; player: PlayerMetric | null; team: TeamMetric | n
   { pattern: word(`(?:xp|exp[ée]rience) (?:à|a|at|@) ?(?:10|15|20)|(?:xp|exp[ée]rience) ${AT_MINUTE}`), player: "xp", team: null },
 ];
 
-/** A question about the dragons by element or the souls, whatever the figure: the dragon_stats tool breaks them down. */
 export const isDragonCue = (cue: Pick<MetricCue, "team">): boolean => cue.team === "dragon_soul" || cue.team === "elder_dragons";
 
-/** An element named in the question ("âme infernale", "dragons des océans"): a ranking on it is not the soul rate. */
 export const DRAGON_ELEMENT = word(ELEMENTS);
 
-/**
- * `askedMinute`: the minute the question names, null when it names none. `minute`: the same when the data has
- * snapshots at it (10, 15, 20), else null; null with an `askedMinute` means the data has no figure at that minute.
- */
 export type MetricCue = { player: PlayerMetric | null; team: TeamMetric | null; minute: Minute | null; askedMinute: number | null; mention: string };
 
-/** The in-game metric a question asks about, or null. */
 export function detectMetric(question: string): MetricCue | null {
   for (const c of CUES) {
     const m = c.pattern.exec(question);

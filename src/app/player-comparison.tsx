@@ -3,10 +3,6 @@ import { formatStat, rowWinner } from "@/lib/comparison";
 import { useLocale, useUi } from "./i18n/locale-context";
 import { PlayerAvatar } from "./player-avatar";
 
-/**
- * Two players face to face: one row per stat, mirrored bars from a central label, the better value in the
- * accent color. Derived figures (winrate, KDA) are marked as computed by the page.
- */
 export function PlayerComparison({ comparison }: { comparison: Comparison }) {
   return (
     <div className="mt-4">
@@ -16,7 +12,6 @@ export function PlayerComparison({ comparison }: { comparison: Comparison }) {
   );
 }
 
-/** What the page computed itself, and where the teams and roles come from. */
 export function ComparisonNote({ c }: { c: Comparison }) {
   const ui = useUi();
 
@@ -43,14 +38,12 @@ function Label({ s }: { s: ComparedStat }) {
   );
 }
 
-/** Text and weight of a value: the better one in the accent color. */
 const tone = (s: ComparedStat, i: 0 | 1) => {
   const w = rowWinner(s);
 
   return w === i ? "text-accent font-semibold" : w == null ? "" : "text-muted";
 };
 
-/** Share of the row's largest absolute value, for bar lengths. */
 function share(s: ComparedStat, i: 0 | 1): number {
   const max = Math.max(...s.values.map((v) => Math.abs(v ?? 0)));
   const v = s.values[i];
@@ -76,7 +69,6 @@ function Who({ p, align }: { p: ComparedPlayer; align: "left" | "right" }) {
   );
 }
 
-/** `focus`: key of the statistic the question names, set apart from the rest. */
 export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | null }) {
   const ui = useUi();
   const [a, b] = c.players;
@@ -117,11 +109,6 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
   );
 }
 
-/**
- * Two players of whom one has no game in the scope: still one against the other in the heading, then the
- * absent one's side says so once, and the other's side lists that player's figures. No bars and no verdict:
- * there is nothing to measure them against.
- */
 export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; absent: 0 | 1; scope: string; focus?: string | null }) {
   const ui = useUi();
   const locale = useLocale();

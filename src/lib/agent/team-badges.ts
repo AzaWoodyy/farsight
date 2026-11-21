@@ -4,24 +4,13 @@ import { CUP_LEAGUES } from "../domain/leagues";
 import { teamLogo } from "../domain/team-logos";
 import type { ToolOutput } from "./tools";
 
-/**
- * What the views put beside a team's name: its logo (Leaguepedia's file, by the name shown) and the league it played
- * in over the answer's period, read from the database.
- */
-
-/** Headers of the table columns that hold a team name (as the tools write them, and a generated query's `team` columns). */
 const TEAM_COLUMN = /^(équipe|team|vainqueur|finaliste|adversaire|bleu|rouge|winner|runner-up|opponent|blue|red)\b|(^|_)team(_name)?$/i;
 
-/**
- * Every team the question or the answer names (the two sides of a confrontation and of its series, a roster's
- * team, the team columns of a table), by the name shown: the views put its logo and its league beside that name.
- */
 export function teamNames(out: Pick<ToolOutput, "teams" | "roster" | "table">, asked: string[]): string[] {
   const columns = out.table?.columns.flatMap((c, i) => (TEAM_COLUMN.test(c) ? [i] : [])) ?? [];
 
   return [
     ...new Set([
-      // The teams the question names: an answer about one team shows its logo even when no cell holds its name.
       ...asked,
       ...(out.teams ? [out.teams.teamA, out.teams.teamB, ...out.teams.series.flatMap((s) => [s.teamA, s.teamB])] : []),
       ...(out.roster ? [out.roster.team, ...out.roster.names] : []),
@@ -30,16 +19,10 @@ export function teamNames(out: Pick<ToolOutput, "teams" | "roster" | "table">, a
   ];
 }
 
-/** A league below this share of a team's games over the period (a few games as a stand-in) does not name its league. */
 const LEAGUE_SHARE = 0.1;
 
-/** Leagues shown for a team that moved over the period: the last ones it played in. */
 const LEAGUES_SHOWN = 2;
 
-/**
- * Logo, logo tone and league of each team name. `aliases`: the other names a shown name stands for (a roster's
- * team counts every name it played under), whose games count for its league.
- */
 export async function teamBadges(db: Db, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
   const files = await teamLogoFiles(db, names);
 
@@ -58,15 +41,6 @@ export async function teamBadges(db: Db, names: string[], period: Period, aliase
 
 type Period = { yearFrom: number | null; yearTo: number | null };
 
-/**
- * The logo file of each team name, from `teams.logo` (one query): the one team it names, as stored or without
- * Leaguepedia's disambiguation ("Griffin" for "Griffin (Korean Team)"), compared literally. A name two teams answer to
- * ("Nova Esports", the Thai and the Taiwanese team; "Awesome", a team and "Awesome (Awesome Spear Academy)") gets none:
- * no logo rather than the other team's.
- *
- * `to_jsonb(tm) ->> 'logo'` reads a database the load of migration 3 has not reached yet (PG_MIGRATION_READ): no column,
- * so no logo, rather than an error.
- */
 export async function teamLogoFiles(db: Db, names: string[]): Promise<Map<string, string>> {
   if (!names.length) return new Map();
 
@@ -84,13 +58,6 @@ export async function teamLogoFiles(db: Db, names: string[]): Promise<Map<string
   return new Map(rows.flatMap((r) => (r.logo ? [[r.team, r.logo]] : [])));
 }
 
-/**
- * The league each team played in over the period: its own leagues (neither international nor cross-league),
- * each with at least LEAGUE_SHARE of all its games of the period, oldest first, the last LEAGUES_SHOWN of them.
- * A team without one in the period under that name (a name taken later, "Movistar KOI" at MSI 2023) gets the
- * league it last played in, from its latest season that has one. A name is matched as stored or as displayed,
- * without Leaguepedia's disambiguation ("Griffin (Korean Team)").
- */
 export async function teamLeagues(db: Db, names: string[], period: Period, aliases: Record<string, string[]>): Promise<Record<string, string[]>> {
   const inPeriod = new Map([...(await seasonGames(db, names, period, aliases))].flatMap(([team, rows]) => {
     const leagues = ownLeagues(rows);
@@ -119,7 +86,6 @@ type SeasonGames = { year: number; league: string; own: number; games: number; f
 
 type LeagueGames = { league: string; games: number; first: number; last: number };
 
-/** The own leagues of these games that hold at least LEAGUE_SHARE of them (internationals and cups count in the total). */
 function ownLeagues(rows: SeasonGames[]): LeagueGames[] {
   const total = rows.reduce((n, r) => n + r.games, 0);
   const leagues = new Map<string, LeagueGames>();
@@ -132,13 +98,11 @@ function ownLeagues(rows: SeasonGames[]): LeagueGames[] {
   return [...leagues.values()].filter((l) => l.games >= total * LEAGUE_SHARE);
 }
 
-/** Games of each team over the period, by season and competition. */
 async function seasonGames(db: Db, names: string[], { yearFrom, yearTo }: Period, aliases: Record<string, string[]>): Promise<Map<string, SeasonGames[]>> {
   if (!names.length) return new Map();
 
   const asked = names.flatMap((team) => [...new Set([team, ...(aliases[team] ?? [])])].map((name) => [team, name]));
 
-  // Two queries: the team ids first, so the games are read by id.
   const ids = await selectAll(
     db,
     z.object({ team: z.string(), id: z.number() }),

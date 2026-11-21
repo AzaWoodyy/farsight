@@ -12,11 +12,6 @@ const ROLES: { role: string; label: string }[] = [
   { role: "Support", label: "Support" },
 ];
 
-/**
- * A team's roster over a period: one block per role, its starter (most games) first, then the other
- * players fielded in the role, each with their games, record and tournaments. The tournaments of the
- * scope follow, with their Leaguepedia pages.
- */
 export function TeamRoster({ r, logos, tones, leagues }: { r: View; logos: Record<string, string>; tones: Record<string, "dark" | "light">; leagues: Record<string, string[]> }) {
   const ui = useUi();
   const known = new Set(ROLES.map((x) => x.role));
@@ -37,7 +32,6 @@ export function TeamRoster({ r, logos, tones, leagues }: { r: View; logos: Recor
       </div>
 
       <h3 className="mt-6 text-xs uppercase tracking-widest text-muted">── {ui.roster.byRole}</h3>
-      {/* relative: the sr-only header is absolutely positioned and would widen the page from outside the scroller. */}
       <div className="relative mt-2 overflow-x-auto border border-line">
         <table className="w-full min-w-[560px] border-collapse text-left text-xs">
           <thead className="border-b border-line text-[11px] text-muted">

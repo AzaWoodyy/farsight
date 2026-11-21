@@ -8,7 +8,6 @@ import { testDb, type TestDb } from "./fixtures/test-db";
 
 const ICON = "https://ddragon.leagueoflegends.com/cdn/img/x.png";
 
-/** One Worlds final game (T1 red, winner) and one LEC season game for the profiles. */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const league = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
@@ -55,21 +54,17 @@ test("a game's recap reads the scoreboard tables, winner first, even without Rio
 
     expect(sb.label).toBe("Worlds 2024 · finale · game 5");
     expect([sb.winner, sb.durationS, sb.patch]).toEqual(["red", 1934, "14.18"]);
-    // No Riot timeline: the dragon count of the scoreboard, without elements or soul.
     expect(sb.red).toEqual({ name: "T1", kills: 0, gold: 12891, towers: 7, inhibitors: 1, dragons: 3, barons: 1, heralds: 1, grubs: 5, dragonKinds: [], soul: null });
     expect([sb.blue.kills, sb.blue.gold]).toEqual([0, 11637]);
 
     const [bin, zeus] = sb.players;
 
-    // Items in slot order; a keystone the database has no icon for (removed from the game) gets the icon of its time.
     expect(bin.items.map((i) => i.name)).toEqual(["Trinity Force", "Sundered Sky"]);
     expect([bin.side, bin.champion, bin.keystone, bin.damage]).toEqual(["blue", "Jax", null, 10771]);
     expect([zeus.side, zeus.keystone, zeus.keystoneIcon, zeus.items]).toEqual(["red", "Phase Rush", "https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png", []]);
 
-    // Spells with their stored icon; the page after the keystone, in page order, a shard taken twice listed twice.
     expect(zeus.spells).toEqual([{ name: "Flash", iconUrl: ICON }, { name: "Teleport", iconUrl: ICON }]);
     expect(bin.spells).toEqual([{ name: "Clairvoyance", iconUrl: null }]);
-    // A stat shard is not in Data Dragon's rune list: its icon comes from the fallback paths.
     const SHARD = "https://ddragon.leagueoflegends.com/cdn/img/perk-images/StatMods/StatModsHealthPlusIcon.png";
 
     expect(zeus.runes).toEqual([
@@ -111,7 +106,6 @@ test("compared players' profiles list teams by games and the main role, in the s
   try {
     await seed(db);
 
-    // Zeus has no LEC game: no team, no role.
     expect(await playerProfiles(db, ["SAKEN", "Zeus"], { league: "LoL EMEA Championship", yearFrom: null, yearTo: null })).toEqual([
       { player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null },
       { player: "Zeus", teams: [], role: null, photo: null },
@@ -128,11 +122,8 @@ test("profiles follow the scope given, not a narrower one", async () => {
     await seed(db);
     const lec = { league: "LoL EMEA Championship", yearFrom: null, yearTo: null };
 
-    // The period the question asked, before a relaxation drops it: no game there.
     expect(await playerProfiles(db, ["SAKEN"], { ...lec, yearFrom: 1999, yearTo: 1999 })).toEqual([{ player: "SAKEN", teams: [], role: null, photo: null }]);
-    // The widened scope the comparison ran on.
     expect(await playerProfiles(db, ["SAKEN"], lec)).toEqual([{ player: "SAKEN", teams: ["Team Vitality", "Karmine Corp"], role: "Mid", photo: null }]);
-    // No competition: Zeus's Worlds game counts.
     expect(await playerProfiles(db, ["Zeus"], { league: null, yearFrom: null, yearTo: null })).toEqual([{ player: "Zeus", teams: ["T1"], role: "Top", photo: null }]);
   } finally {
     await db.close();
@@ -199,7 +190,6 @@ test("an undated photo, kept for a player who has no other, is shown without a y
 });
 
 test("a photo URL follows MediaWiki's md5 layout on Fandom's CDN", () => {
-  // md5("Faker_Summer_2016.png") starts with 19, as the wiki's own URL for that file.
   expect(wikiImageUrl("Faker Summer 2016.png", 200)).toBe(
     "https://static.wikia.nocookie.net/lolesports_gamepedia_en/images/1/19/Faker_Summer_2016.png/revision/latest/scale-to-width-down/200",
   );

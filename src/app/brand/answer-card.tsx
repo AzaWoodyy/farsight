@@ -10,10 +10,6 @@ export const CARD_SIZE = { width: 1200, height: 630 };
 
 const RULE = "#292524";
 
-/**
- * The image of a link to an answer, on the frame of the site's own card (share-card): the answer's title, then
- * its figures (a score, the head of a ranking, key figures) or, without any, its first sentence.
- */
 export async function answerCard(card: ShareCard, locale: Locale) {
   const { background, foreground, muted, accent } = PALETTE.dark;
   const figures = card.duel != null || card.top.length > 0 || card.figures.length > 0;
@@ -55,10 +51,8 @@ export async function answerCard(card: ShareCard, locale: Locale) {
             {card.top.map((row, i) => (
               <div key={row.name} style={{ display: "flex", alignItems: "center", gap: 24, fontSize: i === 0 ? 60 : 40, color: i === 0 ? foreground : muted, borderBottom: `1px solid ${RULE}`, paddingBottom: 12 }}>
                 <span style={{ color: accent, width: 56 }}>{row.rank}</span>
-                {/* next/og draws plain <img> only. */}
                 {/* oxlint-disable-next-line nextjs/no-img-element */}
                 {row.icon && <img src={row.icon} width={i === 0 ? 72 : 52} height={i === 0 ? 72 : 52} alt="" style={{ borderRadius: 8 }} />}
-                {/* One line: a long name is cut with an ellipsis rather than pushing its value out of the image. */}
                 <div style={{ display: "block", flex: 1, lineClamp: 1 }}>{row.name}</div>
                 <span>{row.value}</span>
                 <span style={{ fontSize: i === 0 ? 34 : 26, color: muted }}>{card.metric}</span>

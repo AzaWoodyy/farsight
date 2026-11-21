@@ -2,25 +2,15 @@ import { z } from "zod";
 import type { Answer, PlayerProfile, TableCell } from "./agent/types";
 import { DEFAULT_LOCALE, type Locale, NO_DATA, numberFormat, percent, sameLabel } from "./locale";
 
-/**
- * Reads a generic result table as a two-player comparison, when it is one: two rows, one column naming
- * the players, numeric stat columns. Derived figures (winrate, KDA) are computed here from the returned
- * columns only; a figure whose inputs are missing is not shown.
- */
-
 export type Better = "higher" | "lower" | null;
 
 export type ComparedStat = {
   key: string;
   label: string;
   values: Pair<number | null>;
-  /** Which value wins the row; null for context figures (games) and unknown columns. */
   better: Better;
-  /** Shown as a percentage (winrate, rates). */
   percent: boolean;
-  /** Signed metric (differences with the lane opponent): shown with + or −. */
   signed: boolean;
-  /** Computed by the page from other columns. */
   derived: boolean;
 };
 
@@ -29,17 +19,14 @@ export type ComparedPlayer = { name: string; profile: PlayerProfile | null };
 export type Comparison = {
   players: Pair<ComparedPlayer>;
   stats: ComparedStat[];
-  /** Index of the player who wins more rows, null on a tie. */
   leader: 0 | 1 | null;
   wins: Pair<number>;
 };
 
 const PLAYER_COLUMN = /^(player|joueur|player_name|name|ign|handle|pseudo)$/i;
 
-/** `count`: a sum over the player's games when not averaged, so not comparable across different game counts. */
 type Meaning = { label: Record<Locale, string>; better: Better; percent?: boolean; signed?: boolean; count?: boolean };
 
-/** Column name (without avg_/total_ prefixes) → what it means. Order matters: first match wins. */
 const MEANINGS: [RegExp, Meaning][] = [
   [/^(games|games_played|parties|nb_games|game_count)$/, { label: { fr: "parties", en: "games" }, better: null }],
   [/^ingame_games$/, { label: { fr: "parties Riot", en: "Riot games" }, better: null }],
@@ -72,7 +59,6 @@ const MEANINGS: [RegExp, Meaning][] = [
   [/^plates$/, { label: { fr: "plaques", en: "plates" }, better: "higher", count: true }],
 ];
 
-/** "avg_gold_diff_10" → { base: "gold_diff_10", average: true } */
 function baseName(column: string) {
   const lower = column.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   const average = /^(avg|average|moy|mean)_|_(avg|average|per_game|pg)$/.test(lower);
@@ -90,7 +76,6 @@ function meaningOf(column: string, locale: Locale): Omit<Meaning, "label"> & { l
       const deaths = m[1] === "deaths";
       const label = meaning.label[locale].replace("$1", deaths && locale === "fr" ? "morts" : (m[1] ?? "")).replace("$2", m[2] ?? "");
 
-      // "deaths @10" is the one row of its pattern where the lower value wins.
       return { ...meaning, label, better: deaths ? "lower" : meaning.better, average };
     }
   }
@@ -100,23 +85,19 @@ function meaningOf(column: string, locale: Locale): Omit<Meaning, "label"> & { l
 
 const Finite = z.number().finite();
 
-/** A table cell as a stat value: a finite number, else null. */
 const numberOf = (v: TableCell) => Finite.safeParse(v).data ?? null;
 
-/** A table cell as a player name: a non-empty text, else null. */
 const nameOf = (v: TableCell) => z.string().min(1).safeParse(v).data ?? null;
 
 type Pair<T> = [T, T];
 
 const both = <T>(f: (i: 0 | 1) => T): Pair<T> => [f(0), f(1)];
 
-/** `keep`: a column shown even when both values are n/d (the statistic the question names, without data in the scope). */
 export function detectComparison(table: Answer["table"], profiles: PlayerProfile[], keep: string | null = null, locale: Locale = DEFAULT_LOCALE): Comparison | null {
   if (!table || table.rows.length !== 2) return null;
 
   const named = new Set(profiles.map((p) => p.player.toLowerCase()));
 
-  // The player column: by its name, else the text column whose two values are the named players.
   const nameIndex = table.columns.findIndex((c) => PLAYER_COLUMN.test(c));
 
   const playerIndex =
@@ -135,7 +116,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
 
   const gamesIndex = table.columns.findIndex((c) => /^(games|games_played|parties|nb_games|game_count)$/.test(baseName(c).base));
   const gameCounts = gamesIndex < 0 ? null : both((r) => numberOf(table.rows[r][gamesIndex]));
-  // Totals only compare when both players played as many games; an unknown game count compares nothing.
   const totalsComparable = gameCounts != null && gameCounts[0] != null && gameCounts[0] === gameCounts[1];
 
   table.columns.forEach((column, i) => {
@@ -144,7 +124,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
     const cells = both((r) => table.rows[r][i]);
     const pair = both((r) => numberOf(cells[r]));
 
-    // Text columns (team, role…) are not stats; one null cell is allowed (n/d for one player).
     if (cells.some((v, r) => v != null && pair[r] == null) || (pair.every((v) => v == null) && column !== keep)) return;
 
     const meaning = meaningOf(column, locale);
@@ -187,7 +166,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
 
   const [k, d, as] = ["kills", "deaths", "assists"].map((key) => byBase.get(key));
 
-  // Same aggregate on all three (all averages or all totals): the ratio is then the same KDA.
   if (k && d && as && !byBase.has("kda") && k.average === d.average && d.average === as.average)
     derived.push({
       key: "derived:kda",
@@ -224,7 +202,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
   };
 }
 
-/** Index of the better value of a row, null when the row is not compared or tied. */
 export function rowWinner(s: ComparedStat): 0 | 1 | null {
   const [a, b] = s.values;
 
@@ -233,7 +210,6 @@ export function rowWinner(s: ComparedStat): 0 | 1 | null {
   return (s.better === "higher") === a > b ? 0 : 1;
 }
 
-/** "2,93", "13 777", "+72", "66,3 %" */
 export function formatStat(s: ComparedStat, v: number | null, locale: Locale = DEFAULT_LOCALE): string {
   if (v == null) return NO_DATA[locale];
 

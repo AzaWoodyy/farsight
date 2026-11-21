@@ -1,7 +1,3 @@
-/**
- * The mark: the F of Farsight, drawn by the two lanes leaving the base in the corner, with the accent square
- * as its middle bar. Two shapes on a 32 px grid so it stays readable at favicon size.
- */
 export function Mark({
   fg = "currentColor",
   accent = "var(--accent)",

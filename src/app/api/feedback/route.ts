@@ -4,18 +4,12 @@ import { requestPolicy } from "@/lib/http/request-policy";
 import { verifyFeedback } from "@/lib/tracing/feedback-token";
 import { sendFeedback } from "@/lib/tracing/langfuse";
 
-/** A thumbs up or down on one answer, addressed by the id of its trace (32 hex digits). */
 const FeedbackRequest = z.object({
   traceId: z.string().regex(/^[0-9a-f]{32}$/),
   token: z.string().regex(/^\d{13}\.[0-9a-f]{64}$/),
   rating: z.enum(["up", "down"]),
 });
 
-/**
- * Body: { traceId, token, rating: "up" | "down" }. The rating becomes a boolean
- * Langfuse score on the trace; nothing about the visitor is sent with it.
- * 204 when recorded, 503 when tracing is off or Langfuse did not take it.
- */
 export async function POST(req: Request) {
   const denied = requestPolicy(req, "feedback");
 

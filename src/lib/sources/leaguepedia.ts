@@ -4,24 +4,11 @@ import { basename, resolve } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../fs-atomic";
 
-/**
- * Minimal Leaguepedia Cargo client.
- *
- * Uses Special:CargoExport (JSON), which serves the same data as the
- * `action=cargoquery` API. Anonymous `cargoquery` calls are rate-limited very
- * aggressively, so we stay polite: one request at a time, at least 2 s between
- * requests, exponential backoff on errors, and every response cached on disk
- * so re-running the ingestion never re-hits the wiki.
- *
- * Data: Leaguepedia (https://lol.fandom.com), CC BY-SA 3.0.
- */
-
 export const LEAGUEPEDIA_BASE = "https://lol.fandom.com";
 const EXPORT_URL = `${LEAGUEPEDIA_BASE}/wiki/Special:CargoExport`;
 
 const API_URL = `${LEAGUEPEDIA_BASE}/api.php`;
 
-/** Says who we are and how we behave, as the wiki's bot policy asks. */
 export const USER_AGENT =
   process.env.LEAGUEPEDIA_USER_AGENT ||
   "farsight/0.4 (+https://askfarsight.com; portfolio research project; batch ingestion, one request at a time, at least 2 s apart)";
@@ -35,7 +22,6 @@ const DELAY_MS = Math.max(
 
 const MAX_ATTEMPTS = 6;
 
-/** A stalled request is aborted after this long and retried like any network error. */
 const REQUEST_TIMEOUT_MS = 60_000;
 export const PAGE_SIZE = 5000;
 
@@ -50,7 +36,6 @@ function decodeEntities(value: string): string {
 
 const CargoText = z.string().transform(decodeEntities);
 
-/** One Cargo field: text (HTML entities decoded), number, list field, or empty. */
 export const CargoValue = z.union([CargoText, z.number(), z.boolean(), z.null(), z.array(z.union([CargoText, z.number()]))]);
 
 export type CargoValue = z.output<typeof CargoValue>;
@@ -61,16 +46,13 @@ export type CargoRow = z.output<typeof CargoRow>;
 
 const CargoRows = z.array(CargoRow);
 
-/** Cached responses hold rows already decoded: same shape, no second decoding pass. */
 const StoredValue = z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.union([z.string(), z.number()]))]);
 
-/** A Cargo row as stored on disk (cache, datasets): already decoded. */
 export const StoredCargoRow = z.record(z.string(), StoredValue);
 const CachedResponse = z.object({ rows: z.array(StoredCargoRow) });
 
 export type CargoQuery = {
   tables: string;
-  /** Fields as "Table.Field=Alias" so the JSON keys are stable. */
   fields: string[];
   where?: string;
   joinOn?: string;
@@ -78,9 +60,7 @@ export type CargoQuery = {
 };
 
 export type CargoOptions = {
-  /** Directory holding one JSON file per raw response. */
   cacheDir: string;
-  /** Ignore cached responses and hit the network (responses are re-cached). */
   refresh?: boolean;
 };
 
@@ -88,14 +68,12 @@ export const cargoStats = { requests: 0, cached: 0, bytes: 0 };
 
 let lastRequestAt = 0;
 
-/** The network and the clock of this module, replaceable in tests. Production code never reassigns them. */
 export const transport = {
   fetch: (url: string, init: RequestInit): Promise<Response> => fetch(url, init),
   sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)),
   now: (): number => Date.now(),
 };
 
-/** Test-only: forgets the last request time and zeroes `cargoStats`. */
 export function resetThrottle(): void {
   lastRequestAt = 0;
   cargoStats.requests = 0;
@@ -141,7 +119,6 @@ async function fetchPage(
   const rows = await politeGet(url, (text) => {
     if (text.trimStart().startsWith("[")) return CargoRows.parse(JSON.parse(text));
 
-    // Cargo query errors (bad field, bad table, bad syntax) are not retryable.
     if (/^Error:|Error \d{4}|Unknown column/i.test(text.trimStart())) throw new CargoQueryError(text.slice(0, 300));
 
     return null;
@@ -152,12 +129,6 @@ async function fetchPage(
   return rows;
 }
 
-/**
- * The one way this module reaches the wiki: one request at a time, at least
- * DELAY_MS between two request starts, exponential backoff on errors, and the
- * server's Retry-After (or MediaWiki `maxlag`) honoured when it sends one.
- * `parse` returns the value, null for a retryable answer, or throws to stop.
- */
 async function politeGet<T>(url: string, parse: (text: string) => T | null): Promise<T> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const wait = lastRequestAt + DELAY_MS - transport.now();
@@ -227,12 +198,6 @@ const ApiPages = z.object({
 
 export type WikiPage = { title: string; revid: number; timestamp: string; content: string } | { title: string; missing: true };
 
-/**
- * Latest revision content of a few wiki pages (MediaWiki API, one request).
- * A title absent from the result was not served (size limit): request it again.
- * `maxlag=5` lets the wiki ask us to back off when its replicas lag; that
- * answer is retried like an HTTP error.
- */
 export async function wikiPages(titles: string[]): Promise<Map<string, WikiPage>> {
   const params = new URLSearchParams({
     action: "query",
@@ -265,7 +230,6 @@ export async function wikiPages(titles: string[]): Promise<Map<string, WikiPage>
     const rev = p.revisions?.[0];
 
     if (rev) out.set(title, { title, revid: rev.revid, timestamp: rev.timestamp, content: rev.slots.main.content });
-    // No content without `missing`: the answer hit the API size limit, ask again.
     else if (p.missing || p.invalid) out.set(title, { title, missing: true });
   }
 
@@ -283,14 +247,8 @@ const ApiFiles = z.object({
   error: z.object({ code: z.string(), info: z.string().optional() }).optional(),
 });
 
-/** File names per request: the MediaWiki API limit for an anonymous client. */
 export const FILES_PER_REQUEST = 50;
 
-/**
- * The wiki's answer for a few file names (no `File:` prefix): each name asked -> the exact name the wiki stores the
- * file under (its title once normalized and redirected, the name the CDN path is built from), or null when it has no
- * such file. A name absent from the map was not answered: ask it again.
- */
 export function parseWikiFiles(names: string[], data: z.infer<typeof ApiFiles>): Map<string, string | null> {
   const step = (moves: { from: string; to: string }[] | undefined) => new Map((moves ?? []).map((m) => [m.from, m.to]));
   const normalized = step(data.query?.normalized);
@@ -305,17 +263,12 @@ export function parseWikiFiles(names: string[], data: z.infer<typeof ApiFiles>):
     const page = pages.get(target);
 
     if (!page) continue;
-    // A file page can outlive its file: only a page with the file's own information counts.
     out.set(name, page.imageinfo?.length ? page.title.replace(/^File:/, "") : null);
   }
 
   return out;
 }
 
-/**
- * Which of these files exist on the wiki and under which exact name (MediaWiki API, one request for up to
- * FILES_PER_REQUEST names, under the same throttle as Cargo). File metadata only: no image is downloaded.
- */
 export async function wikiFiles(names: string[]): Promise<Map<string, string | null>> {
   const params = new URLSearchParams({
     action: "query",
@@ -341,7 +294,6 @@ export async function wikiFiles(names: string[]): Promise<Map<string, string | n
   return parseWikiFiles(names, data);
 }
 
-/** Runs a Cargo query and follows offset pagination until exhausted. */
 export async function cargoQuery(
   q: CargoQuery,
   opts: CargoOptions,
@@ -362,12 +314,10 @@ export function wikiUrl(page: string): string {
   return `${LEAGUEPEDIA_BASE}/wiki/${encodeURIComponent(page.replace(/ /g, "_")).replace(/%2F/g, "/")}`;
 }
 
-/** Quote a value for a Cargo WHERE clause. */
 export function cargoString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-/** `field IN ("a","b",...)` for a Cargo WHERE clause. */
 export function cargoIn(field: string, values: string[]): string {
   return `${field} IN (${values.map(cargoString).join(",")})`;
 }

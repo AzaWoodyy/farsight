@@ -1,35 +1,16 @@
 import { QUESTION_MAX_LENGTH } from "@/lib/agent/types";
 
-/**
- * The link to an answer: the question on screen is the `q` of the home page's address (`/?q=…`, `/en?q=…`).
- * The console reads and writes the address in the browser only, and a link runs its question through the same
- * POST /api/ask as a typed one (BotID, rate limit, length limit). The server reads `q` once, when a link is
- * opened: for the metadata of its preview (answer-metadata), computed without the model.
- */
 const PARAM = "q";
 
-/** Set on `<html>` before the first paint of a page opened on a link, removed once the console has read it. */
 const OPENING_ATTR = "data-question-link";
 
-/**
- * Runs in `<head>`. The static HTML of a home page is the home screen; on a link the visitor came for an
- * answer, so the console stays hidden until it has read the address (see globals.css) instead of flashing
- * the home screen first.
- */
 export const QUESTION_LINK_SCRIPT = `{const q=new URLSearchParams(location.search).getAll("${PARAM}");if(q.length===1&&q[0])document.documentElement.setAttribute("${OPENING_ATTR}","")}`;
 
 export const questionLinkRead = () => document.documentElement.removeAttribute(OPENING_ATTR);
 
-/** A question as the console asks it: one line, no space around it. */
 export const normalizeQuestion = (text: string): string => text.replace(/\s+/g, " ").trim();
 
-/**
- * The question a query string carries, or null: no `q`, an empty one, or one the field could not hold (longer
- * than it accepts, a control character, a broken percent-escape). Decoded strictly, where URLSearchParams
- * would let a broken escape through as text; a literal percent sign is `%25`.
- */
 export function questionIn(search: string): string | null {
-  // The decoded key can also be written %71. Count bare and empty keys as duplicates.
   const fields = search.replace(/^\?/, "").split("&").filter((pair) => /^(?:q|%71)(?:=|$)/.test(pair));
 
   if (fields.length !== 1 || !fields[0].includes("=")) return null;
@@ -48,18 +29,14 @@ export function questionIn(search: string): string | null {
   return normalizeQuestion(raw) || null;
 }
 
-/** The question of the page's address. */
 export const addressQuestion = (): string | null => questionIn(window.location.search);
 
-/** A question on a home page: the page showing it, or the other language's. */
 export const questionPath = (path: string, question: string): string => `${path}?${new URLSearchParams({ [PARAM]: question })}`;
 
-/** The absolute link to a question, for the clipboard. */
 export const questionLink = (question: string): string => questionPath(`${window.location.origin}${window.location.pathname}`, question);
 
 const listeners = new Set<() => void>();
 
-/** For useSyncExternalStore: the address changed, by the console or by back / forward. */
 export function subscribeToAddress(listener: () => void): () => void {
   listeners.add(listener);
   window.addEventListener("popstate", listener);
@@ -70,11 +47,6 @@ export function subscribeToAddress(listener: () => void): () => void {
   };
 }
 
-/**
- * Makes the address say what is on screen: a question, or the home screen (null). A new history entry, so
- * back and forward walk through the questions asked; `replace` corrects the entry instead (a `q` nobody can
- * ask). Nothing is requested from the server: Next takes the native History API in.
- */
 export function setAddressQuestion(question: string | null, mode: "push" | "replace" = "push") {
   const { pathname, search } = window.location;
 

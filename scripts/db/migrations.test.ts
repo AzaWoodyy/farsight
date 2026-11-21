@@ -37,7 +37,6 @@ describe("the Postgres schema is the SQLite one", () => {
     expect(postgres).toEqual(lite);
     expect(readMigrations().at(-1)?.version).toBe(PG_MIGRATION);
 
-    // The loader copies the columns it reads from the DDL: every table, every column.
     const tables = tableColumns();
 
     expect([...tables.keys()]).toEqual(SCHEMA_OBJECTS.filter((o) => !o.startsWith("v_")));

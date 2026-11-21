@@ -1,7 +1,3 @@
-/**
- * Restore the immutable snapshot Postgres is loaded from in CI (db:load): the raw datasets kept in git and the in-game
- * summaries of the pinned release. Nothing contacts the wiki or R2.
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs";
@@ -30,7 +26,6 @@ async function checked(file: string, hash: string) {
   if (await sha256File(file) !== hash) throw new Error(`Snapshot checksum mismatch: ${basename(file)}`);
 }
 
-/** Our deterministic USTAR archive only contains regular files with explicitly allowed names. */
 export function extractRaw(tar: string, destination: string, hashes: Record<string, string>) {
   const fd = openSync(tar, "r");
   const header = Buffer.alloc(512);

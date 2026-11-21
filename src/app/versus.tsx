@@ -7,14 +7,8 @@ import { dateFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
 import { ComparisonNote, FaceOff, OneSided } from "./player-comparison";
 
-/** Games listed before "show all". */
 const FIRST_GAMES = 10;
 
-/**
- * Two players set against each other. When they met: the face-to-face over those games (with a tab for
- * their statistics over the whole scope), then the games themselves. Otherwise: the statistics over the
- * scope and a sentence saying they never met.
- */
 export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Answer["profiles"]; fallback: ReactNode }) {
   const locale = useLocale();
   const ui = useUi();
@@ -25,7 +19,6 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
   const shown = first(h2h && tab === "h2h" ? h2h : global, v.focus);
   const met = v.h2h ? Number(v.h2h.rows[0]?.[v.h2h.columns.indexOf("games")] ?? 0) : 0;
 
-  // A table the face-off cannot read (no player column): the plain table.
   if (!shown) return <>{fallback}</>;
 
   const tabs = [
@@ -64,11 +57,6 @@ export function Versus({ v, profiles, fallback }: { v: VersusView; profiles: Ans
   );
 }
 
-/**
- * The scope's statistics with a line for each of the two players. One of them without any game there has no
- * line in the answer: it gets an empty one (0 games, every figure n/d), so the two still stand face to face
- * and the absence reads as such, instead of a one-line table about the other player alone.
- */
 function bothPlayers(v: VersusView) {
   const at = v.global.columns.indexOf("player");
   const only = v.global.rows.length === 1 ? v.global.rows[0] : null;
@@ -85,7 +73,6 @@ function bothPlayers(v: VersusView) {
   return { table: { ...v.global, rows: absent === v.playerA ? [empty, only] : [only, empty] }, absent };
 }
 
-/** The statistic the question names, moved to the top of the face-off. */
 function first(c: Comparison | null, focus: string | null): Comparison | null {
   if (!c || !focus) return c;
   const asked = c.stats.filter((s) => s.key === focus);
@@ -93,7 +80,6 @@ function first(c: Comparison | null, focus: string | null): Comparison | null {
   return asked.length ? { ...c, stats: [...asked, ...c.stats.filter((s) => s.key !== focus)] } : c;
 }
 
-/** Whether their games against each other were lane face-offs: same role on both sides. */
 function Lanes({ v, met }: { v: VersusView; met: number }) {
   const ui = useUi();
   const { same, roles } = v.lanes;
@@ -117,8 +103,6 @@ function Games({ v }: { v: VersusView }) {
   return (
     <div className="mt-6">
       <h3 className="text-xs uppercase tracking-widest text-muted">── {ui.versus.theirGames}</h3>
-      {/* relative: the sr-only "source" header is absolutely positioned; without a positioned scroller it is laid
-          out against the page and widens it (horizontal scroll on phones). */}
       <div className="relative mt-2 overflow-x-auto border border-line">
         <table className="w-full min-w-[720px] border-collapse text-left text-xs">
           <thead className="border-b border-line text-[11px] text-muted">
@@ -192,7 +176,6 @@ function Side({ s, won }: { s: VersusSide; won: boolean }) {
   return (
     <div className="flex items-center gap-2">
       {s.championIcon && s.champion ? (
-        // Data Dragon icons: next/image would spend the shared Vercel Hobby image quota for no LCP gain.
         // oxlint-disable-next-line nextjs/no-img-element
         <img src={s.championIcon} alt={s.champion} title={s.champion} width={22} height={22} loading="lazy" className="h-[22px] w-[22px] border border-line" />
       ) : (

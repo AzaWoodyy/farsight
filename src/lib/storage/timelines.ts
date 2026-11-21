@@ -6,38 +6,20 @@ import { loadRawGame } from "../sources/riot";
 import { EVENT_KINDS, type ParsedTimeline, parseTimeline, TIMELINE_FORMAT } from "../sources/timeline";
 import { FsStore, type ObjectStore, R2Store, r2ReadConfigFromEnv } from ".";
 
-/**
- * Server-side access to one game's parsed timeline, for the game timeline
- * tool. The raw Riot JSON lives in R2 (or the local ingestion cache in
- * development); only the parsed timeline (a few KB) leaves this module, and
- * never a key.
- *
- * Cache: Vercel Runtime Cache (regional, shared by the function instances,
- * kept across deployments), keyed by game and TIMELINE_FORMAT. A game's JSON
- * never changes once published, so entries live 30 days; a game missing from
- * the store is remembered for an hour. Outside Vercel, `getCache()` falls back
- * to an in-memory cache.
- */
-
-/** Only `get` is used: the R2 token is read-only anyway. */
 type ObjectReader = Pick<ObjectStore, "label" | "get">;
 
 export type TimelineSource = "cache" | "r2" | "local";
 
 export type TimelineLoad =
   | { status: "ok"; timeline: ParsedTimeline; source: TimelineSource; ms: number }
-  /** The store has no JSON, or the JSON has no timeline, for this game. */
   | { status: "missing"; source: TimelineSource; ms: number }
-  /** No store configured (no R2_READ_* variables and no local cache). */
   | { status: "unconfigured" }
-  /** `timeoutSeconds` is set when the store did not answer in time: the answer words it in its own language. */
   | { status: "error"; message: string; timeoutSeconds?: number; ms: number };
 
 const TTL_S = 30 * 24 * 3600;
 const MISSING_TTL_S = 3600;
 const READ_TIMEOUT_MS = 8000;
 
-/** The ingestion cache, read in local runs when R2 is not configured (never shipped: next.config.ts excludes data/raw). */
 const LOCAL_DIR = resolve(/*turbopackIgnore: true*/ process.cwd(), "data/raw/riot");
 
 let store: { reader: ObjectReader; source: "r2" | "local" } | null | undefined;
@@ -53,7 +35,6 @@ function timelineStore() {
   return store;
 }
 
-/** For tests: forget the store picked from the environment. */
 export function resetTimelineStore() {
   store = undefined;
 }
@@ -83,7 +64,6 @@ async function readCache(key: string) {
 
     return parsed.success ? parsed.data : null;
   } catch {
-    // A cache outage only costs a read from the store.
     return null;
   }
 }
@@ -92,7 +72,6 @@ async function writeCache(key: string, value: z.infer<typeof Cached>, ttl: numbe
   try {
     await cache().set(cacheKey(key), value, { ttl, tags: ["timeline"], name: "game-timeline" });
   } catch {
-    // Same: the next question reads the store again.
   }
 }
 
@@ -109,7 +88,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-/** The parsed timeline of a game (RiotPlatformGameId, e.g. LOLTMNT05_90306), from the cache or the store. */
 export async function loadTimeline(key: string): Promise<TimelineLoad> {
   const started = performance.now();
   const ms = () => Math.round(performance.now() - started);

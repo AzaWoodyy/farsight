@@ -1,22 +1,3 @@
-/**
- * Replays the reference questions (eval/questions.json) through the agent and
- * scores each one against its expectations.
- *
- *   bun run eval                   uses OPENROUTER_API_KEY if it is set, else deterministic
- *   bun run eval --deterministic   ignores the key (rules level only)
- *   bun run eval --only=worlds-chovy,alias-hangul   exit 1 on an unknown id
- *   bun run eval --strict          exit 1 unless every check passes, or when no case could be judged
- *   bun run eval --verbose         print every check, not only the failing ones
- *   bun run eval --llm-only        only the cases marked `llm` (the ones the rules hand to the LLM)
- *   bun run eval --follow-ups      also replays every follow-up question of the answers (deterministic only); with --strict, exit 1 when one is not understood by a typed tool
- *
- * A case marked `llm` cannot pass on the rules alone: without a key only what
- * the rules decide is scored (entities, unread words) and the case is listed
- * as needing the LLM instead of being counted as passed.
- *
- * A selection that keeps no case (`--only`, `--exclude-tags`, `--llm-only`)
- * always exits 1: a gate that runs nothing must not pass.
- */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -27,7 +8,6 @@ const only = args.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 
 if (flag("deterministic")) delete process.env.OPENROUTER_API_KEY;
 
-// Imported after the flag so the LLM client never sees an ignored key.
 const { runAgent } = await import("../src/lib/agent/run");
 const { getLlm } = await import("../src/lib/agent/llm");
 const { TOOLS } = await import("../src/lib/agent/tools");
@@ -37,7 +17,6 @@ type Answer = import("../src/lib/agent/types").Answer;
 
 type StepPart = import("../src/lib/agent/types").StepPart;
 
-/** A scalar of a tool input or a total, as written in questions.json. */
 const Scalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
 type Scalar = z.infer<typeof Scalar>;
@@ -48,9 +27,7 @@ const Expect = z.strictObject({
   teams: z.array(z.string()).optional(),
   champion: z.string().optional(),
   league: z.string().optional(),
-  /** Subset of the tool input. */
   input: z.record(z.string(), Scalar).optional(),
-  /** Exact row count, or a minimum with `rowsMin`. */
   rows: z.number().int().optional(),
   rowsMin: z.number().int().optional(),
   totals: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
@@ -58,12 +35,9 @@ const Expect = z.strictObject({
   attempts: z.number().int().optional(),
   notes: z.array(z.string()).optional(),
   sources: z.number().int().optional(),
-  /** Substrings the summary must contain, and must not contain (case-insensitive). */
   summaryIncludes: z.array(z.string()).optional(),
   summaryExcludes: z.array(z.string()).optional(),
-  /** The answer gives no figure: no row, no table, no digit in the summary. */
   noFigure: z.boolean().optional(),
-  /** Words the rules did not understand and handed to the LLM router (answer.meta.unread). */
   unread: z.array(z.string()).optional(),
 });
 
@@ -71,9 +45,7 @@ const Case = z.strictObject({
   id: z.string(),
   question: z.string(),
   tags: z.array(z.string()),
-  /** Language the answer is asked in, like a page of that language does (default: French). */
   locale: z.enum(["fr", "en"]).optional(),
-  /** The expected answer needs the LLM (tool choice or entities): not scored as passed without a key. */
   llm: z.boolean().optional(),
   expect: Expect,
 });
@@ -82,12 +54,11 @@ type Case = z.infer<typeof Case>;
 
 const QuestionsFile = z.object({
   $comment: z.string().optional(),
-  /** Date the relative seasons are resolved against ("l'an dernier"), so the expectations do not move with the calendar. */
   now: z.iso.date(),
   questions: z.array(Case),
 });
 
-type Check = { name: string; ok: boolean | null; detail?: string }; // null = skipped
+type Check = { name: string; ok: boolean | null; detail?: string };
 
 const file = resolve(import.meta.dirname, "../eval/questions.json");
 
@@ -118,9 +89,7 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
   const m = answer.meta;
   const checks: Check[] = [];
   const add = (name: string, ok: boolean | null, detail?: string) => checks.push({ name, ok, detail });
-  // Without a key, text-to-SQL cannot run: the routing is still checked, the result is not.
   const noResult = e.route === "sql" && !m.sqlAvailable;
-  // Without a key, a case that needs the LLM is only scored on what the rules decide.
   const noLlm = c.llm === true && !m.sqlAvailable;
 
   const result = (name: string, ok: boolean, detail?: string) =>
@@ -173,7 +142,6 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
     for (const n of e.notes) routed(`note « ${n} »`, answer.notes.some((x) => x.includes(n)), answer.notes.join(" | ") || "aucune note");
 
   const summary = answer.summary.toLowerCase();
-  // A text-to-SQL summary says what the query returned: without a key there is none to check.
   const said = e.route === "sql" ? result : routed;
 
   if (e.summaryIncludes)
@@ -206,7 +174,6 @@ let skipped = 0;
 const failures: string[] = [];
 const needLlm: string[] = [];
 
-/** Follow-up questions of the answers, by language and text: the first case that suggested each. */
 const followUps = new Map<string, { locale: "fr" | "en"; text: string; id: string }>();
 const t0 = performance.now();
 
@@ -247,7 +214,6 @@ for (const c of cases) {
   const s = scored.length ? passed / scored.length : 0;
   skipped += checks.length - scored.length;
 
-  // A case that needs the LLM is not passed without a key, even when the rules' part is right.
   const pending = s === 1 && c.llm === true && !llm;
 
   if (pending) needLlm.push(c.id);
@@ -283,13 +249,11 @@ if (failures.length) console.log(`échecs : ${failures.join(", ")}`);
 
 if (flag("strict") && !judged) console.error("--strict : aucun cas vérifié (tous demandent le LLM)");
 
-// Not understood follow-up questions (`--follow-ups`, deterministic only).
 const missed: string[] = [];
 
 if (flag("follow-ups")) {
   if (llm) console.log("\n--follow-ups : mode déterministe seulement");
   else {
-    // Understood: a typed tool answered and the rules read every word.
     for (const f of followUps.values()) {
       let reason: string | undefined;
 

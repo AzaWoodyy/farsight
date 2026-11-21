@@ -12,15 +12,10 @@ import type { Ui } from "./i18n/ui";
 import type { Locale } from "@/lib/locale";
 import { addressQuestion, normalizeQuestion, questionLink, questionLinkRead, setAddressQuestion } from "./question-link";
 
-// The chat (AI SDK, zod) and the answer views (tables, comparison, scoreboard...) weigh more than the home page
-// itself: they are not part of its first load. They load once the page is idle, or as soon as the visitor
-// focuses the field or asks a question, whichever comes first. Kept in state rather than behind next/dynamic:
-// a Suspense boundary held each answer back about 300 ms after the stream had ended.
 type Modules = { chat: typeof import("./chat-engine"); views: typeof import("./answer-view") };
 
 let loading: Promise<Modules> | null = null;
 
-// A failed load (connection lost) is forgotten, so the next question tries again.
 const loadModules = () =>
   (loading ??= Promise.all([import("./chat-engine"), import("./answer-view")])
     .then(([chat, views]) => ({ chat, views }))
@@ -31,7 +26,6 @@ const loadModules = () =>
 
 const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
-/** Answers kept in the page for back and forward; the oldest goes first. */
 const KEPT_ANSWERS = 20;
 
 const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
@@ -41,7 +35,6 @@ const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   fix: { mark: "~>", cls: "text-fix" },
 };
 
-/** The console in the language of the page; every view under it reads that language from the context. */
 export function AgentConsole({ locale }: { locale: Locale }) {
   return (
     <LocaleProvider locale={locale}>
@@ -54,20 +47,13 @@ function Console() {
   const ui = useUi();
   const locale = useLocale();
   const [question, setQuestion] = useState("");
-  // Anonymous id of this conversation: a random UUID made up at its first question and kept in the page,
-  // so a reload or "nouvelle conversation" starts another. It groups the traces of the conversation, and
-  // says nothing of the visitor.
   const sessionId = useRef<string | null>(null);
 
   const chat = useRef<ChatControls>(null);
-  // The latest question asked; the chat, loaded with the first one, sends that one when it mounts.
   const [first, setFirst] = useState<{ text: string; sessionId: string; restored?: AgentUIMessage[] } | null>(null);
   const [chatState, setChatState] = useState<ChatState>(IDLE);
-  // Without a question there is nothing to show, whatever the chat last said: a page shown again after
-  // another one runs the chat's effects again, and they report its state once more.
   const { messages, status, error } = first ? chatState : IDLE;
   const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
-  // The chat could not load: the question waits for nothing, say so (asking again retries).
   const [loadFailed, setLoadFailed] = useState(false);
   const waiting = first != null && messages.length === 0 && !error && !loadFailed;
   const running = waiting || status === "submitted" || status === "streaming";
@@ -78,7 +64,6 @@ function Console() {
       void loadModules().then(
         (loaded) => {
           setModules(loaded);
-          // A later load (focus on the field after a failure) succeeded: the error no longer holds.
           setLoadFailed(false);
         },
         () => setLoadFailed(true),
@@ -95,10 +80,6 @@ function Console() {
     return () => window.removeEventListener("load", idle);
   }, [preload]);
 
-  /**
-   * `address`: a question asked here goes in the address bar as a new history entry, so the address is always
-   * the link to what is on screen; one read from the address (a link, back, forward) leaves it as it is.
-   */
   function ask(q: string, address: "push" | "keep" = "push") {
     const text = normalizeQuestion(q);
 
@@ -111,14 +92,11 @@ function Console() {
 
     if (address === "push") setAddressQuestion(text);
 
-    // Also the question shown until the chat has taken it in (the chat reads `first` only when it mounts).
     setFirst({ text, sessionId: sessionId.current });
 
-    // No chat yet (first question, or after the home screen): it starts from nothing, not from what was last shown.
     if (chat.current) chat.current.ask(text, sessionId.current);
     else setChatState(IDLE);
 
-    // A follow-up or a new question asked from low on the page: back up to where the new answer starts.
     scrollToTop();
   }
 
@@ -126,7 +104,6 @@ function Console() {
     if (address === "push") setAddressQuestion(null);
 
     chat.current?.reset();
-    // The chat unmounts with `first`: its last state would otherwise stay on screen.
     setFirst(null);
     setChatState(IDLE);
     setLoadFailed(false);
@@ -135,7 +112,6 @@ function Console() {
     scrollToTop();
   }
 
-  // The answers of this visit, by question: back and forward show them again without asking the agent twice.
   const answers = useRef(new Map<string, AgentUIMessage[]>());
 
   useEffect(() => {
@@ -155,9 +131,6 @@ function Console() {
     }
   }, [messages, status, error]);
 
-  // The address is the question to show: a link opened cold, back or forward, or this page shown again after
-  // another one. A `q` nobody could have typed (empty, too long, malformed) is the home screen, and leaves
-  // the address.
   const followAddress = useEffectEvent(() => {
     const text = addressQuestion();
 
@@ -184,12 +157,9 @@ function Console() {
     scrollToTop();
   });
 
-  // A layout effect: a link shows its question at the first paint of the console, not the home screen first.
   useLayoutEffect(() => {
-    // A page the browser prerenders ahead of a visit (address bar, speculation) asks nothing until it is shown.
     if ("prerendering" in document && document.prerendering)
       document.addEventListener("prerenderingchange", followAddress, { once: true });
-    // The address is outside React: reading it is what this effect is for.
     // oxlint-disable-next-line react-hooks/set-state-in-effect
     else followAddress();
 
@@ -202,7 +172,6 @@ function Console() {
     };
   }, []);
 
-  // The logo in the header goes back to the home screen (see HomeLink).
   const onHome = useEffectEvent(() => restart());
 
   useEffect(() => {
@@ -315,17 +284,11 @@ function Console() {
         </div>
       )}
 
-      {/* At least a screen tall while the agent works: the footer stays below the fold instead of sliding under
-          the growing answer. Once the answer is in, the block is as tall as the answer: a short one is not
-          followed by an empty screen. */}
       {askedText && (
         <div data-running={running ? "" : undefined} className={`mt-8 ${running ? "min-h-svh" : ""}`}>
-          {/* Mounted as long as the question is shown: a live region only announces changes to an element already
-              there, so the end of the run (answer ready, or nothing) is heard too. Hidden, so it never moves the page. */}
           <p role="status" className="sr-only">
             {running ? progressLabel(steps, ui) : answer ? ui.console.ready(answer.title) : ""}
           </p>
-          {/* A long question takes the whole line and pushes the buttons under it, instead of a narrow column. */}
           <div className="flex flex-wrap items-start justify-between gap-x-4">
             <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
               <span aria-hidden className="text-muted">
@@ -333,7 +296,6 @@ function Console() {
               </span>{" "}
               {askedText}
             </p>
-            {/* One group, kept to the right: on a narrow screen the two actions go under the question together. */}
             <div className="ml-auto flex shrink-0 items-center gap-x-4">
               <CopyLink key={askedText} question={askedText} />
               <button
@@ -345,11 +307,7 @@ function Console() {
               </button>
             </div>
           </div>
-          {/* Nothing on screen moves while the answer comes (CLS was 0.6): the progress line stays on top and the
-              steps stream in under it. Once the run is over and the answer is shown, the trace goes folded under
-              the answer: the visitor reads the result first, the way it was found after. */}
           {running && <Progress steps={steps} />}
-          {/* A run that failed shows its error alone: a half-run trace under it explains nothing to the visitor. */}
           {steps.size > 0 && !traceBelow && !(error && !answer) && <HowIFoundIt steps={steps} running={running} />}
           {error && !answer && (
             <p role="alert" className="mt-4 text-sm text-error">
@@ -370,7 +328,6 @@ function Console() {
               </button>
             </div>
           )}
-          {/* The chat and the views load together: an answer always has its views. */}
           {answer && modules && <modules.views.AnswerView answer={answer} onAsk={ask} />}
           {traceBelow && <HowIFoundIt steps={steps} running={false} />}
           {answer && trace && modules && <modules.views.Feedback key={trace.traceId} traceId={trace.traceId} token={trace.token} />}
@@ -380,10 +337,6 @@ function Console() {
   );
 }
 
-/**
- * Copies the link to the question on screen. The three labels share one cell, so the button keeps its width
- * and nothing next to it moves when the label changes.
- */
 function CopyLink({ question }: { question: string }) {
   const ui = useUi();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
@@ -430,7 +383,6 @@ function CopyLink({ question }: { question: string }) {
   );
 }
 
-/** Smooth scroll to the top of the page; an instant jump when the visitor asks for reduced motion. */
 function scrollToTop() {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -439,7 +391,6 @@ function scrollToTop() {
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-/** A braille spinner, fast so the wait feels short; a still dot when the visitor asks for reduced motion. */
 function Spinner() {
   const [frame, setFrame] = useState(0);
 
@@ -457,9 +408,7 @@ function Spinner() {
   );
 }
 
-/** What the agent is doing, read from the step that is running. */
 function progressLabel(steps: Map<StepName, StepPart>, ui: Ui): string {
-  // The latest step started; once it is done and before the next one streams, the next one is what comes.
   const lastIndex = STEPS.findLastIndex((name) => steps.has(name));
   const last = lastIndex < 0 ? undefined : STEPS[lastIndex];
   const current = last && steps.get(last)?.state === "done" ? (STEPS[lastIndex + 1] ?? last) : last;
@@ -468,7 +417,6 @@ function progressLabel(steps: Map<StepName, StepPart>, ui: Ui): string {
   return !current ? ui.console.reading : retrying ? ui.console.retrying : ui.console.progress[current];
 }
 
-/** The one line shown while the agent works. Screen readers hear it from the status region of the console. */
 export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   const ui = useUi();
 
@@ -480,17 +428,10 @@ export function Progress({ steps }: { steps: Map<StepName, StepPart> }) {
   );
 }
 
-/**
- * The technical trace (steps, decisions, SQL, retries): open while the agent works, so the visitor sees it
- * progress, folded once the answer is in. The visitor can still open or close it by hand.
- */
 export function HowIFoundIt({ steps, running }: { steps: Map<StepName, StepPart>; running: boolean }) {
   const ui = useUi();
   const ref = useRef<HTMLDetailsElement>(null);
 
-  // A run starting opens the trace, a run ending folds it. Set on the element after commit and left
-  // uncontrolled otherwise: mirroring the toggle event into state raced with the fold (the browser's
-  // toggle for the opening could land after it and reopen the trace).
   useLayoutEffect(() => {
     if (ref.current) ref.current.open = running;
   }, [running]);
@@ -545,7 +486,6 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
             </>
           );
 
-          // A step without detail is a plain row, skipped by Tab.
           if (part.entries.length === 0)
             return (
               <li key={name} className="flex gap-2">
@@ -553,7 +493,6 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
               </li>
             );
 
-          // The four steps read as four lines; the detail of a step (decisions, SQL, retries) opens on click.
           return (
             <li key={name}>
               <details className="group/step">
@@ -576,7 +515,6 @@ function Steps({ steps, running }: { steps: Map<StepName, StepPart>; running: bo
                     </>
                   );
 
-                  // Only an entry with a detail is a disclosure; the others are plain rows, skipped by Tab.
                   return (
                     <li key={`${e.at}-${j}`}>
                       {e.detail ? (

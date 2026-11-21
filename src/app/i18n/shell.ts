@@ -1,14 +1,5 @@
 import type { Locale } from "./locales";
 
-/**
- * The texts around the console, in each language: metadata, header, footer, share card and 404. `en` is typed
- * on `fr`, so a text added in one language and forgotten in the other fails the typecheck.
- *
- * Tagline and description both carry "LoL": people search "farsight lol" more than "farsight league of
- * legends", and Google ranks a brand query on the words a page actually contains. The description is the
- * search snippet, the Open Graph and Twitter text and the JSON-LD: one sentence that stands alone, under 150
- * characters so Google shows it whole.
- */
 const fr = {
   tagline: "L'esport League of Legends (LoL) en une question",
   description:

@@ -45,8 +45,6 @@ describe("the logo files a team name may have", () => {
 });
 
 describe("asking the wiki", () => {
-  // Real answers of the MediaWiki API (2026-11-21), cut down: a name the API normalizes, a file that redirects to another
-  // one (an older name's logo), a missing file.
   const answer = {
     query: {
       normalized: [{ from: "File:t1logo_square.png", to: "File:T1logo square.png" }],
@@ -70,7 +68,6 @@ describe("asking the wiki", () => {
   });
 
   test("the CDN path is built from the exact name, as the wiki's own image URL", () => {
-    // `imageinfo.url` of File:T1logo square.png, asked as "t1logo_square.png", on the same day.
     expect(wikiImageUrl("T1logo square.png", 64)).toStartWith("https://static.wikia.nocookie.net/lolesports_gamepedia_en/images/a/a2/T1logo_square.png/");
   });
 

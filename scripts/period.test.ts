@@ -24,7 +24,6 @@ describe("a single year after a period word: depuis / jusqu'en include it, aprè
     ["Faker before 2020", null, 2019],
     ["Faker en 2020", 2020, 2020],
     ["Faker de 2018 à 2020", 2018, 2020],
-    // Two years are still read as their min–max range.
     ["Faker avant 2020 et après 2016", 2016, 2020],
   ] as const)("%s → %p, %p", async (q, yearFrom, yearTo) => {
     const entities = (await understandQuestion(db, q, new Date("2026-11-14")))?.result;

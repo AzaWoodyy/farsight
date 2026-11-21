@@ -7,18 +7,12 @@ import { useLocale, useUi } from "./i18n/locale-context";
 import { EntityIcon } from "./entity-icon";
 import { LeagueTag } from "./league-tag";
 
-/** Team name → logo, for the names the answer has one for. */
 type Logos = Record<string, string>;
 
 type Tones = Record<string, "dark" | "light">;
 
-/** Series listed before "show all". */
 const FIRST_SERIES = 10;
 
-/**
- * Two teams' meetings: their record in series and in games, then every series with its date, competition,
- * score, winner and Leaguepedia page. The per-tournament table stays below, sortable.
- */
 export function TeamHeadToHead({ v, logos, tones, leagues, byTournament }: { v: View; logos: Logos; tones: Tones; leagues: Record<string, string[]>; byTournament: ReactNode }) {
   const ui = useUi();
   const [all, setAll] = useState(false);
@@ -39,7 +33,6 @@ export function TeamHeadToHead({ v, logos, tones, leagues, byTournament }: { v: 
       </div>
 
       <h3 className="mt-6 text-xs uppercase tracking-widest text-muted">── {ui.teams.meetings}</h3>
-      {/* relative: the sr-only header is absolutely positioned and would widen the page from outside the scroller. */}
       <div className="relative mt-2 overflow-x-auto border border-line">
         <table className="w-full min-w-[560px] border-collapse text-left text-xs">
           <thead className="border-b border-line text-[11px] text-muted">
@@ -93,14 +86,12 @@ function Side({ name, logo, tone, leagues, series, games, lead, align }: { name:
 
   return (
     <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      {/* The logo sits on the outer side of the name, so the two names stay next to the "vs". */}
       <div className={`flex items-center gap-2 text-sm font-semibold ${align === "right" ? "justify-end" : "flex-row-reverse justify-end"}`}>
         {logo && <EntityIcon src={logo} size={32} tone={tone} />}
         <span className="truncate" translate="no">
           {name}
         </span>
       </div>
-      {/* Under the name, so a long name keeps the room it has beside the "vs". */}
       {leagues && (
         <div className="mt-1">
           <LeagueTag leagues={leagues} />
@@ -154,7 +145,6 @@ function SeriesRow({ s, logos, tones }: { s: TeamSeries; logos: Logos; tones: To
   );
 }
 
-/** A series known only from Leaguepedia's match schedule: the tag says so, its title why there are no stats. */
 function ScheduleTag() {
   const ui = useUi();
 

@@ -1,8 +1,3 @@
-/**
- * Selection of the candidate eval cases (scripts/eval-candidates/select.ts).
- * Synthetic traces only: a real visitor question never goes into the
- * repository, which is public.
- */
 import { describe, expect, test } from "bun:test";
 import { candidatesOf, guessLocale, normalizeQuestion, reasonsOf, type TracedQuestion, withoutEvalCases } from "./eval-candidates/select";
 
@@ -110,7 +105,6 @@ describe("withoutEvalCases", () => {
 
     const left = withoutEvalCases(list, [{ question: "résultats de joueurx aux worlds" }, { question: "players of teamy", locale: "fr" }]);
 
-    // The second eval case is French: the English candidate stays.
     expect(left.map((c) => c.question).sort()).toEqual(["nouvelle question", "players of TeamY"]);
   });
 });

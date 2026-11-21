@@ -31,17 +31,10 @@ import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles"
 import type { Entities, QueryPlan, ToolName } from "./types";
 import { CHAMPION_POOL, LOL_DOMAIN, maskUnderstood, resolveTeam, SPLIT_CUES } from "./understand";
 
-// Rules router ----------------------------------------------------------------------
-
 const word = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${body})(?![\\p{L}\\p{N}])`, "iu");
 
 const VERSUS = word("vs\\.?|versus|contre|face [àa]|against|head[- ]to[- ]head|h2h|confrontations?|affrontements?");
 
-/**
- * Words that set two sides against each other, in French and English (case-insensitive). With two
- * players they all give the same answer, the comparison: their games against each other when there
- * are some, their statistics in the scope, and the list of those games.
- */
 export const OPPOSE = word(
   "compar(?:er|ez|e|es|aisons?|ing|ed|ison|isons)|vs\\.?|versus|contre|against|face[- ][àa][- ]face|or|ou|" +
     "who(?:'s| is) (?:the )?better|qui est (?:le |la )?meilleure?|meilleure?s?|better|best|mieux|diff[ée]rences?|differences?|" +
@@ -53,7 +46,6 @@ const STANDINGS = word(
   "palmar[eè]s|vainqueurs?|gagnants?|winners?|qui a gagn[ée]|qui a soulev[ée] (?:la coupe|le troph[ée]e)|who won|who lifted the (?:cup|trophy)|classements?|standings|podium|sacr[ée]s?|finale",
 );
 
-/** Metrics and open rankings no typed tool computes: they go to text-to-SQL. */
 const UNSUPPORTED = word(
   "kills?|kda|morts?|deaths?|assists?|pentakills?|quadrakills?|gold|golds|cs|farm|d[ée]g[âa]ts|damage|vision|wards?|" +
     "dragons?|drakes?|barons?|heralds?|nashor|towers?|tourelles?|dur[ée]e|duration|plus longue?s?|plus courte?s?|" +
@@ -61,38 +53,23 @@ const UNSUPPORTED = word(
     "le plus de|most|quel joueur|quels joueurs|which players?|quelle [ée]quipe|which team|top \\d+",
 );
 
-/**
- * Concepts people ask about that the database does not hold, each with the
- * view column that would hold it. A concept counts as missing while that
- * column is absent from the live schema, so a rebuild that adds it to the
- * views switches the detection off by itself.
- */
 const DATA_CONCEPTS = [
   { concept: "spells", pattern: word("sorts? d'invocateurs?|summoner spells?"), view: "v_game_players", column: "spell1" },
   { concept: "mvp", pattern: word("mvps?|pogs?|player of the (?:game|match)|joueurs? du match"), view: "v_game_players", column: "mvp" },
 ] as const;
 
-/** The concepts of the question that no column of the schema holds. */
 export function missingConcepts(question: string, schema: Record<string, string[]>): string[] {
   return DATA_CONCEPTS.flatMap((c) => (c.pattern.test(question) && !(schema[c.view] ?? []).includes(c.column) ? [msg().route.concepts[c.concept]] : []));
 }
 
-/** A value, or the promise of one: the router awaits both, so a fixed lookup stays a plain function. */
 type Awaitable<T> = T | Promise<T>;
 
-/** Games of a scope and how many have in-game (Riot) data. */
 export type Coverage = { games: number; ingame: number };
 
-/** Coverage lookups for the router, read from v_ingame_coverage and v_games. */
 export type CoverageLookup = {
   league: (league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
   player: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
-  /** Games of a team (every name of the franchise) and how many have Riot data. */
   team: (members: string[], league: string | null, yearFrom: number | null, yearTo: number | null) => Awaitable<Coverage>;
-  /**
-   * The team a player last played for in the scope, the year of that game, and the other teams they played for there.
-   * null when they have no competition game in it. Optional: a lookup without it leaves the player's own routes in place.
-   */
   playerTeam?: (player: string, league: string | null, yearFrom: number | null, yearTo: number | null, split: string | null) => Awaitable<PlayerTeam | null>;
 };
 
@@ -118,7 +95,6 @@ const period = (col: string, yearFrom: number | null, yearTo: number | null, par
   return sql;
 };
 
-/** Coverage read from the database (league and period, or one player's games). */
 export function coverageLookup(db: Db): CoverageLookup {
   const read = async (sql: string, params: (string | number)[]): Promise<Coverage> => {
     const row = await selectOne(db, CoverageRow, sql, params);
@@ -159,13 +135,11 @@ export function coverageLookup(db: Db): CoverageLookup {
     },
     playerTeam: async (player, league, yearFrom, yearTo, split) => {
       const params: (string | number)[] = [player];
-      // Without a competition asked, those a roster leaves out do not name the player's team (a T1 Academy player at the KeSPA Cup).
       const members = league ? leagueMembers(league, yearFrom, yearTo) : [...ROSTER_EXCLUDED];
       const inLeague = (params.push(...members), ` AND p.league ${league ? "IN" : "NOT IN"} (${members.map(() => "?").join(",")})`);
       const inPeriod = period("p.year", yearFrom, yearTo, params);
       const inSplit = split ? (params.push(split), " AND p.tournament_page IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = ?)") : "";
 
-      // Latest team first: the stages are the ones the roster counts, so the team found has a roster in the scope.
       const rows = await selectAll(
         db,
         PlayerTeamRow,
@@ -177,7 +151,6 @@ export function coverageLookup(db: Db): CoverageLookup {
 
       if (!rows.length) return null;
 
-      // The roster merges the names of one franchise (SK Telecom T1 → T1): they are not other teams.
       const franchise = (await resolveTeam(db, rows[0].team))?.members ?? [];
 
       return { team: rows[0].team, year: rows[0].year, others: rows.slice(1).map((r) => r.team).filter((t) => !franchise.includes(t)) };
@@ -191,53 +164,34 @@ const RANKING = word(
 
 const TEAM_WORDS = word("[ée]quipes?|teams?");
 
-/**
- * Words asking who played for a team: "roster", "line-up", "effectif", "composition", "qui jouait chez".
- * Not "composition d'équipe" in the draft sense: the draft is champions, and a champion goes elsewhere first.
- */
 export const ROSTER = word(
   "ro[ao]?sters?|line[- ]?ups?|effectifs?|compositions?|compos?|[ée]quipes? types?|cinq (?:de d[ée]part|majeur)|starting (?:five|lineup)|titulaires?|rempla[çc]ants?|" +
     "qui (?:jouait|jouaient|joue|jouent|a jou[ée]|ont jou[ée]|[ée]tait|[ée]taient)(?: (?:chez|pour|dans|à|a|avec|en))?|who (?:played|plays|was|were)(?: (?:for|on|in|at))?|" +
     "(?:quels?|les) joueurs (?:de|d'|du|chez|pour)|players (?:of|on|for)|membres?|members?",
 );
 
-/** Who is "best" or "most" in a team, or an in-game figure: a ranking or a metric, not its roster. */
 const NOT_ROSTER = word(
   "le plus|la plus|les plus|most|meilleure?s?|best|pires?|worst|top ?\\d+|kda|kills?|gold|golds|cs|d[ée]g[âa]ts|damage|vision|winrate|win rate|stats?|statistiques?",
 );
 
-/**
- * With one player named: their team ("Rooster team 2026", "l'équipe de Faker en 2017", "coéquipiers de Caps", "who played with Caps").
- * Narrower than ROSTER: "who was Faker" names no team, so a verb needs its "with".
- */
 const PLAYER_TEAM = word(
   "[ée]quipe|team|co[ée]quipiers?|team ?mates?|partenaires?|ro[ao]?sters?|line[- ]?ups?|effectifs?|" +
     "qui (?:jouait|jouaient|joue|jouent|a jou[ée]|ont jou[ée]) avec|who (?:played|plays) with",
 );
 
-/** "dans quelle équipe jouait Faker", "which team did Faker play for": the team asked, not a ranking of teams. */
 const WHICH_TEAM = /quelle [ée]quipe|which team/giu;
 
-/**
- * What makes "which team" a membership question: "dans quelle équipe", "which team did Faker play for", "quelle équipe était".
- * "Which team beat Faker" and "which team did Faker play in the final" ask for an opponent.
- */
 const PLAYS_FOR = word(
   "(?:dans|pour|chez|in|for|on) (?:quelle [ée]quipe|which team)|(?:quelle [ée]quipe|which team) (?:est|[ée]tait|is|was)|" +
     "play(?:s|ed|ing)? (?:for|on|with)|jou(?:e|ait|[ée]) (?:pour|chez|dans|avec)",
 );
 
-/** What a player's team did, not who was in it: the player's history answers. */
 const TEAM_RESULTS = word(
   "r[ée]sultats?|results?|parcours|historique|history|bilan|records?|perfs?|performances?|palmar[eè]s|titres?|titles?|troph[ée]es?|classements?|class[ée]e?s?|rankings?|rank|ranks|ranked|standings|places?|" +
     "placements?|podiums?|finish|finished|termin[ée]e?s?|fini|carri[èe]re|career|victoires?|wins?|won|gagn[ée]e?s?|d[ée]faites?|losses|lost|perdu|" +
     "battue?s?|bat|beat|beats|beaten|vaincue?s?|defeated|[ée]limin[ée]e?s?|eliminated|affront[ée]e?s?|faced|combien|how many|how did|how well|comment",
 );
 
-/**
- * Words asking for the champions one player or one team plays: "champion pool", "pool de Caps", "quels champions joue Keria",
- * "champions joués par T1", "winrate de Faker par champion". Only with one player or one team named.
- */
 export const POOL = word(
   `${CHAMPION_POOL}|pools?|` +
     "quels? champions?|quelles? champions?|which champions?|what champions?|" +
@@ -246,12 +200,6 @@ export const POOL = word(
     "persos?|signature picks?",
 );
 
-// Champions and roles ranked ------------------------------------------------------------
-
-/**
- * A ranking of champions: "champions les plus joués", "most banned champions", "meta", "quel champion a
- * le meilleur winrate". Not "champion du monde", which is a title.
- */
 export const CHAMPION_RANKING = word(
   "champions? (?:les? |la )?(?:plus|moins)|(?:most|least) (?:played|picked|banned|contested|popular|present) champions?|" +
     "(?:meilleurs?|best|top ?\\d*|strongest|plus forts?|pires?|worst) champions?|champions? (?:avec|with|[àa]u?|ayant) (?:la |le |the )?(?:plus|most|meilleure?|best|highest|pire|worst)|" +
@@ -262,7 +210,6 @@ export const CHAMPION_RANKING = word(
 
 const NOT_CHAMPION_RANKING = word("champions? (?:du monde|d'europe|de cor[ée]e|de chine|en titre)|world champions?|reigning champions?");
 
-/** What a champion ranking is ordered by, most specific first; "meilleurs champions" means the win rate. */
 export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
   ["presence", word("pr[ée]sences?|presences?|pr[ée]sents?|present|contest[ée]s?|contested|prioritaires?|priorit[ée]s?|priority|m[ée]ta|tier ?list|picks? (?:et|and|ou|or|\\+|&) bans?|picks?/bans?|pick ?(?:&|et|and) ?ban")],
   ["bans", word("bann(?:i|is|ie|ies|ed|s)?|bans?|ban ?rates?")],
@@ -272,20 +219,16 @@ export const CHAMPION_SORT_CUES: [ChampionSort, RegExp][] = [
   ["winrate", word("forts?|strongest|strong|meilleurs?|best|pires?|worst")],
 ];
 
-/** Per-game figures a champion ranking does not sort by (it sorts by presence, picks, bans, win rate or KDA). */
 const CHAMPION_UNRANKED = word(
   "kills?|morts?|deaths?|assists?|golds?|d['’]or|cs|farm|d[ée]g[âa]ts|damage|vision|dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration",
 );
 
-/** Figures of a game, not of a champion's line: no per-game average of the ranking answers them. */
 const CHAMPION_OTHER_FIGURES = word("dragons?|drakes?|barons?|tourelles?|towers?|dur[ée]e|duration");
 
-/** The dragon event identifies its team, but has no killer champion. */
 const CHAMPION_DRAGON_KILLS = word("champions? (?:avec|ayant|a|ont) le plus de dragons?|champions? (?:with|has|have|killed|kills) the most (?:dragons|drakes|dragon kills)");
 
 export const championSortOf = (question: string): ChampionSort => CHAMPION_SORT_CUES.find(([, re]) => re.test(question))?.[0] ?? "presence";
 
-/** The per-game averages a champion ranking sorts by, as a question names them. */
 export const CHAMPION_AVERAGE_CUES: [ChampionAverageSort, RegExp][] = [
   ["kills", word("kills?")],
   ["deaths", word("morts?|deaths?")],
@@ -296,29 +239,20 @@ export const CHAMPION_AVERAGE_CUES: [ChampionAverageSort, RegExp][] = [
   ["vision", word("vision")],
 ];
 
-/** "par game", "en moyenne": the question asks for an average, not a total over the scope. */
 const PER_GAME = word("par (?:partie|game|match)|per (?:game|match)|/ ?(?:partie|game|match)|en moyenne|moyen(?:ne)?s?|on average|averages?");
 
-/** The ranking only goes from the highest down: "le moins de morts" is not its answer ("au moins 10 picks" is a minimum). */
 const LOWEST = word("(?<!au )moins|(?<!at )least|fewest|lowest|pires?|worst");
 
-/** A superlative of the bottom alone: "le moins de morts" stays a criterion of the player leaderboard. */
 const WORST = word("pires?|worst");
 
-/**
- * The per-game average a champion ranking is asked for ("le plus de morts par game"), null when the question
- * wants a total, the lowest figure or several figures at once: those stay with generated SQL.
- */
 export function championAverageSortOf(question: string): ChampionAverageSort | null {
   const asked = CHAMPION_AVERAGE_CUES.filter(([, re]) => re.test(question));
 
   return asked.length === 1 && PER_GAME.test(question) && !LOWEST.test(question) ? asked[0][0] : null;
 }
 
-/** "au total", "nombre de", "combien": a total over the scope, in so many words. */
 const TOTAL = word("au total|en tout|in total|totale?s?|cumul[ée]e?s?|nombre (?:de|d')|number of|combien|how many");
 
-/** The multikills and lane counts of the Riot data a champion ranking totals. */
 const CHAMPION_INGAME_TOTAL: Partial<Record<NonNullable<MetricCue["player"]>, ChampionTotalSort>> = {
   penta_kills: "penta_kills",
   quadra_kills: "quadra_kills",
@@ -328,11 +262,6 @@ const CHAMPION_INGAME_TOTAL: Partial<Record<NonNullable<MetricCue["player"]>, Ch
   first_bloods: "first_blood",
 };
 
-/**
- * The total over the scope a champion ranking is asked for: "le plus de morts" without "par partie", "le plus de
- * pentakills", "le plus de solo kills". A first blood is a share of games unless the question says a total ("nombre
- * de first bloods"). Null for a per-game or per-minute figure, the lowest figure, or several figures at once.
- */
 export function championTotalSortOf(question: string, cue: MetricCue | null): ChampionTotalSort | null {
   if (LOWEST.test(question) || PER_GAME.test(question) || PER_MINUTE.test(question)) return null;
 
@@ -347,13 +276,10 @@ export function championTotalSortOf(question: string, cue: MetricCue | null): Ch
   return asked.length === 1 ? asked[0][0] : null;
 }
 
-/** "par minute", "/min", and the per-minute figures by name. */
 const PER_MINUTE = word("par min(?:ute)?|per min(?:ute)?|/ ?min(?:ute)?|dpm|gpm|cspm");
 
-/** "joués par le plus de joueurs", "most different players": how many players picked a champion. */
 const MOST_PLAYERS = word("(?:le )?plus de joueurs|joueurs diff[ée]rents|most (?:different )?players|different players");
 
-/** The lane figures of the Riot data a champion ranking holds, at 15 min only. */
 const CHAMPION_INGAME_SORT: Partial<Record<NonNullable<MetricCue["player"]>, ChampionExtraSort>> = {
   gold_diff: "gold_diff_15",
   cs_diff: "cs_diff_15",
@@ -362,11 +288,6 @@ const CHAMPION_INGAME_SORT: Partial<Record<NonNullable<MetricCue["player"]>, Cha
   first_bloods: "first_blood",
 };
 
-/**
- * A figure of the picks a champion ranking sorts by beyond its averages: damage, gold or CS per minute, a lane
- * figure of the Riot data ("écart d'or à 15 min", "solo kills", "first blood"), or the number of players. Null when
- * the question wants the lowest figure or a snapshot at another minute than 15: those stay with generated SQL.
- */
 export function championExtraSortOf(question: string, cue: MetricCue | null): ChampionExtraSort | null {
   if (LOWEST.test(question)) return null;
 
@@ -387,13 +308,11 @@ export function championExtraSortOf(question: string, cue: MetricCue | null): Ch
   return word("cspm|cs|farm").test(question) ? "cspm" : null;
 }
 
-/** One side of the map: "côté bleu", "blue side", "en rouge". */
 export const SIDE_CUES: [MapSide, RegExp][] = [
   ["blue", word("c[ôo]t[ée] bleu|blue ?side|side bleu|en bleu|(?:du|au|le) bleu")],
   ["red", word("c[ôo]t[ée] rouge|red ?side|side rouge|en rouge|(?:du|au|le) rouge")],
 ];
 
-/** The side a question asks about, null when it names none or both. */
 export function sideOf(question: string): MapSide | null {
   const asked = SIDE_CUES.filter(([, re]) => re.test(question));
 
@@ -402,16 +321,12 @@ export function sideOf(question: string): MapSide | null {
 
 const PLAYER_WORDS = word("joueurs?|joueuses?|players?|pros?|laners?|laneurs?");
 
-/** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
 const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]to[- ]head|duels?|matchups?");
 
-/** The in-game figures of a champion's profile: metric and minute. */
 const PROFILE_INGAME = new Set(["gold_diff@15", "cs_diff@15"]);
 
-/** "au moins 50 parties", "minimum 20 games", "more than 30 picks": a minimum the question sets itself. */
 const MINIMUM = /(au moins|minimum(?: de)?|min\.?|at least|plus de|more than|over)\s*(\d{1,3})\s*(parties|games|matchs|matches|picks)/iu;
 
-/** The tools' minimum is inclusive: "plus de 50 parties" is 51 or more. */
 const STRICT = /^(?:plus de|more than|over)$/i;
 
 export function minimumOf(question: string, unit: "games" | "picks"): number | null {
@@ -423,7 +338,6 @@ export function minimumOf(question: string, unit: "games" | "picks"): number | n
   return n >= 1 && n <= 200 ? n : null;
 }
 
-/** What "best" means for a player ranking, most specific first; KDA when the question does not say. */
 export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
   ["kda", word("kda")],
   ["kp", word("kp|kill participation|participation aux kills|participation")],
@@ -439,16 +353,11 @@ export const PLAYER_CRITERION_CUES: [PlayerCriterion, RegExp][] = [
   ["assists", word("assists?")],
 ];
 
-/** "part des dégâts de leur équipe" names a criterion of the players, not a ranking of teams. */
 const withoutTeamShare = (question: string) =>
   PLAYER_CRITERION_CUES.filter(([c]) => c === "dmg_share" || c === "gold_share").reduce((q, [, re]) => q.replace(new RegExp(re.source, "giu"), " "), question).replace(/(?:de|d')\s*(?:son|leur|l')\s*[ée]quipe/giu, " ");
 
 export const playerCriterionOf = (question: string): PlayerCriterion => PLAYER_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? "kda";
 
-/**
- * Champions ranked on picks, bans, presence, win rate, KDA, a per-game average or a total, optionally in one role.
- * A champion's games are its picks: "plus de 4 parties" is a minimum of 5 picks.
- */
 function championRankingRoute(question: string, e: Entities, sort: ChampionSort = championSortOf(question), total = false): Route {
   const role = roleOf(question);
   const side = sideOf(question);
@@ -463,7 +372,6 @@ function championRankingRoute(question: string, e: Entities, sort: ChampionSort 
   };
 }
 
-/** Players (of a role) ranked on an explicit end-of-game criterion. */
 function playerLeaderboardRoute(question: string, e: Entities): Route {
   const criterion = playerCriterionOf(question);
   const role = roleOf(question);
@@ -474,19 +382,16 @@ function playerLeaderboardRoute(question: string, e: Entities): Route {
     call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games"), side, split: e.split } },
     confidence: 0.85,
     reason: msg().route.playerRanking(role ?? null, criterion, side ?? null),
-    // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
     notes: e.league ? [] : [msg().route.noLeagueWorldsRanking],
   };
 }
 
 const ROLE_CUES = ROLES.map((r) => ({ role: r.role, pattern: word(r.words) }));
 
-/** Leagues of the scope (short names), period words aside: "la LPL", "le MSI 2024". */
 function scopeOf(e: Entities): string {
   return msg().route.leagueScope(e.leagueShort);
 }
 
-/** The competition asked has no game with Riot data (the LPL, older seasons): the figure is absent, said without widening the scope. */
 async function ingameAbsent(e: Entities, mention: string, coverage: CoverageLookup): Promise<Route | null> {
   if (!e.league || (await coverage.league(e.league, e.yearFrom, e.yearTo)).ingame > 0) return null;
 
@@ -498,17 +403,12 @@ async function ingameAbsent(e: Entities, mention: string, coverage: CoverageLook
   };
 }
 
-/**
- * In-game questions (Riot data): the typed in-game tools, or "missing" when
- * the scope has no in-game data at all (the LPL, older seasons, some events).
- */
 async function routeIngame(question: string, e: Entities, cue: MetricCue, coverage: CoverageLookup): Promise<Route | null> {
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
   const league = e.league;
   const m = msg().route;
   const what = m.ingameStats(cue.mention);
 
-  // "gold diff à 25 min": the snapshots exist at 10, 15 and 20 min only; say so rather than answer at 15.
   if (cue.askedMinute != null && cue.minute == null && isSnapshot(cue))
     return {
       kind: "missing",
@@ -520,7 +420,6 @@ async function routeIngame(question: string, e: Entities, cue: MetricCue, covera
 
   if (absent) return absent;
 
-  // Souls, elder dragons and dragons by element: their breakdown, for every team or one team. A ranking of teams keeps the leaderboard.
   const ranksTeams = e.teams.length === 0 && RANKING.test(question) && TEAM_WORDS.test(question);
 
   if (isDragonCue(cue) && !e.players.length && !e.champion && e.teams.length <= 1 && !ranksTeams) {
@@ -575,8 +474,6 @@ async function routeIngame(question: string, e: Entities, cue: MetricCue, covera
     const { team, members } = e.teams[0];
     const asked = await coverage.team(members, league, e.yearFrom, e.yearTo);
 
-    // Games but no Riot data in the scope asked, or no Riot data at all for this team (an LPL team): the data is absent.
-    // A scope where the team did not play at all stays with the tool, whose relaxations widen it.
     if (asked.ingame === 0 && (asked.games > 0 || (await coverage.team(members, null, null, null)).ingame === 0))
       return {
         kind: "missing",
@@ -594,14 +491,11 @@ async function routeIngame(question: string, e: Entities, cue: MetricCue, covera
     };
   }
 
-  // "écart d'or à 15 min des junglers": a role names who is ranked, even without a ranking word.
   if (e.players.length + e.teams.length === 0 && !e.champion && (RANKING.test(question) || (roleOf(question) && !TEAM_WORDS.test(question)))) {
     const asksTeams = TEAM_WORDS.test(question);
 
-    // "équipes avec le plus d'âmes infernales": one element is not the soul rate the leaderboard ranks.
     if (isDragonCue(cue) && DRAGON_ELEMENT.test(question)) return { kind: "sql", reason: m.dragonElementRanking(cue.mention) };
 
-    // A team ranking on a metric only players have (or the reverse): text-to-SQL.
     if ((asksTeams && cue.team == null) || (!asksTeams && cue.player == null && cue.team == null)) return { kind: "sql", reason: m.rankingUntyped(cue.mention) };
     const team = asksTeams || cue.player == null;
     const metric = team ? cue.team : cue.player;
@@ -621,16 +515,12 @@ async function routeIngame(question: string, e: Entities, cue: MetricCue, covera
   return { kind: "sql", reason: m.ingameUntyped(cue.mention) };
 }
 
-// One game's timeline ------------------------------------------------------------------
-
-/** Words asking for the story of one game rather than a statistic. */
 const TIMELINE = word(
   "timelines?|chronologie|d[ée]roul[ée](?:ment)?|minute par minute|minute by minute|courbes? d'or|courbes? de l'or|courbes? de gold|" +
     "graphiques? d'or|gold (?:graph|curve|chart)s?|[ée]volution de l'or|[ée]cart d'or (?:par minute|minute par minute|au fil)|" +
     "comment s'est (?:pass[ée]e?|d[ée]roul[ée]e?)|how did (?:the )?(?:game|match)|r[ée]sum[ée] de la (?:game|partie)",
 );
 
-/** "game 3", "partie 2", "3e game", "troisième partie". Not "G3": G2 is a team. */
 const GAME_NUMBER = [
   /(?<![\p{L}\p{N}])(?:game|partie|manche|map)\s*(?:n[°o]\s*)?([1-5])(?![\p{L}\p{N}])/iu,
   /(?<![\p{L}\p{N}])([1-5])\s*(?:e|ème|eme|er|re|nd|rd|th|st)?\s+(?:game|partie|manche|map)(?![\p{L}\p{N}])/iu,
@@ -644,7 +534,6 @@ const ORDINALS: [RegExp, number][] = [
   [word("cinqui[èe]me (?:game|partie|manche)|fifth game|derni[èe]re (?:game|partie|manche) d'un bo5"), 5],
 ];
 
-/** Most specific first: "demi-finale" also contains "finale". */
 const PHASES: { phase: GamePhase; pattern: RegExp }[] = [
   { phase: "third_place", pattern: word("petite finale|(?:match pour la )?(?:3e|troisi[èe]me) place|third[- ]place") },
   { phase: "semifinal", pattern: word("demi[- ]?finales?|demi[- ]?finals?|demies?|demis?|semi[- ]?finales?|semi[- ]?finals?|semis?") },
@@ -666,7 +555,6 @@ export function gameNumberOf(question: string): number | null {
 
 export const phaseOf = (question: string): GamePhase | null => PHASES.find((p) => p.pattern.test(question))?.phase ?? null;
 
-/** One game's timeline: a timeline cue, or a game number with a team or a competition. */
 function routeTimeline(question: string, e: Entities): Route | null {
   const game = gameNumberOf(question);
   const cue = TIMELINE.test(question);
@@ -691,27 +579,15 @@ function routeTimeline(question: string, e: Entities): Route | null {
   };
 }
 
-// Series (best-of) of a phase ------------------------------------------------------------
-
-/** Words asking for the standings of a competition, not its series: "classement des Worlds 2025" keeps the standings. */
 const STANDINGS_ONLY = word("palmar[eè]s|classements?|standings|podiums?|rankings?|tableau final|final standings|placements?");
 
-/** Words of a series: its score, its winner, its games and drafts. */
 const SERIES_WORDS = word(
   "bo ?[135]?|best[- ]of ?[135]?|s[ée]ries?|scores?|r[ée]sultats?|results?|qui a gagn[ée]|who won|vainqueurs?|gagnants?|winners?|gagn[ée]e?s?|won|" +
     "remport[ée]e?s?|perdu|lost|d[ée]tails?|picks?|bans?|drafts?|champions?|games?|parties|matchs?|grande|grand|petite",
 );
 
-/** A best-of asked by name: "BO KC T1 worlds 2026", "bo5 T1 Gen.G 2024". */
 const BEST_OF = word("bo ?[135]?|best[- ]of(?: ?[135])?");
 
-/**
- * A stage of a competition ("finale des Worlds 2025", "Final worlds 2025", "demi-finales MSI 2024", "quarts LCK 2024") or a match
- * named by its stage ("T1 vs Gen.G finale LCK 2024"): its series as best-of units. Needs a competition or a team, no player or
- * champion; a game number or a timeline cue went to the game's timeline before. In-game metrics, pools, rosters and standings
- * words keep their own route. Without a stage, two teams and a best-of word in a season asked ("BO KC T1 worlds 2026") give
- * the series they played there; without a season their whole record stays the head-to-head.
- */
 function routeSeries(question: string, e: Entities): Route | null {
   const phase = phaseOf(question);
   const bestOf = !phase && e.teams.length >= 2 && (e.yearFrom != null || e.yearTo != null) ? BEST_OF.exec(question)?.[0] : null;
@@ -736,31 +612,21 @@ function routeSeries(question: string, e: Entities): Route | null {
 }
 
 export type Route =
-  /** `unread`: the words the rules did not understand, when they are enough to put the tool in doubt (confidence lowered to UNSURE). */
-  /** `forced`: the cue is explicit enough that unread words do not put the tool in doubt (two players and an opposing word). */
   | { kind: "tool"; call: ToolCall; confidence: number; reason: string; notes: string[]; unread?: string[]; forced?: boolean }
-  /** The question needs data the database does not hold: answered without a query. `coverage`: in-game data, absent for this scope only. */
   | { kind: "missing"; concepts: string[]; reason: string; coverage?: boolean }
-  /** `open`: the rules found nothing to route on, so the LLM router may still pick a tool. `unread`: as above, for an open route. */
   | { kind: "sql"; reason: string; open?: boolean; unread?: string[] }
   | { kind: "out_of_scope"; reason: string };
 
 const WORLDS = "World Championship";
 
-/** The end-of-game averages a comparison puts first, as a question names them. */
 const COMPARISON_END_CUES = CHAMPION_AVERAGE_CUES.flatMap(([stat, re]) => {
   const end = COMPARISON_END_STATS.find((s) => s === stat);
 
   return end ? [[end, re] as const] : [];
 });
 
-/** What a comparison puts first, with the words of the question that name it ("" without one). */
 type ComparedMetric = { metric: ComparisonMetric | null; minute: Minute | null; mention: string };
 
-/**
- * The statistic a two-player comparison puts first: an in-game metric of a player ("pentakills", "écart d'or à 10"),
- * else a single end-of-game average ("morts"). A minute the data does not hold, or a team-only metric, is said in a note.
- */
 function comparedMetric(question: string, notes: string[]): ComparedMetric {
   const cue = detectMetric(question);
 
@@ -783,10 +649,6 @@ function comparedMetric(question: string, notes: string[]): ComparedMetric {
   return ends.length === 1 ? { metric: ends[0][0], minute: null, mention: ends[0][1].exec(question)![0] } : { metric: null, minute: null, mention: "" };
 }
 
-/**
- * Two players: the comparison. Every way of setting them against each other ("compare", "vs", "h2h",
- * "confrontations"…) gets the same answer; such a word settles it, so the LLM router is not asked again.
- */
 function comparisonRoute(question: string, e: Entities): Route {
   const [a, b] = e.players;
   const notes = e.players.length > 2 ? [msg().route.onlyTwoPlayers(a.player, b.player)] : [];
@@ -803,7 +665,6 @@ function comparisonRoute(question: string, e: Entities): Route {
   };
 }
 
-/** Two teams: their series against each other. An opposing word settles it, so the LLM router is not asked again. */
 function teamsRoute(question: string, e: Entities): Route {
   const [a, b] = e.teams;
   const cue = OPPOSE.exec(question)?.[0];
@@ -818,7 +679,6 @@ function teamsRoute(question: string, e: Entities): Route {
   };
 }
 
-/** One team's roster over the period or competition asked (every competition when none is named). */
 function rosterRoute(question: string, e: Entities): Route {
   const cue = ROSTER.exec(question)?.[0];
   const role = teamRoleOf(maskUnderstood(question, e).rest);
@@ -833,10 +693,6 @@ function rosterRoute(question: string, e: Entities): Route {
   };
 }
 
-/**
- * One player and a team or roster word, no team named: the roster of the team they last played for in the scope asked.
- * Without a period, the season of their latest game: a player who left keeps the roster they were in.
- */
 function playerTeamRoute(e: Entities, rest: string, found: PlayerTeam): Route {
   const player = e.players[0].player;
   const cue = PLAYER_TEAM.exec(rest)![0];
@@ -858,7 +714,6 @@ function playerTeamRoute(e: Entities, rest: string, found: PlayerTeam): Route {
   };
 }
 
-/** One player's or one team's champion pool, in the competition and period asked (every competition when none is named). */
 function poolRoute(question: string, e: Entities): Route {
   const team = e.players.length === 0;
   const name = team ? e.teams[0].team : e.players[0].player;
@@ -882,10 +737,6 @@ function poolRoute(question: string, e: Entities): Route {
   };
 }
 
-/**
- * One player's runes ("runes de Faker aux Worlds 2019", "keystones de Chovy en LCK 2025", "Faker's runes on Azir"), in the
- * competition and period asked (every competition when none is named), on the champion and in the role it names.
- */
 function playerRunesRoute(question: string, e: Entities): Route {
   const player = e.players[0].player;
   const notes: string[] = [];
@@ -907,9 +758,6 @@ function playerRunesRoute(question: string, e: Entities): Route {
   };
 }
 
-// Teams ranked ---------------------------------------------------------------------------
-
-/** What a team ranking is ordered by, most specific first. Without one of these words the standings keep "meilleures équipes". */
 export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
   ["game_length", word("dur[ée]es?|durations?|longues?|courtes?|rapides?|lentes?|rapidement|vite|longest|shortest|fastest|slowest|long|short|fast|slow|game ?time|temps de jeu")],
   ["champions", word("champions? (?:diff[ée]rents?|uniques?|distincts?)|(?:different|unique|distinct) champions?|plus de champions|most champions|champion pools?|pools? de champions?|diversit[ée]")],
@@ -925,12 +773,10 @@ export const TEAM_CRITERION_CUES: [TeamCriterion, RegExp][] = [
   ["winrate", word("win ?rates?|taux de victoire|victoires?|wins?|gagn\\p{L}*|winning")],
 ];
 
-/** "les plus courtes", "le moins de morts": the lowest figure first. */
 const ASCENDING = word("courtes?|rapides?|rapidement|vite|shortest|fastest|short|fast|(?<!au )moins|(?<!at )least|fewest|lowest");
 
 export const teamCriterionOf = (question: string): TeamCriterion | null => TEAM_CRITERION_CUES.find(([, re]) => re.test(question))?.[0] ?? null;
 
-/** Teams ranked on an explicit end-of-game criterion ("équipes avec le meilleur winrate côté bleu en LEC 2025"). */
 function teamLeaderboardRoute(question: string, e: Entities, criterion: TeamCriterion): Route {
   const side = sideOf(question);
   const order = ASCENDING.test(question) ? "asc" : "desc";
@@ -944,18 +790,11 @@ function teamLeaderboardRoute(question: string, e: Entities, criterion: TeamCrit
   };
 }
 
-// Champion matchups ------------------------------------------------------------------------
-
-/** Words asking who a champion faces: "matchups d'Azir", "counters de K'Sante", "contre qui Jax perd le plus". */
 export const MATCHUP = word(
   "match[- ]?ups?|counters?|contres?|contre (?:qui|quels? champions?|quoi)|face [àa] (?:qui|quels? champions?|quoi)|against (?:who|whom|which champions?|what champions?|what)|" +
     "adversaires? directs?|lane opponents?|vis[- ][àa][- ]vis|b[êe]tes? noires?|pires? adversaires?|meilleurs? adversaires?",
 );
 
-/**
- * A champion against its direct opponents: two champions set against each other ("Azir contre Orianna"), or one
- * champion and a matchup word ("matchups d'Azir"). Every competition unless the question names one: a matchup has few games.
- */
 function matchupRoute(question: string, e: Entities): Route {
   const role = roleOf(question);
   const opponent = e.opponentChampion?.champion ?? null;
@@ -971,15 +810,11 @@ function matchupRoute(question: string, e: Entities): Route {
   };
 }
 
-// Single-game records ------------------------------------------------------------------------
-
-/** "en une partie", "in a single game": one game's figure, not a total over the scope. */
 const SINGLE_GAME = word(
   "(?:en|sur|dans|lors d') ?(?:une|1) (?:seule |m[êe]me )?(?:partie|game|manche|map)|in (?:a|one|1) (?:single )?(?:game|match|map)|single[- ]game|" +
     "records?|meilleures? (?:parties?|games?|perfs?|performances?)|best (?:games?|performances?)|pires? (?:parties?|games?)",
 );
 
-/** The figure a single-game record is asked on, when the question names exactly one. */
 export function recordMetricOf(question: string, cue: MetricCue | null): RecordMetric | null {
   if (cue) {
     const sort = cue.player ? CHAMPION_INGAME_SORT[cue.player] : undefined;
@@ -992,7 +827,6 @@ export function recordMetricOf(question: string, cue: MetricCue | null): RecordM
   return asked.length === 1 ? asked[0][0] : null;
 }
 
-/** The best single games on one figure, of everyone or of the one player named. */
 function recordsRoute(e: Entities, metric: RecordMetric, role: ReturnType<typeof roleOf>): Route {
   const player = e.players[0]?.player ?? null;
 
@@ -1006,16 +840,12 @@ function recordsRoute(e: Entities, metric: RecordMetric, role: ReturnType<typeof
   };
 }
 
-// A player's latest games --------------------------------------------------------------------
-
-/** "forme récente", "dernières parties", "last 5 games", "en ce moment". */
 export const RECENT = word(
   "formes?(?: r[ée]cente| actuelle| du moment)?|en forme|" +
     "(?:\\d{1,2} )?derni[èe]re?s? (?:\\d{1,2} )?(?:parties?|games?|matchs?|matches|rencontres?|manches?)|(?:parties?|games?|matchs?) r[ée]cente?s?|" +
     "last (?:\\d{1,2} )?(?:games?|matches|match)|recent (?:games?|matches|form|results?)|r[ée]cemment|recently|lately|en ce moment|right now|these days|ces derniers temps|ces temps-ci",
 );
 
-/** "5 dernières parties", "last 5 games": how many games, within what the tool lists. */
 export function recentCountOf(question: string): number | null {
   const m = /(\d{1,2})\s+derni|derni\p{L}+\s+(\d{1,2})|last\s+(\d{1,2})/iu.exec(question);
   const n = Number(m?.slice(1).find(Boolean));
@@ -1036,7 +866,6 @@ function recentRoute(question: string, e: Entities): Route {
   };
 }
 
-/** Words about rune pages: a champion's ("runes d'Azir") or, with one player named, the player's ("keystones de Chovy"). */
 const RUNES = word("runes?|keystones?|pages? de runes?|rune ?pages?");
 
 const CHAMPION_FOCUS_CUES: [ChampionFocus, RegExp][] = [
@@ -1045,7 +874,6 @@ const CHAMPION_FOCUS_CUES: [ChampionFocus, RegExp][] = [
   ["spells", word("sorts?(?: d'invocateurs?)?|summoner spells?|summoners?|spells?")],
 ];
 
-/** The part of the profile the question names (the first one it names), null for the whole profile. */
 function championFocus(question: string): ChampionFocus | null {
   const named = CHAMPION_FOCUS_CUES.flatMap(([focus, re]) => {
     const at = question.search(re);
@@ -1056,7 +884,6 @@ function championFocus(question: string): ChampionFocus | null {
   return named[0]?.focus ?? null;
 }
 
-/** A champion alone: its stats in the competition (the Worlds when the question names none). */
 function championRoute(e: Entities, question: string): Route {
   return {
     kind: "tool",
@@ -1067,11 +894,6 @@ function championRoute(e: Entities, question: string): Route {
   };
 }
 
-/**
- * Deterministic intent routing on the resolved entities and a few cues.
- * Returns a typed tool + input, "sql" when no tool covers the question,
- * "missing" when the data is not in the database, or "out_of_scope".
- */
 async function routeByRules(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Promise<Route> {
   if (e.outOfScope)
     return { kind: "out_of_scope", reason: msg().route.notInScope(e.outOfScope) };
@@ -1080,7 +902,6 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   if (nEntities === 0 && !e.league && !LOL_DOMAIN.test(question) && !STANDINGS.test(question))
     return { kind: "out_of_scope", reason: msg().route.noEsport };
 
-  // Before the in-game metrics: "courbe d'or" or "dragons" in a timeline question are not a statistic.
   const timeline = routeTimeline(question, e);
 
   if (timeline) return timeline;
@@ -1089,50 +910,32 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
 
   if (missing.length) return { kind: "missing", concepts: missing, reason: msg().route.missing(missing.join(", ")) };
 
-  // A stage of a competition, or a match named by its stage, before the head-to-head and the standings:
-  // "Final worlds 2025" is the Worlds final, not a tournament whose name holds "Finals".
   const series = routeSeries(question, e);
 
   if (series) return series;
 
-  // A champion against its direct opponents: two champions set against each other, or one and a matchup word.
   if (e.champion && !e.players.length && !e.teams.length && (MATCHUP.test(question) || (e.opponentChampion && VERSUS.test(question)))) return matchupRoute(question, e);
 
-  // "record de kills en une partie aux Worlds", "meilleure game de Faker en dégâts": one game's figure, of everyone or of one player.
   const cue = detectMetric(question);
   const asksRecord = !e.champion && !e.teams.length && e.players.length <= 1 && SINGLE_GAME.test(question) && !LOWEST.test(question);
   const record = asksRecord ? recordMetricOf(question, cue) : null;
 
-  // A figure per minute is not one the records hold, and a ranking over the scope would answer another question.
   if (asksRecord && PER_MINUTE.test(question)) return { kind: "sql", reason: msg().route.perMinuteRecord };
 
   if (record) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? recordsRoute(e, record, roleOf(question));
 
-  // Two players set against each other get the comparison, even with a metric ("Faker vs Chovy KDA").
   if (e.players.length >= 2 && OPPOSE.test(question)) return comparisonRoute(question, e);
 
-  // Two teams set against each other ("h2h KC et MKOI", "G2 vs Fnatic"): their series, decided by the rules.
   if (e.teams.length >= 2 && !e.players.length && OPPOSE.test(question)) return teamsRoute(question, e);
 
-  // One player and a rune word ("runes de Faker aux Worlds 2019", "keystones de Chovy", "runes de Faker sur Azir"): the player's
-  // runes, on the champion named with them. A champion alone keeps its profile, which shows its runes.
   if (e.players.length === 1 && !cue && RUNES.test(question)) return playerRunesRoute(question, e);
 
-  // One player or one team and a pool word ("champion pool de Faker", "quels champions joue Keria", "pool de T1 aux Worlds 2023"),
-  // before the roster: "quels champions joue le mid de T1" asks for champions, not players.
-  // Not with a champion named (a player on one champion), nor with an in-game metric the pool does not hold.
   if (!e.champion && !cue && (e.players.length === 1 || (e.players.length === 0 && e.teams.length === 1)) && POOL.test(question)) return poolRoute(question, e);
 
-  // One player and a word about their latest games ("forme récente de Faker", "5 dernières parties de Caps").
   if (e.players.length === 1 && !e.champion && !cue && RECENT.test(question)) return recentRoute(question, e);
 
-  // One team and a roster word ("Samsung White roster 2014", "qui jouait chez Fnatic en 2018"): its players by role.
-  // One team and a role, nothing else ("adc de T1", "c'est qui le toplaner de T1 ?", "top fpx 2019", "jg de G2"): the roster, that role first.
-  // Read without the entities and years: "top 2019" is the top of 2019, not a "top N" ranking, and "Top Esports" is a team.
   const rest = maskUnderstood(question, e).rest;
 
-  // One player and a team or roster word, no team named ("Rooster team 2026", "coéquipiers de Faker en 2017"): the roster of their team.
-  // Read without the player: "Rooster" is not a roster word. A word about what the team did keeps the player's history.
   const asksPlayerTeam =
     e.players.length === 1 && !e.teams.length && !e.champion && !cue && !NOT_ROSTER.test(rest) && !VERSUS.test(question) &&
     PLAYER_TEAM.test(rest) && !TEAM_RESULTS.test(rest) && !UNSUPPORTED.test(PLAYS_FOR.test(rest) ? rest.replace(WHICH_TEAM, " ") : rest);
@@ -1140,7 +943,6 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   const playerTeam = asksPlayerTeam ? await coverage.playerTeam?.(e.players[0].player, e.league, e.yearFrom, e.yearTo, e.split) : null;
   const ofPlayerTeam = playerTeam ? playerTeamRoute(e, rest, playerTeam) : null;
 
-  // Only when the roster reads every word: "did Faker's team qualify" or "which team was Faker facing" ask something else about the team.
   if (ofPlayerTeam?.kind === "tool" && unreadWords(question, e, ofPlayerTeam.call).words.length === 0) return ofPlayerTeam;
 
   const oneTeam = e.teams.length === 1 && !e.players.length && !e.champion && !NOT_ROSTER.test(rest) && !cue;
@@ -1150,20 +952,15 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
 
   const noEntity = e.players.length + e.teams.length === 0 && !e.champion;
 
-  // A champion alone: its profile answers its averages too ("KDA d'Azir", "dégâts de Jinx"), and the gold
-  // and CS differences at 15 min; another in-game metric ("gold diff at 10", "solo kills") is not in it.
   if (e.champion && !e.players.length && !e.teams.length && (!cue || PROFILE_INGAME.has(`${cue.player}@${cue.askedMinute ?? 15}`))) return championRoute(e, question);
 
   if (noEntity && CHAMPION_DRAGON_KILLS.test(question) && !NOT_CHAMPION_RANKING.test(question)) {
-    // Team totals can be joined to the champions picked by that side.
     if (TEAM_WORDS.test(question)) return { kind: "sql", reason: msg().route.championFigureUnsorted("dragons") };
     const concept = msg().route.championDragonKills;
 
     return { kind: "missing", concepts: [concept], reason: msg().route.missing(concept) };
   }
 
-  // Teams ranked on a criterion the question names ("équipes avec le meilleur winrate", "quelle équipe a les parties les plus courtes").
-  // In-game metrics keep their leaderboard, and "meilleures équipes" alone keeps the standings.
   const teamCriterion = noEntity && !cue && TEAM_WORDS.test(question) && RANKING.test(question) && !PLAYER_WORDS.test(question) ? teamCriterionOf(question) : null;
 
   if (teamCriterion) return teamLeaderboardRoute(question, e, teamCriterion);
@@ -1174,20 +971,14 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
     const extra = championExtraSortOf(question, cue);
     const total = championTotalSortOf(question, cue);
 
-    // "champion avec le plus de morts aux Worlds", "quel champion a le plus de pentakills": a total over the scope.
-    // A figure of the Riot data where the scope has none (the LPL) is absent, not zero.
     if (total && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? championRankingRoute(question, e, total, true);
 
-    // "champions avec le meilleur écart d'or à 15 min", "le plus de dégâts par minute": a figure of the picks the ranking holds.
     if (extra && !CHAMPION_OTHER_FIGURES.test(question)) return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? championRankingRoute(question, e, extra);
 
-    // "champion avec le plus de morts par game": an average the ranking sorts by, with its minimum of picks.
     if (average && !CHAMPION_OTHER_FIGURES.test(question)) return championRankingRoute(question, e, average);
 
-    // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
     if (figure) return { kind: "sql", reason: msg().route.championFigureUnsorted(figure) };
 
-    // "champions les moins joués", "champions avec le pire winrate": the tool has no ascending order, and the highest would be the opposite answer.
     if (LOWEST.test(question)) return { kind: "sql", reason: msg().route.championLowest };
 
     return championRankingRoute(question, e);
@@ -1195,17 +986,11 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
 
   const role = roleOf(question);
   const ranksPlayers = role != null || PLAYER_WORDS.test(question);
-  // At most one player named (two go to their comparison above), no team or champion; one only with a role ("Caps, meilleur mid ?").
   const forPlayers = !e.teams.length && !e.champion && (noEntity || (e.players.length === 1 && role != null));
 
-  // "pires joueurs", "worst mids": the leaderboards only rank from the highest down, and the best would be the opposite answer.
-  // A figure of the Riot data where the scope has none (the LPL) is absent, not a ranking.
   if (noEntity && ranksPlayers && WORST.test(question))
     return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? { kind: "sql", reason: msg().route.playerLowest };
 
-  // Players ranked on an end-of-game criterion; in-game metrics (gold diff, solo kills...) keep their leaderboard.
-  // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a
-  // tournament's standings: only without a role or a player word.
   if (
     forPlayers && !cue && (RANKING.test(question) || (ranksPlayers && COMPARE.test(question))) && !TEAM_WORDS.test(withoutTeamShare(question)) &&
     (ranksPlayers || !STANDINGS.test(question)) && (ranksPlayers || PLAYER_CRITERION_CUES.some(([, re]) => re.test(question)))
@@ -1265,7 +1050,6 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   if (e.league || STANDINGS.test(question)) {
     const league = defaultLeague();
     const oneYear = e.yearFrom != null && e.yearFrom === e.yearTo;
-    // One edition a year: the international events, and the KeSPA Cup.
     const oneEdition = league === "KeSPA Cup" || LEAGUES.some((l) => l.name === league && l.international);
 
     return {
@@ -1280,9 +1064,6 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   return { kind: "sql", reason: msg().route.noMatchingTool, open: true };
 }
 
-// What the rules did not understand ---------------------------------------------------
-
-/** Grammar and filler words, accents stripped: they carry no intent. */
 const FUNCTION_WORDS = new Set(
   (
     "a au aux de des du le la les un une et ou en dans sur pour par avec ce cet cette ces ne pas qu que qui quoi quel quelle quels quelles " +
@@ -1307,11 +1088,6 @@ const INGAME_WORDS = word(
 
 const GAME_WORDS = word("matchs?|games?|parties?|manches?|maps?|duels?|s[ée]ries?|rencontres?|face ?[àa] ?face");
 
-/**
- * The words each tool answers, beyond the entities: the cues that route to
- * it and the vocabulary of what it returns. A word outside them was not
- * understood ("toplaner" for a team history, "bannis" for standings).
- */
 const TOOL_WORDS: Record<ToolName, RegExp[]> = {
   player_event_history: [HISTORY_WORDS],
   team_history: [HISTORY_WORDS],
@@ -1370,7 +1146,6 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     ),
   ],
   player_leaderboard: [
-    // Roles first: "meilleur top" is a role, not "meilleur" then a stray "top".
     ...ROLE_CUES.map((r) => r.pattern),
     RANKING,
     COMPARE,
@@ -1446,11 +1221,6 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
 
 const fold = (text: string) => text.normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
-/**
- * The meaningful words of the question that neither the understand step nor
- * the routed tool read, and their share of everything meaningful (read
- * mentions and cues count one each). `call` is null for an open route.
- */
 export function unreadWords(question: string, e: Entities, call: ToolCall | null) {
   const understood = maskUnderstood(question, e);
   let { rest, read } = understood;
@@ -1464,7 +1234,6 @@ export function unreadWords(question: string, e: Entities, call: ToolCall | null
   };
 
   if (call) {
-    // The in-game cue is read by the in-game tools, by a champion ranking or a record on a lane figure, and by a comparison that puts it first.
     const ingame =
       ["player_ingame_stats", "team_ingame_stats", "dragon_stats", "ingame_leaderboard", "champion_ranking", "game_records"].includes(call.tool) ||
       (call.tool === "player_comparison" && call.input.metric != null);
@@ -1483,23 +1252,10 @@ export function unreadWords(question: string, e: Entities, call: ToolCall | null
   return { words, share: words.length ? words.length / (words.length + read) : 0 };
 }
 
-/**
- * Share of unread words from which a typed tool is no longer trusted: the
- * rules found an entity, not what is asked about it. One unread word out of
- * four meaningful ones is enough. On the eval questions the well-understood
- * ones stay at 0.20 or less ("spring" for a champion's stats) and the
- * misread ones start at 0.25 ("compare Caps et Perkz en LEC").
- */
 export const UNREAD_THRESHOLD = 0.25;
 
-/** Confidence of a tool in doubt: under the LLM router's threshold and under a generated query (0.6), so either can replace it. */
 const UNSURE = 0.5;
 
-/**
- * The rules' route, with a check of how much of the question they read. A
- * tool picked while too many words stay unread is put in doubt: the LLM
- * router then decides, with those words, between a tool and text-to-SQL.
- */
 export async function routeQuestion(question: string, e: Entities, schema: Record<string, string[]>, coverage: CoverageLookup): Promise<Route> {
   const route = await routeByRules(question, e, schema, coverage);
 
@@ -1514,7 +1270,6 @@ export async function routeQuestion(question: string, e: Entities, schema: Recor
 
   if (share < UNREAD_THRESHOLD) return route;
 
-  // Kept for the trace, without lowering the confidence: the rules' pick stands.
   if (route.forced) return { ...route, unread: words, reason: msg().route.unreadIgnored(route.reason, words.join(", ")) };
 
   return {
@@ -1525,21 +1280,17 @@ export async function routeQuestion(question: string, e: Entities, schema: Recor
   };
 }
 
-// Plans -------------------------------------------------------------------------------
-
 export function toolPlan(tool: BoundTool, attempt: number, relaxed: string[] = []): QueryPlan {
   return { intent: tool.call.tool, tool, sql: tool.sql, params: tool.params, attempt, relaxed };
 }
 
 
-/** Schema summary given to the LLM: the v_* views only (generated SQL may read nothing else). */
 export async function schemaPrompt(db: Db): Promise<string> {
   return Object.entries(allowedSchema(await readSchema(db), VIEWS))
     .map(([t, cols]) => `${t}(${cols.join(", ")})`)
     .join("\n");
 }
 
-/** `language`: the one the model names the missing data in, as the answer shows it. */
 const sqlRules = (language: string) =>
   "PostgreSQL dialect. One read-only SELECT statement, no trailing semicolon, no server function (pg_*, set_config...). " +
   "Text matches exactly: use ILIKE for a case-insensitive match. Flags (win, has_ingame, first_*) are 0/1 integers: compare them with = 1 and SUM them. " +
@@ -1575,17 +1326,14 @@ const sqlRules = (language: string) =>
 
 const SqlOutput = z.object({ sql: z.string(), explanation: z.string(), missing: z.array(z.string()) });
 
-/** A predicate that is always false: the query states a figure without reading any data. */
 const ALWAYS_FALSE = /\b(?:0\s*=\s*1|1\s*=\s*0)\b|\bwhere\s+(?:false|0)\b/i;
 
-/** What a generated query would leave out: the data it says is missing, or a query that reads nothing real. */
 function generatedGaps(reply: { sql: string; missing: string[] }): string[] {
   if (reply.missing.length) return reply.missing;
 
   return !reply.sql || ALWAYS_FALSE.test(reply.sql) ? [msg().route.readNothing] : [];
 }
 
-/** `functionId` names the call in the trace: generating a query, or repairing one. */
 async function askSql(db: Db, prompt: string, functionId: "generate-sql" | "repair-sql") {
   const llm = getLlm();
 
@@ -1616,11 +1364,8 @@ const entitySummary = (e: Entities) =>
     split: e.split,
   });
 
-// Build step ------------------------------------------------------------------------
-
 type BuildInput = { db: Db; question: string; entities: Entities; route: Route };
 
-/** A query plan, or (text-to-SQL only) the data the database does not hold. */
 export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; missing: string[]; notes: string[] };
 
 const rulesRouter: Decider<BuildInput, BuildResult> = {
@@ -1638,7 +1383,6 @@ const rulesRouter: Decider<BuildInput, BuildResult> = {
   },
 };
 
-/** Added to the router's instructions when the rules left words of the question unread. */
 const UNREAD_RULES =
   " The rule-based router matched the names but could not read the words listed below, so its pick is in doubt: check it against those words. " +
   "A tool only filters on the arguments of its schema and only returns what its description says. " +
@@ -1647,17 +1391,8 @@ const UNREAD_RULES =
   "a ranking of champions or players, personal details...), call no tool: " +
   "a SQL query is then generated, which is the expected outcome and not a failure. Never answer a different question with a tool.";
 
-/** The router's call once checked against the data, and the competition taken out of it. */
 export type GroundedCall = { call: ToolCall | null; dropped: string | null };
 
-/**
- * A competition the LLM router adds on its own. When the understand step read none and the question names a player or a team,
- * the router sometimes fills the argument from what it remembers of them ("Rooster team 2026" → LCK, where he no longer plays):
- * the query then returns nothing. Such a competition is kept only when one of the names has a game in it over the period asked;
- * otherwise the call goes back to the rules' competition (same tool) or to every competition, and the one removed is returned.
- * A tool that needs a competition and has none to go back to gives no call: the router's pick is declined.
- * Nobody named, or no game at all over the period: the competition stays, the data does not contradict it.
- */
 export async function groundLeague(db: Db, call: ToolCall, e: Entities, route: Route, coverage: CoverageLookup): Promise<GroundedCall> {
   const league = "league" in call.input ? call.input.league : null;
   const kept: GroundedCall = { call, dropped: null };
@@ -1677,14 +1412,12 @@ export async function groundLeague(db: Db, call: ToolCall, e: Entities, route: R
 
   const rules = route.kind === "tool" && route.call.tool === call.tool && "league" in route.call.input ? route.call.input.league : null;
 
-  // The rules' own default (the Worlds for a player's history): nothing the router added, and its note already says so.
   if (rules === league) return kept;
   const grounded = await withLeague(db, call, rules);
 
   return { call: grounded, dropped: league };
 }
 
-/** The LLM picks a typed tool (AI SDK tool calling); no tool call means text-to-SQL. */
 const llmRouter: Decider<BuildInput, BuildResult> = {
   level: "llm",
   name: "choix d'outil",
@@ -1714,7 +1447,6 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
       abortSignal: llmSignal(LLM_CALL.timeoutMs),
     });
 
-    // Dynamic calls are unknown or unparsable tool calls: treat them as "no tool".
     const typed = toolCalls.find((c) => !c.dynamic);
 
     if (!typed || typed.dynamic) return null;
@@ -1727,7 +1459,6 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
     const said = msg().route.modelSays(llm.id, `${picked.tool}(${JSON.stringify(picked.input)})`);
 
     return {
-      // The rules' notes (a default competition...) still hold when the LLM confirms their tool.
       result: { plan: toolPlan(await bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
       confidence: 0.85,
       level: "llm",
@@ -1760,8 +1491,6 @@ export function buildQuery(input: BuildInput) {
   return decide(input, [rulesRouter, llmRouter, textToSqlDecider], { threshold: 0.8 });
 }
 
-// Self-correction -------------------------------------------------------------------
-
 export type CorrectInput = {
   db: Db;
   question: string;
@@ -1772,7 +1501,6 @@ export type CorrectInput = {
 
 type Fix = { plan: QueryPlan; note?: string };
 
-/** Deterministic fixes for an empty typed result: the tool's relaxations, in order. */
 const rulesCorrector: Decider<CorrectInput, Fix> = {
   level: "rules",
   name: "corrections déterministes",
@@ -1791,7 +1519,6 @@ const rulesCorrector: Decider<CorrectInput, Fix> = {
   },
 };
 
-/** The LLM repairs a rejected or failing query, or an empty generated one. */
 const llmCorrector: Decider<CorrectInput, Fix> = {
   level: "llm",
   name: "réparation SQL",
@@ -1806,7 +1533,6 @@ const llmCorrector: Decider<CorrectInput, Fix> = {
       "repair-sql",
     );
 
-    // A repair that gives up on real data is no repair.
     if (!reply || generatedGaps(reply).length) return null;
 
     return {

@@ -7,7 +7,6 @@ import { ITEM_KIND_LABEL, ITEM_KINDS, type ItemKind } from "@/lib/domain/items";
 import { compareText, numberFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
 
-/** Figures written in the language of the page: a number, a possibly missing one, a share of a total. */
 export function useFigures() {
   const number = numberFormat(useLocale(), 2);
   const ui = useUi();
@@ -19,10 +18,6 @@ export function useFigures() {
   };
 }
 
-/**
- * A Data Dragon square icon, or the champion's first letters in a box when the icon is missing or fails
- * to load. Plain <img>: next/image would spend the shared Vercel Hobby image quota for no LCP gain.
- */
 export function ChampionIcon({ name, src, size, tone }: { name: string; src: string | null; size: number; tone?: "light" }) {
   const [failed, setFailed] = useState(false);
 
@@ -47,14 +42,12 @@ export function ChampionIcon({ name, src, size, tone }: { name: string; src: str
       loading="lazy"
       onError={() => setFailed(true)}
       style={{ width: size, height: size }}
-      // A nearly white icon (a stat shard) gets the plate of `.entity-icon` on a light page.
       data-tone={tone}
       className={`shrink-0 border border-line ${tone ? "entity-icon" : ""}`}
     />
   );
 }
 
-/** A horizontal ASCII-like gauge: filled share in accent, the rest dotted. */
 export function Gauge({ share, label }: { share: number; label: string }) {
   return (
     <div role="img" aria-label={label} className="relative h-1.5 w-full bg-[repeating-linear-gradient(90deg,var(--line)_0_2px,transparent_2px_4px)]">
@@ -63,13 +56,8 @@ export function Gauge({ share, label }: { share: number; label: string }) {
   );
 }
 
-/** A figure's name for screen readers, where the column header is only visual. */
 export const Label = ({ children }: { children: string }) => <span className="sr-only">{children} : </span>;
 
-/**
- * A sortable column header. Its accessible name keeps the visible label and adds the sort state, since
- * these lists are not tables and cannot carry `aria-sort`.
- */
 export function SortHeader({ active, dir, label, title, className, onClick }: { active: boolean; dir: 1 | -1; label: string; title: string; className: string; onClick: () => void }) {
   const ui = useUi();
 
@@ -78,7 +66,6 @@ export function SortHeader({ active, dir, label, title, className, onClick }: { 
       type="button"
       title={title}
       onClick={onClick}
-      // A button does not inherit capitals from its row: set here, as in the plain table's headers.
       className={`${className} whitespace-nowrap uppercase hover:text-accent pointer-coarse:min-h-11 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${active ? "text-foreground" : ""}`}
     >
       <span className="sr-only">{ui.champion.sortBy}</span>
@@ -91,17 +78,11 @@ export function SortHeader({ active, dir, label, title, className, onClick }: { 
   );
 }
 
-/**
- * Width of a metric's column, shared by its header and its values: 6 rem, or more when the header is longer
- * ("pentakills (total)"), so a header never breaks onto two lines. In ch of the header (capitals, tracked).
- */
 // SAFETY: a CSS custom property is a valid inline style that React's CSSProperties type does not list.
 const columnWidth = (label: string) => ({ "--col": `max(6rem, ${Math.ceil(label.length * 1.1) + 1}ch)` }) as CSSProperties;
 
-/** How many metrics sit beside the ranking one in the champion view. */
 const SIDE_METRICS = 5;
 
-/** Champions ranked: one line per champion, a gauge on the ranking metric, the other metrics beside it. */
 export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; fallback: ReactNode }) {
   const locale = useLocale();
   const ui = useUi();
@@ -109,7 +90,6 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
   const primary = ranking.metrics[ranking.primary];
   const max = Math.max(...ranking.lines.map((l) => Math.abs(l.values[ranking.primary] ?? 0)), 0);
   const rest = ranking.metrics.map((m, i) => ({ m, i })).filter(({ i }) => i !== ranking.primary);
-  // A ranking can hold fifteen figures: the champion view keeps the first ones beside the gauge, the table view has them all.
   const others = rest.slice(0, SIDE_METRICS);
   const hidden = rest.length - others.length;
 
@@ -130,12 +110,9 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
         </button>
       </div>
       {asTable ? (
-        // The plain table starts where the champion list does: switching views changes the content, not its place.
         <div className="[&>div]:mt-0">{fallback}</div>
       ) : (
         <div className="border border-line">
-          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. One column
-              per metric only from the width where six of them leave room for the name (lg); below, they wrap under it. */}
           <div aria-hidden className="hidden items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase lg:flex">
             <span className="w-8 shrink-0">#</span>
             <span className="min-w-0 flex-1">champion</span>
@@ -168,7 +145,6 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
                     </div>
                   </div>
                   <span aria-hidden style={columnWidth(primary.label)} className="text-right font-semibold tabular-nums text-accent lg:w-(--col) lg:shrink-0">{formatChampionValue(value, primary.percent, locale)}</span>
-                  {/* Phone width: the other metrics wrap under the name; wider: one column each. */}
                   <dl className="col-span-3 col-start-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-[calc(2rem+0.75rem+28px+0.5rem)] text-[11px] text-muted lg:hidden">
                     {others.map(({ m, i }) => (
                       <div key={m.key} className="flex gap-1">
@@ -193,7 +169,6 @@ export function ChampionRankingView({ ranking, fallback }: { ranking: Ranking; f
   );
 }
 
-/** One champion in the scope: draft figures, averages per game, roles and the players who played it most. */
 export function ChampionProfileView({ p }: { p: Profile }) {
   const ui = useUi();
   const { nd, pct } = useFigures();
@@ -309,13 +284,8 @@ export function ChampionProfileView({ p }: { p: Profile }) {
   );
 }
 
-/** Lines of a build section shown at full width (the one the question is about), and beside another. */
 const BUILD_LINES = { wide: 10, half: 5 };
 
-/**
- * Items, runes and summoner spells: the one the question is about first, at full width, the two others side
- * by side under it. A question about the champion as a whole leads with the items.
- */
 function ChampionBuild({ p }: { p: Profile }) {
   const first = p.focus ?? "items";
 
@@ -345,7 +315,6 @@ function ChampionBuild({ p }: { p: Profile }) {
 type ItemSortKey = "item" | "games" | "winrate";
 
 
-/** One spell pair or rune: icons, name, share of the games that have the data, games and win rate. */
 export function SetupLine({ rank, icons, name, games, wins, of, winrate }: { rank: number; icons: { name: string; src: string | null; tone?: "light" }[]; name: string; games: number; wins: number; of: number; winrate?: ReactNode }) {
   const ui = useUi();
   const { pct } = useFigures();
@@ -391,7 +360,6 @@ export function SetupLine({ rank, icons, name, games, wins, of, winrate }: { ran
   );
 }
 
-/** The champion's summoner spell pairs, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
 function ChampionSpellsSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
   const ui = useUi();
 
@@ -421,7 +389,6 @@ function ChampionSpellsSection({ setups, lines }: { setups: ChampionSetups; line
   );
 }
 
-/** The champion's runes by part of the page, from the scoreboards: share of the games that list them. `lines`: how many are shown. */
 function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines: number }) {
   const ui = useUi();
   const kinds = RUNE_KINDS.filter((k) => setups.runes.some((r) => r.kind === k));
@@ -469,18 +436,12 @@ function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines
   );
 }
 
-/** Below this many games, an item's win rate is not shown: one game more or less swings it too much. */
 export const ITEM_WINRATE_MIN_GAMES = 5;
 
-/** Lines shown before "voir tout". */
 const ITEM_LINES = 8;
 
 const winrateOf = (i: ChampionItem) => (i.games >= ITEM_WINRATE_MIN_GAMES ? (100 * i.wins) / i.games : null);
 
-/**
- * The champion's most built items: end-of-game inventories, filtered by kind (completed items first),
- * each line with its share of the champion's games and, on enough games, its win rate.
- */
 function ChampionItemsSection({ items, lines: shownLines }: { items: ChampionItems; lines: number }) {
   const locale = useLocale();
   const ui = useUi();
@@ -632,17 +593,12 @@ function ChampionItemsSection({ items, lines: shownLines }: { items: ChampionIte
 type PoolKey = "games" | "wins" | "winrate" | "kda" | "share" | "champion";
 
 
-/** Two figures in the sort direction; a missing one (a KDA without deaths data) goes last either way. */
 export function compareFigures(x: number | null, y: number | null, dir: 1 | -1): number {
   if (x == null || y == null) return x == null ? (y == null ? 0 : dir) : -dir;
 
   return x - y;
 }
 
-/**
- * A player's or a team's champion pool: diversity on top (distinct champions, share of the three most played),
- * then one line per champion with its icon, sortable on every column.
- */
 export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: ReactNode }) {
   const locale = useLocale();
   const ui = useUi();
@@ -664,7 +620,6 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
       [...pool.lines].sort((a, b) => {
         const order = sort.key === "champion" ? compareText(locale, a.champion, b.champion) : compareFigures(a[sort.key], b[sort.key], sort.dir);
 
-        // Ties keep the most played first.
         return order * sort.dir || b.games - a.games;
       }),
     [pool.lines, sort, locale],
@@ -723,11 +678,9 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
       </div>
 
       {asTable ? (
-        // Same gap as the champion list: switching views changes the content, not its place.
         <div className="[&>div]:mt-2">{fallback}</div>
       ) : (
         <div className="mt-2 border border-line">
-          {/* Same header as the plain table (height, size, capitals): switching views keeps it in place. */}
           <div className="flex items-center gap-3 border-b border-line px-3 py-2 text-xs tracking-wider text-muted uppercase">
             <span className="w-6 shrink-0">#</span>
             {header("champion", "champion", ui.champion.alphabetical, "min-w-0 flex-1 text-left")}
@@ -775,7 +728,6 @@ export function ChampionPoolView({ pool, fallback }: { pool: Pool; fallback: Rea
                   <Label>{ui.champion.share}</Label>
                   {ui.percent(number.format(l.share))}
                 </span>
-                {/* Phone width: the columns that do not fit wrap under the name. */}
                 <dl className="flex w-full flex-wrap gap-x-3 pl-[calc(1.5rem+0.75rem+28px+0.5rem)] text-[11px] text-muted sm:hidden">
                   <div className="flex gap-1">
                     <dt>{ui.record}</dt>

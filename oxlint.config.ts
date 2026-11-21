@@ -18,6 +18,7 @@ export default defineConfig({
   ],
   jsPlugins: [
     { name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" },
+    { name: "farsight", specifier: "./tools/oxlint/farsight/index.ts" },
   ],
   rules: {
     "oxc/no-accumulating-spread": "error",
@@ -39,5 +40,6 @@ export default defineConfig({
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-readable-spacing": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "farsight/no-comments": "error",
   },
 });

@@ -4,14 +4,8 @@ import Link from "next/link";
 import { Mark } from "./brand/logo";
 import { SITE } from "./brand/site";
 
-/** Event the home console listens to: the visitor asked to go back to the home screen. */
 export const HOME_EVENT = "farsight:home";
 
-/**
- * The logo and the site name, linking to the home page of the language (`href`). On the home page itself the
- * click tells the console to start over instead of navigating: the console owns the question of the address
- * (`?q=`, see question-link) and takes it out, so the home screen is one step back from the answer.
- */
 export function HomeLink({ href, label }: { href: string; label: string }) {
   return (
     <Link

@@ -5,7 +5,6 @@ import { isPublic, LOCALE_NAME, LOCALES, type Locale, type PageKey, PATHS } from
 import { SHELL } from "./i18n/shell";
 import { ThemeToggle } from "./theme-toggle";
 
-/** The header of every page: the logo back to the home page, where the visitor is, the language and the theme. */
 export function SiteHeader({ locale, page, trail }: { locale: Locale; page: PageKey; trail: string }) {
   const shell = SHELL[locale];
 
@@ -21,12 +20,6 @@ export function SiteHeader({ locale, page, trail }: { locale: Locale; page: Page
   );
 }
 
-/**
- * The same page in the other public languages. Plain links, not `next/link`: each language has its own root
- * layout, so the change is a full page load either way, and a crawler reads them as the alternates they are.
- * The page that follows a click plays the arrival in its language (i18n/arrival). From an answer, the link
- * carries the question to the other home page, which asks it again and answers in its language.
- */
 function LocaleSwitch({ locale, page }: { locale: Locale; page: PageKey }) {
   return LOCALES.filter((other) => other !== locale && isPublic(other)).map((other) => (
     <LocaleLink

@@ -133,9 +133,7 @@ describe("one team and a roster word: its players by role, decided by the rules"
     expect(await route("Faker vs Chovy", entities({ players: [player("Faker"), player("Chovy")] }))).toBe("player_comparison");
     expect(await route("meilleurs mids LEC 2025", entities({ ...league("LoL EMEA Championship", "LEC"), ...year(2025) }))).toBe("player_leaderboard");
     expect(await route("classement worlds 2024", entities({ ...league("World Championship", "Worlds"), ...year(2024) }))).toBe("tournament_standings");
-    // A ranking or a metric inside a team is not its roster.
     expect(await route("joueur de Fnatic avec le plus de kills en 2018", entities({ teams: [FNC], ...year(2018) }))).toBe("sql");
-    // A role with a team and a history or ranking word keeps its route.
     expect(await route("historique de T1", entities({ teams: [T1] }))).toBe("team_history");
     expect(await route("meilleur adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
     expect(await route("KDA de l'adc de T1", entities({ teams: [T1] }))).not.toBe("team_roster");
@@ -191,7 +189,6 @@ describe("one player and a team or roster word: the roster of the team they last
     expect(await route("Who did Rooster's team play at Worlds 2026?", entities({ players: [rooster], ...league("World Championship", "Worlds"), ...year(2026) }))).not.toBe("team_roster");
     expect(await route("who was Rooster in 2026?", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
     expect(await route("items de l'équipe de Rooster en 2026", entities({ players: [rooster], ...year(2026) }))).not.toBe("team_roster");
-    // A team named keeps its own roster, and a player without a game in the scope keeps their history.
     expect(await routeQuestion("roster de Fnatic en 2018", entities({ teams: [FNC], ...year(2018) }), SCHEMA, lookup)).toMatchObject({ call: { input: { team: "Fnatic" } } });
     expect(await route("Faker team 2026", entities({ players: [player("Faker")], ...year(2026) }))).toBe("player_event_history");
     expect(await route("Rooster team 2026", entities({ players: [rooster], ...year(2026) }), COVERAGE)).toBe("player_event_history");
@@ -235,10 +232,6 @@ describe("in-game statistics of one team: absent data is said", () => {
   });
 });
 
-/**
- * Samsung Ozone (Spring 2014) then Samsung White (Summer 2014, Worlds 2014): the same five, plus Homme (two
- * games at top) and Dade (mid, Spring only). Samsung Blue (another team) and a 2015 game must not count.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const id = async (name: string) => Number((await db.query("SELECT id FROM leagues WHERE name = ?", [name]))[0]!.id);
@@ -336,9 +329,7 @@ describe("a competition the LLM router adds on its own", () => {
       expect(rules).toMatchObject({ call: { tool: "player_event_history", input: { league: WORLDS_NAME } } });
       expect(await groundLeague(db, history(LEC), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: LEC });
       expect(await groundLeague(db, roster(LEC), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: LEC });
-      // The rules' own default, confirmed by the router: kept as is, nothing was added.
       expect(await groundLeague(db, history(WORLDS_NAME, 2015), entities({ players: [player("Homme")], ...year(2014) }), rules, coverage)).toEqual({ call: history(WORLDS_NAME, 2015), dropped: null });
-      // A required competition with no rules' pick to fall back on: the router's call is declined.
       expect(await groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: LEC });
     } finally {
       await db.close();
@@ -400,14 +391,12 @@ describe("roster of a team on a seeded database", () => {
       expect(out.facts).toContain("Noms pris en compte : Samsung Ozone, Samsung White");
       expect(out.sources.map((s) => s.url)).toContain("https://lol.fandom.com/wiki/W14");
 
-      // A competition restricts the roster.
       const worlds = await bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: "World Championship", yearFrom: 2014, yearTo: 2014, split: null, role: null } });
       const atWorlds = await worlds.format(db, (await db.query(worlds.sql, worlds.params)));
 
       expect(atWorlds.roster).toMatchObject({ games: 2, scope: "aux Worlds en 2014", names: ["Samsung White"] });
       expect(atWorlds.roster!.players.map((p) => p.player)).toEqual(["Looper", "DanDy", "PawN", "Imp", "Mata"]);
 
-      // A split restricts the roster and its tournaments; an even split of the games gives two starters.
       const spring = await bindTool(db, { tool: "team_roster", input: { team: "Samsung White", league: null, yearFrom: 2014, yearTo: 2014, split: "Spring", role: null } });
 
       expect(guardQuery(await readSchema(db), spring.sql).ok).toBe(true);
@@ -417,7 +406,6 @@ describe("roster of a team on a seeded database", () => {
       expect(inSpring.roster!.tournaments.map((t) => t.label)).toEqual(["Champions 2014 Spring"]);
       expect(inSpring.roster!.players.filter((p) => p.role === "Top").map((p) => [p.player, p.starter])).toEqual([["Homme", true], ["Looper", true]]);
 
-      // Without a period, the current roster: the team's latest season (2015 here), and the role asked comes first.
       const current = await bindTool(db, { tool: "team_roster", input: { team: "SSW", league: null, yearFrom: null, yearTo: null, split: null, role: "Bot" } });
       const now = await current.format(db, (await db.query(current.sql, current.params)));
 
@@ -426,13 +414,11 @@ describe("roster of a team on a seeded database", () => {
       expect(now.facts.startsWith("ADC de Samsung White en 2015 : Imp (1 partie)")).toBe(true);
       expect(now.notes).toContain("Aucune période précisée : roster de la saison la plus récente de Samsung White (2015).");
 
-      // The latest season keeps the split asked: Spring was last played in 2014, not in 2015.
       const lastSpring = await bindTool(db, { tool: "team_roster", input: { team: "SSW", league: null, yearFrom: null, yearTo: null, split: "Spring", role: null } });
       const spring14 = await lastSpring.format(db, (await db.query(lastSpring.sql, lastSpring.params)));
 
       expect(spring14.roster).toMatchObject({ games: 2, scope: "au split Spring en 2014" });
 
-      // The router model may write an old name: the input carries the team's current one.
       expect(await TOOLS.team_roster.normalize(db, { team: "Samsung Ozone", league: null, yearFrom: 2014, yearTo: 2014, split: null, role: null })).toMatchObject({ input: { team: "Samsung White" } });
     } finally {
       await db.close();
@@ -472,22 +458,18 @@ describe("the KeSPA Cup in a roster", () => {
       expect(in2014.roster!.tournaments.map((t) => t.label)).toEqual(["Champions 2014 Spring", "Champions 2014 Summer", "Worlds 2014"]);
       expect(in2014.roster!.players.map((p) => p.player)).not.toContain("Rookie Top");
 
-      // The latest season is the team's last one in its other competitions, not a later KeSPA Cup.
       expect((await roster({ league: null, yearFrom: null })).roster).toMatchObject({ games: 1, scope: "en 2015" });
 
-      // Asked by name, the KeSPA Cup gives its own roster.
       const atKespa = await roster({ league: "KeSPA Cup", yearFrom: 2014 });
 
       expect(atKespa.roster).toMatchObject({ games: 1 });
       expect(atKespa.roster!.players.map((p) => p.player)).toEqual(["Rookie Top", "Rookie Jungle", "Rookie Mid", "Rookie Bot", "Rookie Support"]);
 
-      // Nor does it name a player's team: Imp's later KeSPA Cup game for Samsung Blue leaves him at Samsung White.
       await db.exec("INSERT INTO games(id,tournament_id,tab,match_n,game_n,blue_team_id,red_team_id,winner_side,played_at) VALUES (9,6,'Round 1',2,1,3,4,1,510)");
       await db.run("INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (?,?,?,?,?,?)", 9, 4, 3, "Bot", 1, 1);
       expect(await coverageLookup(db).playerTeam!("Imp", null, null, null, null)).toEqual({ team: "Samsung White", year: 2015, others: [] });
       expect(await coverageLookup(db).playerTeam!("Imp", "KeSPA Cup", null, null, null)).toMatchObject({ team: "Samsung Blue", year: 2016 });
 
-      // Its games still count for the team everywhere else.
       expect(await coverageLookup(db).team(["Samsung Ozone", "Samsung White"], null, 2014, 2014)).toEqual({ games: 6, ingame: 0 });
     } finally {
       await db.close();

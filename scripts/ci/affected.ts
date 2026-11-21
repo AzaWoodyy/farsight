@@ -1,4 +1,3 @@
-/** Unknown paths run every check; the checks that read data load Postgres from the pinned snapshot. */
 export const CHECKS = ["lint", "typecheck", "test", "eval", "build"] as const;
 
 export type Check = (typeof CHECKS)[number];
@@ -30,10 +29,6 @@ export function affected(paths: string[]): Set<Check> {
   return selected;
 }
 
-/**
- * The newest commit already validated on main that is an ancestor of the pushed commit, or null: then every check runs.
- * A run only proves its own range when it selected checks with this rule, so older runs are never a base.
- */
 export function pushBase(greenShas: string[], after: string, isAncestor: (sha: string) => boolean, usesThisRule: (sha: string) => boolean): string | null {
   return greenShas.find(sha => /^[a-f0-9]{40}$/.test(sha) && sha !== after && isAncestor(sha) && usesThisRule(sha)) ?? null;
 }

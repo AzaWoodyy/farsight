@@ -1,12 +1,3 @@
-/**
- * Versioned migrations of the Postgres schema: db/migrations/NNNN_name.sql, applied in order, each in its own
- * transaction, recorded in `schema_migrations` with a checksum. An applied file that changed afterwards is refused:
- * a new migration is a new file.
- *
- * A migration names no schema: it applies to the schema on the search path, the live one (db:migrate) or the one a
- * load builds from scratch (db:load). Tables and views change through a migration and a load, since their rows are
- * derived from the raw cache; an index or a view alone can be migrated in place.
- */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -36,7 +27,6 @@ export function readMigrations(dir = MIGRATIONS_DIR): Migration[] {
   return migrations;
 }
 
-/** Applies the pending migrations to the schema on the client's search path; returns the versions applied. */
 export async function migrate(client: pg.ClientBase, migrations = readMigrations()): Promise<number[]> {
   await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version integer PRIMARY KEY, name text NOT NULL, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`);
@@ -70,7 +60,6 @@ export async function migrate(client: pg.ClientBase, migrations = readMigrations
   return done;
 }
 
-/** Read access for the app roles of db/roles.sql on `schema`, when those roles exist (a bare local server has none). */
 export async function grantReaders(client: pg.ClientBase, schema: string, views: readonly string[]) {
   const { rows } = await client.query<{ rolname: string }>("SELECT rolname FROM pg_roles WHERE rolname IN ('farsight_app', 'farsight_sql')");
   const roles = new Set(rows.map((r) => r.rolname));

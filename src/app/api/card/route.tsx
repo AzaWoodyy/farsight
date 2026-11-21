@@ -5,18 +5,12 @@ import { answerCard, CARD_SIZE } from "../../brand/answer-card";
 import { shareCard as siteCard } from "../../brand/share-card";
 import { questionIn } from "../../question-link";
 
-/**
- * The image of a link to an answer: `GET /api/card?l=<language>&q=<question>`, named by the metadata of that
- * link (answer-metadata). Chat services ask for it, so no BotID here: the answer is computed by the rules
- * alone, never by the model, and a question they do not answer gets the site's own card.
- */
 export async function GET(req: Request) {
   if (rateLimited(req, "card")) return new Response("too many requests", { status: 429, headers: { "Retry-After": "600" } });
 
   const url = new URL(req.url);
   const locale = LOCALES.find((l) => l === url.searchParams.get("l")) ?? DEFAULT_LOCALE;
   const question = questionIn(url.search);
-  // One address per image, the one the link's metadata names: any other query string would be a new CDN entry.
   const canonical = `?${new URLSearchParams(question ? { l: locale, q: question } : { l: locale })}`;
 
   if (url.search !== canonical) return Response.redirect(new URL(`/api/card${canonical}`, url), 308);
@@ -24,7 +18,6 @@ export async function GET(req: Request) {
   const card = question ? await shareCard(question, locale) : null;
   const image = await (card ? answerCard(card, locale) : siteCard(locale, CARD_SIZE));
 
-  // An answer changes with the database, reloaded without a deployment: kept as long as the app's own caches.
   image.headers.set("Cache-Control", "public, max-age=300, s-maxage=300");
 
   return image;

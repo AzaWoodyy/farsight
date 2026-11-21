@@ -9,7 +9,6 @@ import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
 describe("item kinds from Data Dragon", () => {
-  // Shapes taken from item.json 16.22.1 and 13.24.1 (Ornn upgrade, transformation, null recipe entries).
   const catalog = {
     "1036": { tags: ["Damage", "Lane"], into: ["3031", "6672"], gold: { total: 350, purchasable: true } },
     "1038": { tags: ["Damage"], into: ["3031"], gold: { total: 1300, purchasable: true } },
@@ -25,7 +24,6 @@ describe("item kinds from Data Dragon", () => {
     "2055": { tags: ["Consumable", "Lane", "Vision"], gold: { total: 75, purchasable: true } },
     "3363": { tags: ["Active", "Trinket", "Vision"], gold: { total: 0, purchasable: true } },
     "4638": { tags: ["Health", "Vision"], into: ["4643"], gold: { total: 1100, purchasable: true } },
-    // Relic Shield → Targon's Buckler → Bulwark of the Mountain (13.24.1): only the last stage is completed.
     "3858": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: true } },
     "3859": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: false }, specialRecipe: 3858 },
     "3860": { tags: ["Health", "GoldPer", "Lane"], gold: { total: 400, purchasable: false }, specialRecipe: 3859 },
@@ -38,10 +36,8 @@ describe("item kinds from Data Dragon", () => {
     ["1038", "component"],
     ["3031", "complete"],
     ["6672", "complete"],
-    // Luden's Tempest builds only into Ornn's upgrade: completed.
     ["6655", "complete"],
     ["7013", "complete"],
-    // Muramana: a transformation, no recipe depth.
     ["3042", "complete"],
     ["1055", "starter"],
     ["1082", "starter"],
@@ -49,7 +45,6 @@ describe("item kinds from Data Dragon", () => {
     ["3865", "starter"],
     ["2055", "consumable"],
     ["3363", "consumable"],
-    // Watchful Wardstone: Data Dragon marks it `consumed`, it is a component of the Vigilant Wardstone.
     ["4638", "component"],
     ["3858", "starter"],
     ["3859", "starter"],
@@ -68,10 +63,6 @@ describe("item kinds from Data Dragon", () => {
   });
 });
 
-/**
- * Worlds 2026, four games of Yunara in the bot lane (three with an inventory), and MSI 2023 first dragons:
- * T1 takes it in two of its three games, Gen.G in one.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const worlds = Number((await db.query("SELECT id FROM leagues WHERE name = 'World Championship'"))[0]!.id);
@@ -166,7 +157,6 @@ describe("a champion's most built items", () => {
 });
 
 describe("a champion's summoner spells and runes", () => {
-  /** Spells on the four Yunara games; a keystone on three of them, the whole page on two. */
   async function loadouts(db: TestDb) {
     await db.exec(`
       INSERT INTO summoner_spells VALUES (1,'Flash','/flash.png'),(2,'Heal',NULL),(3,'Barrier',NULL);
@@ -279,7 +269,6 @@ describe("rate leaderboards show the count beside the share", () => {
 
     try {
       await seed(db);
-      // SK Telecom T1 is T1's former name: its MSI 2023 game (a first dragon) counts for T1. Inserted before any team is resolved.
       await db.exec(`
         INSERT INTO teams(id,name) VALUES (3,'SK Telecom T1');
         INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (8,2,3,2,1,40);

@@ -2,19 +2,8 @@ import type { StepName } from "@/lib/agent/types";
 import { type Locale, NO_DATA, percent } from "@/lib/locale";
 import type { EventKind } from "@/lib/sources/timeline";
 
-/**
- * The texts of the console and of the answer views, in each language. `en` is typed on `fr`: a text added in
- * one language and forgotten in the other fails the typecheck. A text with a number or a name in it is a
- * function, so each language keeps its own word order and plural.
- *
- * What the agent itself writes (titles, summaries, notes, table headers, follow-ups) is not here: it comes
- * with the answer.
- */
-
-/** French marks the plural from two; zero is singular. */
 const frPlural = (n: number) => (n > 1 ? "s" : "");
 
-/** English marks it for everything but one. */
 const enPlural = (n: number) => (n === 1 ? "" : "s");
 
 const fr = {
@@ -59,7 +48,6 @@ const fr = {
     how: "Comment Farsight trouve ses réponses",
     ready: (title: string) => `Réponse prête : ${title}`,
     restart: "Nouvelle conversation",
-    /** Copies the address of the answer (`?q=`), then says so in place. */
     copyLink: "Copier le lien",
     linkCopied: "Lien copié",
     copyFailed: "Copie impossible",
@@ -84,7 +72,6 @@ const fr = {
 
   examples: {
     heading: "Essaie par exemple",
-    /** Stops and restarts the drift of the examples. */
     pause: "[ pause ]",
     resume: "[ reprendre ]",
   },
@@ -93,7 +80,6 @@ const fr = {
     note: "note :",
     sources: "Sources",
     followUps: "Questions de suivi",
-    /** Back from the plain table to the card of a one-line answer. */
     cardView: "vue fiche",
     correct: "Réponse correcte ?",
     yes: "[+] oui",
@@ -105,7 +91,6 @@ const fr = {
     place: "Place",
     champions: "Champions",
     played: (name: string, games: number, wins: number) => `${name} : ${games} partie(s), ${wins} victoire(s)`,
-    /** Headers of the machine-named columns the champion and comparison layouts read, when shown as a plain table. */
     columns: {
       rank: "rang",
       presence: "présence %",
@@ -125,7 +110,6 @@ const fr = {
     compared: "Statistiques comparées",
     and: "et",
     neverMet: (scope: string) => `ne se sont jamais affrontés${scope ? ` ${scope}` : ""} : statistiques sur toutes leurs parties.`,
-    /** One of the two has no game in the scope: said in full in the face-off itself. */
     neverMetAbsent: (scope: string) => `ne se sont jamais affrontés${scope ? ` ${scope}` : ""}.`,
     noGames: (scope: string) => `aucune partie${scope ? ` ${scope}` : ""}`,
     nothingToCompare: (scope: string) => `n'a aucune partie${scope ? ` ${scope}` : ""} : rien à comparer.`,
@@ -150,7 +134,6 @@ const fr = {
     picksUnknown: "picks n/d",
   },
 
-  /** A series Leaguepedia only lists on its match schedule: its result, without any game. */
   schedule: {
     only: "calendrier seul",
     detail: "Résultat tiré du calendrier de Leaguepedia : aucune stat de partie pour cette série.",
@@ -194,7 +177,6 @@ const fr = {
   },
 
   timeline: {
-    /** Chart marker of each event kind; towers are a plain tick. */
     marks: { first_blood: "FB", tower: "", inhibitor: "I", dragon: "D", elder: "DA", herald: "H", grubs: "L", baron: "B", atakhan: "At", ace: "ACE" } satisfies Record<EventKind, string>,
     events: {
       first_blood: "first blood",
@@ -214,7 +196,6 @@ const fr = {
     caption: (blue: string, red: string) =>
       `écart d'or ${blue} − ${red} par minute · FB first blood · D dragon · DA ancestral · H héraut · L larves · B baron · At Atakhan · I inhibiteur · ACE · trait : tour`,
     keyEvents: "événements clés",
-    /** An event with its detail: "tour extérieure bot", "dragon hextech". */
     detailed: (event: string, detail: string) => `${event} ${detail}`,
   },
 

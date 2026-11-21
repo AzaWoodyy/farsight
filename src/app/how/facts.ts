@@ -2,12 +2,6 @@ import { z } from "zod";
 import { utcDay } from "@/lib/db/release";
 import { LEAGUES } from "@/lib/domain/leagues";
 
-/**
- * What `next.config.ts` reads from the database when the build starts and inlines as `process.env.HOW_FACTS`.
- * The page never opens the database itself: Next renders a prerendered page again, in its own function, for
- * the crawlers it does not stream to (Google's inspection tool, link previews), and that function does not
- * ship the database.
- */
 const Inlined = z.object({
   built: z.string().nullable(),
   leagues: z.array(z.object({ league: z.string(), games: z.number(), ingame: z.number(), first_ingame: z.number().nullable() })),
@@ -15,15 +9,11 @@ const Inlined = z.object({
 
 export type LeagueCoverage = { name: string; short: string; games: number; ingame: number };
 
-/** What the page states in figures, from the database the build ships so no count is typed in the text. */
 export type Facts = {
-  /** Day (UTC, `YYYY-MM-DD`) of the data release, null when the file records none. */
   releaseDay: string | null;
   games: number;
   ingame: number;
-  /** First season with a Riot game file, null when there is none at all. */
   firstIngameYear: number | null;
-  /** Every competition of the scope, in the order of `LEAGUES`. */
   leagues: LeagueCoverage[];
 };
 

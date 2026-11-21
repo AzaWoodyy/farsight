@@ -1,82 +1,28 @@
-/**
- * In-game summary of one game, computed at ingestion from its Riot JSON
- * (stats + timeline, match-v4 or match-v5 shape): the per-player and per-team
- * numbers that go to SQL. The raw JSON stays in object storage.
- *
- * Definitions (the same for v4 and v5, so seasons compare):
- * - `*_10/15/20` (gold, XP, CS, team gold): the timeline frame of that minute,
- *   chosen by its time (frames are one minute apart, a few hundred ms late in
- *   match-v5); null when the game or its timeline ended before the minute, when
- *   no frame is that close, or without a timeline. The last frame of a match-v5
- *   timeline is the end of the game: a game over at 19:46 has one about 20:00,
- *   which is no observation at 20:00.
- * - team `kills_10/15/20` and `towers_15`: counted strictly before the minute,
- *   for a game whose duration and timeline both reach it (null otherwise).
- * - player `kills_10` / `deaths_10` / `assists_10`: champion kills strictly
- *   before 10:00, whenever the game has a timeline.
- * - `solo_kills`: champion kills with no assisting champion, by a champion
- *   (executions by towers or minions excluded).
- * - `first_blood_*`: Riot's end-of-game flags; the victim comes from the
- *   credited first blood of the timeline (`src/lib/sources/first-blood`: an
- *   execution is skipped, and the victim is unknown when the kill does not
- *   match Riot's flags).
- * - `plates`: turret plates destroyed, from the match-v5 timelines (null for
- *   match-v4 ones, which have no plate event, and before patch 9.2).
- * - `dragons`: every dragon kill of the timeline, in order: second, Riot team
- *   and element (null before the elements, patch 6.9); null without a timeline.
- * - `elder_dragons`: elder dragons a team killed (null without a timeline).
- * - `dragon_soul` / `soul`: whether the team got the dragon soul, and its
- *   element. The soul goes to the first team with four elemental dragons, from
- *   patch 9.23. match-v5 timelines say so (DRAGON_SOUL_GIVEN with a team; the
- *   same event with team 0 only announces the element of the map); the count
- *   is used otherwise. Null without a timeline or before patch 9.23.
- *
- * From derive 4, what Leaguepedia's scoreboard lacks on many 2018-2020 games, for the derivation to fall back on:
- * - `damage`: damage dealt to champions; `vision`: vision score. Null when no participant of the game has a
- *   non-zero value (the field was not tracked yet).
- * - `runes`: the rune ids in Leaguepedia's order, keystone, three primary runes, two secondary runes, then the stat
- *   shards offense, flex, defense (six ids before the shards, patch 8.23); `primary_tree` / `secondary_tree`: the
- *   two tree ids. Null before Runes Reforged or when a slot (a shard from 8.23) is missing.
- * - `heralds`: Rift Heralds a team killed, from Riot's end-of-game count; null before the Herald (patch 5.22).
- * - `gameVersion`: Riot's full game version ("9.11.276.3025").
- */
 import { z } from "zod";
 import { dragonKind, soulKind } from "../../src/lib/domain/dragons";
 import type { Json } from "../../src/lib/json";
 import { firstBlood, firstBloodFlags } from "../../src/lib/sources/first-blood";
 import type { RawGame } from "../../src/lib/sources/riot";
 
-/** Bump when the computation changes: summaries of an older version are recomputed from the raw JSON. */
 export const DERIVE_VERSION = 5;
 
-/**
- * Oldest version whose numbers are those of DERIVE_VERSION: such a summary only lacks what later versions added
- * (dragons and souls from 3, Leaguepedia fallbacks from 4). The derivation keeps it with these columns NULL; `data:fetch` recomputes it as soon as
- * it can read the raw JSON, and a published release refuses it. Derive 5 changed existing numbers (the minute
- * statistics of games that ended before the minute, the first-blood victim after an execution), so no older summary
- * is compatible.
- */
 export const DERIVE_COMPATIBLE = 5;
 
 const MINUTES = [10, 15, 20] as const;
 
 const MINUTE_MS = 60_000;
 
-/** How far from its minute a frame may be and still be that minute's observation. */
 const FRAME_TOLERANCE_MS = 30_000;
 
-/** match-v4 and early v5 report milliseconds in gameDuration for some games, the others seconds. */
 const durationMs = (d: number | undefined) => (d == null ? null : d > 20_000 ? d : d * 1000);
 
 const N = z.number().nullable();
 
 export const PlayerSummary = z.object({
   pid: z.number().int(),
-  /** Riot side: 100 blue, 200 red. */
   teamId: z.number().int(),
   championId: z.number().int(),
   championName: z.string().nullable(),
-  /** Riot summoner name, kept to diagnose mapping problems. */
   name: z.string().nullable(),
   kills: z.number(),
   deaths: z.number(),
@@ -91,7 +37,6 @@ export const PlayerSummary = z.object({
   wards_placed: N, wards_killed: N, control_wards: N,
   plates: N,
   damage_taken: N,
-  // From derive 4: absent from an older summary.
   damage: N.optional(),
   vision: N.optional(),
   runes: z.array(z.number().int()).nullable().optional(),
@@ -108,27 +53,22 @@ export const TeamSummary = z.object({
   gold_10: N, gold_15: N, gold_20: N,
   kills_10: N, kills_15: N, kills_20: N,
   towers_15: N,
-  // From derive 3: absent from an older summary.
   elder_dragons: N.optional(),
   dragon_soul: N.optional(),
   soul: z.string().nullable().optional(),
-  // From derive 4.
   heralds: N.optional(),
 });
 
 export type TeamSummary = z.infer<typeof TeamSummary>;
 
 export const DragonKill = z.object({
-  /** Second of the game. */
   t: z.number().int(),
-  /** Riot side of the killer, null when the timeline does not tell. */
   teamId: z.number().int().nullable(),
   kind: z.string().nullable(),
 });
 
 export type DragonKill = z.infer<typeof DragonKill>;
 
-/** One line of data/raw/ingame.jsonl: a game's summary, or why there is none. */
 export const IngameLine = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ok"),
@@ -141,9 +81,7 @@ export const IngameLine = z.discriminatedUnion("status", [
     durationS: z.number().nullable(),
     players: z.array(PlayerSummary),
     teams: z.array(TeamSummary),
-    /** From derive 3 (absent from an older summary); null without a timeline. */
     dragons: z.array(DragonKill).nullable().optional(),
-    /** From derive 4: Riot's full game version, null when the JSON has none. */
     gameVersion: z.string().nullable().optional(),
   }),
   z.object({
@@ -159,8 +97,6 @@ export type IngameLine = z.infer<typeof IngameLine>;
 
 export type IngameOk = Extract<IngameLine, { status: "ok" }>;
 
-// --- Riot JSON, only the fields we read (v4 and v5) ---------------------------
-
 const num = z.number().optional();
 const flag = z.boolean().optional();
 
@@ -170,13 +106,11 @@ const V4Stats = z.object({
   doubleKills: num, tripleKills: num, quadraKills: num, pentaKills: num,
   wardsPlaced: num, wardsKilled: num, visionWardsBoughtInGame: num, totalDamageTaken: num,
   totalDamageDealtToChampions: num, visionScore: num,
-  // match-v4 rune page.
   perk0: num, perk1: num, perk2: num, perk3: num, perk4: num, perk5: num,
   perkPrimaryStyle: num, perkSubStyle: num,
   statPerk0: num, statPerk1: num, statPerk2: num,
 });
 
-/** match-v5 rune page. */
 const Perks = z.object({
   statPerks: z.object({ offense: num, flex: num, defense: num }).optional(),
   styles: z.array(z.object({ description: z.string().optional(), style: num, selections: z.array(z.object({ perk: num })).optional() })).optional(),
@@ -242,7 +176,6 @@ const Timeline = z.object({ frames: z.array(Frame) });
 
 const Wrapped = z.object({ info: z.record(z.string(), z.json()) });
 
-/** match-v5 JSON may come wrapped as { metadata, info }. */
 function unwrap(json: Json): Json {
   const wrapped = Wrapped.safeParse(json);
 
@@ -251,42 +184,36 @@ function unwrap(json: Json): Json {
 
 const bit = (b: boolean | undefined) => (b == null ? null : b ? 1 : 0);
 
-/** Patch 9.2 introduced turret plates. */
 function hasPlates(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
 
   return major > 9 || (major === 9 && minor >= 2);
 }
 
-/** Patch 8.23 introduced the stat shards. */
 function hasShards(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
 
   return major > 8 || (major === 8 && minor >= 23);
 }
 
-/** Patch 5.22 introduced the Rift Herald. */
 function hasHeralds(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
 
   return major > 5 || (major === 5 && minor >= 22);
 }
 
-/** Patch 9.23 introduced the dragon soul. */
 function hasSouls(version: string | undefined): boolean {
   const [major, minor] = (version ?? "").split(".").map(Number);
 
   return major > 9 || (major === 9 && minor >= 23);
 }
 
-/** A Riot id, null when absent or 0 (an empty slot). */
 const id = (n: number | undefined) => (n != null && n > 0 ? n : null);
 
 const known = (ids: (number | null)[]): ids is number[] => ids.every((x) => x != null);
 
 type RunePage = { runes: number[] | null; primary: number | null; secondary: number | null };
 
-/** The rune page of a participant, match-v4 (`perk0`..) or match-v5 (`perks`), in Leaguepedia's order. */
 function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, version: string | undefined): RunePage {
   const styles = p.perks?.styles;
   const primaryStyle = styles?.find((x) => x.description === "primaryStyle") ?? styles?.[0];
@@ -304,8 +231,6 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
 
   const page = perks.map(id);
   const statIds = shardIds.map(id);
-  // From patch 8.23 a page has its three shards: without them it is incomplete, not a page of six runes. Without a
-  // version, only a page with its shards is trusted.
   const shardsAt = /^\d+\.\d+(?:\.|$)/.test(version ?? "") ? hasShards(version) : true;
   const none = { runes: null, primary: null, secondary: null };
 
@@ -316,27 +241,20 @@ function runePage(p: z.infer<typeof Participant>, s: z.infer<typeof V4Stats>, ve
   return known(statIds) ? { runes: [...page, ...statIds], primary: id(primary), secondary: id(secondary) } : none;
 }
 
-/**
- * Leaguepedia's patch ("9.11") of a Riot game version ("9.11.276.3025"), for a game whose scoreboard has none. Only
- * up to season 14: from 2025 Riot's versions (15.x) and Leaguepedia's patches (25.x, 25.S1.1) are numbered apart.
- */
 export function leaguepediaPatch(version: string | null | undefined): string | null {
   const m = /^(\d+)\.(\d+)\./.exec(version ?? "");
 
   return m && Number(m[1]) <= 14 ? `${Number(m[1])}.${Number(m[2])}` : null;
 }
 
-/** Elemental dragons a team needs for the soul. */
 const SOUL_DRAGONS = 4;
 
-/** The game summary, or throws when the JSON does not have the expected shape. */
 export function summarizeGame(raw: RawGame): IngameOk {
   const stats = Stats.parse(unwrap(raw.stats));
   const timeline = raw.timeline == null ? null : Timeline.safeParse(unwrap(raw.timeline));
   const frames = timeline?.success ? timeline.data.frames : null;
   const events = (frames ?? []).flatMap((f) => f.events).sort((a, b) => a.timestamp - b.timestamp);
   const kills = events.filter((e) => e.type === "CHAMPION_KILL");
-  // match-v4 timelines have no plate event, even after plates existed.
   const plates = raw.version >= 5 && hasPlates(stats.gameVersion) && frames ? events.filter((e) => e.type === "TURRET_PLATE_DESTROYED") : null;
   const teamOf = new Map(stats.participants.map((p) => [p.participantId, p.teamId]));
   const names = new Map((stats.participantIdentities ?? []).map((i) => [i.participantId, i.player?.summonerName ?? null]));
@@ -345,13 +263,8 @@ export function summarizeGame(raw: RawGame): IngameOk {
   const endMs = durationMs(stats.gameDuration);
   const lastFrameMs = frames?.length ? frames[frames.length - 1].timestamp : null;
 
-  /**
-   * Whether the game and its timeline both lasted until minute m, in milliseconds (19:59.9 is not 20:00). The
-   * timeline's last frame stands in for a missing duration.
-   */
   const reached = (m: number) => lastFrameMs != null && lastFrameMs >= m * MINUTE_MS && (endMs ?? lastFrameMs) >= m * MINUTE_MS;
 
-  /** Frame of minute m: the closest to it in time, if the game lasted that long. */
   const frameAt = (m: number) => {
     if (!frames || !reached(m)) return null;
     let best: (typeof frames)[number] | null = null;
@@ -383,7 +296,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
 
   const soulKnown = dragons != null && hasSouls(stats.gameVersion);
 
-  /** The team with the soul and its element, or null when nobody got it. */
   const soul = (() => {
     if (!dragons || !soulKnown) return null;
     const given = events.find((e) => e.type === "DRAGON_SOUL_GIVEN" && riotSide(e.teamId) != null);
@@ -404,7 +316,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
 
   const before10 = kills.filter((k) => k.timestamp < 600_000);
   const merged = stats.participants.map((p) => ({ ...p, ...p.stats }));
-  /** Null for every participant when none has a non-zero value: the field was not tracked yet. */
   const tracked = (pick: (s: (typeof merged)[number]) => number | undefined) => merged.some((s) => (pick(s) ?? 0) > 0);
   const damageTracked = tracked((s) => s.totalDamageDealtToChampions);
   const visionTracked = tracked((s) => s.visionScore);
@@ -468,7 +379,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
 
     const killsAt = (m: number) => (reached(m) ? kills.filter((k) => k.timestamp < m * MINUTE_MS && teamOf.get(k.killerId ?? 0) === t.teamId).length : null);
 
-    // BUILDING_KILL / TURRET_PLATE_DESTROYED name the team that lost the building.
     const towers15 =
       reached(15)
         ? events.filter((e) => e.type === "BUILDING_KILL" && e.buildingType === "TOWER_BUILDING" && e.timestamp < 15 * MINUTE_MS && e.teamId != null && e.teamId !== t.teamId).length
@@ -502,7 +412,6 @@ export function summarizeGame(raw: RawGame): IngameOk {
     version: raw.version,
     statsPage: raw.statsPage,
     hasTimeline: frames != null,
-    // match-v4 and early v5 report milliseconds in gameDuration for some games.
     durationS: stats.gameDuration == null ? null : stats.gameDuration > 20_000 ? Math.round(stats.gameDuration / 1000) : stats.gameDuration,
     players,
     teams,

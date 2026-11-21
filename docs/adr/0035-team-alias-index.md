@@ -1,0 +1,20 @@
+# How the team alias index decides what names a team
+
+`readIndexes` in `src/lib/agent/understand.ts` builds one map from normalized alias to team out of team names, Leaguepedia abbreviations, curated shorthands and franchises. AGENTS.md records the general rules (abbreviations as aliases, capitals for everyday words, two letters never read, shared abbreviations picked by scope); the cases below are the ones the index and `detectMentions` special-case and that a simplification would break.
+
+## Rules
+
+- `ALIAS_RANK` orders how an alias names its team, weakest first: an abbreviation or a form derived from it (`alias`), the team's own name (`name`), a curated shorthand (`curated`). On the same alias the stronger kind wins, then the team with more games.
+- `abbreviation()` refuses a Leaguepedia abbreviation that is too short to mean the team (two letters without a digit: "AT", "GO"), a role word, a grammar word of `STOPWORDS`, or a league's short name; it returns `caps` when the abbreviation is also an everyday word, which is then read in capitals only.
+- `LEAGUE_SHORTS`: a league's short name ("PCS") names the league, never the team that shares it (Project Conquerors).
+- `SHORT_WORDS` exists because the common word list (`COMMON_WORDS`) does not hold three-letter words and chat shorthands ("per", "svp", "pts"), in English and French; an abbreviation among them is read as the team in capitals only.
+- A team name shortened by dropping "Team" and "Esports" / "Gaming" is an alias, except when what is left is a role word: "Top Esports" is not "top", a bare role word names the role ("TES" and "Top Esports" still name the team).
+- A team of the same organization is also called by its parent's abbreviation followed by the rest of its name: "Karmine Corp Blue Stars" is also "KCBS", "KC Blue Stars", "KCB Stars", and "Blue Star" in the singular.
+- A member of a curated franchise (`FRANCHISES`) keeps the franchise under its own abbreviation: "KRX" (Kiwoom DRX) counts every DRX game, like "DRX".
+- `FRANCHISES` keeps Samsung White and Samsung Blue apart: MVP Ozone became Samsung Galaxy Ozone, renamed Samsung Galaxy White in 2014, and its sister team was Samsung Galaxy Blue (formerly MVP Blue). They are two lineages, and neither is Samsung Galaxy / Gen.G.
+- A team known only from the schedule (0 games) is indexed by its full name alone, and never by a name a question reads by accident: an everyday word, or a team with games followed by a grammar word ("T1 a gagné" is "t1a" once normalized, the name of a T1 academy team that has no scoreboard; the `glued` test). "Afreeca Freecs Academy B" stays a name, and so does a Hangul name of two syllables ("떡상"), which the two-letter rule of abbreviations is not about.
+- `teamByEnd` reads the end of one team's name, in two words or more ("Blue Stars" for Karmine Corp Blue Stars), when no other team's name ends the same way. It is used only for a mention the LLM already read as a team (`lookupTeam`): the rules never guess a team from the end of a name. Teams without games are excluded from it.
+- `WINNERS`: "Winners" is also a team (2015-2021). When the question names a competition ("MSI winners", "winners of the LCK"), the word means the winners of that competition and the team is not read; it is read as the team only when no competition is named.
+- An abbreviation that is also a player's handle names the player, unless written in capitals ("Wiz" is the player, "WIZ" the team).
+- An abbreviation two teams share is kept in `found.teams` as a mention of its own even when its default team was already found under another name: `buildEntities` (`inScope`) may resolve it to the other team once the competition and period are known.
+- `detectMentions` reads spans of up to four words ("Royal Never Give Up"), or up to `teamWidth`, the longest team alias ("Jin Air Green Wings Stealths"). A span longer than four words can only be a team, read from the index already in memory: player aliases are looked up for at most four words (`aliasCandidates`), and champions are shorter.

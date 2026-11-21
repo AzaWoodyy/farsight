@@ -1,9 +1,3 @@
-/**
- * db:migrate: apply the pending migrations to the live schema, in place (an index, a view). A change to a table's
- * rows needs `bun run db:load`, which builds a fresh schema from every migration.
- *
- *   bun run db:migrate [--schema=farsight]
- */
 import pg from "pg";
 import { migrate, quoteIdent } from "./migrations";
 

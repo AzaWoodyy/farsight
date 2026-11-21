@@ -8,17 +8,13 @@ export type ContentSection = { id: string; label: string; body: ReactNode };
 type Props = {
   locale: Locale;
   page: PageKey;
-  /** Where the visitor is, in the header. */
   trail: string;
   title: string;
-  /** The line under the title: the day the text or its data dates from. */
   dated: string;
-  /** Name of the table of contents, for screen readers. */
   toc: string;
   sections: ContentSection[];
 };
 
-/** A page of text in one language: its sections under a table of contents, between the header and the footer. */
 export function ContentPage({ locale, page, trail, title, dated, toc, sections }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
@@ -53,7 +49,6 @@ export function ContentPage({ locale, page, trail, title, dated, toc, sections }
   );
 }
 
-/** A link out of the site, inside running text. */
 export function Ext({ href, children, rel = "noreferrer" }: { href: string; children: ReactNode; rel?: string }) {
   return (
     <a className={TEXT_LINK} href={href} target="_blank" rel={rel}>

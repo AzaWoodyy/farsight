@@ -28,8 +28,6 @@ test("of two summaries of one game, the best ranked comes first whatever the ord
 
   const keys = (order: typeof lines) => bestFirst(order, (l) => l.game, (l) => l.rank).map((l) => l.key);
 
-  // The real game before its 28-second remake, the champions of the scoreboard before the length, then the key;
-  // the line of another game (B_7) and the one without a game (C_3) stay where they were.
   expect(keys(lines)).toEqual(["A_2", "B_7", "A_1", "C_3", "D_7", "D_8", "D_9"]);
 
   const kept = (order: typeof lines) => {
@@ -50,15 +48,10 @@ test("a remake whose length stayed in milliseconds does not rank before the game
 
   const full = { key: "FULL_2", champions: 10, durationS: 2_000 };
 
-  // Five seconds written 5 000: longer than the game as a number, not the length of the scoreboard.
   expect(first([{ key: "REMAKE_1", champions: 10, durationS: 5_000 }, full], 2_000)).toEqual(["FULL_2", "FULL_2"]);
-  // A real 5 700-second game is not a remake.
   expect(first([{ key: "LONG_1", champions: 10, durationS: 5_700 }, { key: "REMAKE_2", champions: 10, durationS: 28 }], 5_700)).toEqual(["LONG_1", "LONG_1"]);
-  // The scoreboard's game in milliseconds is still the scoreboard's game.
   expect(summaryRank(10, 15_000, 15)).toEqual([10, 1, 15]);
-  // Without a scoreboard length: the champions, then the length, three hours being no game.
   expect(first([{ key: "REMAKE_3", champions: 10, durationS: 15_000 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
   expect(first([{ key: "OTHER_1", champions: 4, durationS: 2_400 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
-  // A summary without a length never agrees with the scoreboard, even one of a few seconds.
   expect([summaryRank(10, null, 2_000), summaryRank(10, null, 5)]).toEqual([[10, 0, 0], [10, 0, 0]]);
 });

@@ -17,7 +17,6 @@ const ROLE_SHORT = new Map([
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-/** Gold in thousands ("62,4k"), in the notation of the page's language. */
 function useKilo() {
   const one = numberFormat(useLocale(), 1);
   const { noData } = useUi();
@@ -27,10 +26,6 @@ function useKilo() {
 
 const OBJECTIVES = ["kills", "gold", "towers", "inhibitors", "dragons", "barons", "heralds", "grubs"] as const;
 
-/**
- * End-of-game recap in the console's style: the winner's block first, as in the client's end screen,
- * then the loser's. Only what Leaguepedia's scoreboard tables hold; a missing field reads "n/d".
- */
 export function GameScoreboard({ scoreboard: sb }: { scoreboard: Scoreboard }) {
   const ui = useUi();
   const order: Side[] = sb.winner === "red" ? ["red", "blue"] : ["blue", "red"];
@@ -106,9 +101,7 @@ function TeamBlock({
           ) : null}
         </dl>
       </div>
-      {/* relative: keeps the sr-only caption inside the scroller (see team-h2h). */}
       <div className="relative overflow-x-auto">
-        {/* Fixed column widths: both teams' tables line up column for column. */}
         <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-xs">
           <caption className="sr-only">
             {team.name}, {sb.side[side]}
@@ -159,8 +152,6 @@ function TeamBlock({
 }
 
 function Icon({ src, alt, size }: { src: string; alt: string; size: number }) {
-  // Data Dragon icons: next/image would spend the Vercel Hobby image-optimization quota (shared
-  // with the portfolio) without any LCP gain.
   // oxlint-disable-next-line nextjs/no-img-element
   return <img src={src} alt={alt} title={alt} width={size} height={size} loading="lazy" className="shrink-0 border border-line" style={{ width: size, height: size }} />;
 }
@@ -212,7 +203,6 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
                     </li>
                   ))}
                 </ul>
-                {/* The page after the keystone, without the stat shards (no icon): primary tree, then secondary tree. */}
                 {p.runes.some((r) => r.kind !== "shard") && (
                   <ul className="flex items-center gap-px" aria-label="Runes">
                     {p.runes
@@ -231,7 +221,6 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
                 )}
               </div>
             )}
-            {/* Phone width: the K/D/A column is off screen, behind the horizontal scroll; repeat it here. */}
             <div className="ml-9 text-[11px] tabular-nums sm:hidden" aria-hidden>
               {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
               <span className="text-muted"> · {kilo(p.gold)} {ui.scoreboard.gold}</span>

@@ -17,7 +17,6 @@ const OPENROUTER_URL = "https://openrouter.ai";
 
 const SQL_TIMEOUT_S = SQL_TIMEOUT_MS / 1000;
 
-/** Title, description and header trail of the page: what its metadata needs, without the database. */
 export const HOW: Record<Locale, { title: string; description: string; trail: string; toc: string }> = {
   fr: {
     title: "Comment Farsight répond à une question",
@@ -57,12 +56,10 @@ function List({ children }: { children: ReactNode }) {
   return <ul className="list-disc space-y-2 pl-5 marker:text-muted">{children}</ul>;
 }
 
-/** The dated line and the sections of the page in one language. */
 type How = { dated: string; sections: ContentSection[] };
 
 type CoverageText = { caption: string; competition: string; games: string; ingame: string; total: string };
 
-/** Games of every competition of the scope and how many have a Riot game file, as the shipped database holds them. */
 function Coverage({ locale, facts, text }: { locale: Locale; facts: Facts; text: CoverageText }) {
   const cell = "border-b border-line py-1.5 pr-4 align-top last:pr-0";
   const figure = `${cell} text-right tabular-nums`;

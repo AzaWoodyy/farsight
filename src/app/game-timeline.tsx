@@ -104,7 +104,6 @@ export function GameTimeline({ timeline: t }: { timeline: TimelineView }) {
             </circle>
           ))}
 
-          {/* Blue side's events above the plot, red side's below the axis labels. */}
           {t.events.map((e, i) => {
             const top = e.side === "blue";
             const cx = x(e.s);

@@ -1,6 +1,5 @@
 import { msg } from "../agent/messages";
 
-/** Leaguepedia competition history begins in 2011. Upper coverage uses the question clock. */
 export const YEAR_MIN = 2011;
 
 export function periodProblem(from: number | null, to: number | null, now: Date): string | null {

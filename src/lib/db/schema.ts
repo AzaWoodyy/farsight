@@ -1,19 +1,9 @@
-/** Shared contract of the read-only database. Rebuild from raw data after a schema change. */
 import type { DatabaseSync } from "node:sqlite";
 
 export const SCHEMA_VERSION = 12;
 
-/**
- * Newest Postgres migration (db/migrations/NNNN_*.sql): the same tables and views as SCHEMA_VERSION. A migration that
- * changes a table or a view bumps both.
- */
 export const PG_MIGRATION = 3;
 
-/**
- * Oldest migration the code reads (`openDb` refuses an older database). PG_MIGRATION, unless the code reads what the
- * newest migration adds only when it is there: then a deployment may land before the load (docs/postgres.md). Migration
- * 3 adds `teams.logo`, which team-badges.ts reads that way.
- */
 export const PG_MIGRATION_READ = 2;
 
 export const TABLE_DDL = `
@@ -249,7 +239,6 @@ export function createSchema(db: DatabaseSync): void {
   db.exec(TABLE_DDL);
 }
 
-/** Install after ingestion so indexes are built once from the complete dataset. */
 export function createQuerySchema(db: DatabaseSync): void {
   db.exec(QUERY_DDL);
 }

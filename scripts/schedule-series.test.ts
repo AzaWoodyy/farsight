@@ -8,12 +8,6 @@ import { testDb, type TestDb } from "./fixtures/test-db";
 
 const LCK_AS = "LCK Academy Series";
 
-/**
- * LCK AS 2020: in the season, two series known only from the schedule between T1 Rookies and Gen.G Global Academy
- * (2-1 for T1 Rookies, then a Gen.G forfeit); in the playoffs, a semifinal known only from the schedule (T1 Rookies 3-1
- * DRX Academy, a team without any game) and a final with its scoreboards (T1 Rookies 2-0 Gen.G Global Academy).
- * "Red", a schedule-only team named by an everyday word, is never read in a question.
- */
 async function seed(db: TestDb) {
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const league = Number((await db.query("SELECT id FROM leagues WHERE name = ?", [LCK_AS]))[0]!.id);
@@ -90,7 +84,6 @@ describe("series known only from the schedule (v_series_results)", () => {
       expect(semi.totals).toMatchObject({ series: 1, games: 0, schedule_series: 1 });
       expect(semi.facts).toContain("T1 Rookies 3-1 DRX Academy");
 
-      // Every series of the two teams: the forfeit reads as one, won by its winner.
       const all = await run(db, { tool: "series", input: { teamA: "T1 Rookies", teamB: "Gen.G Global Academy", league: LCK_AS, yearFrom: 2020, yearTo: 2020, phase: null, split: null } });
 
       expect(all.series?.series.map((s) => [s.label, s.teamA, s.teamB, s.forfeitedBy])).toEqual([
@@ -113,7 +106,6 @@ describe("series known only from the schedule (v_series_results)", () => {
       await seed(db);
       expect(await resolveTeam(db, "DRX Academy")).toMatchObject({ team: "DRX Academy", members: ["DRX Academy"] });
       expect(await resolveTeam(db, "red")).toBeNull();
-      // Nor by the end of its name, which the model may write for a team with games.
       expect(await resolveTeam(db, "Gaming Youth")).toBeNull();
     } finally {
       await db.close();

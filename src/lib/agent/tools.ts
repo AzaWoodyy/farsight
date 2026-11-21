@@ -63,40 +63,14 @@ import {
   metricLabel,
 } from "./metrics";
 
-/**
- * Typed tools: one parameterized query per frequent intent, each with a zod
- * input schema (shared with the LLM router through AI SDK `tool()`), its own
- * deterministic corrections and its own formatting. Every query still goes
- * through the schema guard before it runs.
- */
-
-/**
- * Stages that belong to the competition itself. Regional qualifiers share the
- * `World Championship` / `Mid-Season Invitational` league label on
- * Leaguepedia, and `event` pages only hold standings, so both are excluded.
- */
 const COMPETITION_STAGES = "'main_event', 'play_in', 'season', 'playoffs'";
 
-/**
- * `MAX(n, expr)` as SQLite reads it: at least `n`, and NULL when `expr` is NULL (Postgres' GREATEST would skip the
- * NULL and give `n`, turning a missing figure into a value).
- */
 const atLeast = (n: number, expr: string) => `(CASE WHEN (${expr}) IS NULL THEN NULL ELSE GREATEST(${n}, ${expr}) END)`;
 
-/**
- * A column read beside `MAX(at)` without being grouped: SQLite gives the value of the row that holds the maximum
- * (the team of a player's latest game), which Postgres says explicitly.
- */
 const latest = (column: string, at: string) => `(ARRAY_AGG(${column} ORDER BY ${at} DESC NULLS LAST))[1]`;
 
-/** Pages that carry final standings. */
 const STANDINGS_STAGES = "'event', 'main_event', 'season', 'playoffs'";
 
-/**
- * A `season` page that crowns nobody (`t` is v_tournaments): no knockout tab, and either playoffs of the same split,
- * or week-by-week league play in a year where another page of the league holds the final.
- * "Rounds 1-2" of the LCK is one; the LCK Cup, stored as a season too, is not.
- */
 const regularSeason = (t: string) =>
   `(${t}.stage = 'season'
     AND NOT EXISTS (SELECT 1 FROM v_games f WHERE f.tournament_page = ${t}.tournament_page AND f.tab ILIKE '%final%')
@@ -115,7 +89,6 @@ export type MapSide = (typeof MAP_SIDES)[number];
 
 const MapSideInput = z.enum(MAP_SIDES).nullable().describe("Only the games played on this side of the map ('côté bleu', 'red side'), null for both sides");
 
-/** A split of the season for the rankings; absent in the calls written before it, null from the model for the whole season. */
 const RankingSplitInput = z.enum(["Spring", "Summer", "Winter"]).nullish().describe("Restrict to one split of the season ('LEC Spring 2024', 'au printemps'), null for the whole season");
 
 export const PlayerHistoryInput = z.object({
@@ -139,7 +112,6 @@ export const TeamRosterInput = z.object({
 });
 
 export const HeadToHeadInput = z.object({
-  // Two players go to player_comparison, which also lists their games against each other.
   kind: z.enum(["team"]),
   sideA: z.string().min(1),
   sideB: z.string().min(1),
@@ -152,12 +124,10 @@ const MinuteInput = z
   .nullable()
   .describe("Minute of the snapshot for gold/CS/XP metrics (10, 15 or 20), null for 15");
 
-/** End-of-game averages a comparison can put first ("Faker vs Chovy morts"); gold and CS stay in the overview. */
 export const COMPARISON_END_STATS = ["kills", "deaths", "assists", "damage", "vision"] as const;
 
 export type ComparisonEndStat = (typeof COMPARISON_END_STATS)[number];
 
-/** What a comparison puts first: an in-game metric of the Riot data, or an end-of-game average. */
 export const COMPARISON_METRICS = [...PLAYER_METRICS, ...COMPARISON_END_STATS] as const;
 
 export type ComparisonMetric = (typeof COMPARISON_METRICS)[number];
@@ -174,7 +144,6 @@ export const PlayerComparisonInput = z.object({
   minute: MinuteInput,
 });
 
-/** The parts of a champion's profile a question can be about. */
 export const CHAMPION_FOCUS = ["items", "runes", "spells"] as const;
 
 export type ChampionFocus = (typeof CHAMPION_FOCUS)[number];
@@ -186,26 +155,18 @@ export const ChampionStatsInput = z.object({
   focus: z.enum(CHAMPION_FOCUS).nullable().default(null).describe("What the question is about, when it names one: the champion's items, runes or summoner spells. The profile shows that part first."),
 });
 
-/** The per-game averages a champion ranking can sort by: end-of-game figures of v_game_players. */
 export const CHAMPION_AVERAGE_SORTS = ["kills", "deaths", "assists", "gold", "cs", "damage", "vision"] as const;
 
 export type ChampionAverageSort = (typeof CHAMPION_AVERAGE_SORTS)[number];
 
-/**
- * Figures of the picks a champion ranking shows beside picks, bans, presence, win rate and KDA, and can sort by:
- * per-minute figures of the end-of-game stats, then lane figures from the Riot game data (absent in the LPL), then
- * how many different players picked the champion.
- */
 export const CHAMPION_EXTRA_SORTS = ["dpm", "gpm", "cspm", "gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", "players"] as const;
 
 export type ChampionExtraSort = (typeof CHAMPION_EXTRA_SORTS)[number];
 
-/** Multikills of the Riot game data: rare enough that only their total over the scope means something. */
 export const CHAMPION_MULTIKILL_SORTS = ["penta_kills", "quadra_kills", "triple_kills", "double_kills"] as const;
 
 export const CHAMPION_SORTS = ["picks", "bans", "presence", "winrate", "kda", ...CHAMPION_AVERAGE_SORTS, ...CHAMPION_EXTRA_SORTS, ...CHAMPION_MULTIKILL_SORTS] as const;
 
-/** The sorts a ranking can order by their total over the scope instead of a per-game figure: the counts and sums of a pick. */
 export const CHAMPION_TOTAL_SORTS = [...CHAMPION_AVERAGE_SORTS, "solo_kills", "first_blood", ...CHAMPION_MULTIKILL_SORTS] as const;
 
 export type ChampionTotalSort = (typeof CHAMPION_TOTAL_SORTS)[number];
@@ -355,7 +316,6 @@ export const ChampionMatchupInput = z.object({
 
 export type ChampionMatchupInput = z.infer<typeof ChampionMatchupInput>;
 
-/** What a single-game record is counted on: end-of-game figures, then lane figures from the Riot game data. */
 export const RECORD_METRICS = ["kills", "deaths", "assists", "damage", "cs", "gold", "vision", "gold_diff_15", "cs_diff_15", "solo_kills"] as const;
 
 export type RecordMetric = (typeof RECORD_METRICS)[number];
@@ -446,7 +406,6 @@ export type ChampionStatsInput = z.infer<typeof ChampionStatsInput>;
 
 export type StandingsInput = z.infer<typeof StandingsInput>;
 
-/** A typed tool with its input, as decided by the router (rules or LLM). */
 export type ToolName = keyof typeof TOOLS;
 
 export type ToolCall = { [K in ToolName]: { tool: K; input: z.infer<(typeof TOOLS)[K]["input"]> } }[ToolName];
@@ -459,7 +418,6 @@ type Plan = { sql: string; params: Params };
 
 type Relaxation<I> = { key: string; input: I; note: string; reason: string };
 
-/** A line a tool adds to the trace while formatting (a timeline read from storage...). */
 export type ToolTrace = { status: TraceStatus; title: string; detail?: string };
 
 export type ToolOutput = {
@@ -475,12 +433,9 @@ export type ToolOutput = {
   pool?: ChampionPool;
   runes?: PlayerRunes;
   series?: SeriesList;
-  /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
-  /** The period the answer covers when the tool chose it (a roster without a year is the latest season). */
   period?: { yearFrom: number | null; yearTo: number | null };
   trace?: ToolTrace[];
-  /** Notes shown under the answer (the game shown when several match...). */
   notes?: string[];
   facts: string;
   sources: Source[];
@@ -490,18 +445,14 @@ export type ToolOutput = {
 
 type ToolDef<I> = {
   name: string;
-  /** What the tool answers, shown in the trace. */
   label: Phrase;
   description: string;
   plan: (db: Db, input: I) => Plan | Promise<Plan>;
-  /** Deterministic corrections when the result is empty, most conservative first. */
   relaxations: (input: I, entities: Entities) => Relaxation<I>[];
   format: (db: Db, input: I, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
-  /** Maps names written by the LLM onto database names. */
   normalize: (db: Db, input: I) => I | null | Promise<I | null>;
 };
 
-/** A tool bound to its input: the plan to run, its corrections and its formatting. */
 export type BoundTool = {
   call: ToolCall;
   label: string;
@@ -511,9 +462,6 @@ export type BoundTool = {
   format: (db: Db, rows: SqlRow[]) => ToolOutput | Promise<ToolOutput>;
 };
 
-// Helpers -------------------------------------------------------------------------
-
-/** `:prefix0, :prefix1…` for an IN list; no value gives `NULL`, so `x IN (NULL)` matches nothing, as an empty list did. */
 function inList(prefix: string, values: string[], params: Params): string {
   if (!values.length) return "NULL";
 
@@ -550,7 +498,6 @@ function periodFilter(col: string, input: Period, params: Params): string {
   return parts.join(" ");
 }
 
-/** Games that count in a competition scope: its stages, the league when one is asked, the period, a role when ranked by role. */
 function competitionScope(alias: string, input: { league: string | null; role?: string | null; side?: MapSide | null } & Period, params: Params): string {
   const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
   const role = input.role ? `AND ${alias}.role = :role` : "";
@@ -561,19 +508,14 @@ function competitionScope(alias: string, input: { league: string | null; role?: 
   return `${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${role} ${side} ${periodFilter(`${alias}.year`, input, params)}`;
 }
 
-/** `side` as the tables store it. */
 const SIDE_ID: Record<MapSide, number> = { blue: 1, red: 2 };
 
-/** " côté bleu", or nothing when both sides count. */
 const sideLabel = (side: MapSide | null) => (side ? say(` côté ${side === "blue" ? "bleu" : "rouge"}`, ` ${side} side`) : "");
 
-/** The league and period of an input, without the role its own tool filters on. */
 const leagueAndPeriod = (input: { league: string | null } & Period) => ({ league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
-/** An aggregated JSON column (json_agg…): the driver hands it over parsed, so its own schema reads it. */
 const jsonColumn = <S extends z.ZodType>(schema: S) => schema;
 
-/** SQLite integers come back as numbers; a missing year sorts first. */
 const YearColumn = z.number().catch(0);
 
 const PlayerCounts = z.array(z.object({ player: z.string(), games: z.number() }));
@@ -581,13 +523,8 @@ const PlayerCounts = z.array(z.object({ player: z.string(), games: z.number() })
 const tidy = (sql: string) => sql.replace(/\n\s*\n/g, "\n");
 const hasPeriod = (i: Period) => i.yearFrom != null || i.yearTo != null;
 
-/** The period as a title says it: "2025", "entre 2019 et 2025", "since 2020"; empty without one. */
 const titlePeriod = (i: Period) => (hasPeriod(i) ? scopeLabel(allCompetitions(), i).replace(/^(en|in) /, "") : "");
 
-/**
- * Where and when an answer stands, as its title's ending: " — Worlds 2025", " (LCK entre 2019 et 2025)". A title
- * that names the competition without the season reads as every season.
- */
 const titleScope = (league: string, i: Period, open: " — " | " (") => {
   const scope = [league === allCompetitions() ? "" : league, titlePeriod(i)].filter(Boolean).join(" ");
 
@@ -604,13 +541,11 @@ const noPeriod = <I extends Period>(input: I, what: string): Relaxation<I> => ({
 const pct = (w: number, n: number) => Math.round((100 * w) / Math.max(1, n));
 const span = (years: number[]) => (years.length ? `${Math.min(...years)}–${Math.max(...years)}` : "");
 
-/** "3" → "3rd", "5-8" → "5th-8th". */
 const ordinal = (place: string) => place.replace(/\d+/g, (n) => `${n}${/(?<!1)1$/.test(n) ? "st" : /(?<!1)2$/.test(n) ? "nd" : /(?<!1)3$/.test(n) ? "rd" : "th"}`);
 
 export function placeLabel(place: string | null, isRegularSeason = false): string {
   if (!place) return say("Classement non publié", "Standings not published");
 
-  // Regular-season standings are not a title.
   if (isRegularSeason) return say(place === "1" ? "1er de la saison régulière" : `${place}e de la saison régulière`, `${ordinal(place)} in the regular season`);
 
   if (place === "1") return "Champion";
@@ -624,10 +559,8 @@ export function placeLabel(place: string | null, isRegularSeason = false): strin
   return say(`Éliminé (${place}e)`, `Eliminated (${ordinal(place)})`);
 }
 
-/** The scope of an answer that names no competition; also compared to, so always read through this. */
 export const allCompetitions = () => say("toutes compétitions", "all competitions");
 
-/** A day as the answers write it: "2 novembre 2024", "November 2, 2024". */
 const dayFormat = () => dateFormat(answerLocale(), { day: "numeric", month: "long", year: "numeric" });
 
 async function leagueShortName(db: Db, league: string | null): Promise<string> {
@@ -636,11 +569,9 @@ async function leagueShortName(db: Db, league: string | null): Promise<string> {
   return (await selectOne(db, z.object({ short_name: z.string() }), "SELECT short_name FROM leagues WHERE name = ?", [league]))?.short_name ?? league;
 }
 
-/** "aux Worlds", "en LEC" / "at Worlds", "in LEC"; nothing for every competition. */
 const inLeague = (short: string) =>
   short === allCompetitions() ? "" : say(frenchIn(short), englishIn(short));
 
-/** `pages` with `kept` moved to the end, so that `eventSources` keeps them when it keeps the last pages. */
 const lastPages = (pages: string[], kept: string[]) => [...pages.filter((p) => !kept.includes(p)), ...kept];
 
 function eventSources(pages: string[], max = 12): Source[] {
@@ -655,7 +586,6 @@ async function teamMembers(db: Db, team: string): Promise<{ team: string; member
   return t ? { team: t.team, members: t.members } : { team, members: [team] };
 }
 
-/** SQL for a team name with a franchise's former names folded into its current one. */
 async function franchiseName(db: Db, column: string, params: Params): Promise<string> {
   const whens = (await renamedTeams(db)).map((f, i) => {
     params[`fr${i}`] = f.team;
@@ -666,12 +596,9 @@ async function franchiseName(db: Db, column: string, params: Params): Promise<st
   return whens.length ? `CASE ${whens.join(" ")} ELSE ${column} END` : column;
 }
 
-// Result rows, as each tool's query returns them ----------------------------------------
-
 const Text = z.string();
 const NullableText = z.string().nullable();
 
-/** Pages listed in a json_agg column. */
 const pageList = jsonColumn(z.array(z.string()).nullable()).transform((v) => v ?? []);
 
 const PlayerHistoryRow = z.object({
@@ -741,8 +668,6 @@ const StandingsRow = z.object({
   team: Text,
   prize_usd: z.number().nullable(),
 });
-
-// 1. Player history in a competition ------------------------------------------------
 
 const playerEventHistory: ToolDef<PlayerHistoryInput> = {
   name: "player_event_history",
@@ -815,7 +740,6 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
       team: r.team,
       place: r.place,
       placeLabel: placeLabel(r.place, r.regular_season === 1),
-      // Regular-season ranks do not compete with final placements.
       placeNumber: r.regular_season === 1 ? null : r.place_number,
       wins: r.wins,
       losses: r.losses,
@@ -832,7 +756,6 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
     const titles = rows.filter((r) => r.placeNumber === 1).length;
     const events = new Set(rows.map((r) => r.event)).size;
 
-    // One page per year is an edition (Worlds, MSI); a league's year holds several tournaments (seasons, playoffs, cups).
     const perYear = new Set(rows.map((r) => r.year)).size === events;
     const what = perYear ? say("éditions", events === 1 ? "edition" : "editions") : say("tournois", events === 1 ? "tournament" : "tournaments");
 
@@ -849,7 +772,6 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
 
     if (unranked.length) facts += say(` Classement final ${unranked.map((r) => r.year).join(", ")} pas encore publié sur Leaguepedia.`, ` Final standings of ${unranked.map((r) => r.year).join(", ")} not yet published on Leaguepedia.`);
 
-    // Follow-ups stay within what the agent supports: teammates of the latest run.
     const latest = rows[rows.length - 1];
 
     const teammates = (await selectAll(
@@ -884,22 +806,14 @@ ORDER BY pg.year NULLS FIRST, MIN(pg.played_at) NULLS FIRST, pg.event_page`),
   },
 };
 
-// 2. Team history -------------------------------------------------------------------
-
-/**
- * Games a series known only from the schedule (v_series_results `sr`) adds to a team's record: its score for the team
- * whose names are `team` ("own") or for its opponent ("other"); none for a forfeit, whose score is not games played.
- */
 const scheduleScore = (s: string, team: string, whose: "own" | "other") => {
   const [mine, theirs] = whose === "own" ? ["team1_score", "team2_score"] : ["team2_score", "team1_score"];
 
   return `CASE WHEN ${s}.forfeited_by IS NOT NULL THEN 0 WHEN ${s}.team1 IN (${team}) THEN COALESCE(${s}.${mine}, 0) ELSE COALESCE(${s}.${theirs}, 0) END`;
 };
 
-/** 1 for a series of v_series_results `sr` that a team forfeited, else 0. */
 const scheduleForfeit = (s: string) => `CASE WHEN ${s}.forfeited_by IS NOT NULL THEN 1 ELSE 0 END`;
 
-/** The notes of an answer that counts series known only from Leaguepedia's schedule, empty without any. */
 function scheduleNotes(count: number, forfeits: number, tournaments: string[]): string[] {
   if (!count) return [];
   const unique = [...new Set(tournaments)];
@@ -929,7 +843,6 @@ const teamHistory: ToolDef<TeamHistoryInput> = {
     const league = (alias: string) => (input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "");
     const period = (alias: string) => periodFilter(`${alias}.year`, input, params);
 
-    // A series known only from the schedule counts its score as games (none for a forfeit), and is counted apart.
     return {
       params,
       sql: tidy(`WITH team_games AS (
@@ -1044,8 +957,6 @@ ORDER BY tg.year NULLS FIRST, MIN(tg.played_at) NULLS FIRST, tg.event_page`),
   },
 };
 
-// 2b. Team roster ---------------------------------------------------------------------
-
 const RosterEvent = z.object({ event: z.string(), tournament: z.string().nullable(), team: z.string(), games: z.number(), at: z.number().nullable() });
 
 const RosterRow = z.object({
@@ -1060,14 +971,12 @@ const RosterRow = z.object({
 
 const RosterTournamentRow = z.object({ event_page: Text, tournament: NullableText, games: z.number(), wins: z.number(), at: z.number().nullable() });
 
-/** Roles in roster order; a role the database does not know sorts last. */
 const roleRank = (role: string) => {
   const i = ROLE_ORDER.indexOf(role);
 
   return i < 0 ? ROLE_ORDER.length : i;
 };
 
-/** A split of the season ("Spring 2018"): the tournament pages of that split. */
 function splitFilter(column: string, input: { split: string | null }, params: Params): string {
   if (!input.split) return "";
   params.split = input.split;
@@ -1075,10 +984,6 @@ function splitFilter(column: string, input: { split: string | null }, params: Pa
   return `AND ${column} IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = :split)`;
 }
 
-/**
- * A ranking's games: its competition scope, then the tournament pages of the split asked. The split's own alias (`ts`)
- * never shadows the stats view (`s`) the rankings read.
- */
 function rankingScope(alias: string, input: { league: string | null; role?: string | null; side?: MapSide | null; split?: string | null } & Period, params: Params): string {
   const scope = competitionScope(alias, input, params);
 
@@ -1088,11 +993,9 @@ function rankingScope(alias: string, input: { league: string | null; role?: stri
   return `${scope} AND ${alias}.tournament_page IN (SELECT ts.tournament_page FROM v_tournaments ts WHERE ts.split = :split)`;
 }
 
-/** "au split Spring en LEC en 2024": the scope of a ranking as a sentence says it, its split first. */
 const rankingScopeLabel = (league: string, input: Period & { split?: string | null }) =>
   [input.split ? say(`au split ${input.split}`, `in the ${input.split} split`) : "", scopeLabel(league, input)].filter(Boolean).join(" ");
 
-/** " — LEC 2024 Spring": a ranking's title ending, the split after the season. */
 const rankingTitleScope = (league: string, input: Period & { split?: string | null }, open: " — " | " (") => {
   const scope = titleScope(league, input, open);
 
@@ -1101,11 +1004,9 @@ const rankingTitleScope = (league: string, input: Period & { split?: string | nu
   return scope ? (open === " (" ? scope.replace(/\)$/, ` ${input.split})`) : `${scope} ${input.split}`) : `${open}${input.split}${open === " (" ? ")" : ""}`;
 };
 
-/** The roster's competition: the one asked, otherwise every competition but those a roster leaves out (ROSTER_EXCLUDED). */
 const rosterLeague = (column: string, input: TeamRosterInput, params: Params) =>
   input.league ? `AND ${leagueFilter(column, input, params)}` : `AND ${column} NOT IN (${inList("rosterExcluded", [...ROSTER_EXCLUDED], params)})`;
 
-/** The roster's filters on v_game_players (`gp`): the team's names, the competition stages, the league, the period and the split. */
 async function rosterScope(db: Db, input: TeamRosterInput, params: Params): Promise<string> {
   const t = inList("t", (await teamMembers(db, input.team)).members, params);
   const league = rosterLeague("gp.league", input, params);
@@ -1113,10 +1014,6 @@ async function rosterScope(db: Db, input: TeamRosterInput, params: Params): Prom
   return `gp.team IN (${t}) AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
 }
 
-/**
- * Without a period, the roster is the current one: the team's latest season in the scope, competition and split
- * included (in the database, so a team that stopped playing gets its last season). A period given by the question stays as is.
- */
 async function rosterSeason(db: Db, input: TeamRosterInput): Promise<TeamRosterInput & { latest: boolean }> {
   if (input.yearFrom != null || input.yearTo != null) return { ...input, latest: false };
   const params: Params = {};
@@ -1134,7 +1031,6 @@ async function rosterSeason(db: Db, input: TeamRosterInput): Promise<TeamRosterI
   return year == null ? { ...input, latest: false } : { ...input, yearFrom: year, yearTo: year, latest: true };
 }
 
-/** The team's tournaments of the scope, in play order, with its games and wins in each (a trusted helper query). */
 async function rosterTournaments(db: Db, input: TeamRosterInput) {
   const params: Params = {};
   const t = inList("t", (await teamMembers(db, input.team)).members, params);
@@ -1231,14 +1127,12 @@ ORDER BY role, SUM(games) DESC, player`),
       }))
       .sort((a, b) => roleRank(a.role) - roleRank(b.role) || b.games - a.games || a.player.localeCompare(b.player));
 
-    // The starters of a role are its players with the most games: two of them when they split the games evenly.
     for (const p of players) p.starter = p.games === top.get(p.role);
 
     const starters = players.filter((p) => p.starter);
     const others = players.filter((p) => !p.starter);
     const roleName = (role: string) => ROLE_LABEL_BY_NAME.get(role) ?? role;
     const where = scope ? ` ${scope}` : "";
-    // The histories the follow-ups lead to read no split: their scope is the competition and the period.
     const historyScope = scopeLabel(league, input);
     const historyWhere = historyScope ? ` ${historyScope}` : "";
 
@@ -1296,8 +1190,6 @@ ORDER BY role, SUM(games) DESC, player`),
   },
 };
 
-// 3. Head-to-head -------------------------------------------------------------------
-
 const SeriesRow = z.object({
   tournament_page: Text,
   tab: NullableText,
@@ -1308,16 +1200,13 @@ const SeriesRow = z.object({
   team_b: Text,
   wins_a: z.number(),
   wins_b: z.number(),
-  /** 1 when side A won the series, 0 when side B did, null without a winner. */
   won_a: z.number().nullable(),
   schedule: z.number(),
   forfeited_by: NullableText,
 });
 
-/** Series listed under a head-to-head; the record counts every series of the scope. */
 const MAX_SERIES = 100;
 
-/** Every series (one tab's match of one tournament page) the two teams played in the scope, newest first. */
 async function teamSeries(db: Db, input: HeadToHeadInput) {
   const params: Params = {};
   const A = inList("a", (await teamMembers(db, input.sideA)).members, params);
@@ -1326,7 +1215,6 @@ async function teamSeries(db: Db, input: HeadToHeadInput) {
   const winsA = `SUM(CASE WHEN g.winner IN (${A}) THEN 1 ELSE 0 END)`;
   const winsB = `SUM(CASE WHEN g.winner IN (${B}) THEN 1 ELSE 0 END)`;
 
-  // The series of the scoreboards, then those known only from the schedule (their score, the side that forfeited).
   const rows = await selectAll(
     db,
     SeriesRow,
@@ -1385,7 +1273,6 @@ const headToHead: ToolDef<HeadToHeadInput> = {
     const B = inList("b", (await teamMembers(db, input.sideB)).members, params);
     const league = (alias: string) => (input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "");
 
-    // A series known only from the schedule adds its score as games (none for a forfeit), and is counted apart.
     return {
       params,
       sql: tidy(`WITH meetings AS (
@@ -1481,7 +1368,6 @@ ORDER BY year NULLS FIRST, MIN(played_at) NULLS FIRST, event_page`),
       totals: { wins_a: winsA, wins_b: winsB, events: raw.length, series: series.count, series_a: series.seriesA, series_b: series.seriesB, schedule_series: series.scheduleOnly },
     };
   },
-  // The model may write a franchise's old name ("MAD Lions KOI"): the input carries the franchise's current one.
   normalize: async (db, input) => {
     const a = await resolveTeam(db, input.sideA);
     const b = await resolveTeam(db, input.sideB);
@@ -1489,8 +1375,6 @@ ORDER BY year NULLS FIRST, MIN(played_at) NULLS FIRST, event_page`),
     return a && b ? { ...input, sideA: a.team, sideB: b.team } : null;
   },
 };
-
-// 3b. Two players set against each other ----------------------------------------------
 
 const ComparisonRow = z.object({
   player: Text,
@@ -1508,7 +1392,6 @@ const ComparisonRow = z.object({
   avg_solo_kills: z.number().nullable(),
   solo_kills: z.number().nullable(),
   ingame_games: z.number(),
-  /** The statistic the question names (null without one): total, average, and the games it is counted on. */
   focus_total: z.number().nullable(),
   focus_avg: z.number().nullable(),
   focus_games: z.number(),
@@ -1517,7 +1400,6 @@ const ComparisonRow = z.object({
 
 type ComparisonRow = z.infer<typeof ComparisonRow>;
 
-/** Columns of the comparison tables, named as the comparison layout reads them. */
 const COMPARISON_COLUMNS = [
   "player", "games", "wins", "avg_kills", "avg_deaths", "avg_assists", "avg_gold", "avg_cs", "avg_damage", "avg_vision", "avg_gold_diff_15", "avg_cs_diff_15",
   "avg_solo_kills",
@@ -1548,11 +1430,6 @@ const VersusGameRow = z.object({
   assists_b: z.number().nullable(),
 });
 
-/**
- * The statistic a comparison puts first, when the question names one ("Faker vs Chovy pentakills").
- * `stat`: the column read, of v_game_player_stats for an in-game metric (counted on the games with Riot
- * data only), of v_game_players otherwise. `column`: the table column the comparison layout reads.
- */
 type ComparisonFocus = { label: string; ingame: boolean; aggregate: "sum" | "avg"; stat: string; column: string; digits: number; signed: boolean };
 
 const END_STAT_FOCUS: Record<ComparisonEndStat, { label: Phrase; digits: number }> = {
@@ -1574,17 +1451,11 @@ function comparisonFocus(input: PlayerComparisonInput): ComparisonFocus | null {
   const stat = metricColumn(def, input.minute);
   const sum = def.aggregate === "sum";
 
-  // A count keeps the metric's name as its column (first_bloods, kills_before_10), an average its source column.
   return { label: metricLabel(def, input.minute), ingame: true, aggregate: sum ? "sum" : "avg", stat, column: sum ? metric : `avg_${stat}`, digits: /gold|xp/.test(stat) ? 0 : 1, signed: /_diff_/.test(stat) };
 }
 
-/** The focus value of a row: the total of a count, the rounded average otherwise; null when nothing counts it. */
 const focusValue = (r: ComparisonRow, f: ComparisonFocus) => (r.focus_games === 0 ? null : f.aggregate === "sum" ? r.focus_total : roundTo(r.focus_avg, f.digits));
 
-/**
- * The sentence the facts open with when the question names a statistic: face to face when they met, then over
- * the scope. An in-game figure is n/d for a player without Riot data, and says on how many games it is counted.
- */
 function focusFacts(f: ComparisonFocus, pair: string, names: [string, string], faced: ComparisonRow[], rows: ComparisonRow[]): string {
   if (f.ingame && [...rows, ...faced].every((r) => r.focus_games === 0)) return say(`${pair}, ${f.label} : n/d, aucune partie avec données Riot dans ce périmètre. `, `${pair}, ${f.label}: n/a, no game with Riot data in this scope. `);
 
@@ -1603,20 +1474,13 @@ function focusFacts(f: ComparisonFocus, pair: string, names: [string, string], f
   return say(`${pair}, ${f.label} : ${faced.length ? `face à face, ${both(faced)} ; ` : ""}sur toutes leurs parties, ${both(rows)}. `, `${pair}, ${f.label}: ${faced.length ? `head to head, ${both(faced)}; ` : ""}over all their games, ${both(rows)}. `);
 }
 
-/** Most games listed under the comparison (Faker and Chovy met 146 times). */
 const MAX_VERSUS_GAMES = 200;
 
 const fr1 = (n: number) => numberFormat(answerLocale(), 1).format(Math.round(n * 10) / 10);
 
-/** The other player of the pair, for a row of either: they faced each other when they were on opposing teams. */
 const FACED = `EXISTS (SELECT 1 FROM v_game_players o
     WHERE o.game_id = p.game_id AND o.team <> p.team AND o.player = CASE p.player WHEN :a THEN :b ELSE :a END)`;
 
-/**
- * Both players' statistics, one row each (player A first). `faced`: only the games where they played
- * against each other. The in-game stats are filtered on the two players before the join, so the view's
- * own joins stay small.
- */
 function comparisonSql(input: PlayerComparisonInput, params: Params, faced: boolean): string {
   const focus = comparisonFocus(input);
   const focusSql = focus == null ? "NULL::integer" : focus.ingame ? "st.focus" : `p.${focus.stat}`;
@@ -1641,7 +1505,6 @@ FROM g GROUP BY player
 ORDER BY player = :a DESC`);
 }
 
-/** The comparison table; the statistic the question names comes right after the record, with the games it is counted on when in-game. */
 function comparisonTable(rows: ComparisonRow[], focus: ComparisonFocus | null) {
   const lead = focus ? [focus.column, ...(focus.ingame ? ["ingame_games"] : [])] : [];
   const [head, rest] = [COMPARISON_COLUMNS.slice(0, 3), COMPARISON_COLUMNS.slice(3).filter((c) => !lead.includes(c))];
@@ -1660,7 +1523,6 @@ function comparisonTable(rows: ComparisonRow[], focus: ComparisonFocus | null) {
   return { columns, rows: rows.map((r) => columns.map((c) => cell(r, c))) };
 }
 
-/** "en LEC en 2025", "aux Worlds entre 2015 et 2020", "depuis 2023", "" for every competition and season. */
 export function scopeLabel(league: string, input: Period): string {
   const { yearFrom: from, yearTo: to } = input;
 
@@ -1678,14 +1540,9 @@ export function scopeLabel(league: string, input: Period): string {
   return [inLeague(league), period].filter(Boolean).join(" ");
 }
 
-/**
- * Player A's games of the scope (`p`) and player B's games (`o`), each read once on its own: joined directly, the
- * planner reckons a player has the average number of games and walks B's games again for every game of A.
- */
 const pairGames = (scope: string) => `WITH p AS MATERIALIZED (SELECT * FROM v_game_players p WHERE p.player = :a AND ${scope}),
      o AS MATERIALIZED (SELECT * FROM v_game_players WHERE player = :b)`;
 
-/** Their games against each other, newest first, with each player's champion and K/D/A. */
 async function versusGames(db: Db, input: PlayerComparisonInput): Promise<VersusGame[]> {
   const params: Params = {};
 
@@ -1710,7 +1567,6 @@ async function versusGames(db: Db, input: PlayerComparisonInput): Promise<Versus
   );
 
   return rows.map((r) => {
-    // The game's own page when Leaguepedia has its Riot data, else the tournament page.
     const page = r.stats_page ?? r.tournament_page;
 
     return {
@@ -1724,7 +1580,6 @@ async function versusGames(db: Db, input: PlayerComparisonInput): Promise<Versus
   });
 }
 
-/** Of their games against each other, those they played in the same role (a lane face-off), by role. */
 async function sameLane(db: Db, input: PlayerComparisonInput): Promise<VersusView["lanes"]> {
   const params: Params = {};
 
@@ -1743,7 +1598,6 @@ async function sameLane(db: Db, input: PlayerComparisonInput): Promise<VersusVie
   return { same: roles.reduce((n, r) => n + r.games, 0), roles };
 }
 
-/** "dont 12 dans la même lane (Mid)", or why they never faced each other in lane. */
 function laneFacts(lanes: VersusView["lanes"], met: number, profiles: [string | null, string | null], names: [string, string]): string {
   if (!met) return "";
 
@@ -1770,7 +1624,6 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
     Object.assign(params, { a: input.playerA, b: input.playerB });
 
-    // Every game of the scope: it decides whether there is anything to compare (the relaxations run on it).
     return { params, sql: comparisonSql(input, params, false) };
   },
   relaxations: (input) => {
@@ -1822,7 +1675,6 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
     };
 
     const facts =
-      // The statistic the question names opens the facts, so the summary leads with it.
       (focus ? focusFacts(focus, pair, [input.playerA, input.playerB], met ? faced : [], rows) : "") +
       (met
         ? say(`${pair} se sont affrontés sur ${met} parties : ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB} ; face à face, ${faced.map(line).join(" ; ")}. `, `${pair} faced each other in ${met} games: ${input.playerA} ${winsA} – ${met - winsA} ${input.playerB}; head to head, ${faced.map(line).join("; ")}. `) +
@@ -1836,7 +1688,6 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
 
     return {
       title: `${input.playerA} vs ${input.playerB}${titleScope(league, input, " — ")}`,
-      // The generic table (and the text answer) keep the global statistics; the view adds the games they met in.
       table: comparisonTable(rows, focus),
       versus: {
         playerA: input.playerA,
@@ -1864,10 +1715,8 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
         h2h_wins_a: winsA,
         h2h_listed: games.length,
         h2h_same_lane: lanes.same,
-        // The face-to-face when they met, else the scope: what the comparison shows first.
         solo_kills_a: (met ? faced : rows).find((r) => r.player === input.playerA)?.solo_kills ?? nd(),
         solo_kills_b: (met ? faced : rows).find((r) => r.player === input.playerB)?.solo_kills ?? nd(),
-        // The statistic the question names, over the scope and face to face.
         ...(focus && {
           metric_a: valueOf(rows, input.playerA),
           metric_b: valueOf(rows, input.playerB),
@@ -1886,36 +1735,27 @@ const playerComparison: ToolDef<PlayerComparisonInput> = {
   },
 };
 
-// 4. Champion in an event -----------------------------------------------------------
-
-/** (kills + assists) / deaths, a perfect game counting one death; null without the three figures. */
 const kdaOf = (ka: number | null, deaths: number | null) => (ka == null || deaths == null ? null : Math.round((100 * ka) / Math.max(1, deaths)) / 100);
 
-/** SQL of the two sums a KDA is made of, null-aware: kills + assists, and deaths (see kdaOf). */
 const kaSum = (alias: string) => `SUM(CASE WHEN ${alias}.deaths IS NOT NULL THEN ${alias}.kills + ${alias}.assists END)`;
 const deathsSum = (alias: string) => `SUM(CASE WHEN ${alias}.kills IS NOT NULL AND ${alias}.assists IS NOT NULL THEN ${alias}.deaths END)`;
 
-/** French role names, as the answers write them. */
 export const ROLE_LABEL: Record<(typeof ROLES)[number], string> = { Top: "top", Jungle: "jungle", Mid: "mid", Bot: "ADC", Support: "support" };
 
 const ROLE_LABEL_BY_NAME = new Map<string, string>(Object.entries(ROLE_LABEL));
 
-/** The players of a role, as the answers name them. */
 const ROLE_PLAYERS: Record<(typeof ROLES)[number], string> = { Top: "toplaners", Jungle: "junglers", Mid: "mids", Bot: "ADC", Support: "supports" };
 
 const ROLE_PLAYERS_EN: Record<(typeof ROLES)[number], string> = { Top: "top laners", Jungle: "junglers", Mid: "mids", Bot: "ADCs", Support: "supports" };
 
-/** A unit after a figure in English: no space before the percent sign. */
 const unitEn = (unit: string | undefined) => (unit === " %" ? "%" : (unit ?? ""));
 
-/** A champion's picks in the scope (`gp` is v_game_players). */
 function championScope(input: ChampionStatsInput, params: Params): string {
   params.champion = input.champion;
 
   return `gp.champion = :champion AND ${leagueFilter("gp.league", input, params)} AND gp.stage IN (${COMPETITION_STAGES}) ${periodFilter("gp.year", input, params)}`;
 }
 
-/** End-of-game figures averaged per game on the champion, with the number of games that have them. */
 const CHAMPION_AVERAGES = [
   { key: "kills", label: phrase("kills", "kills"), digits: 1 },
   { key: "deaths", label: phrase("morts", "deaths"), digits: 1 },
@@ -1926,7 +1766,6 @@ const CHAMPION_AVERAGES = [
   { key: "vision", label: phrase("score de vision", "vision score"), digits: 1 },
 ] as const;
 
-/** In-game figures (Riot data), averaged over the games that have them. */
 const CHAMPION_INGAME = [
   { key: "gold_diff_15", label: phrase("écart d'or @15", "gold diff @15"), digits: 0 },
   { key: "cs_diff_15", label: phrase("écart CS @15", "CS diff @15"), digits: 1 },
@@ -1938,17 +1777,13 @@ const ChampionPlayerRow = z.object({ player: Text, team: NullableText, games: z.
 
 const roundTo = (n: number | null, digits: number) => (n == null ? null : Math.round(n * 10 ** digits) / 10 ** digits);
 
-/** "12 345", "3,1", "+72", nd() */
 export const frNumber = (n: number | null, signedValue = false) =>
   n == null ? nd() : `${signedValue && n > 0 ? "+" : n < 0 ? "−" : ""}${numberFormat(answerLocale(), 2).format(Math.abs(n)).replace(/[\u202f\u00a0]/g, " ")}`;
 
-/** A figure the data does not hold: nd() / "n/a". */
 const nd = () => NO_DATA[answerLocale()];
 
-/** Since 2026, a bot laner's boots sit in the role quest slot (Riot `roleBoundItem`), which Leaguepedia's Items field leaves out. */
 const BOT_BOOTS_SLOT_YEAR = 2026;
 
-/** Where the inventories come from: the Items field of the scoreboards. */
 const itemsSource = (): Source => ({
   label: say("Leaguepedia — inventaires de fin de partie (ScoreboardPlayers)", "Leaguepedia — end-of-game inventories (ScoreboardPlayers)"),
   url: wikiUrl("Special:CargoTables/ScoreboardPlayers"),
@@ -1956,13 +1791,10 @@ const itemsSource = (): Source => ({
 
 const ChampionItemRow = z.object({ item: Text, icon: Text, kind: z.enum(ITEM_KINDS).nullable(), games: z.number(), wins: z.number() });
 
-/** A champion's end-of-game items in the scope (`gp` is v_game_players), and what the inventories leave out. */
 async function championItems(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionItems> {
   const params: Params = {};
   const where = championScope(input, params);
   const owned = "pi.game_id = gp.game_id AND pi.player = gp.player";
-  // The champion's few games drive the lookups (LATERAL, and OFFSET 0 so the planner keeps it): joined whole, the item
-  // and rune views would be computed for every game first (2.8 million item rows, 4.6 million rune slots).
 
   const items = await selectAll(
     db,
@@ -1993,7 +1825,6 @@ async function championItems(db: Db, input: ChampionStatsInput, picks: number): 
   return { games: counts.games, items, notes };
 }
 
-/** "Infinity Edge (17/21 parties, 81 %)" for the most built completed items. */
 function itemsFacts(p: ChampionProfile): string {
   const complete = p.items.items.filter((i) => i.kind === "complete").slice(0, 3);
 
@@ -2005,7 +1836,6 @@ function itemsFacts(p: ChampionProfile): string {
   );
 }
 
-/** Where the summoner spells and the runes come from: the scoreboards. */
 const setupsSource = (): Source => ({
   label: say("Leaguepedia — sorts d'invocateur et runes (ScoreboardPlayers)", "Leaguepedia — summoner spells and runes (ScoreboardPlayers)"),
   url: wikiUrl("Special:CargoTables/ScoreboardPlayers"),
@@ -2015,19 +1845,12 @@ const ChampionSpellsRow = z.object({ spell1: Text, spell2: NullableText, icon1: 
 
 const ChampionRuneRow = z.object({ rune: Text, kind: z.enum(RUNE_KINDS), tree: NullableText, icon: NullableText, games: z.number(), wins: z.number() });
 
-/** The runes of a scope's picks, as both the champion and the player views read them. */
 type ScopeRunes = Pick<ChampionSetups, "keystoneGames" | "pageGames" | "runes" | "notes">;
 
-/**
- * The runes of the picks a scope holds (`gp` is v_game_players; `scope` writes its condition into the parameters it
- * is given), by part of the page, the games that list a keystone or the whole page, and why part of the scope has
- * none. `picks`: the scope's games, the denominator of the notes.
- */
 async function scopeRunes(db: Db, scope: (params: Params) => string | Promise<string>, picks: number): Promise<ScopeRunes> {
   const params: Params = {};
   const where = await scope(params);
 
-  // A stat shard taken twice on a page counts once, as two copies of an item do.
   const runes = await selectAll(
     db,
     ChampionRuneRow,
@@ -2062,7 +1885,6 @@ async function scopeRunes(db: Db, scope: (params: Params) => string | Promise<st
   return { keystoneGames: counts.keystones, pageGames: counts.pages, runes: runes.map((r) => ({ ...r, icon: runeIcon(r.rune, r.icon) })), notes };
 }
 
-/** A champion's summoner spell pairs and runes in the scope (`gp` is v_game_players), and the games that have them. */
 async function championSetups(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionSetups> {
   const params: Params = {};
   const where = championScope(input, params);
@@ -2088,7 +1910,6 @@ async function championSetups(db: Db, input: ChampionStatsInput, picks: number):
   };
 }
 
-/** "Flash + Teleport (185/215 parties, 86 %)" for the most taken spell pairs, then the keystones the same way. */
 function setupsFacts(p: ChampionProfile): string {
   const s = p.setups;
   const line = (name: string, games: number, of: number) => say(`${name} (${games}/${of} parties, ${pct(games, of)} %)`, `${name} (${games}/${of} games, ${pct(games, of)}%)`);
@@ -2101,7 +1922,6 @@ function setupsFacts(p: ChampionProfile): string {
   );
 }
 
-/** Averages, players and roles of a champion in the scope of the question. */
 async function championProfile(db: Db, input: ChampionStatsInput, scope: string, games: number, bans: number, icon: string | null): Promise<ChampionProfile> {
   const params: Params = {};
   const where = championScope(input, params);
@@ -2168,7 +1988,6 @@ async function championProfile(db: Db, input: ChampionStatsInput, scope: string,
   };
 }
 
-/** The sentence part of a champion's averages, saying which figures are missing or partial. */
 function averagesFacts(p: ChampionProfile): string {
   const shown = p.averages.map((a) => `${a.label} ${frNumber(a.value, a.signed)}`).join(", ");
   const partial = p.averages.filter((a) => a.counted > 0 && a.counted < p.picks);
@@ -2241,12 +2060,10 @@ ORDER BY ev.year NULLS FIRST, MIN(ev.played_at) NULLS FIRST, ev.event_page`),
     const picks = sum("picks");
     const bans = sum("bans");
     const wins = sum("wins");
-    // Every game of the scope, as champion_ranking counts them: editions without the champion included.
     const first = raw[0];
     const games = first?.scope_games ?? 0;
     const years = raw.map((r) => Number(r.year));
 
-    // Said only when the scope is wider than the champion's own editions.
     const scopeYears =
       first?.scope_from != null && first.scope_to != null && (first.scope_from < Math.min(...years) || first.scope_to > Math.max(...years))
         ? `, ${yearSpan([first.scope_from, first.scope_to])}`
@@ -2333,8 +2150,6 @@ ORDER BY ev.year NULLS FIRST, MIN(ev.played_at) NULLS FIRST, ev.event_page`),
   },
 };
 
-// 4b. Champions ranked ------------------------------------------------------------------
-
 const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: string }> = {
   picks: { title: "les plus joués", criterion: "nombre de picks" },
   bans: { title: "les plus bannis", criterion: "nombre de bans" },
@@ -2363,7 +2178,6 @@ const CHAMPION_SORT_LABEL: Record<ChampionSort, { title: string; criterion: stri
   double_kills: { title: "avec le plus de double kills", criterion: "double kills au total, sur les parties avec données Riot" },
 };
 
-/** The same in English, where the adjective comes first: the whole title, "champions" included. */
 const CHAMPION_SORT_LABEL_EN: Record<ChampionSort, { title: string; criterion: string }> = {
   picks: { title: "Most played champions", criterion: "number of picks" },
   bans: { title: "Most banned champions", criterion: "number of bans" },
@@ -2392,17 +2206,12 @@ const CHAMPION_SORT_LABEL_EN: Record<ChampionSort, { title: string; criterion: s
   double_kills: { title: "Champions with the most double kills", criterion: "double kills in total, over the games with Riot data" },
 };
 
-/**
- * A total over the scope: the column it sums, in v_game_players (end-of-game) or v_game_player_stats (Riot data,
- * named as metrics.ts defines it), its title, and how a figure reads (`one` for a count of 1, when it differs).
- */
 function ingameTotal(metric: keyof typeof PLAYER_METRIC_DEFS) {
   const { column, label, en } = PLAYER_METRIC_DEFS[metric];
 
   return { ingame: true, column, title: `avec le plus de ${label}`, unit: label, one: label.replace(/s$/, ""), en: { title: `Champions with the most ${en}`, unit: en, one: en.replace(/s$/, "") } };
 }
 
-/** `en`: the same in English, with the whole title. */
 const CHAMPION_TOTAL: Record<ChampionTotalSort, { ingame: boolean; column: string; title: string; unit: string; one?: string; en: { title: string; unit: string; one?: string } }> = {
   kills: { ingame: false, column: "kills", title: "avec le plus de kills", unit: "kills", one: "kill", en: { title: "Champions with the most kills", unit: "kills", one: "kill" } },
   deaths: { ingame: false, column: "deaths", title: "avec le plus de morts", unit: "morts", one: "mort", en: { title: "Champions with the most deaths", unit: "deaths", one: "death" } },
@@ -2422,7 +2231,6 @@ const CHAMPION_TOTAL: Record<ChampionTotalSort, { ingame: boolean; column: strin
 const totalSortOf = (input: Pick<ChampionRankingInput, "sort" | "total">): ChampionTotalSort | null =>
   input.total ? (CHAMPION_TOTAL_SORTS.find((s) => s === input.sort) ?? null) : null;
 
-/** "3 pentakills", "1 pentakill", "0 pentakill", "45 210 d'or". */
 const totalText = (sort: ChampionTotalSort, n: number | null) => {
   const t = CHAMPION_TOTAL[sort];
 
@@ -2432,7 +2240,6 @@ const totalText = (sort: ChampionTotalSort, n: number | null) => {
 const totalCriterion = (sort: ChampionTotalSort) =>
   say(`${CHAMPION_TOTAL[sort].unit} au total sur le périmètre${CHAMPION_TOTAL[sort].ingame ? ", sur les parties avec données Riot" : ""}`, `${CHAMPION_TOTAL[sort].en.unit} in total over the scope${CHAMPION_TOTAL[sort].ingame ? ", over the games with Riot data" : ""}`);
 
-/** How each extra figure reads in a sentence. */
 const CHAMPION_EXTRA_TEXT: Record<ChampionExtraSort, (v: number | null) => string> = {
   dpm: (v) => say(`${frNumber(v)} dégâts/min`, `${frNumber(v)} damage/min`),
   gpm: (v) => say(`${frNumber(v)} d'or/min`, `${frNumber(v)} gold/min`),
@@ -2447,10 +2254,8 @@ const CHAMPION_EXTRA_TEXT: Record<ChampionExtraSort, (v: number | null) => strin
 
 const extraSortOf = (sort: ChampionSort): ChampionExtraSort | null => CHAMPION_EXTRA_SORTS.find((s) => s === sort) ?? null;
 
-/** The extra figures that come from the Riot game data: none where Leaguepedia hosts no game JSON (the LPL). */
 const CHAMPION_INGAME_SORTS: ChampionSort[] = ["gold_diff_15", "cs_diff_15", "xp_diff_15", "first_blood", "solo_kills", ...CHAMPION_MULTIKILL_SORTS];
 
-/** What a per-game average is called in a sentence, and its decimals. */
 const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; en: string; digits: number }> = {
   kills: { unit: "kills", en: "kills", digits: 2 },
   deaths: { unit: "morts", en: "deaths", digits: 2 },
@@ -2463,7 +2268,6 @@ const CHAMPION_AVERAGE_UNIT: Record<ChampionAverageSort, { unit: string; en: str
 
 const averageSortOf = (sort: ChampionSort): ChampionAverageSort | null => CHAMPION_AVERAGE_SORTS.find((s) => s === sort) ?? null;
 
-/** Columns of the champion ranking table, named as the champion layout reads them. */
 export const CHAMPION_RANKING_COLUMNS = ["rank", "champion", "picks", "bans", "presence", "winrate", "kda", ...CHAMPION_EXTRA_SORTS] as const;
 
 const ChampionRankingRow = z.object({
@@ -2478,7 +2282,6 @@ const ChampionRankingRow = z.object({
   winrate: z.number().nullable(),
   kda: z.number().nullable(),
   average: z.number().nullable(),
-  /** The total over the scope a total ranking is ordered by, null otherwise. */
   total: z.number().nullable(),
   dpm: z.number().nullable(),
   gpm: z.number().nullable(),
@@ -2489,25 +2292,18 @@ const ChampionRankingRow = z.object({
   first_blood: z.number().nullable(),
   solo_kills: z.number().nullable(),
   players: z.number(),
-  /** Games on the champion that have Riot data: what the lane figures are computed on. */
   ingame_picks: z.number(),
-  /** Games of the scope that have Riot data: 0 where Leaguepedia hosts none (the LPL). */
   ingame_games: z.number(),
-  /** The figure the ranking is ordered by. */
   sort_value: z.number().nullable(),
   min_picks: z.number(),
 });
 
-/** Winrate and KDA need enough picks to mean something: 2 % of the scope's games, at least 3. */
 const DEFAULT_MIN_PICKS = atLeast(3, "(n.games + 49) / 50");
 
-/** A per-game average swings more on a few games: at least 5 picks, the cut Riot's own Worlds stats page applies. */
 const DEFAULT_MIN_PICKS_AVERAGE = atLeast(5, "(n.games + 49) / 50");
 
-/** The games a champion ranking counts: its competition, period and split, without the role and side its picks filter on. */
 const rankedChampionsScope = (input: ChampionRankingInput) => ({ ...leagueAndPeriod(input), split: input.split });
 
-/** A total needs no minimum: more picks is what makes it. A minimum the question sets still applies. */
 const needsMinPicks = (input: Pick<ChampionRankingInput, "sort" | "total">) => !["picks", "bans", "presence", "players"].includes(input.sort) && !totalSortOf(input);
 
 const championRanking: ToolDef<ChampionRankingInput> = {
@@ -2525,10 +2321,8 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     "'champion avec le plus de morts' (total), 'quel champion a le plus de pentakills'.",
   plan: async (_db, input) => {
     const params: Params = {};
-    // The picks the figures are about: one role, one side of the map, or every pick.
     const mine = (alias: string) => [input.role ? `${alias}.role = :role` : "", input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : ""].filter(Boolean).join(" AND ") || "TRUE";
     const role = mine("gp");
-    // Bans and presence follow the side asked; a ban has no role.
     const side = (alias: string) => (input.side ? `${alias}.side = ${SIDE_ID[input.side]}` : "TRUE");
 
     const perMinuteOf = (column: string) =>
@@ -2542,7 +2336,6 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     const average = totalSort ? null : averageSortOf(input.sort);
     const minPicks = input.minPicks != null ? ":minPicks" : totalSort ? "0" : average || extraSortOf(input.sort) ? DEFAULT_MIN_PICKS_AVERAGE : DEFAULT_MIN_PICKS;
     const order = totalSort ? "total" : average ? "average" : input.sort;
-    // A figure of the Riot data: kept where the scope has none, so the answer says it is absent rather than widen the scope.
     const ingame = CHAMPION_INGAME_SORTS.includes(input.sort);
 
     return {
@@ -2625,9 +2418,7 @@ LIMIT 20`),
     const extra = totalSort ? null : extraSortOf(input.sort);
     const role = `${input.role ? say(` en ${ROLE_LABEL[input.role]}`, ` in ${ROLE_LABEL[input.role]}`) : ""}${sideLabel(input.side)}`;
     const params: Params = {};
-    // The Riot data has no game of the scope (the LPL): the figure is absent, not zero.
     const absent = CHAMPION_INGAME_SORTS.includes(input.sort) && ingameGames === 0;
-    // A total ranks the champions that have one: none at all is a true zero over the scope, said as such.
     const rows = absent ? [] : totalSort ? all.filter((r) => (r.total ?? 0) > 0) : all;
     const ingamePicks = rows.reduce((n, r) => n + r.ingame_picks, 0);
 
@@ -2672,7 +2463,6 @@ LIMIT 20`),
     const lowerMultikill = multikill >= 0 ? (CHAMPION_MULTIKILL_SORTS[multikill + 1] ?? null) : null;
     const where = `${inLeague(league) || say("aux Worlds", "at Worlds")}${input.yearFrom != null && input.yearFrom === input.yearTo ? ` ${input.yearFrom}` : ""}`;
 
-    // A total or a per-game average is one more column, named as the sort: the champion layout gives it the bar.
     const figure = totalSort ? `total_${totalSort}` : average;
 
     const out: ToolOutput = {
@@ -2687,7 +2477,6 @@ LIMIT 20`),
       followUps: rows.length
         ? rows.slice(0, 2).map((r) => say(`Stats de ${r.champion} ${where}`, `${r.champion} stats ${where}`))
         : [
-            // No champion to look at: the next multikill down, and the champions of the same scope.
             ...(lowerMultikill ? [say(`Champions avec le plus de ${CHAMPION_TOTAL[lowerMultikill].unit} ${where}`, `Champions with the most ${CHAMPION_TOTAL[lowerMultikill].en.unit} ${where}`)] : []),
             say(`Champions les plus joués ${where}`, `Most played champions ${where}`),
           ],
@@ -2703,7 +2492,6 @@ LIMIT 20`),
       },
     };
 
-    // An absent figure or a true zero is said in the facts: no empty table under it.
     if (!absent && (rows.length || !totalSort))
       out.table = {
         columns: figure ? ["rank", "champion", figure, ...CHAMPION_RANKING_COLUMNS.slice(2)] : [...CHAMPION_RANKING_COLUMNS],
@@ -2712,8 +2500,6 @@ LIMIT 20`),
 
     return out;
   },
-  // The router model tends to set a minimum of 1 for "top 5": below 3 picks, the default threshold keeps a winrate meaningful.
-  // A multikill is only ever a total; `total` means nothing for a figure that is not a count or a sum.
   normalize: (_db, input) => ({
     ...input,
     total: CHAMPION_TOTAL_SORTS.some((s) => s === input.sort) && (input.total === true || CHAMPION_MULTIKILL_SORTS.some((s) => s === input.sort)),
@@ -2721,9 +2507,6 @@ LIMIT 20`),
   }),
 };
 
-// 4c. A player's or a team's champion pool ---------------------------------------------
-
-/** Columns of the champion pool table; the team pool adds who played each champion. */
 export const CHAMPION_POOL_COLUMNS = ["rank", "champion", "games", "wins", "losses", "winrate", "kda", "share"] as const;
 
 const ChampionPoolRow = z.object({
@@ -2739,7 +2522,6 @@ const ChampionPoolRow = z.object({
   unique_champions: z.number(),
 });
 
-/** The picks of a pool's scope: the player's or the team's games in the competition, period and split. */
 async function poolScope(db: Db, input: ChampionPoolInput, params: Params): Promise<string> {
   const who =
     input.subject === "player"
@@ -2762,7 +2544,6 @@ const championPool: ToolDef<ChampionPoolInput> = {
   plan: async (db, input) => {
     const params: Params = {};
 
-    // Who played each champion is aggregated once and joined: a correlated subquery rescanned every pick per champion (10 s for T1).
     return {
       params,
       sql: tidy(`WITH picks AS (
@@ -2924,9 +2705,6 @@ LIMIT 200`),
   },
 };
 
-// 4d. A player's runes -----------------------------------------------------------------
-
-/** A player's picks in the scope (`gp` is v_game_players): the pool's scope, narrowed to a champion and a role when asked. */
 async function playerRunesScope(db: Db, input: PlayerRunesInput, params: Params): Promise<string> {
   const pool = await poolScope(db, { subject: "player", name: input.player, league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo, split: input.split }, params);
   const champion = input.champion ? ((params.champion = input.champion), "AND gp.champion = :champion") : "";
@@ -2939,17 +2717,10 @@ const PlayerRunesChampionRow = z.object({ champion: Text, icon: NullableText, ga
 
 const RunePageRow = z.object({ page: Text, games: z.number(), wins: z.number() });
 
-/** How many pages the view and the summary show. */
 const RUNE_PAGES = 5;
 
-/** The part of the page a slot of v_player_runes holds. */
 const slotKind = (slot: number): RuneKind => (slot === 1 ? "keystone" : slot <= 4 ? "primary" : slot <= 6 ? "secondary" : "shard");
 
-/**
- * The full pages of a scope without the stat shards (the keystone, three primary and two secondary runes), most games
- * first, with the secondary trees they show. A page whose keystone or second slot is not listed is not counted. The two
- * secondary runes are read in name order: the scoreboards list them either way round, and they are one page.
- */
 async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["runes"]): Promise<{ pages: RunePage[]; secondary: RuneTree[] }> {
   const params: Params = {};
   const where = await playerRunesScope(db, input, params);
@@ -2968,7 +2739,6 @@ async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["r
     params,
   );
 
-  // Icons and trees as the rune lines give them: every rune of a page is among them.
   const known = new Map(runes.map((r) => [r.rune, r]));
 
   const pages = rows.map((row) => ({
@@ -2997,7 +2767,6 @@ async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["r
   return { pages: pages.slice(0, RUNE_PAGES), secondary: [...secondary.values()].sort((a, b) => b.games - a.games || a.tree.localeCompare(b.tree)) };
 }
 
-/** The primary trees, counted on the keystones: a keystone belongs to the primary path of its page. */
 function primaryTrees(runes: PlayerRunes["runes"]): RuneTree[] {
   const trees = new Map<string, RuneTree>();
 
@@ -3012,7 +2781,6 @@ function primaryTrees(runes: PlayerRunes["runes"]): RuneTree[] {
   return [...trees.values()].sort((a, b) => b.games - a.games || a.tree.localeCompare(b.tree));
 }
 
-/** "Electrocute (10/14 parties, 71 %, 60 % de victoires)": share of the games that list it, then its win rate. */
 const runeLine = (name: string, games: number, wins: number, of: number) =>
   say(`${name} (${games}/${of} parties, ${pct(games, of)} %, ${pct(wins, games)} % de victoires)`, `${name} (${games}/${of} games, ${pct(games, of)}%, ${pct(wins, games)}% wins)`);
 
@@ -3027,8 +2795,6 @@ const playerRunes: ToolDef<PlayerRunesInput> = {
   plan: async (db, input) => {
     const params: Params = {};
 
-    // The player's games by champion: the scope the runes are read on, its most played champion, and an empty result
-    // only when the player has no game there (a scope without runes still answers, with its note).
     return {
       params,
       sql: tidy(`SELECT gp.champion, ANY_VALUE(c.icon_url) AS icon, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
@@ -3091,7 +2857,6 @@ ORDER BY games DESC, wins DESC, gp.champion`),
 
     const leading = keystones.slice(0, 3).map((r) => runeLine(r.rune, r.games, r.wins, runes.keystoneGames)).join(", ");
 
-    // The keystones in the first sentence: it is the description of a link to the answer.
     const facts =
       (keystones.length
         ? say(`Runes de ${input.player} (${where}) sur ${games} partie${games > 1 ? "s" : ""}, keystones les plus fréquentes : ${leading}.`, `${input.player}'s runes (${where}) over ${games} game${games === 1 ? "" : "s"}, most frequent keystones: ${leading}.`)
@@ -3112,14 +2877,12 @@ ORDER BY games DESC, wins DESC, gp.champion`),
 
     const at = inLeague(league);
     const year = input.yearFrom != null && input.yearFrom === input.yearTo ? input.yearFrom : null;
-    // "aux Worlds 2019", "en LCK", "en 2016", or nothing: where the follow-ups ask.
     const asked = at ? `${at}${year ? ` ${year}` : ""}` : year ? say(`en ${year}`, `in ${year}`) : "";
     const top = champions[0]?.champion;
     const of = (name: string) => (/^[AEIOUYH]/i.test(name) ? "d'" : "de ");
     const tail = asked ? ` ${asked}` : "";
 
     const followUps = [
-      // Narrower: the runes on the champion the player played most; wider: that champion's runes across every player of the competition.
       ...(runes.keystoneGames && !champion && top && champions.length > 1 ? [say(`Runes de ${input.player} sur ${top}${tail}`, `${input.player}'s runes on ${top}${tail}`)] : []),
       ...(runes.keystoneGames && top && at ? [say(`Runes ${of(top)}${top} ${asked}`, `${top} runes ${asked}`)] : []),
       say(`Champion pool de ${input.player}${tail}`, `${input.player}'s champion pool${tail}`),
@@ -3133,7 +2896,6 @@ ORDER BY games DESC, wins DESC, gp.champion`),
       runes: view,
       table: {
         columns: [say("partie de la page", "part of the page"), "rune", say("arbre", "tree"), say("parties", "games"), say("victoires", "wins"), "winrate"],
-        // By part of the page, most games first in each.
         rows: RUNE_KINDS.flatMap((kind) => runes.runes.filter((r) => r.kind === kind)).map((r) => [tr(RUNE_KIND_LABEL[r.kind]), r.rune, r.tree, r.games, r.wins, r.games ? pct(r.wins, r.games) : null]),
       },
       facts,
@@ -3172,15 +2934,12 @@ ORDER BY games DESC, wins DESC, gp.champion`),
   },
 };
 
-/** The parts of a rune page, as the answers name them. */
 const RUNE_KIND_LABEL: Record<RuneKind, Phrase> = {
   keystone: phrase("keystone", "keystone"),
   primary: phrase("primaire", "primary"),
   secondary: phrase("secondaire", "secondary"),
   shard: phrase("fragment", "shard"),
 };
-
-// 5. Standings / roll of honour -------------------------------------------------------
 
 const tournamentStandings: ToolDef<StandingsInput> = {
   name: "tournament_standings",
@@ -3201,7 +2960,6 @@ const tournamentStandings: ToolDef<StandingsInput> = {
 
     if (!input.full) {
       filters.push("AND tr.place_number <= 2");
-      // A regular season with its own playoffs: the title is the playoffs one.
       filters.push(`AND NOT ${regularSeason("t")}`);
     }
 
@@ -3305,21 +3063,13 @@ ORDER BY t.date_start NULLS FIRST, tr.event_page, tr.place_number IS NULL, tr.pl
   normalize: (_db, input) => input,
 };
 
-// In-game stats (Riot JSON on Leaguepedia, not the LPL) ------------------------------
-
-/** Where the in-game numbers come from, cited with every in-game answer. */
 const riotDataSource = (): Source => ({
   label: say("Leaguepedia — données Riot des parties (PostgameJsonMetadata)", "Leaguepedia — Riot game data (PostgameJsonMetadata)"),
   url: wikiUrl("Special:CargoTables/PostgameJsonMetadata"),
 });
 
-/**
- * The question that leads to a player's or a team's in-game stats. It names a metric: "stats in-game de X"
- * alone was read as a history of X.
- */
 const ingameFollowUp = {
   player: (name: string) => say(`Solo kills de ${name}`, `${name} solo kills`),
-  // A team as the answers show it (no "(European Team)"), its punctuation written in words ("KaBuM! Esports"), as the rules read it.
   team: (name: string) => {
     const words = displayTeam(name).replace(/[^\p{L}\p{N}.\-&' ]+/gu, "").replace(/\s+/g, " ").trim();
 
@@ -3327,28 +3077,23 @@ const ingameFollowUp = {
   },
 };
 
-/** "2024", or "2019–2024". */
 const yearSpan = (years: number[]) => (years.length && Math.min(...years) === Math.max(...years) ? String(years[0]) : span(years));
 
 const signed = (n: number | null) => (n == null ? nd() : `${n > 0 ? "+" : ""}${n}`);
 const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
 
-/** SQL aggregate of a metric column: totals for counts, averages, percentages for 0/1 flags. */
 function aggregateSql(aggregate: "sum" | "avg" | "rate", column: string): string {
   if (aggregate === "sum") return `SUM(${column})`;
 
   if (aggregate === "rate") return `ROUND(100.0 * AVG(${column}), 1)`;
 
-  // Gold and XP in whole units, the rest (CS, wards, plates) to one decimal.
   return `ROUND(AVG(${column}), ${/gold|xp/.test(column) ? 0 : 1})`;
 }
 
-/** Shared WHERE clause of the in-game tools (`s` is the stats view). */
 function ingameScope(input: { league: string | null } & Period, params: Params): string {
   return competitionScope("s", leagueAndPeriod(input), params);
 }
 
-/** Games of the scope, and how many of them have Riot data. */
 async function coverage(db: Db, sql: string, params: Params) {
   return await selectOne(db, z.object({ games: z.number(), ingame: z.number() }), sql, params) ?? { games: 0, ingame: 0 };
 }
@@ -3358,7 +3103,6 @@ const coverageNote = (c: { games: number; ingame: number }) =>
     ? say(` Données in-game disponibles pour ${c.ingame} parties sur ${c.games} (Leaguepedia ne publie pas les données Riot de toutes les parties, aucune en LPL).`, ` In-game data available for ${c.ingame} games out of ${c.games} (Leaguepedia does not publish the Riot data of every game, none in the LPL).`)
     : "";
 
-/** Metrics of the player overview, then the one the question asks about. */
 const PLAYER_OVERVIEW: PlayerMetric[] = ["solo_kills", "penta_kills", "first_bloods", "kills_before_10", "gold_diff", "cs_diff", "wards_placed"];
 
 const PLAYER_COLUMN_LABELS: Record<PlayerMetric, Phrase> = {
@@ -3381,15 +3125,12 @@ const PLAYER_COLUMN_LABELS: Record<PlayerMetric, Phrase> = {
   plates: phrase("Plaques", "Plates"),
 };
 
-/** The metric the question asks about first, then the overview. */
 const playerMetricsOf = (input: PlayerIngameInput): PlayerMetric[] =>
   input.metric ? [input.metric, ...PLAYER_OVERVIEW.filter((m) => m !== input.metric)] : PLAYER_OVERVIEW;
 
 const IngameRow = z
   .object({ year: z.number().nullable(), league_short: z.string().nullable(), games: z.number(), wins: z.number(), pages: pageList, stats_page: z.string().nullable() })
   .catchall(z.number().nullable());
-
-// 6. A player's in-game stats -----------------------------------------------------------
 
 const playerIngameStats: ToolDef<PlayerIngameInput> = {
   name: "player_ingame_stats",
@@ -3496,7 +3237,6 @@ ORDER BY is_total, first_game NULLS FIRST`),
       table: {
         columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Parties", "Games"), say("V-D", "W-L"), ...metrics.map((m) => (PLAYER_METRIC_DEFS[m].snapshot ? `${tr(PLAYER_COLUMN_LABELS[m])} @${minute}` : tr(PLAYER_COLUMN_LABELS[m])))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...metrics.map((m) => num(r, m))]),
-        // The metric the question names is the first one listed.
         focus: input.metric ? (PLAYER_METRIC_DEFS[metrics[0]].snapshot ? `${tr(PLAYER_COLUMN_LABELS[metrics[0]])} @${minute}` : tr(PLAYER_COLUMN_LABELS[metrics[0]])) : undefined,
       },
       facts,
@@ -3513,7 +3253,6 @@ ORDER BY is_total, first_game NULLS FIRST`),
       totals: {
         games: total.games,
         coverage_games: cov.games,
-        // n/d: no game of the scope has this metric (no timeline, or no plate events before match-v5).
         ...Object.fromEntries(metrics.map((m) => [m, val(m) ?? nd()])),
       },
     };
@@ -3524,8 +3263,6 @@ ORDER BY is_total, first_game NULLS FIRST`),
     return p ? { ...input, player: p.player } : null;
   },
 };
-
-// 7. Leaderboard on an in-game metric --------------------------------------------------
 
 const LeaderRow = z.object({ name: z.string(), team: z.string().nullable(), games: z.number(), counted: z.number(), total: z.number().nullable(), average: z.number().nullable() });
 
@@ -3545,7 +3282,6 @@ function leaderboardMetric(input: LeaderboardInput) {
   return { def: PLAYER_METRIC_DEFS[key], key };
 }
 
-/** Averages and rates need enough games to mean something. */
 function minGamesOf(input: LeaderboardInput): number {
   if (input.minGames != null) return input.minGames;
 
@@ -3632,7 +3368,6 @@ LIMIT 20`),
       ingame_games: cov.ingame,
     };
 
-    // A rate's leader: how many games had it ("6 first dragons").
     if (def.aggregate === "rate") totals.leader_count = rows[0]?.total ?? 0;
 
     const facts =
@@ -3644,13 +3379,11 @@ LIMIT 20`),
     return {
       title: `${say(`Classement — ${label}${roleLabel}`, `Ranking — ${label}${roleLabel}`)}${titleScope(league, input, " (")}`,
       table: {
-        // A rate shows its count too: "11 first dragons in 17 games, 64.7 %".
         columns: [say("Rang", "Rank"), who, ...(input.subject === "player" ? [say("Équipe (dernière)", "Team (latest)")] : []), say("Parties", "Games"), ...(def.aggregate === "rate" ? [say("Nombre", "Count")] : []), def.aggregate === "sum" ? "Total" : def.aggregate === "rate" ? "%" : say("Moyenne", "Average"), ...(def.aggregate === "sum" ? [say("Par partie", "Per game")] : [])],
         rows: rows.map((r, i) => [
           i + 1,
           displayName(r.name),
           ...(input.subject === "player" ? [r.team ? displayTeam(r.team) : null] : []),
-          // A rate is over the games where the flag is known (a soul before patch 9.23 is not).
           def.aggregate === "rate" ? r.counted : r.games,
           ...(def.aggregate === "rate" ? [r.total ?? 0] : []),
           value(r),
@@ -3675,15 +3408,9 @@ LIMIT 20`),
   },
 };
 
-/** How recent an edition's last game must be, against the newest game of the database, to count as in progress. */
 const IN_PROGRESS_DAYS = 30;
 
 
-/**
- * Editions of the scope still being played: no champion in their standings yet, and a game within
- * IN_PROGRESS_DAYS of the newest game of the database (an old group stage without a winner is not one).
- * The answer then says its figures are those of the games played so far.
- */
 async function inProgressNote(db: Db, scope: string, params: Params): Promise<string | null> {
   const rows = await selectAll(
     db,
@@ -3703,27 +3430,18 @@ async function inProgressNote(db: Db, scope: string, params: Params): Promise<st
     .join(" ");
 }
 
-// 7b. Players of a role ranked on an end-of-game criterion -----------------------------------
-
 type CriterionDef = {
-  /** Column header and sentence label. */
   label: string;
-  /** How the figure is computed, said in the answer. */
   definition: string;
-  /** Aggregate over the scope, in SQL (columns of the `base` CTE). */
   sql: string;
-  /** A total (every game counts, no minimum of games by default) rather than a rate or an average. */
   total?: true;
   unit?: string;
-  /** The label and the definition in English. */
   en?: { label: string; definition: string };
 };
 
-/** Per-minute figures: over the games that have both the figure and the game's length. */
 const perMinute = (column: string, digits: number) =>
   `ROUND(60.0 * SUM(CASE WHEN b.length_s > 0 THEN b.${column} END) / SUM(CASE WHEN b.length_s > 0 AND b.${column} IS NOT NULL THEN b.length_s END), ${digits})`;
 
-/** A player's share of their team's total, in %: over the games where both figures exist. */
 const teamShare = (column: string) =>
   `ROUND(100.0 * SUM(CASE WHEN b.team_${column} > 0 THEN b.${column} END) / SUM(CASE WHEN b.team_${column} > 0 AND b.${column} IS NOT NULL THEN b.team_${column} END), 1)`;
 
@@ -3748,7 +3466,6 @@ export const PLAYER_CRITERION_DEFS: Record<PlayerCriterion, CriterionDef> = {
   vspm: { en: { label: "vision/min", definition: "vision score per minute" }, label: "vision/min", definition: "score de vision par minute", sql: perMinute("vision", 2) },
 };
 
-/** Every criterion is a column of the table, the ranking one first. */
 const LEADERBOARD_COLUMNS: PlayerCriterion[] = ["kda", "winrate", "kp", "dmg_share", "gold_share", "dpm", "cspm", "gpm", "vspm"];
 
 const PlayerLeaderRow = z
@@ -3757,7 +3474,6 @@ const PlayerLeaderRow = z
 
 const isInternational = (league: string | null) => LEAGUES.some((l) => l.name === league && l.international);
 
-/** Rates and averages need enough games: 5 in one international event, 10 in one league season, else 20. */
 export function minGamesOfLeaderboard(input: PlayerLeaderboardInput): number {
   if (input.minGames != null) return input.minGames;
 
@@ -3830,12 +3546,10 @@ LIMIT 20`),
     const rows = z.array(PlayerLeaderRow).parse(sqlRows);
     const league = await leagueShortName(db, input.league);
     const scope = rankingScopeLabel(league, input);
-    // The comparison a follow-up leads to reads no split: its scope is the competition and the period.
     const followUpScope = scopeLabel(league, input);
     const def = PLAYER_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfLeaderboard(input);
     const who = `${input.role ? say(ROLE_PLAYERS[input.role], ROLE_PLAYERS_EN[input.role]) : say("joueurs", "players")}${sideLabel(input.side)}`;
-    // English name and definition of the criterion; the French ones are read from `def` where they always were.
     const en = def.en ?? def;
     const columns = [...new Set<PlayerCriterion>([input.criterion, ...LEADERBOARD_COLUMNS])].filter((c) => c !== "games");
     const value = (r: z.infer<typeof PlayerLeaderRow>, c: PlayerCriterion) => r[c] ?? null;
@@ -3881,7 +3595,6 @@ LIMIT 20`),
       ],
       followUps: [
         ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${followUpScope ? ` ${followUpScope}` : ""}`] : []),
-        // No game of the scope has Riot data (the LPL): the gold difference would only say it is absent.
         ...(input.role && ingame > 0 ? [say(`Écart d'or à 15 min des ${ROLE_PLAYERS[input.role]} ${inLeague(league) || "aux Worlds"}`, `Gold difference at 15 min of ${ROLE_PLAYERS_EN[input.role]} ${inLeague(league) || "at Worlds"}`)] : []),
         ...rows.slice(0, 1).map((r) => ingameFollowUp.player(r.player)),
       ],
@@ -3897,11 +3610,8 @@ LIMIT 20`),
       },
     };
   },
-  // As for champions: "top 5 supports" is not a minimum of 1 game; below 3, the default minimum stands.
   normalize: (_db, input) => ({ ...input, minGames: input.minGames != null && input.minGames >= 3 ? input.minGames : null }),
 };
-
-// 8. A team's in-game stats --------------------------------------------------------------
 
 const TEAM_OVERVIEW: TeamMetric[] = ["first_blood", "first_tower", "first_dragon", "first_herald", "first_baron", "dragon_soul", "gold_diff", "kills_before_10", "plates"];
 
@@ -3983,7 +3693,6 @@ ORDER BY is_total, first_game NULLS FIRST`),
       table: {
         columns: [say("Année", "Year"), say("Compétition", "Competition"), say("Parties", "Games"), say("V-D", "W-L"), ...TEAM_OVERVIEW.map((m) => (m === "gold_diff" ? say(`Écart or @${minute}`, `Gold diff @${minute}`) : tr(TEAM_COLUMN_LABELS[m])))],
         rows: rows.map((r) => [r.year, r.league_short, r.games, `${r.wins}-${r.games - r.wins}`, ...TEAM_OVERVIEW.map((m) => (r[m] == null ? null : Number(r[m])))]),
-        // The metric the question names, when the overview has its column.
         focus: input.metric && TEAM_OVERVIEW.includes(input.metric) ? (input.metric === "gold_diff" ? say(`Écart or @${minute}`, `Gold diff @${minute}`) : tr(TEAM_COLUMN_LABELS[input.metric])) : undefined,
       },
       facts,
@@ -4003,13 +3712,10 @@ ORDER BY is_total, first_game NULLS FIRST`),
   },
 };
 
-// 8 bis. Dragons by element and dragon souls ---------------------------------------------
-
 const DragonRow = z.object({ kind: z.string().nullable(), dragons: z.number(), souls: z.number(), soul_wins: z.number() });
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** `AND <alias>.team IN (...)` for the names of a franchise, or nothing when every team counts. */
 const dragonTeams = async (db: Db, alias: string, team: string | null, params: Params) =>
   team ? `AND ${alias}.team IN (${inList("t", (await teamMembers(db, team)).members, params)})` : "";
 
@@ -4061,7 +3767,6 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
     const scope = competitionScope("s", leagueAndPeriod(input), params);
     const own = await dragonTeams(db, "s", input.team, params);
 
-    // Games where a soul could be taken and the timeline says who took it: one row per team, so one game counts once for every team.
     const known = await selectOne(
       db,
       z.object({ games: z.number(), souls: z.number().nullable() }),
@@ -4145,8 +3850,6 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
   },
 };
 
-// 9. One game's timeline (Riot JSON in R2, read server-side) ---------------------------------
-
 const PHASE_SQL: Record<GamePhase, string> = {
   final: "g.tab IN ('Finals', 'Final', 'Grand Finals', 'Grand Final')",
   semifinal: "g.tab IN ('Semifinals', 'Semifinal')",
@@ -4200,12 +3903,10 @@ const TAB_LABELS = new Map([
   ["Tiebreakers", "départage"],
 ]);
 
-/** A Leaguepedia tab as the answers name it: "Finals" → "finale" / "final", "Week 3" → "semaine 3" / "week 3". */
 export function tabLabel(tab: string | null): string {
   return say(tabLabelFr(tab), tabLabelEn(tab));
 }
 
-/** Leaguepedia tabs are English names: the fixed ones in the singular, the others with their leading words in lower case ("bracket round 4", "group A"). */
 const tabLabelEn = (tab: string | null): string => (tab ? (TAB_LABELS_EN.get(tab) ?? tab.replace(/^[A-Za-z-]+(?: Round)?/, (words) => words.toLowerCase())) : "");
 
 function tabLabelFr(tab: string | null): string {
@@ -4248,16 +3949,12 @@ const TimelineGameRow = z.object({
 
 type TimelineGameRow = z.infer<typeof TimelineGameRow>;
 
-/** What names a series: its competition, season and tab. */
 type SeriesNaming = Pick<TimelineGameRow, "league_short" | "year" | "tab" | "tournament">;
 
-/** The series a game belongs to: one tab's match of one tournament page. */
 const seriesKey = (r: Pick<TimelineGameRow, "tournament_page" | "tab" | "match_n">) => `${r.tournament_page}|${r.tab}|${r.match_n}`;
 
-/** "Worlds 2024 · finale" */
 const seriesLabel = (r: SeriesNaming) => [`${r.league_short}${r.year ? ` ${r.year}` : ""}`, tabLabel(r.tab)].filter(Boolean).join(" · ");
 
-/** "la finale des Worlds 2024" */
 function seriesPhrase(r: SeriesNaming): string {
   const tab = tabLabelFr(r.tab);
   const en = tabLabelEn(r.tab);
@@ -4265,7 +3962,6 @@ function seriesPhrase(r: SeriesNaming): string {
 
   return say(
     tab ? `${/^(semaine|journée|jour|tour)/.test(tab) ? "" : /^(quart|match)/.test(tab) ? "le " : "la "}${tab} ${ofEvent(r)}` : (r.tournament ?? event),
-    // "the final of Worlds 2024", "week 3 of LCK 2025".
     en ? `${/^(week|day|round|bracket|group|tiebreak)/.test(en) ? "" : "the "}${en} ${ofEvent(r)}` : (r.tournament ?? event),
   );
 }
@@ -4276,16 +3972,11 @@ const signedGold = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${thousand
 
 const KIND_COUNT: { kind: ParsedTimeline["events"][number]["kind"]; one: string; many: string; en: string }[] = [
   { kind: "tower", one: "tour", many: "tours", en: "tower" },
-  // Elder dragons count as dragons, as in Leaguepedia's scoreboards.
   { kind: "dragon", one: "dragon", many: "dragons", en: "dragon" },
   { kind: "baron", one: "baron", many: "barons", en: "baron" },
   { kind: "inhibitor", one: "inhibiteur", many: "inhibiteurs", en: "inhibitor" },
 ];
 
-/**
- * The detail of a timeline event in English. The parsed timeline is cached with its French details (dragon
- * element, tower tier and lane, grubs), a closed vocabulary: it is translated when the view is built.
- */
 const DETAIL_EN: [RegExp, string][] = [
   [/^1 larve$/, "1 grub"],
   [/^(\d+) larves$/, "$1 grubs"],
@@ -4301,7 +3992,6 @@ const DETAIL_EN: [RegExp, string][] = [
 
 const eventDetail = (detail: string | null) => (detail == null ? null : say(detail, DETAIL_EN.reduce((text, [fr, en]) => text.replace(fr, en), detail)));
 
-/** Riot team → Leaguepedia side (blue = Team1), as the build matched them. */
 const sideOf = (team: RiotTeam, swapped: boolean): Side => ((team === 100) !== swapped ? "blue" : "red");
 
 function timelineView(r: TimelineGameRow, t: ParsedTimeline): TimelineView {
@@ -4320,7 +4010,6 @@ function timelineView(r: TimelineGameRow, t: ParsedTimeline): TimelineView {
   };
 }
 
-/** The one-sentence story of the game, from the parsed timeline only. */
 function timelineFacts(r: TimelineGameRow, v: TimelineView): string {
   const name = (side: Side) => (side === "blue" ? v.blue : v.red);
   const winner = v.winner ? name(v.winner) : null;
@@ -4401,14 +4090,9 @@ const ScoreboardRuneRow = z.object({ player: Text, slot: z.number(), kind: z.enu
 
 const ScoreboardItemRow = z.object({ player: Text, item: Text, icon_url: Text });
 
-/** Sum of a team's player values, null when no player has the field (older scoreboards). */
 const teamSum = (players: ScoreboardPlayer[], key: "kills" | "gold") =>
   players.some((p) => p[key] != null) ? players.reduce((n, p) => n + (p[key] ?? 0), 0) : null;
 
-/**
- * End-of-game recap of one game, from Leaguepedia's scoreboard tables only (no Riot JSON needed, so
- * it also covers the LPL). Champion, item, spell and rune icons are stored.
- */
 async function gameScoreboard(db: Db, r: TimelineGameRow): Promise<GameScoreboard | null> {
   const game = await selectOne(
     db,
@@ -4437,7 +4121,6 @@ async function gameScoreboard(db: Db, r: TimelineGameRow): Promise<GameScoreboar
   const items = await selectAll(db, ScoreboardItemRow, "SELECT player, item, icon_url FROM v_player_items WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const runes = await selectAll(db, ScoreboardRuneRow, "SELECT player, slot, kind, rune, icon_url FROM v_player_runes WHERE game_id = :game ORDER BY slot", { game: r.game_id });
   const rank = (role: string | null) => (role && ROLE_ORDER.includes(role) ? ROLE_ORDER.indexOf(role) : ROLE_ORDER.length);
-  // Riot timeline only: empty for the LPL and the games without one, whose dragon count still comes from the scoreboard.
   const dragons = await selectAll(db, z.object({ side: z.number().nullable(), dragon: NullableText }), "SELECT side, dragon FROM v_game_dragons WHERE game_id = :game ORDER BY seq", { game: r.game_id });
   const souls = await selectAll(db, z.object({ side: z.number(), soul: z.string() }), "SELECT side, soul FROM v_game_team_stats WHERE game_id = :game AND soul IS NOT NULL", { game: r.game_id });
 
@@ -4507,10 +4190,6 @@ async function gameScoreboard(db: Db, r: TimelineGameRow): Promise<GameScoreboar
 
 const ProfileRow = z.object({ team: NullableText, role: NullableText, games: z.number(), last: z.number().nullable() });
 
-/**
- * Teams (by games) and main role of each player, in one competition and period: the scope the answer was computed on.
- * Shown by the comparison layouts next to the table, which rarely selects them.
- */
 export async function playerProfiles(db: Db, players: string[], scope: { league: string | null } & Period): Promise<PlayerProfile[]> {
   return Promise.all(players.map(async (player) => {
     const params: Params = {};
@@ -4574,7 +4253,6 @@ const gameTimeline: ToolDef<GameTimelineInput> = {
 
     if (input.phase) where.push(PHASE_SQL[input.phase]);
 
-    // Every game of the matching series, so the answer can say a series had no game 5.
     return {
       params,
       sql: `SELECT g.game_id, g.tournament_page, g.event_page, g.tournament, g.league_short, g.year, g.tab, g.match_n, g.game_n,
@@ -4589,7 +4267,6 @@ ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
     const out: Relaxation<typeof input>[] = [];
     const teams = [input.teamA, input.teamB].filter(Boolean).join(" – ");
 
-    // Without a team, dropping a filter would show an unrelated game.
     if (!input.teamA) return out;
 
     if (input.phase)
@@ -4610,7 +4287,6 @@ ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
     const series = new Map<string, TimelineGameRow[]>();
 
     for (const r of rows) series.set(seriesKey(r), [...(series.get(seriesKey(r)) ?? []), r]);
-    // Rows come newest first: the first series is the most recent match.
     const [shownKey, games] = [...series][0];
     games.sort((x, y) => (x.game_n ?? 0) - (y.game_n ?? 0));
     const first = games[0];
@@ -4651,7 +4327,6 @@ ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
 
     const title = `${displayTeam(pick.blue_team ?? "?")} – ${displayTeam(pick.red_team ?? "?")} — ${seriesLabel(pick)}${pick.game_n ? ` · game ${pick.game_n}` : ""}`;
     const result = say(`${displayTeam(pick.winner ?? "?")} gagne${pick.length_s ? ` en ${clock(pick.length_s)}` : ""}`, `${displayTeam(pick.winner ?? "?")} wins${pick.length_s ? ` in ${clock(pick.length_s)}` : ""}`);
-    // The recap comes from the scoreboard tables: shown whether or not the Riot timeline exists.
     const scoreboard = await gameScoreboard(db, pick) ?? undefined;
 
     if (!pick.riot_key || pick.has_timeline !== 1)
@@ -4728,12 +4403,9 @@ ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
 
     if ((input.teamA && !a) || (input.teamB && !b)) return null;
 
-    // A single team in teamB only is the same question.
     return { ...input, teamA: a?.team ?? b?.team ?? null, teamB: a ? (b?.team ?? null) : null };
   },
 };
-
-// 10. Series (best-of) as one unit: score, then every game ---------------------------------
 
 const PhaseTabRow = z.object({
   tournament_page: Text,
@@ -4745,15 +4417,8 @@ const PhaseTabRow = z.object({
   play_in: z.number(),
 });
 
-/** A tab that holds the phase asked; `before` names the final it precedes when the bracket names no such phase. */
 type PhaseTab = { page: string; tab: string; before: string | null };
 
-/**
- * The tabs (one per tournament page) that hold a phase in the scope. Play-in tabs only count for the play-in, so a
- * play-in final is not the event's final. A double-elimination bracket (MSI since 2023, LCK playoffs) has no tab
- * named "Semifinals": its semifinal is the last round before the final, the round that decides both finalists.
- * Qualifier stages are out of scope (COMPETITION_STAGES): "LPL Regional Finals" is not the Worlds final.
- */
 async function phaseTabs(db: Db, input: SeriesInput & { phase: GamePhase }): Promise<PhaseTab[]> {
   const params: Params = {};
   const league = input.league ? `AND ${leagueFilter("g.league", input, params)}` : "";
@@ -4792,7 +4457,6 @@ async function phaseTabs(db: Db, input: SeriesInput & { phase: GamePhase }): Pro
 }
 
 const SeriesGameRow = z.object({
-  /** Null on a series known only from the schedule: one row, without any game. */
   game_id: z.number().nullable(),
   tournament_page: Text,
   event_page: Text,
@@ -4809,7 +4473,6 @@ const SeriesGameRow = z.object({
   red_team: NullableText,
   winner: NullableText,
   stats_page: NullableText,
-  /** A series known only from the schedule: its id, its score (team1 = blue_team) and the team that forfeited. */
   series_id: z.number().nullable(),
   score1: z.number().nullable(),
   score2: z.number().nullable(),
@@ -4822,7 +4485,6 @@ const SeriesPickRow = z.object({ game_id: z.number(), side: z.number().nullable(
 
 const SeriesBanRow = z.object({ game_id: z.number(), side: z.number(), champion: Text, icon: NullableText });
 
-/** Series detailed with their games; the others of a long phase (Swiss rounds...) are listed with their score only. */
 const MAX_DETAILED_SERIES = 16;
 
 const dayShort = () => dateFormat(answerLocale(), { day: "numeric", month: "short", year: "numeric" });
@@ -4832,10 +4494,8 @@ const gameSource = (r: SeriesGameRow): Source =>
     ? { label: `Leaguepedia — ${seriesLabel(r)} · game ${r.game_n ?? "?"} (${r.stats_page})`, url: wikiUrl(r.stats_page) }
     : { label: `Leaguepedia — ${r.tournament_page}`, url: wikiUrl(r.tournament_page) };
 
-/** 1, 3 or 5 from the score: the winner's wins are the wins needed. Null without a winner. */
 const bestOfScore = (a: number, b: number) => (a === b ? null : 2 * Math.max(a, b) - 1);
 
-/** Picks (Top → Support) and bans of the detailed games, from Leaguepedia's scoreboards. */
 async function seriesDrafts(db: Db, ids: number[]) {
   const params: Params = {};
   const list = ids.map((id, i) => ((params[`g${i}`] = id), `:g${i}`)).join(", ");
@@ -4895,7 +4555,6 @@ const PHASE_PLURAL: Record<GamePhase, string> = {
   play_in: "play-in",
 };
 
-/** "des Worlds 2025", "du MSI 2024", "de la LCK 2024" */
 function ofEvent(r: Pick<SeriesNaming, "league_short" | "year">): string {
   const year = r.year ? ` ${r.year}` : "";
 
@@ -4919,7 +4578,6 @@ const series: ToolDef<SeriesInput> = {
     const tabs = input.phase ? await phaseTabs(db, { ...input, phase: input.phase }) : null;
     const tabList = tabs?.length ? inList("t", tabs.map((t) => `${t.page}|${t.tab}`), params) : null;
 
-    // The same filters on the games (v_games) and on the series known only from the schedule (v_series_results).
     const where = (alias: string, one: string, two: string) => {
       const w = [`${alias}.stage IN (${COMPETITION_STAGES})`];
 
@@ -4954,7 +4612,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
     const out: Relaxation<typeof input>[] = [];
     const phase = input.phase ? say(PHASE_LABEL[input.phase], PHASE_LABEL_EN[input.phase]) : null;
 
-    // Two teams that did not meet in that phase: their series in the season asked (a year keeps the list short).
     if (phase && input.teamA && input.teamB && hasPeriod(input))
       out.push({
         key: "phase",
@@ -4963,7 +4620,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
         reason: say(`phase « ${phase} » retirée`, `phase "${phase}" removed`),
       });
 
-    // One team that did not reach that phase: the phase itself, without the team.
     if (phase && input.teamA && !input.teamB && (input.league || hasPeriod(input)))
       out.push({
         key: "team",
@@ -4978,7 +4634,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
     const rows = z.array(SeriesGameRow).parse(sqlRows);
     const groups = new Map<string, SeriesGameRow[]>();
 
-    // A series known only from the schedule is one row of its own, whatever its tab and number.
     const keyOf = (r: SeriesGameRow) => (r.game_id == null ? `schedule|${r.series_id}` : seriesKey(r));
 
     for (const r of rows) groups.set(keyOf(r), [...(groups.get(keyOf(r)) ?? []), r]);
@@ -4990,7 +4645,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
     const list: SeriesDetail[] = seriesGames.map((games, i) => {
       const scheduled = games[0].game_id == null ? games[0] : null;
 
-      // Known only from the schedule: its score, the winner first, no game.
       if (scheduled) {
         const firstWon = scheduled.winner === scheduled.blue_team;
         const [x, y] = firstWon ? [scheduled.blue_team, scheduled.red_team] : [scheduled.red_team, scheduled.blue_team];
@@ -5016,7 +4670,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
       const first = games[0];
       const names = [...new Set(games.flatMap((g) => [g.blue_team, g.red_team]).filter((t): t is string => t != null))];
       const winsOf = (team: string | undefined) => games.filter((g) => team != null && g.winner === team).length;
-      // The series winner first; a series without one keeps the first game's blue side first.
       const [x, y] = winsOf(names[1]) > winsOf(names[0]) ? [names[1], names[0]] : [names[0], names[1]];
 
       return {
@@ -5052,7 +4705,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
     const one = list.length === 1 ? list[0] : null;
     const teams = [input.teamA, input.teamB].flatMap((t) => (t == null ? [] : [displayTeam(t)]));
     const labels = [...new Set(list.map((s) => s.label))];
-    // One competition and season: "MSI 2024"; several: the competition asked, with the period.
     const oneEvent = new Set(rows.map((r) => `${r.league_short}|${r.year}`)).size === 1;
     const short = await leagueShortName(db, input.league);
     const span = hasPeriod(input) ? yearSpan(rows.flatMap((r) => (r.year == null ? [] : [r.year]))) : "";
@@ -5101,7 +4753,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
         "."
       : say(`${phrase} : ${list.length} séries. ${list.slice(0, 8).map(score).join(" ; ")}${list.length > 8 ? " ; …" : ""}.`, `${phrase}: ${list.length} series. ${list.slice(0, 8).map(score).join("; ")}${list.length > 8 ? "; …" : ""}.`);
 
-    // Asked again by its stage, the follow-up routes back to this tool.
     const askAgain = (s: SeriesDetail) =>
       say(`${s.teamA} vs ${s.teamB} ${input.phase ? `${PHASE_LABEL[input.phase]} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`, `${s.teamA} vs ${s.teamB} ${input.phase ? `${PHASE_LABEL_EN[input.phase]} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`);
 
@@ -5133,7 +4784,6 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
     return {
       title: one ? `${score(one)} — ${one.label}` : phaseName ? `${capitalize(phaseName)} — ${[event, teams.join(" – ")].filter(Boolean).join(" · ")}` : say(`Séries — ${scope}`, `Series — ${scope}`),
       series: { scope, count: list.length, series: list },
-      // The games only: a series known only from the schedule has none, and stays in the series list.
       table: gameRows.length
         ? {
             columns: [say("Série", "Series"), "Game", say("Bleu", "Blue"), say("Rouge", "Red"), say("Vainqueur", "Winner"), say("Durée", "Duration"), "Patch"],
@@ -5169,10 +4819,7 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
   },
 };
 
-// 11. Teams ranked on an end-of-game criterion -----------------------------------------------
-
 type TeamCriterionDef = CriterionDef & {
-  /** From the Riot game data: no figure where Leaguepedia hosts no game JSON. */
   ingame?: true;
 };
 
@@ -5202,7 +4849,6 @@ export const TEAM_CRITERION_DEFS: Record<TeamCriterion, TeamCriterionDef> = {
   gold_diff_15: { en: { label: "gold diff @15", definition: "average team gold difference at 15 min" }, label: "écart or @15", definition: "écart d'or moyen de l'équipe à 15 min", sql: teamAverage("gold_diff_15", 0), ingame: true },
 };
 
-/** Every criterion is a column of the table, the ranking one first; a side's win rate has no meaning once one side is filtered. */
 const TEAM_LEADERBOARD_COLUMNS: TeamCriterion[] = [
   "winrate", "blue_winrate", "red_winrate", "kda", "kills", "deaths", "game_length", "champions",
   "dragons", "barons", "towers", "void_grubs", "first_dragon", "first_baron", "gold_diff_15",
@@ -5213,7 +4859,6 @@ const teamColumnsOf = (input: TeamLeaderboardInput) =>
 
 const TeamLeaderRow = z.object({ name: Text, games: z.number(), wins: z.number().nullable(), ingame_games: z.number() }).catchall(z.number().nullable());
 
-/** Rates and averages need enough games: 5 in one international event, 10 in one league season, else 20. */
 export function minGamesOfTeams(input: TeamLeaderboardInput): number {
   if (input.minGames != null) return input.minGames;
 
@@ -5313,7 +4958,6 @@ LIMIT 20`),
     const pages = (await selectAll(db, z.object({ event_page: Text }), `SELECT g.event_page FROM v_games g WHERE ${gameScope} GROUP BY g.event_page ORDER BY MAX(g.played_at) DESC NULLS LAST LIMIT 12`, params)).map((r) => r.event_page);
     const ongoing = await inProgressNote(db, gameScope, params);
     const lowest = input.order === "asc";
-    // English name and definition of the criterion; the French ones are read from `def`.
     const en = def.en ?? def;
 
     const line = (r: z.infer<typeof TeamLeaderRow>, i: number) =>
@@ -5353,7 +4997,6 @@ LIMIT 20`),
       },
     };
   },
-  // A side's win rate already names its side; "top 5 équipes" is not a minimum of 1 game.
   normalize: (_db, input) => ({
     ...input,
     side: input.criterion === "blue_winrate" || input.criterion === "red_winrate" ? null : input.side,
@@ -5361,12 +5004,8 @@ LIMIT 20`),
   }),
 };
 
-// 12. A champion against the champions it faces in its role -----------------------------------
-
-/** A matchup needs a few games before its win rate is called the best or the worst. */
 const MATCHUP_MIN_GAMES = 3;
 
-/** The games of a champion (`a` is v_game_players) in the competition, period and role asked. */
 function matchupScope(alias: string, input: ChampionMatchupInput, params: Params): string {
   params.champion = input.champion;
   const league = input.league ? `AND ${leagueFilter(`${alias}.league`, input, params)}` : "";
@@ -5375,7 +5014,6 @@ function matchupScope(alias: string, input: ChampionMatchupInput, params: Params
   return `${alias}.champion = :champion AND ${alias}.stage IN (${COMPETITION_STAGES}) ${league} ${role} ${periodFilter(`${alias}.year`, input, params)}`;
 }
 
-/** The direct opponent: the same role on the other side of the same game. */
 const LANE_OPPONENT = "JOIN v_game_players b ON b.game_id = a.game_id AND b.role = a.role AND b.side <> a.side AND b.champion IS NOT NULL";
 
 const MatchupListRow = z.object({
@@ -5417,7 +5055,6 @@ const MatchupGameRow = z.object({
   ingame_games: z.number(),
 });
 
-/** "d'Azir", "de Jax": the French elision before a vowel or a mute h. */
 const of = (name: string) => (/^[aeiouyhàâéèêîôû]/i.test(name) ? `d'${name}` : `de ${name}`);
 
 const kdaText = (k: number | null, d: number | null, a: number | null) => (k == null || d == null || a == null ? null : `${k}/${d}/${a}`);
@@ -5433,7 +5070,6 @@ const championMatchup: ToolDef<ChampionMatchupInput> = {
   plan: async (_db, input) => {
     const params: Params = {};
     const scope = matchupScope("a", input, params);
-    // The lane figure of the champion's player in the same games, where Leaguepedia hosts the Riot data.
     const ingame = `LEFT JOIN v_game_player_stats s ON s.game_id = a.game_id AND s.player = a.player`;
 
     if (input.opponent) {
@@ -5601,17 +5237,11 @@ LIMIT 20`),
   },
 };
 
-// 13. The best single games on one figure ------------------------------------------------------
-
 type RecordDef = {
-  /** The header and the unit in English. */
   en: { label: string; unit: string };
-  /** Column header. */
   label: string;
-  /** "kills", "de dégâts": what the figure counts, in a sentence. */
   unit: string;
   column: string;
-  /** From the Riot game data (v_game_player_stats) rather than the scoreboard (v_game_players). */
   ingame?: true;
   signed?: true;
 };
@@ -5647,7 +5277,6 @@ const GameRecordRow = z.object({
   event_page: Text,
 });
 
-/** The picks a record is looked up in (`x` is the players view): competition, period, role, and one player when asked. */
 function recordScope(input: GameRecordsInput, params: Params): string {
   const player = input.player ? ((params.player = input.player), "AND x.player = :player") : "";
 
@@ -5685,7 +5314,6 @@ LIMIT 20`),
 
     if (input.role) out.push({ key: "role", input: { ...input, role: null }, note: say("Aucune partie à ce poste dans ce périmètre : tous les postes.", "No game in this role in this scope: all roles."), reason: say("filtre de rôle retiré", "role filter removed") });
 
-    // A competition without Riot data has no lane figure: another competition's records would answer another question.
     if (input.league && !RECORD_DEFS[input.metric].ingame)
       out.push({ key: "league", input: { ...input, league: null }, note: say("Aucune partie dans cette compétition : affichage de toutes les compétitions.", "No game in this competition: showing all competitions."), reason: say("filtre de compétition retiré", "competition filter removed") });
 
@@ -5758,8 +5386,6 @@ LIMIT 20`),
     return p ? { ...input, player: p.player } : null;
   },
 };
-
-// 14. A player's latest games ------------------------------------------------------------------
 
 const RECENT_DEFAULT = 10;
 
@@ -5834,7 +5460,6 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
     const [kills, deaths, assists] = [sum((r) => r.kills), sum((r) => r.deaths), sum((r) => r.assists)];
     const kda = scored.length ? Math.round((100 * (kills + assists)) / Math.max(1, deaths)) / 100 : null;
     const per = (n: number) => frNumber(Math.round((10 * n) / Math.max(1, scored.length)) / 10);
-    // The streak the latest game is part of.
     const streak = decided.findIndex((r) => r.win !== decided[0].win);
     const run = decided.length ? (streak < 0 ? decided.length : streak) : 0;
     const champions = new Map<string, number>();
@@ -5891,9 +5516,6 @@ LIMIT ${input.count ?? RECENT_DEFAULT}`),
   },
 };
 
-// Registry ----------------------------------------------------------------------------
-
-/** Capture each tool's input/implementation relationship once, before indexing the heterogeneous registry. */
 function defineTool<S extends z.ZodType>(input: S, def: ToolDef<z.infer<S>>) {
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the registry parsing boundary.
   const bind = async (db: Db, raw: unknown): Promise<BoundTool> => {
@@ -5960,7 +5582,6 @@ export function normalizeToolCall(db: Db, call: StaticToolCall<typeof aiTools>):
   return TOOLS[call.toolName].normalize(db, call.input);
 }
 
-/** The same call on another competition (null for every competition), or null when the tool does not take that value. */
 export async function withLeague(db: Db, call: ToolCall, league: string | null): Promise<ToolCall | null> {
   const def = TOOLS[call.tool];
   const raw = { ...call.input, league };

@@ -2,7 +2,6 @@
 
 import { setTheme, THEME_KEY, type Theme } from "./brand/theme";
 
-/** The theme on screen: the visitor's choice when there is one, the system setting otherwise. */
 function currentTheme(): Theme {
   const set = document.documentElement.getAttribute("data-theme");
 
@@ -11,18 +10,10 @@ function currentTheme(): Theme {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-/** The wipe in progress, so a second click during it only cleans up its own. */
 let wipe: ViewTransition | null = null;
 
-/** The theme a wipe is about to apply: the browser runs the change a frame after the click. */
 let pending: Theme | null = null;
 
-/**
- * Applies the theme behind a line that sweeps the page from top to bottom: above the line the new theme, below
- * it the old one (view transition, styled in globals.css). The line is a real element so the browser moves its
- * snapshot from the top edge to the bottom one. Without view transitions, or with reduced motion, the theme
- * changes at once.
- */
 function switchTheme(next: Theme) {
   const root = document.documentElement;
 
@@ -62,11 +53,6 @@ function switchTheme(next: Theme) {
   });
 }
 
-/**
- * Switches between light and dark and remembers the choice: an icon only, named for screen readers. Both icons
- * are rendered and globals.css shows the one matching the theme on screen, so the server HTML is right from the
- * first frame, before hydration. The two names come from the page, in its language.
- */
 export function ThemeToggle({ toLight, toDark }: { toLight: string; toDark: string }) {
   function toggle() {
     const next: Theme = (pending ?? currentTheme()) === "dark" ? "light" : "dark";
@@ -76,7 +62,6 @@ export function ThemeToggle({ toLight, toDark }: { toLight: string; toDark: stri
     try {
       localStorage.setItem(THEME_KEY, next);
     } catch {
-      // Storage blocked (private mode): the choice holds for this page only.
     }
   }
 

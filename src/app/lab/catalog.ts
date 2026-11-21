@@ -1,19 +1,9 @@
-/**
- * The display lab's catalogue: every tool and layout the agent can answer with, and the variations worth
- * looking at for each. One entry is one real question, answered by the agent without the LLM when the lab's
- * fixtures are built (`bun run lab:build`); the `state` entries are console states no answer carries.
- *
- * Shared by the build script and the lab page. Ids are stable: they are the fixture file names and the `?v=`
- * of the lab's URL.
- */
 export type LabState = "loading-start" | "loading-retry" | "error" | "load-failed" | "feedback";
 
 export type LabVariant = {
   id: string;
-  /** What changes in this variation, as read in the menu. */
   label: string;
   question: string;
-  /** A console state drawn around (or instead of) the answer of `question`. */
   state?: LabState;
 };
 
@@ -244,5 +234,4 @@ export const LAB_GROUPS: LabGroup[] = [
 
 export const LAB_VARIANTS = LAB_GROUPS.flatMap((g) => g.variants.map((v) => ({ ...v, group: g.id, groupTitle: g.title })));
 
-/** Where the fixtures are served from (written under `public/` by `bun run lab:build`). */
 export const LAB_FIXTURES = "/lab-fixtures";

@@ -1,8 +1,3 @@
-/**
- * The rows of the normalized database, computed from the raw cache (data/raw) without writing anything:
- * scripts/db/load.ts copies them into Postgres. Ids are given in the order rows are first seen, so two runs on the
- * same cache give the same ids.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { normalizeAlias } from "../../src/lib/aliases";
@@ -19,15 +14,12 @@ import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
 import { type ScoreboardMatch, scheduleOnly, scheduledSeries } from "./schedule";
 import { type Classification, type Dataset, IngestRun, LEAGUES, classifyTournament, datasetFile } from "./scope";
 
-/** A value of a row, as both writers take it. */
 export type Cell = string | number | null;
 
-/** A table's columns, in the order of its DDL, and its rows in the order they were first inserted. */
 export type TableRows = { columns: string[]; rows: Cell[][] };
 
 type Stored = TableRows & { key: number[]; byKey: Map<string, Cell[]>; byId: Map<Cell, Cell[]> };
 
-/** Columns and primary key of each table, read from the shared DDL (src/lib/db/schema.ts). */
 export function tableColumns(ddl = TABLE_DDL): Map<string, { columns: string[]; key: string[] }> {
   const tables = new Map<string, { columns: string[]; key: string[] }>();
 
@@ -43,10 +35,6 @@ export function tableColumns(ddl = TABLE_DDL): Map<string, { columns: string[]; 
   return tables;
 }
 
-/**
- * Rows kept in memory, table by table, with the semantics of SQL inserts: a plain insert refuses a key
- * already there, an ignoring insert (`INSERT OR IGNORE`) keeps the first row, an update by id changes it in place.
- */
 export class Store {
   readonly tables = new Map<string, Stored>();
 
@@ -97,7 +85,6 @@ export class Store {
     };
   }
 
-  /** `UPDATE name SET columns… WHERE id = ?`: the id is the last value. */
   update(name: string, columns: string[]) {
     const t = this.table(name);
     const at = this.indexes(t, name, columns);
@@ -111,10 +98,6 @@ export class Store {
     };
   }
 
-  /**
-   * `UPDATE name SET column = ? WHERE <primary key> = ? AND column IS NULL`: the key values follow the value, in the
-   * order of the primary key. True when a row changed.
-   */
   fill(name: string, column: string) {
     const t = this.table(name);
     const [at] = this.indexes(t, name, [column]);
@@ -131,12 +114,10 @@ export class Store {
     };
   }
 
-  /** Whether a row of `name` has this primary key. */
   has(name: string, ...key: Cell[]): boolean {
     return this.table(name).byKey.has(JSON.stringify(key));
   }
 
-  /** `SELECT id, name FROM name`, in insertion order. */
   names(name: string): { id: number; name: string }[] {
     const t = this.table(name);
     const [id, label] = this.indexes(t, name, ["id", "name"]);
@@ -145,10 +126,8 @@ export class Store {
   }
 }
 
-/** Served from /public, for items that no Data Dragon patch knows. */
 const ITEM_FALLBACK_ICON = "/icons/item-fallback.svg";
 
-/** Reads a dataset written by data:fetch and validates it with `schema`. */
 function load<S extends z.ZodType>(name: Dataset, schema: S): z.infer<S> {
   const file = datasetFile(name);
 
@@ -161,16 +140,8 @@ const Rows = z.array(StoredCargoRow);
 
 type Row = z.infer<typeof StoredCargoRow>;
 
-/** A Cargo field, or a field the row does not have. */
 type Field = CargoValue | undefined;
 
-/**
- * The summaries in file order, except that the summaries of one game are put, among the places they held, the one to
- * keep first; every other line stays where it was. A game and its remake, or two Riot games filed under one
- * scoreboard, share a `gameId`, and the derivation keeps the first one that maps. The order of the file must not make
- * that choice (a recompute from R2 writes the lines as they arrive): the highest `rank` wins, number by number, then
- * the smaller key.
- */
 export function bestFirst<L extends { key: string }>(all: Iterable<L>, gameOf: (line: L) => number | undefined, rank: (line: L, game: number) => number[]): L[] {
   const out = [...all];
   const places = new Map<number, number[]>();
@@ -196,15 +167,8 @@ export function bestFirst<L extends { key: string }>(all: Iterable<L>, gameOf: (
   return out;
 }
 
-/** Seconds a summary and its scoreboard may differ by and still be the same game (they agree to the second in practice). */
 const SAME_LENGTH_S = 5;
 
-/**
- * How well a summary fits its game, best first (`bestFirst`): the champions of the scoreboard it has, whether it
- * lasted as long as the scoreboard says, then its length. A few short games of the first V5 files kept their length
- * in milliseconds (`summarizeGame` only converts above 20 000): both readings are compared with the scoreboard, and
- * without one a value no game reaches (three hours) is read as milliseconds.
- */
 export function summaryRank(champions: number, durationS: number | null, scoreboardS: number | null): number[] {
   if (durationS == null) return [champions, 0, 0];
 
@@ -214,7 +178,6 @@ export function summaryRank(champions: number, durationS: number | null, scorebo
   return [champions, near(seconds) ? 1 : 0, seconds];
 }
 
-/** Every row of the database, from the raw cache. */
 export function deriveDataset() {
   const store = new Store();
 
@@ -232,7 +195,6 @@ export function deriveDataset() {
     return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + (p[1] || 0);
   };
 
-  /** Name -> integer id lookup table, inserted on first sight. */
   function dictionary(table: string) {
     const ids = new Map<string, number>();
     const insert = store.insert(table, ["id", "name"]);
@@ -252,7 +214,6 @@ export function deriveDataset() {
     };
   }
 
-  // Leagues -----------------------------------------------------------------------
   const leagueId = new Map<string, number>();
   const insLeague = store.insert("leagues", ["id", "name", "short_name", "region", "is_international"]);
 
@@ -263,13 +224,10 @@ export function deriveDataset() {
 
   const leagueByName = new Map<string, (typeof LEAGUES)[number]>(LEAGUES.map((l) => [l.name, l]));
 
-  // Teams of Leaguepedia (page, abbreviation). Absent from an older raw cache: the names then stay as written and the
-  // teams have no abbreviation.
   const teamsFile = datasetFile("teams");
   const teamPageRows = existsSync(teamsFile) ? load("teams", Rows) : null;
   const teamName = teamPageRows ? teamIdentity(teamPageRows.flatMap((r) => text(r.Page) ?? [])) : (name: string) => name;
   const teamDict = dictionary("teams");
-  // Spellings folded into another one ("Dplus KIA" -> "Dplus Kia"): only the team ids move.
   const caseMerged = new Set<string>();
 
   const team = (name: Field) => {
@@ -286,7 +244,6 @@ export function deriveDataset() {
   const rune = dictionary("runes");
   const spell = dictionary("summoner_spells");
 
-  // Items carry a NOT NULL icon, so they are collected first and inserted at the end.
   const itemIds = new Map<string, number>();
 
   const item = (name: Field) => {
@@ -299,9 +256,6 @@ export function deriveDataset() {
     return id;
   };
 
-  // Tournaments -------------------------------------------------------------------
-  // A page named after its edition is that year: Leaguepedia files the December KeSPA Cup ("2025 LoL KeSPA Cup")
-  // under the next LCK season.
   const yearOf = (t: Row) => {
     const page = String(t.Page);
     const edition = /^(\d{4}) /.exec(page);
@@ -329,7 +283,6 @@ export function deriveDataset() {
     if (kind) tournaments.set(page, { ...t, ...kind });
   }
 
-  // An international page whose stages exist separately only holds standings.
   for (const t of tournaments.values())
     if (t.eventPage !== t.Page && tournaments.has(t.eventPage)) tournaments.get(t.eventPage)!.stage = "event";
 
@@ -355,9 +308,6 @@ export function deriveDataset() {
     insResult.run(tid, team(r.Team), text(r.Place), int(r.PlaceNumber), Number.isNaN(prize) ? null : prize);
   }
 
-  // Games -------------------------------------------------------------------------
-
-  /** Tab, match and game numbers of a ScoreboardGames GameId ("<page>_Finals_1_3"), null when it has another shape. */
   function gameSlot(page: string, gameId: string): { tab: string; match: number; game: number } | null {
     const m = gameId.startsWith(`${page}_`) ? /^(.+)_(\d+)_(\d+)$/.exec(gameId.slice(page.length + 1)) : null;
 
@@ -369,7 +319,6 @@ export function deriveDataset() {
   const insDraft = store.insert("game_draft", ["game_id", "side", "kind", "slot", "champion_id"], { ignore: true });
   let skippedGames = 0;
 
-  /** Every scoreboard game, to tell the schedule's series that have one from those that have none. */
   const scoreboardMatches: ScoreboardMatch[] = [];
 
   for (const g of load("games", Rows)) {
@@ -401,9 +350,6 @@ export function deriveDataset() {
       });
   }
 
-  // Player lines ------------------------------------------------------------------
-  // A scoreboard link is not always the player page (case, older handle): every
-  // link of a player goes to one row, keyed by the page `canonical` finds.
   const playerRows = load("players", Rows);
   const redirectRows = load("redirects", Rows);
 
@@ -427,7 +373,6 @@ export function deriveDataset() {
     return id;
   };
 
-  /** The scoreboard links behind each player, kept as aliases. */
   const linksByPlayer = new Map<number, Set<string>>();
   const identity = { page: 0, case: 0, redirect: 0, ambiguous: 0, unknown: 0, merged_lines: 0, same_game: 0 };
   const countedLinks = new Set<string>();
@@ -438,28 +383,20 @@ export function deriveDataset() {
   let skippedLines = 0;
   let oddRunePages = 0;
 
-  /** The Leaguepedia lines of each game, to map Riot participants onto players. */
   const linesByGame = new Map<number, { pid: number; side: number | null; role: string | null; championId: number | null; kills: number | null }[]>();
   const ignByPlayer = new Map<number, Set<string>>();
 
   const lineRows = load("lines", Rows);
   const linkOf = (l: Row) => text(l.Link) ?? text(l.Name);
 
-  // Two links of one player in the same game: one of them is another person on
-  // that scoreboard, so in that game a renamed link keeps its own identity.
   const pagesInGame = new Map<string, Map<string, number>>();
 
-  /**
-   * A rune page in order: the keystone, three primary runes, two secondary ones, then three stat shards (absent on some
-   * pages). A list of another length is not trusted slot by slot.
-   */
   const runePage = (l: Row) => {
     const page = list(l.Runes);
 
     return page.length === 9 || page.length === 6 ? page : [];
   };
 
-  // Tree of each rune, as the lines name it (Data Dragon only knows the runes of its patch): the tree most lines agree on.
   const treeVotes = new Map<string, Map<string, number>>();
 
   const vote = (name: Field, tree: Field) => {
@@ -525,7 +462,6 @@ export function deriveDataset() {
     list(l.Items).forEach((it, slot) => insItem.run(gid, pid, slot + 1, item(it)));
   }
 
-  // Players and aliases -----------------------------------------------------------
   const insAlias = store.insert("player_aliases", ["alias", "raw", "player_id"], { ignore: true });
 
   const alias = (raw: Field, pid: number) => {
@@ -544,7 +480,6 @@ export function deriveDataset() {
     updPlayer.run(text(p.ID), text(p.Name), text(p.NativeName), pid);
 
     for (const a of [p.ID, p.Name, p.NativeName]) alias(a, pid);
-    // Korean/Chinese romanizations: also index the given name ("Jeong Ji-hoon" -> "Ji-hoon").
     const real = text(p.Name);
 
     if (real?.includes(" ")) alias(real.split(" ").slice(1).join(" "), pid);
@@ -562,17 +497,11 @@ export function deriveDataset() {
 
   for (const [pid, names] of ignByPlayer) for (const n of names) alias(n, pid);
 
-  // Player photos -----------------------------------------------------------------
-  // Leaguepedia headshots, dated by the start of the tournament they were taken for. An image's link is resolved
-  // like a scoreboard link (case, older handle). Absent from an older raw cache: the players then have no photo.
-  // An undated headshot is kept only for a player who has no dated one, at the oldest date (UNDATED_PHOTO): any
-  // dated photo would win over it, and the page shows it without a year.
   const insImage = store.insert("player_images", ["player_id", "taken_at", "file"], { ignore: true });
   const photoCounts = { kept: 0, other_players: 0, undated: 0, undated_fallback: 0, wide_shot: 0 };
   const datedPhotos = new Set<number>();
   const undatedPhotos = new Map<number, string[]>();
 
-  // ImageType is free text (Headshot, headshot, Portrait, Profile, Bodyshot, Stageshot...): wide shots crop badly into an avatar.
   const WIDE_SHOT = /body|full|stage|tilt|valentine/i;
   const imagesFile = datasetFile("player_images");
 
@@ -598,7 +527,6 @@ export function deriveDataset() {
       continue;
     }
 
-    // Several undated files: the first by name, so a rebuild picks the same one.
     insImage.run(pid, UNDATED_PHOTO, files.toSorted()[0]);
     photoCounts.undated_fallback++;
     photoCounts.undated += files.length - 1;
@@ -606,7 +534,6 @@ export function deriveDataset() {
 
   if (!existsSync(imagesFile)) console.warn(`  ${imagesFile} is missing: no player photo (run \`bun run data:fetch\`)`);
 
-  // Data Dragon -------------------------------------------------------------------
   const DdragonData = z.object({
     version: z.string(),
     champion: z.object({
@@ -615,7 +542,6 @@ export function deriveDataset() {
     item: z.object({ data: z.record(z.string(), z.looseObject({ name: z.string() })) }),
     runes: z.array(z.object({ name: z.string(), slots: z.array(z.object({ runes: z.array(z.object({ id: z.number().int(), name: z.string(), icon: z.string() })) })) })),
     summoner: z.object({ data: z.record(z.string(), z.object({ name: z.string(), image: z.object({ full: z.string() }), modes: z.array(z.string()).optional() })) }),
-    // `meta` is absent from raw caches fetched before items had a kind: their retired items get a NULL kind.
     legacyItems: z.array(z.object({ version: z.string(), items: z.record(z.string(), z.string()), meta: z.record(z.string(), ItemMeta).optional() })),
   });
 
@@ -637,7 +563,6 @@ export function deriveDataset() {
     updChampion.run(d ? `${cdn}/${dd.version}/img/champion/${d.image.full}` : null, c.id);
   }
 
-  // Summoner spells: the Summoner's Rift entry when several modes share a name.
   const ddSpells = new Map<string, string>();
 
   for (const sp of Object.values(dd.summoner.data).sort((a, b) => Number(b.modes?.includes("CLASSIC") ?? false) - Number(a.modes?.includes("CLASSIC") ?? false)))
@@ -650,7 +575,6 @@ export function deriveDataset() {
     updSpell.run(image ? `${cdn}/${dd.version}/img/spell/${image}` : null, sp.id);
   }
 
-  // Latest patch first, then older patches (newest first) for retired items.
   const itemSources = [
     { version: dd.version, legacy: false, items: Object.fromEntries(Object.entries(dd.item.data).map(([k, v]) => [k, v.name])) },
     ...dd.legacyItems.map((l) => ({ ...l, legacy: true })),
@@ -665,7 +589,6 @@ export function deriveDataset() {
       if (!itemIcon.has(key)) itemIcon.set(key, { id, version: src.version, legacy: src.legacy });
     }
 
-  // Kind from the newest patch that has the item (ARAM and Arena variants share names with another recipe).
   const kindSources: { meta: Record<string, ItemMeta>; items: Record<string, string> }[] = [
     {
       meta: Object.fromEntries(Object.entries(dd.item.data).flatMap(([id, it]) => {
@@ -680,7 +603,6 @@ export function deriveDataset() {
 
   const itemKindByName = new Map<string, ItemKind>();
 
-  // Summoner's Rift entries of every patch first, then the other maps' entries for names the Rift never had.
   for (const rift of [true, false])
     for (const src of kindSources) {
       const kinds = itemKinds(src.meta);
@@ -710,9 +632,6 @@ export function deriveDataset() {
     kindCounts[kind ?? "unknown"] = (kindCounts[kind ?? "unknown"] ?? 0) + 1;
   }
 
-  // In-game stats (Riot JSON summaries) --------------------------------------------
-  // Riot participants are matched to Leaguepedia lines by champion (unique in a
-  // game), then by side and position for the rare champion that does not match.
   const ROLE_ORDER = ["Top", "Jungle", "Mid", "Bot", "Support"];
 
   const championIdByKey = new Map<number, number>();
@@ -734,7 +653,6 @@ export function deriveDataset() {
   const ingameCounts = { games: 0, skipped_unknown_game: 0, skipped_mapping: 0, participants_by_position: 0, kills_mismatch: 0, missing: 0, invalid: 0, duplicates: 0, stale_derive: 0, older_derive: 0 };
   const diff = (a: number | null, b: number | null | undefined) => (a == null || b == null ? null : a - b);
 
-  // What the scoreboard lacks, taken from the Riot JSON (derive 4): Leaguepedia's value always wins.
   const fromRiot = { damage: 0, vision: 0, heralds: 0, patch: 0, rune_pages: 0, keystones: 0, rune_pages_unknown_id: 0 };
   const fillDamage = store.fill("game_players", "damage");
   const fillVision = store.fill("game_players", "vision");
@@ -744,15 +662,10 @@ export function deriveDataset() {
   const fillKeystone = store.fill("game_players", "keystone_id");
   const ddRuneNames = new Map(dd.runes.flatMap((t) => t.slots.flatMap((sl) => sl.runes.map((r) => [r.id, r.name] as const))));
 
-  /** Filled from the Riot JSON when the value is known and Leaguepedia has none; counted in `fromRiot`. */
   const fill = (filler: ReturnType<Store["fill"]>, field: keyof typeof fromRiot, value: Cell | undefined, ...key: Cell[]) => {
     if (filler.run(value, ...key)) fromRiot[field]++;
   };
 
-  /**
-   * A scoreboard without a rune page gets the Riot one (names of the game's patch, `runes.ts`), with its trees as votes.
-   * A page with an id that no table names is left out, not stored with a hole.
-   */
   const fillRunes = (p: PlayerSummary, gid: number, pid: number, version: string | null | undefined) => {
     if (!p.runes || store.has("game_player_runes", gid, pid)) return;
     const names = p.runes.map((id) => runeName(id, version, ddRuneNames));
@@ -780,8 +693,6 @@ export function deriveDataset() {
   const lengthAt = gamesTable.columns.indexOf("length_s");
   const scoreboardLength = (gid: number) => Number(gamesTable.byId.get(gid)?.[lengthAt] ?? Number.NaN);
 
-  // Of two summaries of one game, the one that fits the scoreboard best (`summaryRank`): the loop below keeps the
-  // first of them it can map.
   const ingame = bestFirst(
     loadIngame().values(),
     (line) => (line.status === "ok" ? gameId.get(line.gameId) : undefined),
@@ -820,8 +731,6 @@ export function deriveDataset() {
       continue;
     }
 
-    // Champion match first (a champion is unique in a game, except in the odd
-    // blind-pick game), then the Riot side each matched team corresponds to.
     const byChampion = new Map<number, typeof lines>();
 
     for (const l of lines) if (l.championId != null) byChampion.set(l.championId, [...(byChampion.get(l.championId) ?? []), l]);
@@ -865,7 +774,6 @@ export function deriveDataset() {
     doneGames.add(gid);
     ingameCounts.games++;
 
-    // Kept, without what the versions after it added (NULL columns, no dragon row).
     if (line.derive !== DERIVE_VERSION) ingameCounts.older_derive++;
 
     insRiot.run(gid, line.key, line.statsPage, line.version, line.hasTimeline ? 1 : 0, swapped ? 1 : 0);
@@ -873,7 +781,6 @@ export function deriveDataset() {
     const stats = line.players.map((p) => ({ p, l: matched.get(p.pid)! }));
 
     for (const { p, l } of stats) {
-      // Riot and Leaguepedia disagree on kills: a mapping (or scoreboard) problem worth a look.
       if (l.kills != null && l.kills !== p.kills) ingameCounts.kills_mismatch++;
       const opp = stats.find((o) => o.l.side !== l.side && o.l.role != null && o.l.role === l.role)?.p;
       fill(fillDamage, "damage", p.damage, gid, l.pid);
@@ -917,8 +824,6 @@ export function deriveDataset() {
     });
   }
 
-  // Runes: tree and icon from Data Dragon, the tree of a removed rune from `runes.ts` or from the lines (Leaguepedia's
-  // and the Riot pages'). Stat shards have neither. After the in-game stats, which may add runes.
   const ddRunes = new Map(dd.runes.flatMap((t) => t.slots.flatMap((s) => s.runes.map((r) => [normalizeAlias(r.name), { tree: t.name, icon: r.icon }] as const))));
   const updRune = store.update("runes", ["tree", "icon_url"]);
   const runeCounts = { ddragon: 0, tree_retired: 0, tree_from_lines: 0, shard_or_unknown: 0 };
@@ -932,9 +837,6 @@ export function deriveDataset() {
     runeCounts[d ? "ddragon" : retired ? "tree_retired" : voted ? "tree_from_lines" : "shard_or_unknown"]++;
   }
 
-  // Series without a scoreboard ----------------------------------------------------
-  // The decided matches of Leaguepedia's schedule that no scoreboard game covers: their result, without any game
-  // statistic. Team names are the schedule's, the same page names as the scoreboards'. Absent from an older raw cache.
   const scheduleFile = datasetFile("schedule");
   const insSeries = store.insert("series_results", ["id", "tournament_id", "tab", "match_n", "team1_id", "team2_id", "winner_side", "team1_score", "team2_score", "forfeit", "played_at"]);
   const seriesCounts = { decided: 0, outside_scope: 0, with_scoreboard: 0, kept: 0, forfeits: 0 };
@@ -944,7 +846,6 @@ export function deriveDataset() {
     const decided = matches.filter((s) => s.winner != null);
     seriesCounts.decided = decided.length;
     seriesCounts.outside_scope = decided.filter((s) => !tournamentId.has(s.page)).length;
-    // Every match of the scope claims its scoreboards, a draw included; only the decided ones are kept.
     const kept = scheduleOnly(matches.filter((s) => tournamentId.has(s.page)), scoreboardMatches);
     seriesCounts.with_scoreboard = decided.length - seriesCounts.outside_scope - kept.length;
 
@@ -958,9 +859,6 @@ export function deriveDataset() {
     console.warn(`  ${scheduleFile} is missing: no series without a scoreboard (run \`bun run data:fetch\`)`);
   }
 
-  // Team abbreviations ------------------------------------------------------------
-  // Teams.Short of the team's page ("Karmine Corp Blue Stars" -> "KCBS"), or of the page an older name redirects to
-  // ("Afreeca Freecs" -> "DN SOOPers" -> "DNS"). Absent from an older raw cache: the teams then have no abbreviation.
   const redirectsFile = datasetFile("team_redirects");
   const shortCounts = { page: 0, redirect: 0, none: 0 };
 
@@ -985,8 +883,6 @@ export function deriveDataset() {
 
     const setShort = store.update("teams", ["short"]);
     const teamRows = store.names("teams");
-    // An abbreviation a team holds on its own page is not lent to an older name through a redirect: "DNS.C" is
-    // DN SOOPers Challengers, not Kwangdong Freecs Challengers, which redirects there and has more games.
     const heldDirectly = new Set(teamRows.flatMap((t) => shortOf.get(t.name.toLowerCase()) ?? []));
 
     for (const { id, name } of teamRows) {
@@ -1003,9 +899,6 @@ export function deriveDataset() {
     console.warn(`  ${teamsFile} is missing: no team abbreviation (run \`bun run data:fetch\`)`);
   }
 
-  // Team logos ---------------------------------------------------------------------
-  // The first of "<name>logo square.png" and "<page>logo square.png" the wiki has, under its exact name
-  // (scripts/data/team-logos.ts). Absent from an older raw cache: the teams then have no logo, and a release refuses that.
   const logoFilesFile = datasetFile("team_logo_files");
   const logoCounts = { name: 0, page: 0, none: 0 };
 

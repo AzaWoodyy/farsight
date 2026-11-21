@@ -6,7 +6,6 @@ export const size = { width: 180, height: 180 };
 
 export const contentType = "image/png";
 
-/** Home-screen icon: the mark on the dark background (iOS rounds the corners itself). */
 export default function AppleIcon() {
   const { background, foreground, accent } = PALETTE.dark;
 

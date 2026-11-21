@@ -6,10 +6,8 @@ import { useLocale, useUi } from "./i18n/locale-context";
 
 type AskProps = { onAsk: (question: string) => void };
 
-/** The examples of a row; the second copy only closes the loop of the drift. */
 function Chips({ examples, onAsk, copy }: AskProps & { examples: Example[]; copy?: boolean }) {
   return examples.map((e) => (
-    // The copy is clickable under the pointer, and absent for the keyboard and for screen readers.
     <li key={e.question} data-copy={copy ? "" : undefined} aria-hidden={copy || undefined} className="mr-2 flex shrink-0">
       <button
         type="button"
@@ -30,10 +28,6 @@ function Chips({ examples, onAsk, copy }: AskProps & { examples: Example[]; copy
   ));
 }
 
-/**
- * Every example of the home page, drifting past on four rows (the motion and its pauses are in globals.css).
- * All of them are in the static HTML, in the same order on each load.
- */
 export function HomeExamples({ onAsk }: AskProps) {
   const locale = useLocale();
   const ui = useUi();
