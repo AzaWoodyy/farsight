@@ -3001,9 +3001,9 @@ const riotDataSource = (): Source => ({
  */
 const ingameFollowUp = {
   player: (name: string) => say(`Solo kills de ${name}`, `${name} solo kills`),
-  // A team name with punctuation inside ("KaBuM! Esports") is written in words, as the rules read it.
+  // A team as the answers show it (no "(European Team)"), its punctuation written in words ("KaBuM! Esports"), as the rules read it.
   team: (name: string) => {
-    const words = name.replace(/[^\p{L}\p{N}.\-&' ]+/gu, "").replace(/\s+/g, " ").trim();
+    const words = displayTeam(name).replace(/[^\p{L}\p{N}.\-&' ]+/gu, "").replace(/\s+/g, " ").trim();
 
     return say(`First blood de ${words}`, `${words} first blood`);
   },

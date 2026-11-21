@@ -2700,6 +2700,22 @@
       }
     },
     {
+      "id": "dragon-team-disambiguated",
+      "question": "Âmes du dragon de Rogue",
+      "tags": [
+        "ingame",
+        "dragons",
+        "follow_up"
+      ],
+      "expect": {
+        "route": "dragon_stats",
+        "teams": [
+          "Rogue (European Team)"
+        ],
+        "rowsMin": 1
+      }
+    },
+    {
       "id": "page-homonym-follow-up",
       "question": "Solo kills de Knight (Vũ Hồng Sơn)",
       "tags": [
