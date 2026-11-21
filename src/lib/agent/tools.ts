@@ -2947,7 +2947,8 @@ const slotKind = (slot: number): RuneKind => (slot === 1 ? "keystone" : slot <= 
 
 /**
  * The full pages of a scope without the stat shards (the keystone, three primary and two secondary runes), most games
- * first, with the secondary trees they show. A page whose keystone or second slot is not listed is not counted.
+ * first, with the secondary trees they show. A page whose keystone or second slot is not listed is not counted. The two
+ * secondary runes are read in name order: the scoreboards list them either way round, and they are one page.
  */
 async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["runes"]): Promise<{ pages: RunePage[]; secondary: RuneTree[] }> {
   const params: Params = {};
@@ -2957,7 +2958,7 @@ async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["r
     db,
     RunePageRow,
     `WITH pages AS (
-       SELECT gp.game_id, MAX(gp.win) AS win, STRING_AGG(r.slot || '=' || r.rune, '|' ORDER BY r.slot) AS page
+       SELECT gp.game_id, MAX(gp.win) AS win, STRING_AGG(LEAST(r.slot, 5) || '=' || r.rune, '|' ORDER BY LEAST(r.slot, 5), r.rune) AS page
        FROM v_game_players gp CROSS JOIN LATERAL (SELECT * FROM v_player_runes r WHERE r.game_id = gp.game_id AND r.player = gp.player AND r.slot <= 6 OFFSET 0) r
        WHERE ${where}
        GROUP BY gp.game_id, gp.player

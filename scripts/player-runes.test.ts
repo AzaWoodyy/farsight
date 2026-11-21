@@ -112,7 +112,8 @@ async function seed(db: TestDb) {
     -- game_id, player_id, primary 1-3, secondary 1-2, shards 1-3.
     INSERT INTO game_player_runes VALUES
       (1,1,3,4,5,6,7,8,9,10),
-      (2,1,3,4,5,6,7,8,9,10),
+      -- The secondary runes the other way round: still the same page.
+      (2,1,3,4,5,7,6,8,9,10),
       (1,2,3,4,5,6,7,8,9,10);
   `);
 }

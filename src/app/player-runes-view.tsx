@@ -249,9 +249,6 @@ function Trees({ trees, keystoneGames, pageGames }: { trees: RuneTree[]; keyston
   );
 }
 
-/** Runes shown per tree: over a career, a tree holds every rune Riot has put in it since 2018. */
-const TREE_LINES = 8;
-
 const PAGE_PARTS = ["primary", "secondary", "shard"] as const;
 
 /** The primary and secondary runes grouped by tree, and the shards, one part at a time: share of the games with a full page. */
@@ -262,7 +259,7 @@ function RunesByTree({ runes, of }: { runes: ChampionRune[]; of: number }) {
   const [part, setPart] = useState<(typeof PAGE_PARTS)[number]>(parts[0] ?? "primary");
   const shown = runes.filter((r) => r.kind === part);
   // Trees by their most taken rune; the shards have none and form one group.
-  const groups = [...new Set(shown.map((r) => r.tree ?? ""))].map((tree) => ({ tree, runes: shown.filter((r) => (r.tree ?? "") === tree).slice(0, TREE_LINES) }));
+  const groups = [...new Set(shown.map((r) => r.tree ?? ""))].map((tree) => ({ tree, runes: shown.filter((r) => (r.tree ?? "") === tree) }));
 
   return (
     <section aria-labelledby="runes-by-tree" className="mt-2 border border-line px-3 py-2">
