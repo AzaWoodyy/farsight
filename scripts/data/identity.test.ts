@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { playerIdentity } from "./identity";
+import { playerIdentity, teamIdentity } from "./identity";
 
 const canonical = playerIdentity(
   ["Xiaohu", "Caps", "Darshan", "Exakick", "Viper (Park Do-hyeon)", "Viper (Leo Liu)", "Ghost (Jang Yong-jun)"],
@@ -82,5 +82,40 @@ describe("verified scoreboard-only identities", () => {
     const resolve = playerIdentity(["GeekGoneMad", "minde"], []);
     expect(resolve("GeekGoneMad")).toEqual({ page: "GeekGoneMad", via: "page" });
     expect(resolve("minde")).toEqual({ page: "minde", via: "page" });
+  });
+});
+
+describe("teamIdentity", () => {
+  test("a name at another case goes to the team page", () => {
+    const canonical = teamIdentity(["Dplus Kia Challengers"]);
+
+    expect(canonical("Dplus KIA Challengers")).toBe("Dplus Kia Challengers");
+    expect(canonical("Dplus Kia Challengers")).toBe("Dplus Kia Challengers");
+  });
+
+  test("without a page, the first spelling seen wins", () => {
+    const canonical = teamIdentity([]);
+
+    expect(canonical("Foo GG")).toBe("Foo GG");
+    expect(canonical("FOO GG")).toBe("Foo GG");
+    expect(canonical(" foo gg ")).toBe("Foo GG");
+  });
+
+  test("two pages that differ only in case are not merged", () => {
+    const canonical = teamIdentity(["Abc", "ABC"]);
+
+    expect(canonical("abc")).toBe("abc");
+    expect(canonical("ABC")).toBe("ABC");
+  });
+
+  test("a name that differs from its page by the first letter alone keeps the wiki's display case", () => {
+    const canonical = teamIdentity(["PaiN Gaming"]);
+
+    expect(canonical("paiN Gaming")).toBe("paiN Gaming");
+    expect(canonical("PAIN GAMING")).toBe("paiN Gaming");
+  });
+
+  test("an unrelated name passes through unchanged", () => {
+    expect(teamIdentity(["Dplus Kia"])("T1")).toBe("T1");
   });
 });

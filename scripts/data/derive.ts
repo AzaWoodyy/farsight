@@ -11,7 +11,7 @@ import { UNDATED_PHOTO } from "../../src/lib/domain/player-photos";
 import { TABLE_DDL } from "../../src/lib/db/schema";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
-import { playerIdentity } from "./identity";
+import { playerIdentity, teamIdentity } from "./identity";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch, type PlayerSummary } from "./ingame";
 import { loadIngame } from "./riot";
 import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
@@ -212,7 +212,25 @@ export function deriveDataset() {
 
   const leagueByName = new Map<string, (typeof LEAGUES)[number]>(LEAGUES.map((l) => [l.name, l]));
 
-  const team = dictionary("teams");
+  // Teams of Leaguepedia (page, abbreviation). Absent from an older raw cache: the names then stay as written and the
+  // teams have no abbreviation.
+  const teamsFile = datasetFile("teams");
+  const teamPageRows = existsSync(teamsFile) ? load("teams", Rows) : null;
+  const teamName = teamPageRows ? teamIdentity(teamPageRows.flatMap((r) => text(r.Page) ?? [])) : (name: string) => name;
+  const teamDict = dictionary("teams");
+  // Spellings folded into another one ("Dplus KIA" -> "Dplus Kia"): only the team ids move.
+  const caseMerged = new Set<string>();
+
+  const team = (name: Field) => {
+    if (name == null || name === "") return teamDict(name);
+    const raw = String(name).trim();
+    const canonical = teamName(raw);
+
+    if (canonical !== raw) caseMerged.add(raw);
+
+    return teamDict(canonical);
+  };
+
   const champion = dictionary("champions");
   const rune = dictionary("runes");
   const spell = dictionary("summoner_spells");
@@ -873,14 +891,13 @@ export function deriveDataset() {
   // Team abbreviations ------------------------------------------------------------
   // Teams.Short of the team's page ("Karmine Corp Blue Stars" -> "KCBS"), or of the page an older name redirects to
   // ("Afreeca Freecs" -> "DN SOOPers" -> "DNS"). Absent from an older raw cache: the teams then have no abbreviation.
-  const teamsFile = datasetFile("teams");
   const redirectsFile = datasetFile("team_redirects");
   const shortCounts = { page: 0, redirect: 0, none: 0 };
 
-  if (existsSync(teamsFile)) {
+  if (teamPageRows) {
     const shortOf = new Map<string, string>();
 
-    for (const r of load("teams", Rows)) {
+    for (const r of teamPageRows) {
       const page = text(r.Page);
       const short = text(r.Short)?.trim();
 
@@ -922,6 +939,6 @@ export function deriveDataset() {
     tables: new Map([...store.tables].map(([name, t]) => [name, { columns: t.columns, rows: t.rows }])),
     runs,
     ddragonVersion: dd.version,
-    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts, schedule_series: seriesCounts },
+    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts, team_case_merged: caseMerged.size, schedule_series: seriesCounts },
   };
 }

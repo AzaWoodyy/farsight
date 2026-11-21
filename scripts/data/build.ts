@@ -112,4 +112,6 @@ console.log("player links:", identity);
 
 console.log("series without a scoreboard:", derived.report.schedule_series);
 
+console.log("team spellings folded into another case:", derived.report.team_case_merged);
+
 console.table(byLeague);
