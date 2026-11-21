@@ -306,6 +306,37 @@ release v3 n'en a pas. Deux façons d'amorcer :
   (environ 3 600 parties), donc 8 exécutions environ avant d'être complet ;
   chaque release intermédiaire est utilisable, avec une couverture partielle.
 
+### Schéma v12 (migration Postgres 3)
+
+Le schéma v12 ajoute `teams.logo` (migration `db/migrations/0003_team_logos.sql`) :
+le fichier du logo carré de chaque équipe sur Leaguepedia, le nom seul (usage
+loyal, l'image reste sur le CDN de Fandom). La règle (`scripts/data/team-logos.ts`) :
+`<nom>logo square.png`, sinon `<page>logo square.png` (la page du nom, ou la seule
+page vers laquelle il redirige), jamais `Teams.Image`, l'image d'infobox souvent
+large. `data:fetch` demande à l'API MediaWiki lesquels existent, 50 titres par
+requête sous le même throttle que Cargo (environ 2 050 titres, 41 requêtes,
+101 s mesurées le 21/11/2026), à chaque exécution et sans cache entre deux
+exécutions, et garde le nom exact que le wiki renvoie (titre normalisé, redirection
+de fichier suivie) dans `data/raw/team_logo_files.json`. Sur l'instantané CI :
+1 371 équipes sur 1 993 ont un logo. Un nom que deux équipes portent (« Nova
+Esports ») n'a pas de logo. Le ton (plaque contrastée) reste une liste tenue à la
+main, par fichier : `src/lib/domain/team-logo-tones.json`.
+
+Le code lit aussi une base à la migration 2 (`PG_MIGRATION_READ`) : sans la
+colonne, les réponses n'ont simplement pas de logo. Le déploiement peut donc
+précéder le chargement, sans désactiver Deploy :
+
+1. Merger la PR ; Deploy part après la CI de `main`.
+2. Lancer « Postgres update » à la demande depuis `main` : Neon passe à la
+   migration 3, avec les logos. Entre les deux, les réponses s'affichent sans
+   logo. Ce premier passage ne restaure pas les résumés in-game de la release v11
+   (schéma différent) : il les relit sur R2 (environ 6 min), vérifier ensuite la
+   couverture in-game.
+3. La **Data release** suivante publie le fichier SQLite v12. `data:package`
+   refuse une release sans aucun logo ; `--check-only` se contente d'un
+   avertissement, car l'instantané CI n'a pas encore `team_logo_files.json`.
+   Réépingler ensuite `ci/data.json` et `ci/raw.tar.zst` sur cette release.
+
 ### Schéma v11 (migration Postgres 2)
 
 Le schéma v11 ajoute `series_results` (vue `v_series_results`, migration

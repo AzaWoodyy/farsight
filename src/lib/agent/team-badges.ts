@@ -5,7 +5,7 @@ import { teamLogo } from "../domain/team-logos";
 import type { ToolOutput } from "./tools";
 
 /**
- * What the views put beside a team's name: its logo (Leaguepedia, by the name shown) and the league it played
+ * What the views put beside a team's name: its logo (Leaguepedia's file, by the name shown) and the league it played
  * in over the answer's period, read from the database.
  */
 
@@ -41,10 +41,12 @@ const LEAGUES_SHOWN = 2;
  * team counts every name it played under), whose games count for its league.
  */
 export async function teamBadges(db: Db, names: string[], period: Period, aliases: Record<string, string[]> = {}) {
-  const logos = names.flatMap((name) => {
-    const logo = teamLogo(name);
+  const files = await teamLogoFiles(db, names);
 
-    return logo ? [{ name, ...logo }] : [];
+  const logos = names.flatMap((name) => {
+    const file = files.get(name);
+
+    return file ? [{ name, ...teamLogo(file) }] : [];
   });
 
   return {
@@ -55,6 +57,32 @@ export async function teamBadges(db: Db, names: string[], period: Period, aliase
 }
 
 type Period = { yearFrom: number | null; yearTo: number | null };
+
+/**
+ * The logo file of each team name, from `teams.logo` (one query): the one team it names, as stored or without
+ * Leaguepedia's disambiguation ("Griffin" for "Griffin (Korean Team)"), compared literally. A name two teams answer to
+ * ("Nova Esports", the Thai and the Taiwanese team; "Awesome", a team and "Awesome (Awesome Spear Academy)") gets none:
+ * no logo rather than the other team's.
+ *
+ * `to_jsonb(tm) ->> 'logo'` reads a database the load of migration 3 has not reached yet (PG_MIGRATION_READ): no column,
+ * so no logo, rather than an error.
+ */
+export async function teamLogoFiles(db: Db, names: string[]): Promise<Map<string, string>> {
+  if (!names.length) return new Map();
+
+  const rows = await selectAll(
+    db,
+    z.object({ team: z.string(), logo: z.string().nullable() }),
+    `WITH asked(team) AS (VALUES ${names.map(() => "(?)").join(", ")}),
+     matched AS (
+       SELECT a.team, to_jsonb(tm) ->> 'logo' AS logo FROM asked a
+       JOIN teams tm ON tm.name = a.team OR (starts_with(tm.name, a.team || ' (') AND right(tm.name, 1) = ')'))
+     SELECT team, MIN(logo) AS logo FROM matched GROUP BY team HAVING COUNT(*) = 1`,
+    names,
+  );
+
+  return new Map(rows.flatMap((r) => (r.logo ? [[r.team, r.logo]] : [])));
+}
 
 /**
  * The league each team played in over the period: its own leagues (neither international nor cross-league),

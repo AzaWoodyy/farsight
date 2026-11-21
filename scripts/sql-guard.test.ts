@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import pg from "pg";
 import { guardQuery, MAX_ROWS, VIEWS } from "../src/lib/agent/guard";
 import { checkMigration, readSchema } from "../src/lib/db";
-import { PG_MIGRATION } from "../src/lib/db/schema";
+import { PG_MIGRATION, PG_MIGRATION_READ } from "../src/lib/db/schema";
 import { executeGeneratedQuery, MAX_SQL_CHILDREN, SqlTimeoutError, SQL_TIMEOUT_MS } from "../src/lib/db/generated-query";
 import { createPool, numberParameters, type PgPool } from "../src/lib/db/postgres";
 import { grantReaders } from "./db/migrations";
@@ -152,7 +152,10 @@ test("the app refuses a schema older than the code's migration and accepts a new
     await expect(checkMigration(other.pool)).resolves.toBeUndefined();
     await other.exec("DELETE FROM schema_migrations");
     await expect(checkMigration(other.pool)).rejects.toThrow(/migration null; expected/);
-    await other.exec(`INSERT INTO schema_migrations (version, name, checksum) VALUES (${PG_MIGRATION - 1}, 'previous', 'x')`);
+    await other.exec(`INSERT INTO schema_migrations (version, name, checksum) VALUES (${PG_MIGRATION_READ}, 'oldest read', 'x')`);
+    await expect(checkMigration(other.pool)).resolves.toBeUndefined();
+    await other.exec("DELETE FROM schema_migrations");
+    await other.exec(`INSERT INTO schema_migrations (version, name, checksum) VALUES (${PG_MIGRATION_READ - 1}, 'previous', 'x')`);
     await expect(checkMigration(other.pool)).rejects.toThrow(/expected/);
   } finally {
     await other.close();

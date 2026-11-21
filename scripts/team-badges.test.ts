@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { teamLeagues, teamNames } from "../src/lib/agent/team-badges";
+import { teamBadges, teamLeagues, teamNames } from "../src/lib/agent/team-badges";
+import { wikiImageUrl } from "../src/lib/domain/wiki-images";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb } from "./fixtures/test-db";
 
@@ -16,7 +17,12 @@ beforeAll(async () => {
 
   for (const [i, [short, year]] of tournaments.entries())
     await db.run("INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (?,?,?,?,?,?,?)", i + 1, `T${i}`, `T${i}`, `${short} ${year}`, "season", league(short), year);
-  await db.exec(`INSERT INTO teams(id,name) VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted')`);
+  await db.exec(`INSERT INTO teams(id,name) VALUES (1,'Climbers'),(2,'Other'),(3,'Griffin (Korean Team)'),(4,'SK Telecom T1'),(5,'T1'),(6,'Renamed'),(7,'Prime'),(8,'Back'),(9,'Promoted'),
+    (10,'Nova Esports (Thai Team)'),(11,'Nova Esports (Taiwanese Team)'),(12,'DRX'),(13,'Awesome'),(14,'Awesome (Awesome Spear Academy)')`);
+  // Logo files as the wiki stores them; two teams answer to "Nova Esports", each with its own logo.
+  await db.exec(`UPDATE teams SET logo = CASE id WHEN 1 THEN 'Climberslogo square.png' WHEN 3 THEN 'Griffin (Korean Team)logo square.png'
+    WHEN 5 THEN 'T1logo square.png' WHEN 10 THEN 'Nova Esports (Thai Team)logo square.png' WHEN 11 THEN 'Nova Esportslogo square.png' WHEN 12 THEN 'DRXlogo square.png'
+    WHEN 13 THEN 'Awesomelogo square.png' WHEN 14 THEN 'Awesome Spearlogo square.png' END`);
 
   let id = 0;
 
@@ -87,6 +93,40 @@ describe("the league a team played in", () => {
 
   test("the fallback is the league the team played in last", async () => {
     expect(await teamLeagues(db, ["Back"], { yearFrom: 2015, yearTo: 2015 }, {})).toEqual({ Back: ["LFL D2"] });
+  });
+});
+
+describe("the logo beside a team", () => {
+  const logo = (file: string) => wikiImageUrl(file, 64);
+
+  test("the file of the team of that name, the one team a name stands for without its disambiguation, else none", async () => {
+    const { icons } = await teamBadges(db, ["Climbers", "Griffin", "Griff_n", "Other", "Unknown"], all);
+
+    expect(icons).toEqual({ Climbers: logo("Climberslogo square.png"), Griffin: logo("Griffin (Korean Team)logo square.png") });
+  });
+
+  test("a name two teams answer to gets no logo, rather than the other team's", async () => {
+    const { icons } = await teamBadges(db, ["Nova Esports", "Nova Esports (Thai Team)", "Awesome"], all);
+
+    expect(icons).toEqual({ "Nova Esports (Thai Team)": logo("Nova Esports (Thai Team)logo square.png") });
+  });
+
+  test("the tone comes from the hand-kept list, by file", async () => {
+    const { tones } = await teamBadges(db, ["DRX", "T1"], all);
+
+    expect(tones).toEqual({ DRX: "dark" });
+  });
+
+  test("a database before migration 3 (no logo column) answers without logos", async () => {
+    const old = await testDb();
+
+    try {
+      await old.exec("ALTER TABLE teams DROP COLUMN logo");
+      await old.exec("INSERT INTO teams(id,name) VALUES (1,'T1')");
+      expect(await teamBadges(old, ["T1"], all)).toEqual({ icons: {}, tones: {}, leagues: {} });
+    } finally {
+      await old.close();
+    }
   });
 });
 

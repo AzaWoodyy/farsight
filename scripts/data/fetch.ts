@@ -20,7 +20,8 @@
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
  * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: `data:build` keeps the
  * series it lists without any scoreboard game (scripts/data/schedule.ts). Every raw response is kept under data/raw/cargo,
- * and the merged datasets under data/raw/*.json feed `data:build`.
+ * and the merged datasets under data/raw/*.json feed `data:build`. Which team logo files exist is asked again on every
+ * run, uncached (about forty MediaWiki API requests, scripts/data/team-logos.ts).
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -44,6 +45,7 @@ import {
 import { remoteStoreFromEnv } from "../../src/lib/storage";
 import { fetchRiotGameList, fetchRiotGames } from "./riot";
 import { scheduleQuery } from "./schedule";
+import { fetchTeamLogoFiles } from "./team-logos";
 import {
   CARGO_CACHE_DIR,
   DDRAGON_CACHE_DIR,
@@ -406,6 +408,7 @@ async function full() {
 
   const teams = await fetchTeams(cached);
   console.log(`teams: ${teams.teams.length}, team redirects: ${teams.redirects.length}`);
+  const logoFiles = await fetchTeamLogoFiles([...results, ...games, ...lines, ...schedule], teams);
 
   const dd = await fetchDdragon(refresh);
   console.log(`ddragon: ${dd.version} (+${dd.legacyItems.length} older patches for retired items)`);
@@ -419,6 +422,7 @@ async function full() {
   save("player_images", images);
   save("teams", teams.teams);
   save("team_redirects", teams.redirects);
+  save("team_logo_files", logoFiles);
   save("schedule", schedule);
   save("ddragon", dd);
 
@@ -433,6 +437,7 @@ async function full() {
     players: players.length,
     redirects: redirects.length,
     teams: teams.teams.length,
+    team_logo_files: logoFiles.length,
     schedule: schedule.length,
   };
 }
@@ -544,6 +549,7 @@ async function incrementalFetch() {
   save("player_images", images);
   save("teams", teams.teams);
   save("team_redirects", teams.redirects);
+  save("team_logo_files", await fetchTeamLogoFiles([...merged.results, ...merged.games, ...merged.lines, ...merged.schedule], teams));
   save("ddragon", dd);
 
   const riotCounts = await riot(fresh);

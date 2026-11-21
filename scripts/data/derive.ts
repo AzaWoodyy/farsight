@@ -12,6 +12,7 @@ import { TABLE_DDL } from "../../src/lib/db/schema";
 import { DDRAGON_BASE } from "../../src/lib/sources/ddragon";
 import { type CargoValue, StoredCargoRow } from "../../src/lib/sources/leaguepedia";
 import { playerIdentity, teamIdentity } from "./identity";
+import { chooseLogo, logoCandidatesOf } from "./team-logos";
 import { DERIVE_COMPATIBLE, DERIVE_VERSION, leaguepediaPatch, type PlayerSummary } from "./ingame";
 import { loadIngame } from "./riot";
 import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
@@ -933,12 +934,34 @@ export function deriveDataset() {
     console.warn(`  ${teamsFile} is missing: no team abbreviation (run \`bun run data:fetch\`)`);
   }
 
+  // Team logos ---------------------------------------------------------------------
+  // The first of "<name>logo square.png" and "<page>logo square.png" the wiki has, under its exact name
+  // (scripts/data/team-logos.ts). Absent from an older raw cache: the teams then have no logo, and a release refuses that.
+  const logoFilesFile = datasetFile("team_logo_files");
+  const logoCounts = { name: 0, page: 0, none: 0 };
+
+  if (teamPageRows && existsSync(logoFilesFile)) {
+    const files = new Map(load("team_logo_files", Rows).flatMap((r) => (text(r.Asked) && text(r.File) ? [[text(r.Asked)!, text(r.File)!]] : [])));
+    const candidates = logoCandidatesOf(teamPageRows, existsSync(redirectsFile) ? load("team_redirects", Rows) : []);
+    const setLogo = store.update("teams", ["logo"]);
+
+    for (const { id, name } of store.names("teams")) {
+      const [own, ...rest] = candidates(name);
+      const logo = chooseLogo([own, ...rest], files);
+
+      if (logo) setLogo.run(logo, id);
+      logoCounts[!logo ? "none" : files.get(own) === logo ? "name" : "page"]++;
+    }
+  } else {
+    console.warn(`  ${logoFilesFile} is missing: no team logo (run \`bun run data:fetch\`)`);
+  }
+
   const runs = load("runs", z.array(IngestRun));
 
   return {
     tables: new Map([...store.tables].map(([name, t]) => [name, { columns: t.columns, rows: t.rows }])),
     runs,
     ddragonVersion: dd.version,
-    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts, team_case_merged: caseMerged.size, schedule_series: seriesCounts },
+    report: { skipped_games: skippedGames, skipped_lines: skippedLines, item_icons: itemIcons, item_kinds: kindCounts, rune_sources: runeCounts, odd_rune_pages: oddRunePages, ingame: ingameCounts, from_riot: fromRiot, identity, player_images: photoCounts, team_shorts: shortCounts, team_logos: logoCounts, team_case_merged: caseMerged.size, schedule_series: seriesCounts },
   };
 }

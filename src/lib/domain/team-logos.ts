@@ -1,34 +1,33 @@
 import { z } from "zod";
-import files from "./team-logos.json";
-import { displayTeam } from "./teams";
+import tones from "./team-logo-tones.json";
 import { wikiImageUrl } from "./wiki-images";
 
 /**
- * Team logos: Leaguepedia's logo file of each team name that played a game of the scope (Cargo `Teams.Image`,
- * or the wiki's "<name>logo square.png" for a name a team no longer plays under, so an old name keeps the logo
- * of its time). File names only, see wiki-images.ts.
- *
- * Prototype storage: a JSON file beside the code. The durable place is a column of `teams`, filled by
- * `data:fetch` / `data:build` like the player photos.
+ * Team logos: the square logo file of each team on Leaguepedia, held by the database (`teams.logo`, filled by
+ * `data:fetch` / `data:build`, scripts/data/team-logos.ts) under the exact name the wiki stores it. File names only,
+ * see wiki-images.ts.
  */
+
 /**
- * `tone`: a logo that is nearly black ("dark") or nearly white ("light") all over, measured once on its opaque
- * pixels. Drawn on a page of the same tone it disappears, so the view puts a contrasting plate behind it.
+ * `tone`: a logo that is nearly black ("dark") or nearly white ("light") all over. Drawn on a page of the same tone it
+ * disappears, so the view puts a contrasting plate behind it. A hand-kept list of logo files (team-logo-tones.json),
+ * never measured at ingestion: a new logo that needs a plate is added there by its file name.
  */
-const Logo = z.object({ file: z.string(), tone: z.enum(["dark", "light"]).optional() });
+const Tones = z.object({ dark: z.array(z.string()), light: z.array(z.string()) }).strict();
 
-export type LogoTone = NonNullable<z.infer<typeof Logo>["tone"]>;
+export type LogoTone = keyof z.infer<typeof Tones>;
 
-const LOGOS = new Map(Object.entries(z.record(z.string(), Logo).parse(files)));
+/** The key of a file name: the wiki reads a space and an underscore alike. */
+const key = (file: string) => file.replace(/_/g, " ");
 
-const BY_DISPLAY = new Map([...LOGOS].map(([name, logo]) => [displayTeam(name), logo]));
+const listed = Tones.parse(tones);
+
+const TONES = new Map<string, LogoTone>([...listed.dark.map((f) => [key(f), "dark"] as const), ...listed.light.map((f) => [key(f), "light"] as const)]);
 
 /** Width served: twice the largest logo shown (32 px), for high-density screens. */
 const WIDTH = 64;
 
-/** The logo of a team name, as stored or as displayed; null when Leaguepedia has none. */
-export function teamLogo(team: string): { url: string; tone: LogoTone | null } | null {
-  const logo = LOGOS.get(team) ?? BY_DISPLAY.get(team);
-
-  return logo ? { url: wikiImageUrl(logo.file, WIDTH), tone: logo.tone ?? null } : null;
+/** The image and the tone of a logo file. */
+export function teamLogo(file: string) {
+  return { url: wikiImageUrl(file, WIDTH), tone: TONES.get(key(file)) ?? null };
 }

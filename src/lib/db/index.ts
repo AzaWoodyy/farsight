@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { attachToFunction, createPool, type PgPool, postgresDb } from "./postgres";
-import { PG_MIGRATION } from "./schema";
+import { PG_MIGRATION_READ } from "./schema";
 
 /** A value read from the database; an aggregated JSON column comes back as arrays and objects. */
 export type SqlValue = string | number | bigint | boolean | null | Uint8Array | SqlValue[] | { [key: string]: SqlValue };
@@ -28,7 +28,7 @@ const Version = z.object({ version: z.number().nullable() });
 
 /**
  * The database of the deployment: Postgres at DATABASE_URL, as the read-only app role (db/roles.sql). The schema it
- * holds must be at least the one this code was written for: the newest migration applied is PG_MIGRATION or later.
+ * holds must be one this code reads: the newest migration applied is PG_MIGRATION_READ or later.
  */
 export function openDb(): Db {
   if (cached) return cached;
@@ -44,16 +44,16 @@ export function openDb(): Db {
 }
 
 /**
- * The newest migration applied to the schema on the search path must be PG_MIGRATION or a later one. A later one is
- * accepted because the load of a new migration lands before the deployment of the code that reads it (docs/postgres.md):
+ * The newest migration applied to the schema on the search path must be PG_MIGRATION_READ or a later one. A later one is
+ * accepted because the load of a new migration lands before the deployment of the code that needs it (docs/postgres.md):
  * a migration therefore only adds, and keeps every table, view and column the previous code reads.
  */
 export async function checkMigration(pool: PgPool): Promise<void> {
   const { rows } = await pool.query("SELECT MAX(version) AS version FROM schema_migrations");
   const version = Version.parse(rows[0] ?? { version: null }).version;
 
-  if (version === null || version < PG_MIGRATION) {
-    throw new Error(`Database schema migration ${version}; expected ${PG_MIGRATION} or later. Run \`bun run db:load\` (or db:migrate).`);
+  if (version === null || version < PG_MIGRATION_READ) {
+    throw new Error(`Database schema migration ${version}; expected ${PG_MIGRATION_READ} or later. Run \`bun run db:load\` (or db:migrate).`);
   }
 }
 
