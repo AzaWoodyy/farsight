@@ -1152,6 +1152,9 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
     // "quel champion a le plus de pentakills": a ranking by presence would answer another question.
     if (figure) return { kind: "sql", reason: msg().route.championFigureUnsorted(figure) };
 
+    // "champions les moins joués", "champions avec le pire winrate": the tool has no ascending order, and the highest would be the opposite answer.
+    if (LOWEST.test(question)) return { kind: "sql", reason: msg().route.championLowest };
+
     return championRankingRoute(question, e);
   }
 
@@ -1511,6 +1514,8 @@ const sqlRules = (language: string) =>
   "(or the minimum the question sets), select that count as a column, and return the top 10 rather than one row, even when the question asks for a single name. " +
   "Player names are Leaguepedia page names (v_game_players.player); league values are Leaguepedia League names (e.g. 'World Championship'). " +
   "A role is one of 'Top', 'Jungle', 'Mid', 'Bot', 'Support' (an ADC is 'Bot'). " +
+  "A split (Winter, Spring, Summer...) is v_tournaments.split, read through tournament_page: " +
+  "tournament_page IN (SELECT tournament_page FROM v_tournaments WHERE split = 'Spring'). " +
   `Exclude stage = 'qualifier' unless asked; stage = 'event' rows only hold standings. Keep the result under ${MAX_ROWS} rows. ` +
   "A stage of the bracket (final, semifinal, quarterfinal) is v_games.tab ('Finals', 'Semifinals', 'Quarterfinals'), never a tournament name: " +
   "a tournament named 'Regional Finals' is a regional qualifier, not the final of the international event. " +
@@ -1558,6 +1563,7 @@ const entitySummary = (e: Entities) =>
     league: e.league,
     yearFrom: e.yearFrom,
     yearTo: e.yearTo,
+    split: e.split,
   });
 
 // Build step ------------------------------------------------------------------------
