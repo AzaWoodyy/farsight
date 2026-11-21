@@ -2700,6 +2700,48 @@
       }
     },
     {
+      "id": "page-homonym-follow-up",
+      "question": "Solo kills de Knight (Vũ Hồng Sơn)",
+      "tags": [
+        "player",
+        "common_handle",
+        "follow_up"
+      ],
+      "expect": {
+        "route": "player_ingame_stats",
+        "players": [
+          "Knight (Vũ Hồng Sơn)"
+        ],
+        "unread": [],
+        "rowsMin": 1
+      }
+    },
+    {
+      "id": "page-opponent-follow-up-en",
+      "question": "Knight (Zhuo Ding) vs Faker at Worlds in 2026",
+      "locale": "en",
+      "tags": [
+        "comparison",
+        "player",
+        "follow_up",
+        "english"
+      ],
+      "expect": {
+        "route": "player_comparison",
+        "players": [
+          "Knight (Zhuo Ding)",
+          "Faker"
+        ],
+        "league": "World Championship",
+        "input": {
+          "yearFrom": 2026,
+          "yearTo": 2026
+        },
+        "unread": [],
+        "rowsMin": 1
+      }
+    },
+    {
       "id": "common-handle-three-letters",
       "question": "Uzi aux Worlds",
       "tags": [

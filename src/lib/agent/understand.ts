@@ -197,6 +197,48 @@ async function lookupAliases(db: Db, mentions: string[]): Promise<Map<string, Al
   return found;
 }
 
+/** Up to three words, then a parenthesis: how a Leaguepedia page tells homonyms apart ("Knight (Zhuo Ding)"). */
+const PAGE_MENTION = /(?<![\p{L}\p{N}])((?:[\p{L}\p{N}][\p{L}\p{N}.\-&]* ){1,3})\(([^()]{2,60})\)/gu;
+
+/**
+ * The players a question writes by their page, as the answers name a homonym or a teammate: that page exactly, never a
+ * homonym. The longest page wins ("Hide on bush (…)" before "bush (…)"); where each one starts in the question.
+ */
+async function pageMentions(db: Db, question: string): Promise<{ page: string; index: number; hit: AliasHit }[]> {
+  const spans = [...question.matchAll(PAGE_MENTION)].flatMap((m) => {
+    const words = m[1].trim().split(" ");
+
+    return words.map((_, k) => {
+      const page = `${words.slice(k).join(" ")} (${m[2]})`;
+
+      return { page, index: m.index + m[0].length - page.length };
+    });
+  });
+
+  if (!spans.length) return [];
+  const params = Object.fromEntries(spans.map((s, i) => [`p${i}`, s.page]));
+
+  const rows = await selectAll(
+    db,
+    AliasHit,
+    `SELECT p.page AS raw, ${ALIAS_HIT} FROM players p WHERE p.page IN (${spans.map((_, i) => `:p${i}`).join(", ")})`,
+    params,
+  );
+
+  const byPage = new Map(rows.map((r) => [r.player, r]));
+  const out: { page: string; index: number; hit: AliasHit }[] = [];
+
+  // Spans of one parenthesis come longest first: keep the first page found for each parenthesis.
+  for (const s of spans) {
+    const hit = byPage.get(s.page);
+    const end = s.index + s.page.length;
+
+    if (hit && !out.some((o) => o.index + o.page.length === end)) out.push({ page: s.page, index: s.index, hit });
+  }
+
+  return out;
+}
+
 type Context = { league: string | null; yearFrom: number | null; yearTo: number | null };
 
 async function contextGames(db: Db, playerId: number, ctx: Context): Promise<number> {
@@ -673,6 +715,11 @@ const VERSUS_TOKENS = new Set(["vs", "versus", "contre", "against"]);
 
 // Mentions ----------------------------------------------------------------------
 
+/** The token a player page stands for in the question while mentions are read (`pageMentions`). */
+const PAGE_PREFIX = "farsightpage";
+const PAGE_TOKEN = new RegExp(`^${PAGE_PREFIX}\\d+$`);
+const pageToken = (i: number) => `${PAGE_PREFIX}${i}`;
+
 /** A handle that is an everyday word, or three Latin characters or fewer. */
 function isCommonHandle(mention: string): boolean {
   const alias = normalizeAlias(mention);
@@ -714,18 +761,36 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
   // A league written by its full name ("Liga Española de League of Legends") is no player or team: its words are set aside.
   const asked = leagueMention?.includes(" ") ? question.replace(leagueMention, " ".repeat(leagueMention.length)) : question;
 
-  const tokens = maskTerms(asked)
+  // A player written by their page is that player: the page becomes one placeholder token, read before anything else.
+  const pages = await pageMentions(db, asked);
+  let marked = asked;
+
+  for (const [i, p] of [...pages.entries()].toSorted(([, a], [, b]) => b.index - a.index))
+    marked = `${marked.slice(0, p.index)}${pageToken(i)}${marked.slice(p.index + p.page.length)}`;
+
+  const tokens = maskTerms(marked)
     .replace(/[’']/g, " ")
     .split(/[^\p{L}\p{N}.\-&]+/u)
     .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""))
     .filter(Boolean);
 
   const { teams, champions } = await getIndexes(db);
-  const hits = await lookupAliases(db, aliasCandidates(tokens));
+  const hits = await lookupAliases(db, aliasCandidates(tokens.filter((t) => !PAGE_TOKEN.test(t))));
   const found: Mentions = { players: [], teams: [], champion: null, hits };
   const used = new Set<number>();
   // Where each mention starts, in tokens: the order of the question.
   const at = new Map<string, number>();
+
+  tokens.forEach((t, i) => {
+    const page = PAGE_TOKEN.test(t) ? pages[Number(t.slice(PAGE_PREFIX.length))] : undefined;
+
+    if (!page) return;
+    found.players.push(page.page);
+    hits.set(page.page, [page.hit]);
+    at.set(page.page, i);
+    used.add(i);
+  });
+  const byPage = new Set(pages.map((p) => p.page));
   // The tokens of the first champion: its opponent is written next to it ("oriana lock").
   const championAt = new Set<number>();
 
@@ -840,7 +905,7 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
   // A handle that is also an everyday word ("Paris", "Life") or very short
   // ("Bin") names a player in a question about esport, or when the question
   // says nothing else ("résultats de Knight"): not in "la météo à Paris".
-  if (found.players.some(isCommonHandle)) {
+  if (found.players.some((m) => !byPage.has(m) && isCommonHandle(m))) {
     const esport =
       found.teams.length > 0 ||
       found.champion != null ||
@@ -852,11 +917,11 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
 
     const alone = tokens.every((t, i) => used.has(i) || STOPWORDS.has(t.toLowerCase()) || /^\d+$/.test(t) || BARE_POOL.test(t));
 
-    if (!esport && !alone) found.players = found.players.filter((m) => !isCommonHandle(m));
+    if (!esport && !alone) found.players = found.players.filter((m) => byPage.has(m) || !isCommonHandle(m));
   }
 
   // Next to a team, "top", "sup" or "jg" name its player at that role ("top fpx 2019"), not the handle Top or Sup.
-  if (found.teams.length) found.players = found.players.filter((m) => !SHORT_ROLE_MENTION.test(m));
+  if (found.teams.length) found.players = found.players.filter((m) => byPage.has(m) || !SHORT_ROLE_MENTION.test(m));
 
   // Keep the order of the question (it decides sides in a head-to-head).
   const pos = (m: string) => at.get(m) ?? Number.MAX_SAFE_INTEGER;
