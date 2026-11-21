@@ -8,7 +8,7 @@ import { compareText, numberFormat } from "@/lib/locale";
 import { useLocale, useUi } from "./i18n/locale-context";
 
 /** Figures written in the language of the page: a number, a possibly missing one, a share of a total. */
-function useFigures() {
+export function useFigures() {
   const number = numberFormat(useLocale(), 2);
   const ui = useUi();
 
@@ -23,7 +23,7 @@ function useFigures() {
  * A Data Dragon square icon, or the champion's first letters in a box when the icon is missing or fails
  * to load. Plain <img>: next/image would spend the shared Vercel Hobby image quota for no LCP gain.
  */
-export function ChampionIcon({ name, src, size }: { name: string; src: string | null; size: number }) {
+export function ChampionIcon({ name, src, size, tone }: { name: string; src: string | null; size: number; tone?: "light" }) {
   const [failed, setFailed] = useState(false);
 
   if (!src || failed)
@@ -47,13 +47,15 @@ export function ChampionIcon({ name, src, size }: { name: string; src: string | 
       loading="lazy"
       onError={() => setFailed(true)}
       style={{ width: size, height: size }}
-      className="shrink-0 border border-line"
+      // A nearly white icon (a stat shard) gets the plate of `.entity-icon` on a light page.
+      data-tone={tone}
+      className={`shrink-0 border border-line ${tone ? "entity-icon" : ""}`}
     />
   );
 }
 
 /** A horizontal ASCII-like gauge: filled share in accent, the rest dotted. */
-function Gauge({ share, label }: { share: number; label: string }) {
+export function Gauge({ share, label }: { share: number; label: string }) {
   return (
     <div role="img" aria-label={label} className="relative h-1.5 w-full bg-[repeating-linear-gradient(90deg,var(--line)_0_2px,transparent_2px_4px)]">
       <div className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${Math.min(100, Math.max(0, share * 100)).toFixed(1)}%` }} />
@@ -62,13 +64,13 @@ function Gauge({ share, label }: { share: number; label: string }) {
 }
 
 /** A figure's name for screen readers, where the column header is only visual. */
-const Label = ({ children }: { children: string }) => <span className="sr-only">{children} : </span>;
+export const Label = ({ children }: { children: string }) => <span className="sr-only">{children} : </span>;
 
 /**
  * A sortable column header. Its accessible name keeps the visible label and adds the sort state, since
  * these lists are not tables and cannot carry `aria-sort`.
  */
-function SortHeader({ active, dir, label, title, className, onClick }: { active: boolean; dir: 1 | -1; label: string; title: string; className: string; onClick: () => void }) {
+export function SortHeader({ active, dir, label, title, className, onClick }: { active: boolean; dir: 1 | -1; label: string; title: string; className: string; onClick: () => void }) {
   const ui = useUi();
 
   return (
@@ -344,7 +346,7 @@ type ItemSortKey = "item" | "games" | "winrate";
 
 
 /** One spell pair or rune: icons, name, share of the games that have the data, games and win rate. */
-function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons: { name: string; src: string | null }[]; name: string; games: number; wins: number; of: number }) {
+export function SetupLine({ rank, icons, name, games, wins, of, winrate }: { rank: number; icons: { name: string; src: string | null; tone?: "light" }[]; name: string; games: number; wins: number; of: number; winrate?: ReactNode }) {
   const ui = useUi();
   const { pct } = useFigures();
   const wr = games >= ITEM_WINRATE_MIN_GAMES ? (100 * wins) / games : null;
@@ -355,7 +357,7 @@ function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="flex shrink-0 gap-0.5">
           {icons.map((i) => (
-            <ChampionIcon key={i.name} name={i.name} src={i.src} size={24} />
+            <ChampionIcon key={i.name} name={i.name} src={i.src} size={24} tone={i.tone} />
           ))}
         </span>
         <div className="min-w-0 flex-1">
@@ -372,17 +374,19 @@ function SetupLine({ rank, icons, name, games, wins, of }: { rank: number; icons
         <Label>{ui.gamesLabel}</Label>
         {games}
       </span>
-      <span className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`} title={`${wins}-${games - wins}`}>
-        <Label>winrate</Label>
-        {wr == null ? (
-          <>
-            <span aria-hidden>·</span>
-            <span className="sr-only">{ui.champion.winrateHidden(ITEM_WINRATE_MIN_GAMES)}</span>
-          </>
-        ) : (
-          ui.percent(Math.round(wr))
-        )}
-      </span>
+      {winrate ?? (
+        <span className={`w-14 shrink-0 text-right tabular-nums ${wr == null ? "text-muted" : ""}`} title={`${wins}-${games - wins}`}>
+          <Label>winrate</Label>
+          {wr == null ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="sr-only">{ui.champion.winrateHidden(ITEM_WINRATE_MIN_GAMES)}</span>
+            </>
+          ) : (
+            ui.percent(Math.round(wr))
+          )}
+        </span>
+      )}
     </li>
   );
 }
@@ -449,7 +453,7 @@ function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines
           </div>
           <ol className="mt-2 border border-line">
             {runes.map((r, i) => (
-              <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
+              <SetupLine key={r.rune} rank={i + 1} icons={[{ name: r.rune, src: r.icon, tone: r.kind === "shard" ? "light" : undefined }]} name={r.tree ? `${r.rune} · ${r.tree}` : r.rune} games={r.games} wins={r.wins} of={runeGames} />
             ))}
           </ol>
         </>
@@ -466,7 +470,7 @@ function ChampionRunesSection({ setups, lines }: { setups: ChampionSetups; lines
 }
 
 /** Below this many games, an item's win rate is not shown: one game more or less swings it too much. */
-const ITEM_WINRATE_MIN_GAMES = 5;
+export const ITEM_WINRATE_MIN_GAMES = 5;
 
 /** Lines shown before "voir tout". */
 const ITEM_LINES = 8;
@@ -629,7 +633,7 @@ type PoolKey = "games" | "wins" | "winrate" | "kda" | "share" | "champion";
 
 
 /** Two figures in the sort direction; a missing one (a KDA without deaths data) goes last either way. */
-function compareFigures(x: number | null, y: number | null, dir: 1 | -1): number {
+export function compareFigures(x: number | null, y: number | null, dir: 1 | -1): number {
   if (x == null || y == null) return x == null ? (y == null ? 0 : dir) : -dir;
 
   return x - y;

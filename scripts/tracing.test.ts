@@ -54,6 +54,7 @@ function answer(meta: Partial<Answer["meta"]>): Answer {
     roster: null,
     champion: null,
     pool: null,
+    runes: null,
     series: null,
     icons: {},
     iconTones: {},

@@ -882,6 +882,31 @@ function poolRoute(question: string, e: Entities): Route {
   };
 }
 
+/**
+ * One player's runes ("runes de Faker aux Worlds 2019", "keystones de Chovy en LCK 2025", "Faker's runes on Azir"), in the
+ * competition and period asked (every competition when none is named), on the champion and in the role it names.
+ */
+function playerRunesRoute(question: string, e: Entities): Route {
+  const player = e.players[0].player;
+  const notes: string[] = [];
+
+  if (e.teams.length) notes.push(msg().route.teamIgnoredRunes(e.teams[0].mention, player));
+
+  if (!e.league) notes.push(msg().route.noLeagueAll);
+
+  return {
+    kind: "tool",
+    call: {
+      tool: "player_runes",
+      input: { player, league: e.league, yearFrom: e.yearFrom, yearTo: e.yearTo, split: e.split, champion: e.champion?.champion ?? null, role: roleOf(question) },
+    },
+    confidence: 0.9,
+    reason: msg().route.playerRunes(RUNES.exec(question)![0]),
+    notes,
+    forced: true,
+  };
+}
+
 // Teams ranked ---------------------------------------------------------------------------
 
 /** What a team ranking is ordered by, most specific first. Without one of these words the standings keep "meilleures équipes". */
@@ -1011,9 +1036,12 @@ function recentRoute(question: string, e: Entities): Route {
   };
 }
 
+/** Words about rune pages: a champion's ("runes d'Azir") or, with one player named, the player's ("keystones de Chovy"). */
+const RUNES = word("runes?|keystones?|pages? de runes?|rune ?pages?");
+
 const CHAMPION_FOCUS_CUES: [ChampionFocus, RegExp][] = [
   ["items", word("items?|objets?|builds?|stuffs?|achats?")],
-  ["runes", word("runes?|keystones?")],
+  ["runes", RUNES],
   ["spells", word("sorts?(?: d'invocateurs?)?|summoner spells?|summoners?|spells?")],
 ];
 
@@ -1085,6 +1113,10 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
 
   // Two teams set against each other ("h2h KC et MKOI", "G2 vs Fnatic"): their series, decided by the rules.
   if (e.teams.length >= 2 && !e.players.length && OPPOSE.test(question)) return teamsRoute(question, e);
+
+  // One player and a rune word ("runes de Faker aux Worlds 2019", "keystones de Chovy", "runes de Faker sur Azir"): the player's
+  // runes, on the champion named with them. A champion alone keeps its profile, which shows its runes.
+  if (e.players.length === 1 && !cue && RUNES.test(question)) return playerRunesRoute(question, e);
 
   // One player or one team and a pool word ("champion pool de Faker", "quels champions joue Keria", "pool de T1 aux Worlds 2023"),
   // before the roster: "quels champions joue le mid de T1" asks for champions, not players.
@@ -1325,6 +1357,16 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     word(
       "champions?|champs?|jou[ée]e?s?|joue(?:nt)?|jouait|played|plays?|picks?|pick[ée]s?|stats?|statistiques?|win ?rates?|kda|bilan|r[ée]sultats?|" +
         "victoires?|d[ée]faites?|liste|list|diversit[ée]|vari[ée]t[ée]|uniques?|diff[ée]rents?|souvent|often|carri[èe]re|career|en|in|au|at",
+    ),
+  ],
+  player_runes: [
+    RUNES,
+    ...SPLIT_CUES.map((c) => c.pattern),
+    ...ROLE_CUES.map((r) => r.pattern),
+    word(
+      "pages?|arbres?|trees?|fragments?|shards?|primaires?|primary|secondaires?|secondary|stats?|statistiques?|sur|on|avec|with|jou[ée]e?s?|played|" +
+        "pris|prend|prises?|takes?|took|utilis[ée]e?s?|used|uses?|quels?|quelles?|which|what|en|in|au|aux|at|win ?rates?|victoires?|wins?|" +
+        "(?:les? |la )?plus (?:fr[ée]quente?s?|jou[ée]e?s?|utilis[ée]e?s?)|most (?:frequent|common|used|played)|souvent|often|pr[ée]f[ée]r[ée]e?s?|favou?rites?|carri[èe]re|career",
     ),
   ],
   player_leaderboard: [

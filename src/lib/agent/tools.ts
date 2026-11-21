@@ -26,8 +26,12 @@ import {
   type GameScoreboard,
   LEAGUE_NAMES,
   type PlayerProfile,
+  type PlayerRunes,
   type ResultRow,
   RUNE_KINDS,
+  type RuneKind,
+  type RunePage,
+  type RuneTree,
   type ScoreboardPlayer,
   type ScoreboardTeam,
   type Side,
@@ -292,6 +296,17 @@ export const PlayerIngameInput = z.object({
   minute: MinuteInput,
 });
 
+export const PlayerRunesInput = z.object({
+  player: z.string().min(1).describe("Player handle or Leaguepedia page (Faker, Chovy...)"),
+  league: League.nullable().describe("Restrict to one competition, null for every competition"),
+  ...Period,
+  split: z.enum(["Spring", "Summer", "Winter"]).nullable().describe("Restrict to one split of the season, null for the whole season"),
+  champion: z.string().min(1).nullable().describe("Only the player's games on this champion ('runes de Faker sur Azir'), null for every champion"),
+  role: z.enum(ROLES).nullable().describe("Only the player's games in this role, null for every role"),
+});
+
+export type PlayerRunesInput = z.infer<typeof PlayerRunesInput>;
+
 export const LeaderboardInput = z.object({
   subject: z.enum(["player", "team"]),
   metric: z.enum([...new Set([...PLAYER_METRICS, ...TEAM_METRICS])]).describe(
@@ -458,6 +473,7 @@ export type ToolOutput = {
   roster?: TeamRoster;
   champion?: ChampionProfile;
   pool?: ChampionPool;
+  runes?: PlayerRunes;
   series?: SeriesList;
   /** Champion name → icon of every champion the table names. */
   icons?: Record<string, string>;
@@ -1999,20 +2015,17 @@ const ChampionSpellsRow = z.object({ spell1: Text, spell2: NullableText, icon1: 
 
 const ChampionRuneRow = z.object({ rune: Text, kind: z.enum(RUNE_KINDS), tree: NullableText, icon: NullableText, games: z.number(), wins: z.number() });
 
-/** A champion's summoner spell pairs and runes in the scope (`gp` is v_game_players), and the games that have them. */
-async function championSetups(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionSetups> {
-  const params: Params = {};
-  const where = championScope(input, params);
+/** The runes of a scope's picks, as both the champion and the player views read them. */
+type ScopeRunes = Pick<ChampionSetups, "keystoneGames" | "pageGames" | "runes" | "notes">;
 
-  const spells = await selectAll(
-    db,
-    ChampionSpellsRow,
-    `SELECT gp.spell1, gp.spell2, ANY_VALUE(s1.icon_url) AS icon1, ANY_VALUE(s2.icon_url) AS icon2, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
-     FROM v_game_players gp LEFT JOIN summoner_spells s1 ON s1.name = gp.spell1 LEFT JOIN summoner_spells s2 ON s2.name = gp.spell2
-     WHERE ${where} AND gp.spell1 IS NOT NULL
-     GROUP BY gp.spell1, gp.spell2 ORDER BY games DESC, gp.spell1, gp.spell2`,
-    params,
-  );
+/**
+ * The runes of the picks a scope holds (`gp` is v_game_players; `scope` writes its condition into the parameters it
+ * is given), by part of the page, the games that list a keystone or the whole page, and why part of the scope has
+ * none. `picks`: the scope's games, the denominator of the notes.
+ */
+async function scopeRunes(db: Db, scope: (params: Params) => string | Promise<string>, picks: number): Promise<ScopeRunes> {
+  const params: Params = {};
+  const where = await scope(params);
 
   // A stat shard taken twice on a page counts once, as two copies of an item do.
   const runes = await selectAll(
@@ -2046,6 +2059,24 @@ async function championSetups(db: Db, input: ChampionStatsInput, picks: number):
         : say("Seule la keystone est listée pour ces parties (page de runes complète listée à partir de 2020).", "Only the keystone is listed for these games (full rune page listed from 2020)."),
     );
 
+  return { keystoneGames: counts.keystones, pageGames: counts.pages, runes: runes.map((r) => ({ ...r, icon: runeIcon(r.rune, r.icon) })), notes };
+}
+
+/** A champion's summoner spell pairs and runes in the scope (`gp` is v_game_players), and the games that have them. */
+async function championSetups(db: Db, input: ChampionStatsInput, picks: number): Promise<ChampionSetups> {
+  const params: Params = {};
+  const where = championScope(input, params);
+
+  const spells = await selectAll(
+    db,
+    ChampionSpellsRow,
+    `SELECT gp.spell1, gp.spell2, ANY_VALUE(s1.icon_url) AS icon1, ANY_VALUE(s2.icon_url) AS icon2, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
+     FROM v_game_players gp LEFT JOIN summoner_spells s1 ON s1.name = gp.spell1 LEFT JOIN summoner_spells s2 ON s2.name = gp.spell2
+     WHERE ${where} AND gp.spell1 IS NOT NULL
+     GROUP BY gp.spell1, gp.spell2 ORDER BY games DESC, gp.spell1, gp.spell2`,
+    params,
+  );
+
   return {
     spellGames: spells.reduce((n, s) => n + s.games, 0),
     spells: spells.map((s) => ({
@@ -2053,10 +2084,7 @@ async function championSetups(db: Db, input: ChampionStatsInput, picks: number):
       games: s.games,
       wins: s.wins,
     })),
-    keystoneGames: counts.keystones,
-    pageGames: counts.pages,
-    runes: runes.map((r) => ({ ...r, icon: runeIcon(r.rune, r.icon) })),
-    notes,
+    ...(await scopeRunes(db, (p) => championScope(input, p), picks)),
   };
 }
 
@@ -2894,6 +2922,261 @@ LIMIT 200`),
 
     return p ? { ...input, name: p.player } : null;
   },
+};
+
+// 4d. A player's runes -----------------------------------------------------------------
+
+/** A player's picks in the scope (`gp` is v_game_players): the pool's scope, narrowed to a champion and a role when asked. */
+async function playerRunesScope(db: Db, input: PlayerRunesInput, params: Params): Promise<string> {
+  const pool = await poolScope(db, { subject: "player", name: input.player, league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo, split: input.split }, params);
+  const champion = input.champion ? ((params.champion = input.champion), "AND gp.champion = :champion") : "";
+  const role = input.role ? ((params.role = input.role), "AND gp.role = :role") : "";
+
+  return `${pool} ${champion} ${role}`;
+}
+
+const PlayerRunesChampionRow = z.object({ champion: Text, icon: NullableText, games: z.number(), wins: z.number() });
+
+const RunePageRow = z.object({ page: Text, games: z.number(), wins: z.number() });
+
+/** How many pages the view and the summary show. */
+const RUNE_PAGES = 5;
+
+/** The part of the page a slot of v_player_runes holds. */
+const slotKind = (slot: number): RuneKind => (slot === 1 ? "keystone" : slot <= 4 ? "primary" : slot <= 6 ? "secondary" : "shard");
+
+/**
+ * The full pages of a scope without the stat shards (the keystone, three primary and two secondary runes), most games
+ * first, with the secondary trees they show. A page whose keystone or second slot is not listed is not counted.
+ */
+async function scopePages(db: Db, input: PlayerRunesInput, runes: PlayerRunes["runes"]): Promise<{ pages: RunePage[]; secondary: RuneTree[] }> {
+  const params: Params = {};
+  const where = await playerRunesScope(db, input, params);
+
+  const rows = await selectAll(
+    db,
+    RunePageRow,
+    `WITH pages AS (
+       SELECT gp.game_id, MAX(gp.win) AS win, STRING_AGG(r.slot || '=' || r.rune, '|' ORDER BY r.slot) AS page
+       FROM v_game_players gp CROSS JOIN LATERAL (SELECT * FROM v_player_runes r WHERE r.game_id = gp.game_id AND r.player = gp.player AND r.slot <= 6 OFFSET 0) r
+       WHERE ${where}
+       GROUP BY gp.game_id, gp.player
+       HAVING MIN(r.slot) = 1 AND COUNT(CASE WHEN r.slot = 2 THEN 1 END) = 1
+     )
+     SELECT page, COUNT(*) AS games, COALESCE(SUM(win), 0) AS wins FROM pages GROUP BY page ORDER BY games DESC, wins DESC, page`,
+    params,
+  );
+
+  // Icons and trees as the rune lines give them: every rune of a page is among them.
+  const known = new Map(runes.map((r) => [r.rune, r]));
+
+  const pages = rows.map((row) => ({
+    games: row.games,
+    wins: row.wins,
+    runes: row.page.split("|").map((part) => {
+      const at = part.indexOf("=");
+      const rune = part.slice(at + 1);
+
+      return { rune, kind: slotKind(Number(part.slice(0, at))), tree: known.get(rune)?.tree ?? null, icon: known.get(rune)?.icon ?? runeIcon(rune, null) };
+    }),
+  }));
+
+  const secondary = new Map<string, RuneTree>();
+
+  for (const p of pages) {
+    const tree = p.runes.find((r) => r.kind === "secondary")?.tree;
+
+    if (!tree) continue;
+    const t = secondary.get(tree) ?? { tree, part: "secondary", games: 0, wins: 0 };
+    t.games += p.games;
+    t.wins += p.wins;
+    secondary.set(tree, t);
+  }
+
+  return { pages: pages.slice(0, RUNE_PAGES), secondary: [...secondary.values()].sort((a, b) => b.games - a.games || a.tree.localeCompare(b.tree)) };
+}
+
+/** The primary trees, counted on the keystones: a keystone belongs to the primary path of its page. */
+function primaryTrees(runes: PlayerRunes["runes"]): RuneTree[] {
+  const trees = new Map<string, RuneTree>();
+
+  for (const r of runes) {
+    if (r.kind !== "keystone" || !r.tree) continue;
+    const t = trees.get(r.tree) ?? { tree: r.tree, part: "primary", games: 0, wins: 0 };
+    t.games += r.games;
+    t.wins += r.wins;
+    trees.set(r.tree, t);
+  }
+
+  return [...trees.values()].sort((a, b) => b.games - a.games || a.tree.localeCompare(b.tree));
+}
+
+/** "Electrocute (10/14 parties, 71 %, 60 % de victoires)": share of the games that list it, then its win rate. */
+const runeLine = (name: string, games: number, wins: number, of: number) =>
+  say(`${name} (${games}/${of} parties, ${pct(games, of)} %, ${pct(wins, games)} % de victoires)`, `${name} (${games}/${of} games, ${pct(games, of)}%, ${pct(wins, games)}% wins)`);
+
+const playerRunes: ToolDef<PlayerRunesInput> = {
+  name: "player_runes",
+  label: phrase("runes d'un joueur", "player runes"),
+  description:
+    "One player's runes in a competition, period and split, optionally on one champion and in one role: keystones with games, wins and win rate, " +
+    "the primary and secondary trees, the primary and secondary runes and the stat shards, and the most frequent rune pages. " +
+    "Use it for 'runes de Faker aux Worlds 2019', 'keystones de Chovy en LCK 2025', 'runes de Faker sur Azir', \"Faker's runes at Worlds 2019\". " +
+    "A champion's runes without a player go to champion_event_stats.",
+  plan: async (db, input) => {
+    const params: Params = {};
+
+    // The player's games by champion: the scope the runes are read on, its most played champion, and an empty result
+    // only when the player has no game there (a scope without runes still answers, with its note).
+    return {
+      params,
+      sql: tidy(`SELECT gp.champion, ANY_VALUE(c.icon_url) AS icon, COUNT(*) AS games, COALESCE(SUM(gp.win), 0) AS wins
+FROM v_game_players gp LEFT JOIN champions c ON c.name = gp.champion
+WHERE ${await playerRunesScope(db, input, params)}
+GROUP BY gp.champion
+ORDER BY games DESC, wins DESC, gp.champion`),
+    };
+  },
+  relaxations: (input, entities) => {
+    const out: Relaxation<typeof input>[] = [];
+
+    if (input.split) out.push({ key: "split", input: { ...input, split: null }, note: say(`Aucune partie en ${input.split} : toute la saison.`, `No game in ${input.split}: the whole season.`), reason: say("filtre de split retiré", "split filter removed") });
+
+    if (hasPeriod(input)) out.push(noPeriod({ ...input, split: null }, say("toutes les saisons", "every season")));
+
+    const resolved = entities.players.find((p) => p.player === input.player || p.otherCandidates.includes(input.player));
+
+    for (const other of resolved ? [resolved.player, ...resolved.otherCandidates] : [])
+      if (other !== input.player)
+        out.push({
+          key: `player:${other}`,
+          input: { ...input, player: other },
+          note: say(`« ${resolved!.mention} » désigne aussi ${other} : runes de ${other}.`, `"${resolved!.mention}" also names ${other}: runes of ${other}.`),
+          reason: say(`alias homonyme essayé : ${other}`, `homonym alias tried: ${other}`),
+        });
+
+    return out;
+  },
+  format: async (db, input, sqlRows): Promise<ToolOutput> => {
+    const champions = z.array(PlayerRunesChampionRow).parse(sqlRows);
+    const games = champions.reduce((n, c) => n + c.games, 0);
+    const wins = champions.reduce((n, c) => n + c.wins, 0);
+    const league = await leagueShortName(db, input.league);
+    const scope = [scopeLabel(league, input), input.split ? `(${input.split})` : ""].filter(Boolean).join(" ");
+    const runes = await scopeRunes(db, (p) => playerRunesScope(db, input, p), games);
+    const { pages, secondary } = runes.pageGames ? await scopePages(db, input, runes.runes) : { pages: [], secondary: [] };
+    const champion = input.champion ? { name: input.champion, icon: champions[0]?.icon ?? null } : null;
+    const role = input.role ? (ROLE_LABEL_BY_NAME.get(input.role) ?? input.role) : null;
+
+    const view: PlayerRunes = {
+      player: input.player,
+      scope,
+      champion,
+      role,
+      games,
+      wins,
+      keystoneGames: runes.keystoneGames,
+      pageGames: runes.pageGames,
+      runes: runes.runes,
+      trees: [...primaryTrees(runes.runes), ...secondary],
+      pages,
+      notes: runes.notes,
+    };
+
+    const keystones = runes.runes.filter((r) => r.kind === "keystone");
+    const page = pages[0];
+    const on = [champion ? say(`sur ${champion.name}`, `on ${champion.name}`) : "", role ? say(`en ${role}`, `as ${role}`) : ""].filter(Boolean).join(" ");
+    const where = [scope || allCompetitions(), on].filter(Boolean).join(", ");
+
+    const leading = keystones.slice(0, 3).map((r) => runeLine(r.rune, r.games, r.wins, runes.keystoneGames)).join(", ");
+
+    // The keystones in the first sentence: it is the description of a link to the answer.
+    const facts =
+      (keystones.length
+        ? say(`Runes de ${input.player} (${where}) sur ${games} partie${games > 1 ? "s" : ""}, keystones les plus fréquentes : ${leading}.`, `${input.player}'s runes (${where}) over ${games} game${games === 1 ? "" : "s"}, most frequent keystones: ${leading}.`)
+        : say(`Runes de ${input.player} (${where}) : ${games} partie${games > 1 ? "s" : ""}.`, `${input.player}'s runes (${where}): ${games} game${games === 1 ? "" : "s"}.`)) +
+      (page
+        ? say(` Page la plus fréquente (hors fragments) : ${page.runes.map((r) => r.rune).join(", ")} (${page.games}/${runes.pageGames} parties).`, ` Most frequent page (shards aside): ${page.runes.map((r) => r.rune).join(", ")} (${page.games}/${runes.pageGames} games).`)
+        : "") +
+      (runes.notes.length ? ` ${runes.notes.join(" ")}` : "");
+
+    const pagesParams: Params = {};
+
+    const events = (await selectAll(
+      db,
+      z.object({ event_page: Text }),
+      `SELECT gp.event_page FROM v_game_players gp WHERE ${await playerRunesScope(db, input, pagesParams)} GROUP BY gp.event_page ORDER BY MAX(gp.played_at) DESC NULLS LAST LIMIT 12`,
+      pagesParams,
+    )).map((r) => r.event_page);
+
+    const at = inLeague(league);
+    const year = input.yearFrom != null && input.yearFrom === input.yearTo ? input.yearFrom : null;
+    // "aux Worlds 2019", "en LCK", "en 2016", or nothing: where the follow-ups ask.
+    const asked = at ? `${at}${year ? ` ${year}` : ""}` : year ? say(`en ${year}`, `in ${year}`) : "";
+    const top = champions[0]?.champion;
+    const of = (name: string) => (/^[AEIOUYH]/i.test(name) ? "d'" : "de ");
+    const tail = asked ? ` ${asked}` : "";
+
+    const followUps = [
+      // Narrower: the runes on the champion the player played most; wider: that champion's runes across every player of the competition.
+      ...(runes.keystoneGames && !champion && top && champions.length > 1 ? [say(`Runes de ${input.player} sur ${top}${tail}`, `${input.player}'s runes on ${top}${tail}`)] : []),
+      ...(runes.keystoneGames && top && at ? [say(`Runes ${of(top)}${top} ${asked}`, `${top} runes ${asked}`)] : []),
+      say(`Champion pool de ${input.player}${tail}`, `${input.player}'s champion pool${tail}`),
+      say(`Résultats de ${input.player} ${league === "Worlds" || !at ? "à tous les Worlds" : at}`, `${input.player}'s results ${league === "Worlds" || !at ? "at every Worlds" : at}`),
+    ].slice(0, 3);
+
+    const title = say(`Runes de ${input.player}`, `${input.player}'s runes`) + (champion ? say(` sur ${champion.name}`, ` on ${champion.name}`) : "") + titleScope(league, input, " — ") + (input.split ? ` ${input.split}` : "");
+
+    return {
+      title,
+      runes: view,
+      table: {
+        columns: [say("partie de la page", "part of the page"), "rune", say("arbre", "tree"), say("parties", "games"), say("victoires", "wins"), "winrate"],
+        // By part of the page, most games first in each.
+        rows: RUNE_KINDS.flatMap((kind) => runes.runes.filter((r) => r.kind === kind)).map((r) => [tr(RUNE_KIND_LABEL[r.kind]), r.rune, r.tree, r.games, r.wins, r.games ? pct(r.wins, r.games) : null]),
+      },
+      facts,
+      sources: [
+        { label: `Leaguepedia — ${input.player}`, url: wikiUrl(input.player) },
+        ...eventSources(events, 12),
+        setupsSource(),
+        { label: "Riot Data Dragon — runes", url: `${DDRAGON_BASE}/api/versions.json` },
+      ],
+      followUps,
+      totals: {
+        games,
+        wins,
+        keystone_games: runes.keystoneGames,
+        page_games: runes.pageGames,
+        top_keystone: keystones[0]?.rune ?? "",
+        top_keystone_games: keystones[0]?.games ?? 0,
+        top_keystone_wins: keystones[0]?.wins ?? 0,
+        keystones: keystones.length,
+        top_primary_tree: view.trees.find((t) => t.part === "primary")?.tree ?? "",
+        top_secondary_tree: secondary[0]?.tree ?? "",
+        top_page_games: page?.games ?? 0,
+        top_champion: top ?? "",
+      },
+    };
+  },
+  normalize: async (db, input) => {
+    const p = await resolvePlayer(db, input.player, { league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
+
+    if (!p) return null;
+
+    if (!input.champion) return { ...input, player: p.player };
+    const c = await resolveChampion(db, input.champion);
+
+    return c ? { ...input, player: p.player, champion: c.champion } : null;
+  },
+};
+
+/** The parts of a rune page, as the answers name them. */
+const RUNE_KIND_LABEL: Record<RuneKind, Phrase> = {
+  keystone: phrase("keystone", "keystone"),
+  primary: phrase("primaire", "primary"),
+  secondary: phrase("secondaire", "secondary"),
+  shard: phrase("fragment", "shard"),
 };
 
 // 5. Standings / roll of honour -------------------------------------------------------
@@ -5648,6 +5931,7 @@ export const TOOLS = {
   champion_event_stats: defineTool(ChampionStatsInput, championEventStats),
   champion_ranking: defineTool(ChampionRankingInput, championRanking),
   champion_pool: defineTool(ChampionPoolInput, championPool),
+  player_runes: defineTool(PlayerRunesInput, playerRunes),
   player_leaderboard: defineTool(PlayerLeaderboardInput, playerLeaderboard),
   tournament_standings: defineTool(StandingsInput, tournamentStandings),
   player_ingame_stats: defineTool(PlayerIngameInput, playerIngameStats),

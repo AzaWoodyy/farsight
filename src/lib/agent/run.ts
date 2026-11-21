@@ -412,6 +412,8 @@ export async function answerProfiles(db: Db, call: ToolCall): Promise<PlayerProf
       return playerProfiles(db, [call.input.player], call.input);
     case "champion_pool":
       return call.input.subject === "player" ? playerProfiles(db, [call.input.name], call.input) : [];
+    case "player_runes":
+      return playerProfiles(db, [call.input.player], call.input);
     default:
       return [];
   }
@@ -427,6 +429,7 @@ const EMPTY_VIEWS = {
   roster: null,
   champion: null,
   pool: null,
+  runes: null,
   series: null,
   icons: {},
   iconTones: {},
@@ -594,6 +597,7 @@ async function format(
     roster: out.roster ?? null,
     champion: out.champion ?? null,
     pool: out.pool ?? null,
+    runes: out.runes ?? null,
     series: out.series ?? null,
     icons: { ...badges.icons, ...out.icons },
     iconTones: badges.tones,

@@ -51,6 +51,17 @@ export const LAB_GROUPS: LabGroup[] = [
     ],
   },
   {
+    id: "player_runes",
+    title: "Runes de joueur",
+    variants: [
+      { id: "runes-full", label: "pages complètes", question: "Keystones de Chovy en LCK 2025" },
+      { id: "runes-worlds-2019", label: "Worlds 2019", question: "Runes de Faker aux Worlds 2019" },
+      { id: "runes-keystone-only", label: "keystone seule (LPL 2019)", question: "Runes de Rookie en LPL 2019" },
+      { id: "runes-champion", label: "sur un champion", question: "Runes de Faker sur Azir" },
+      { id: "runes-none", label: "aucune rune avant 2018", question: "Runes de Faker aux Worlds 2016" },
+    ],
+  },
+  {
     id: "player_leaderboard",
     title: "Classement de joueurs",
     variants: [
