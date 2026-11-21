@@ -267,10 +267,11 @@ export async function execute(db: Db, question: string, entities: Entities, firs
       return { rows, plan, problem: null, empty: null };
     }
 
-    // An empty generated query whose scope explains it: another query would come back empty too.
-    const empty = problem.kind === "empty" && !plan.tool ? await explainEmpty(db, entities, plan.sql) : null;
+    // An empty generated query whose scope explains it: another query would come back empty too. A typed tool whose
+    // scope holds no game at all says so too: its relaxations would answer for a period or a competition not asked.
+    const empty = problem.kind === "empty" && (!plan.tool || !plan.relaxed.length) ? await explainEmpty(db, entities, plan.sql) : null;
 
-    if (empty?.conclusive) {
+    if (empty?.conclusive && (!plan.tool || empty.reason === "no_games")) {
       step.add(entry({ status: "warn", title: m.emptyExplained, detail: empty.summary }));
       step.done("warn", empty.title);
 

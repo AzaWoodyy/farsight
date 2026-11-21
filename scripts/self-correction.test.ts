@@ -137,3 +137,60 @@ test("succeeds at once when the scope has games", async () => {
     await db.close();
   }
 });
+
+/** Faker in the seeded T1 lineup: the Worlds 2023 game is his only one. */
+async function seedPlayer(db: TestDb) {
+  await seed(db);
+  await db.exec(`
+    INSERT INTO players(id,page,ign) VALUES(1,'Faker','Faker');
+    INSERT INTO game_players(game_id,player_id,team_id,side,role,win,kills,deaths,assists) VALUES(1,1,1,1,'Mid',1,3,1,7);
+  `);
+}
+
+const faker: Entities = {
+  ...entities,
+  players: [{ mention: "Faker", player: "Faker", matchedAlias: "Faker", realName: null, nativeName: null, otherCandidates: [], ambiguity: null }],
+  league: WORLDS,
+  leagueShort: "Worlds",
+};
+
+async function recentGames(db: TestDb, scope: Entities) {
+  const first = toolPlan(await bindTool(db, { tool: "player_recent_games", input: { player: "Faker", league: WORLDS, yearFrom: scope.yearFrom, yearTo: scope.yearTo, count: null } }), 1);
+  const notes: string[] = [];
+  const result = await execute(db, "dernières parties de Faker aux Worlds", scope, first, () => {}, notes);
+
+  return { ...result, notes };
+}
+
+test("says the named scope holds no game instead of showing another period", async () => {
+  const db = await testDb();
+
+  try {
+    await seedPlayer(db);
+    const out = await recentGames(db, { ...faker, yearFrom: 2020, yearTo: 2020 });
+
+    expect(out.rows).toEqual([]);
+    expect(out.plan.attempt).toBe(1);
+    expect(out.plan.relaxed).toEqual([]);
+    expect(out.notes).toEqual([]);
+    expect(out.empty?.reason).toBe("no_games");
+    expect(out.empty?.summary).toBe("Aucune partie de Faker aux Worlds en 2020 dans la base.");
+  } finally {
+    await db.close();
+  }
+});
+
+test("answers the named scope when it holds the games", async () => {
+  const db = await testDb();
+
+  try {
+    await seedPlayer(db);
+    const out = await recentGames(db, { ...faker, yearFrom: 2023, yearTo: 2023 });
+
+    expect(out.rows).toHaveLength(1);
+    expect(out.plan.attempt).toBe(1);
+    expect(out.empty).toBeNull();
+  } finally {
+    await db.close();
+  }
+});
