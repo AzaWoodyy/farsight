@@ -128,6 +128,8 @@ export type RiotFetchOptions = {
   local?: ObjectStore;
   ingameFile?: string;
   fetchPages?: typeof wikiPages;
+  /** Clock of the wiki time budget, for tests. */
+  now?: () => number;
 };
 
 export type RiotFetchCounts = {
@@ -332,9 +334,12 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   // 3. The wiki, throttled and time-boxed.
   if (todo.length) console.log(`riot: ${todo.length} games to download from the wiki (${GAMES_PER_REQUEST} per request)`);
 
-  const deadline = opts.budgetMinutes == null ? Infinity : Date.now() + opts.budgetMinutes * 60_000;
+  const now = opts.now ?? Date.now;
+  const deadline = opts.budgetMinutes == null ? Infinity : now() + opts.budgetMinutes * 60_000;
   const started = Date.now();
   const total = todo.length;
+  /** Games a response left out: each is asked once more, alone, before any fresh batch. */
+  const retries: RiotGameRow[] = [];
   const retried = new Set<string>();
   let done = 0;
   let lastLog = 0;
@@ -363,22 +368,26 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
     }
   };
 
-  while (todo.length) {
-    if (Date.now() > deadline) {
-      counts.left += todo.length;
-      console.log(`riot: time budget reached, ${todo.length} games left for the next run`);
+  while (todo.length || retries.length) {
+    if (now() > deadline) {
+      const pending = todo.length + retries.length;
+      counts.left += pending;
+      console.log(`riot: time budget reached, ${pending} games left for the next run`);
       break;
     }
 
-    const batch = todo.splice(0, GAMES_PER_REQUEST);
+    // A retry is always a request of its own, whatever the batch size, so that the
+    // game it gave up on is not left out again next to another one.
+    const single = retries.length > 0;
+    const batch = single ? retries.splice(0, 1) : todo.splice(0, GAMES_PER_REQUEST);
     let downloaded: Downloaded[];
 
     try {
       downloaded = await download(batch, fetchPages);
       failures = 0;
     } catch (err) {
-      // The wiki is down or refusing us: pause, then try again; give up after a long outage.
-      todo.unshift(...batch);
+      // The wiki is down or refusing us: pause, then try the same request again; give up after a long outage.
+      (single ? retries : todo).unshift(...batch);
 
       if (++failures >= MAX_OUTAGE_PAUSES) throw err;
       console.warn(`  riot: ${err instanceof Error ? err.message : String(err)}; pausing ${OUTAGE_PAUSE_MS / 60_000} min (${failures}/${MAX_OUTAGE_PAUSES})`);
@@ -392,7 +401,7 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
         if (retried.has(row.Key)) counts.left++;
         else {
           retried.add(row.Key);
-          todo.unshift(row);
+          retries.push(row);
         }
 
         continue;
@@ -417,10 +426,10 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
       summarize(result, summaries, counts);
     }
 
-    if (done - lastLog >= 100 || !todo.length) {
+    if (done - lastLog >= 100 || !(todo.length || retries.length)) {
       lastLog = done;
       const perGame = (Date.now() - started) / Math.max(1, done);
-      const eta = (todo.length * perGame) / 3_600_000;
+      const eta = ((todo.length + retries.length) * perGame) / 3_600_000;
       console.log(
         `  riot wiki ${done}/${total} (${batch[0].League}) · ${counts.from_wiki} downloaded, ${counts.missing} missing, ${counts.invalid} invalid · ` +
           `${(perGame / 1000).toFixed(2)} s/game, about ${eta.toFixed(1)} h left · ${cargoStats.requests} requests · ${new Date().toISOString().slice(11, 16)} UTC`,
