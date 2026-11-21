@@ -111,6 +111,9 @@ export type MapSide = (typeof MAP_SIDES)[number];
 
 const MapSideInput = z.enum(MAP_SIDES).nullable().describe("Only the games played on this side of the map ('côté bleu', 'red side'), null for both sides");
 
+/** A split of the season for the rankings; absent in the calls written before it, null from the model for the whole season. */
+const RankingSplitInput = z.enum(["Spring", "Summer", "Winter"]).nullish().describe("Restrict to one split of the season ('LEC Spring 2024', 'au printemps'), null for the whole season");
+
 export const PlayerHistoryInput = z.object({
   player: z.string().min(1).describe("Player handle or Leaguepedia page (Chovy, Faker, 정지훈...)"),
   league: League,
@@ -235,6 +238,7 @@ export const ChampionRankingInput = z.object({
     .max(200)
     .nullable()
     .describe("Minimum picks (games on the champion: 'plus de 4 parties' is 5) for winrate, kda, per-game and total rankings, null for the default (none for a total)"),
+  split: RankingSplitInput,
 });
 
 export type ChampionRankingInput = z.infer<typeof ChampionRankingInput>;
@@ -266,6 +270,7 @@ export const PlayerLeaderboardInput = z.object({
     ),
   minGames: z.number().int().min(1).max(200).nullable().describe("Minimum games to be ranked, null for the default"),
   side: MapSideInput,
+  split: RankingSplitInput,
 });
 
 export type PlayerLeaderboardInput = z.infer<typeof PlayerLeaderboardInput>;
@@ -1053,6 +1058,32 @@ function splitFilter(column: string, input: { split: string | null }, params: Pa
 
   return `AND ${column} IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = :split)`;
 }
+
+/**
+ * A ranking's games: its competition scope, then the tournament pages of the split asked. The split's own alias (`ts`)
+ * never shadows the stats view (`s`) the rankings read.
+ */
+function rankingScope(alias: string, input: { league: string | null; role?: string | null; side?: MapSide | null; split?: string | null } & Period, params: Params): string {
+  const scope = competitionScope(alias, input, params);
+
+  if (!input.split) return scope;
+  params.split = input.split;
+
+  return `${scope} AND ${alias}.tournament_page IN (SELECT ts.tournament_page FROM v_tournaments ts WHERE ts.split = :split)`;
+}
+
+/** "au split Spring en LEC en 2024": the scope of a ranking as a sentence says it, its split first. */
+const rankingScopeLabel = (league: string, input: Period & { split?: string | null }) =>
+  [input.split ? say(`au split ${input.split}`, `in the ${input.split} split`) : "", scopeLabel(league, input)].filter(Boolean).join(" ");
+
+/** " — LEC 2024 Spring": a ranking's title ending, the split after the season. */
+const rankingTitleScope = (league: string, input: Period & { split?: string | null }, open: " — " | " (") => {
+  const scope = titleScope(league, input, open);
+
+  if (!input.split) return scope;
+
+  return scope ? (open === " (" ? scope.replace(/\)$/, ` ${input.split})`) : `${scope} ${input.split}`) : `${open}${input.split}${open === " (" ? ")" : ""}`;
+};
 
 /** The roster's competition: the one asked, otherwise every competition but those a roster leaves out (ROSTER_EXCLUDED). */
 const rosterLeague = (column: string, input: TeamRosterInput, params: Params) =>
@@ -2445,6 +2476,9 @@ const DEFAULT_MIN_PICKS = atLeast(3, "(n.games + 49) / 50");
 /** A per-game average swings more on a few games: at least 5 picks, the cut Riot's own Worlds stats page applies. */
 const DEFAULT_MIN_PICKS_AVERAGE = atLeast(5, "(n.games + 49) / 50");
 
+/** The games a champion ranking counts: its competition, period and split, without the role and side its picks filter on. */
+const rankedChampionsScope = (input: ChampionRankingInput) => ({ ...leagueAndPeriod(input), split: input.split });
+
 /** A total needs no minimum: more picks is what makes it. A minimum the question sets still applies. */
 const needsMinPicks = (input: Pick<ChampionRankingInput, "sort" | "total">) => !["picks", "bans", "presence", "players"].includes(input.sort) && !totalSortOf(input);
 
@@ -2486,7 +2520,7 @@ const championRanking: ToolDef<ChampionRankingInput> = {
     return {
       params,
       sql: tidy(`WITH ev AS (
-  SELECT g.game_id, g.length_s FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)}
+  SELECT g.game_id, g.length_s FROM v_games g WHERE ${rankingScope("g", rankedChampionsScope(input), params)}
 ),
 n AS (SELECT COUNT(*) AS games FROM ev),
 picks AS (
@@ -2498,7 +2532,7 @@ picks AS (
          ${total && !total.ingame ? `SUM(CASE WHEN ${role} THEN gp.${total.column} END)` : "NULL"} AS total,
          ${perMinuteOf("damage")} AS dpm, ${perMinuteOf("gold")} AS gpm, ${perMinuteOf("cs")} AS cspm,
          COUNT(DISTINCT CASE WHEN ${role} THEN gp.player END) AS players
-  FROM v_game_players gp JOIN ev ON ev.game_id = gp.game_id WHERE ${competitionScope("gp", leagueAndPeriod(input), params)}
+  FROM v_game_players gp JOIN ev ON ev.game_id = gp.game_id WHERE ${rankingScope("gp", rankedChampionsScope(input), params)}
   GROUP BY gp.champion
 ),
 ig AS (
@@ -2507,10 +2541,10 @@ ig AS (
          AVG(CASE WHEN ${mine("s")} THEN s.xp_diff_15 END) AS xp_diff_15, 100.0 * AVG(CASE WHEN ${mine("s")} THEN s.first_blood_kill END) AS first_blood,
          AVG(CASE WHEN ${mine("s")} THEN s.solo_kills END) AS solo_kills,
          ${total?.ingame ? `SUM(CASE WHEN ${mine("s")} THEN s.${total.column} END)` : "NULL"} AS total
-  FROM v_game_player_stats s WHERE ${competitionScope("s", leagueAndPeriod(input), params)}
+  FROM v_game_player_stats s WHERE ${rankingScope("s", rankedChampionsScope(input), params)}
   GROUP BY s.champion
 ),
-ign AS (SELECT COUNT(DISTINCT s.game_id) AS games FROM v_game_player_stats s WHERE ${competitionScope("s", leagueAndPeriod(input), params)}),
+ign AS (SELECT COUNT(DISTINCT s.game_id) AS games FROM v_game_player_stats s WHERE ${rankingScope("s", rankedChampionsScope(input), params)}),
 bans AS (
   SELECT d.champion, COUNT(DISTINCT d.game_id) AS bans FROM v_draft d JOIN ev ON ev.game_id = d.game_id WHERE d.kind = 'ban' AND ${side("d")} GROUP BY d.champion
 ),
@@ -2545,14 +2579,14 @@ LIMIT 20`),
     if ((needsMinPicks(input) || (totalSortOf(input) && input.minPicks != null)) && input.minPicks !== 1)
       out.push({ key: "minPicks", input: { ...input, minPicks: 1 }, note: say("Trop peu de picks par champion dans ce périmètre : seuil abaissé à 1 pick.", "Too few picks per champion in this scope: threshold lowered to 1 pick."), reason: say("seuil de picks abaissé", "pick threshold lowered") });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
+    if (hasPeriod(input)) out.push(noPeriod(input, input.split ? say(`toutes les saisons (split ${input.split})`, `every season (${input.split} split)`) : say("toutes les saisons", "every season")));
 
     return out;
   },
   format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const all = z.array(ChampionRankingRow).parse(sqlRows);
     const league = await leagueShortName(db, input.league);
-    const scope = scopeLabel(league, input);
+    const scope = rankingScopeLabel(league, input);
     const totalSort = totalSortOf(input);
     const label = totalSort ? { title: CHAMPION_TOTAL[totalSort].title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL[input.sort];
     const labelEn = totalSort ? { title: CHAMPION_TOTAL[totalSort].en.title, criterion: totalCriterion(totalSort) } : CHAMPION_SORT_LABEL_EN[input.sort];
@@ -2575,12 +2609,12 @@ LIMIT 20`),
     const pages = (await selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT g.event_page FROM v_games g WHERE ${competitionScope("g", leagueAndPeriod(input), params)} GROUP BY g.event_page ORDER BY MAX(g.played_at) DESC NULLS LAST LIMIT 12`,
+      `SELECT g.event_page FROM v_games g WHERE ${rankingScope("g", rankedChampionsScope(input), params)} GROUP BY g.event_page ORDER BY MAX(g.played_at) DESC NULLS LAST LIMIT 12`,
       params,
     )).map((r) => r.event_page);
 
     const ongoingParams: Params = {};
-    const ongoing = await inProgressNote(db, competitionScope("g", leagueAndPeriod(input), ongoingParams), ongoingParams);
+    const ongoing = await inProgressNote(db, rankingScope("g", rankedChampionsScope(input), ongoingParams), ongoingParams);
 
     const line = (r: z.infer<typeof ChampionRankingRow>, i: number) =>
       `${i + 1}. ${r.champion} (${totalSort ? `${totalText(totalSort, r.total)}, ` : ""}` +
@@ -2614,7 +2648,7 @@ LIMIT 20`),
     const figure = totalSort ? `total_${totalSort}` : average;
 
     const out: ToolOutput = {
-      title: `${say(`Champions ${label.title}${role}`, `${labelEn.title}${role}`)}${titleScope(league, input, " — ")}`,
+      title: `${say(`Champions ${label.title}${role}`, `${labelEn.title}${role}`)}${rankingTitleScope(league, input, " — ")}`,
       icons: Object.fromEntries(rows.flatMap((r) => (r.icon ? [[r.champion, r.icon]] : []))),
       facts,
       sources: [
@@ -3472,7 +3506,7 @@ const playerLeaderboard: ToolDef<PlayerLeaderboardInput> = {
       params,
       sql: tidy(`WITH p AS (
   SELECT p.game_id, p.player, p.team, p.played_at, p.win, p.kills, p.deaths, p.assists, p.gold, p.cs, p.damage, p.vision
-  FROM v_game_players p WHERE ${competitionScope("p", input, params)}
+  FROM v_game_players p WHERE ${rankingScope("p", input, params)}
 ),
 team_kills AS (
   SELECT t.game_id, t.team, SUM(t.kills) AS team_kills, SUM(t.damage) AS team_damage, SUM(t.gold) AS team_gold FROM v_game_players t
@@ -3480,7 +3514,7 @@ team_kills AS (
 ),
 lengths AS (SELECT g.game_id, g.length_s FROM v_games g WHERE g.game_id IN (SELECT game_id FROM p)),
 st AS (
-  SELECT s.game_id, s.player, s.gold_diff_15 FROM v_game_player_stats s WHERE ${competitionScope("s", input, params)}
+  SELECT s.game_id, s.player, s.gold_diff_15 FROM v_game_player_stats s WHERE ${rankingScope("s", input, params)}
 ),
 b AS (
   SELECT p.*, tk.team_kills, tk.team_damage, tk.team_gold, l.length_s, st.gold_diff_15
@@ -3504,14 +3538,16 @@ LIMIT 20`),
     if (input.minGames == null && minGamesOfLeaderboard(input) > 3)
       out.push({ key: "minGames", input: { ...input, minGames: 3 }, note: say("Peu de parties par joueur dans ce périmètre : seuil abaissé à 3 parties.", "Few games per player in this scope: threshold lowered to 3 games."), reason: say("seuil de parties abaissé", "game threshold lowered") });
 
-    if (hasPeriod(input)) out.push(noPeriod(input, say("toutes les saisons", "every season")));
+    if (hasPeriod(input)) out.push(noPeriod(input, input.split ? say(`toutes les saisons (split ${input.split})`, `every season (${input.split} split)`) : say("toutes les saisons", "every season")));
 
     return out;
   },
   format: async (db, input, sqlRows): Promise<ToolOutput> => {
     const rows = z.array(PlayerLeaderRow).parse(sqlRows);
     const league = await leagueShortName(db, input.league);
-    const scope = scopeLabel(league, input);
+    const scope = rankingScopeLabel(league, input);
+    // The comparison a follow-up leads to reads no split: its scope is the competition and the period.
+    const followUpScope = scopeLabel(league, input);
     const def = PLAYER_CRITERION_DEFS[input.criterion];
     const minGames = minGamesOfLeaderboard(input);
     const who = `${input.role ? say(ROLE_PLAYERS[input.role], ROLE_PLAYERS_EN[input.role]) : say("joueurs", "players")}${sideLabel(input.side)}`;
@@ -3526,12 +3562,12 @@ LIMIT 20`),
     const pages = (await selectAll(
       db,
       z.object({ event_page: Text }),
-      `SELECT p.event_page FROM v_game_players p WHERE ${competitionScope("p", input, params)} GROUP BY p.event_page ORDER BY MAX(p.played_at) DESC NULLS LAST LIMIT 12`,
+      `SELECT p.event_page FROM v_game_players p WHERE ${rankingScope("p", input, params)} GROUP BY p.event_page ORDER BY MAX(p.played_at) DESC NULLS LAST LIMIT 12`,
       params,
     )).map((r) => r.event_page);
 
     const gameParams: Params = {};
-    const ongoing = await inProgressNote(db, competitionScope("g", leagueAndPeriod(input), gameParams), gameParams);
+    const ongoing = await inProgressNote(db, rankingScope("g", { ...leagueAndPeriod(input), split: input.split }, gameParams), gameParams);
 
     const line = (r: z.infer<typeof PlayerLeaderRow>, i: number) =>
       say(`${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""} : ${frNumber(value(r, input.criterion))}${def.unit ?? ""}${input.criterion === "games" ? " parties" : `, ${r.games} parties`}`, `${i + 1}. ${r.player}${r.team ? ` (${displayTeam(r.team)})` : ""}: ${frNumber(value(r, input.criterion))}${unitEn(def.unit)}${input.criterion === "games" ? " games" : `, ${r.games} games`}`);
@@ -3547,7 +3583,7 @@ LIMIT 20`),
       (ongoing ? ` ${ongoing}` : "");
 
     return {
-      title: `${say(`${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}`, `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} with the most ${en.label}` : input.role ? `Best ${who}` : "Player ranking"} — ${en.label}`)}${titleScope(league, input, " (")}`,
+      title: `${say(`${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} avec le plus de ${def.label}` : input.role ? `Meilleurs ${who}` : "Classement des joueurs"} — ${def.label}`, `${def.total ? `${who.replace(/^./, (c) => c.toUpperCase())} with the most ${en.label}` : input.role ? `Best ${who}` : "Player ranking"} — ${en.label}`)}${rankingTitleScope(league, input, " (")}`,
       table: {
         columns: [say("Rang", "Rank"), say("Joueur", "Player"), say("Équipe", "Team"), say("Parties", "Games"), ...columns.map((c) => say(PLAYER_CRITERION_DEFS[c].label, (PLAYER_CRITERION_DEFS[c].en ?? PLAYER_CRITERION_DEFS[c]).label)), say("Écart or @15", "Gold diff @15")],
         rows: rows.map((r, i) => [i + 1, r.player, r.team ? displayTeam(r.team) : null, r.games, ...columns.map((c) => value(r, c)), r.gold_diff_15]),
@@ -3560,7 +3596,7 @@ LIMIT 20`),
         ...(ingame ? [riotDataSource()] : []),
       ],
       followUps: [
-        ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${scope ? ` ${scope}` : ""}`] : []),
+        ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${followUpScope ? ` ${followUpScope}` : ""}`] : []),
         // No game of the scope has Riot data (the LPL): the gold difference would only say it is absent.
         ...(input.role && ingame > 0 ? [say(`Écart d'or à 15 min des ${ROLE_PLAYERS[input.role]} ${inLeague(league) || "aux Worlds"}`, `Gold difference at 15 min of ${ROLE_PLAYERS_EN[input.role]} ${inLeague(league) || "at Worlds"}`)] : []),
         ...rows.slice(0, 1).map((r) => ingameFollowUp.player(r.player)),

@@ -453,7 +453,7 @@ function championRankingRoute(question: string, e: Entities, sort: ChampionSort 
 
   return {
     kind: "tool",
-    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, total, role, side, minPicks } },
+    call: { tool: "champion_ranking", input: { league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, sort, total, role, side, minPicks, split: e.split } },
     confidence: 0.9,
     reason: msg().route.championRanking(sort, Boolean(total), role ?? null, side ?? null),
     notes: e.league ? [] : [msg().route.noLeagueWorldsRanking],
@@ -468,7 +468,7 @@ function playerLeaderboardRoute(question: string, e: Entities): Route {
 
   return {
     kind: "tool",
-    call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games"), side } },
+    call: { tool: "player_leaderboard", input: { role, league: e.league ?? WORLDS, yearFrom: e.yearFrom, yearTo: e.yearTo, criterion, minGames: minimumOf(question, "games"), side, split: e.split } },
     confidence: 0.85,
     reason: msg().route.playerRanking(role ?? null, criterion, side ?? null),
     // The level of the field decides who is "best": without a competition, the Worlds, as the other tools.
@@ -1301,6 +1301,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     TOTAL,
     MINUTE,
     ...SIDE_CUES.map(([, re]) => re),
+    ...SPLIT_CUES.map((c) => c.pattern),
     ...ROLE_CUES.map((r) => r.pattern),
     word(
       "champions?|champs?|classement|ranking|top|liste|list|stats?|statistiques?|en|in|au|at|lanes?|postes?|r[ôo]les?|joueurs?|players?|diff[ée]rents?|different|souvent|often|" +
@@ -1323,6 +1324,7 @@ const TOOL_WORDS: Record<ToolName, RegExp[]> = {
     PLAYER_WORDS,
     ...PLAYER_CRITERION_CUES.map(([, re]) => re),
     ...SIDE_CUES.map(([, re]) => re),
+    ...SPLIT_CUES.map((c) => c.pattern),
     word(
       "du monde|in the world|de tous les temps|of all time|all[- ]time|ever|selon|crit[èe]res?|en termes de|in terms of|stats?|statistiques?|" +
         "jou[ée]e?s?|played|parties|games|matchs|par minute|per minute|au moins|at least|minimum|plus de|more than|over|avec|with|" +
