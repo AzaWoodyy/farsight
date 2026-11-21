@@ -65,7 +65,9 @@ function physical(dir: string): string {
 }
 
 /** Git's environment without any GIT_* override (GIT_DIR, GIT_WORK_TREE, GIT_CEILING_DIRECTORIES…): only the path decides the repository. */
-const gitEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))), LC_ALL: "C" };
+const gitEnv = { ...process.env, LC_ALL: "C" };
+
+for (const name of Object.keys(gitEnv)) if (name.startsWith("GIT_")) Reflect.deleteProperty(gitEnv, name);
 
 const refuse = (message: string): never => {
   console.error(`--out : ${message} ; le rapport n'y est jamais écrit`);
