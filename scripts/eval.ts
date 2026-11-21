@@ -8,6 +8,7 @@
  *   bun run eval --strict          exit 1 unless every check passes, or when no case could be judged
  *   bun run eval --verbose         print every check, not only the failing ones
  *   bun run eval --llm-only        only the cases marked `llm` (the ones the rules hand to the LLM)
+ *   bun run eval --follow-ups      also replays every follow-up question of the answers (deterministic only); with --strict, exit 1 when one is not understood by a typed tool
  *
  * A case marked `llm` cannot pass on the rules alone: without a key only what
  * the rules decide is scored (entities, unread words) and the case is listed
@@ -204,6 +205,9 @@ let full = 0;
 let skipped = 0;
 const failures: string[] = [];
 const needLlm: string[] = [];
+
+/** Follow-up questions of the answers, by language and text: the first case that suggested each. */
+const followUps = new Map<string, { locale: "fr" | "en"; text: string; id: string }>();
 const t0 = performance.now();
 
 for (const c of cases) {
@@ -223,6 +227,14 @@ for (const c of cases) {
     );
 
     checks = score(c, answer, steps);
+
+    if (flag("follow-ups"))
+      for (const text of answer.followUps) {
+        const locale = c.locale ?? "fr";
+        const key = `${locale}\n${text}`;
+
+        if (!followUps.has(key)) followUps.set(key, { locale, text, id: c.id });
+      }
 
     if (llm && !answer.meta.sqlAvailable && (c.llm || c.expect.route === "sql"))
       checks.push({ name: "disponibilité du LLM", ok: false, detail: "le modèle configuré est devenu indisponible" });
@@ -271,4 +283,32 @@ if (failures.length) console.log(`échecs : ${failures.join(", ")}`);
 
 if (flag("strict") && !judged) console.error("--strict : aucun cas vérifié (tous demandent le LLM)");
 
-if (flag("strict") && (failures.length || !judged)) process.exit(1);
+// Not understood follow-up questions (`--follow-ups`, deterministic only).
+const missed: string[] = [];
+
+if (flag("follow-ups")) {
+  if (llm) console.log("\n--follow-ups : mode déterministe seulement");
+  else {
+    // Understood: a typed tool answered and the rules read every word.
+    for (const f of followUps.values()) {
+      let reason: string | undefined;
+
+      try {
+        const answer = await runAgent(f.text, () => {}, now, undefined, f.locale);
+
+        if (!Object.hasOwn(TOOLS, answer.meta.route)) reason = `route ${answer.meta.route}`;
+        else if (answer.meta.unread.length) reason = `mots non compris : ${answer.meta.unread.join(", ")}`;
+      } catch (err) {
+        reason = `erreur : ${err instanceof Error ? err.message : String(err)}`;
+      }
+
+      if (reason) missed.push(`  - [${f.locale}] "${f.text}" (cas ${f.id}) : ${reason}`);
+    }
+
+    console.log(`\nrelances : ${followUps.size} rejouées, ${missed.length} non comprises`);
+
+    for (const line of missed) console.log(line);
+  }
+}
+
+if (flag("strict") && (failures.length || !judged || missed.length)) process.exit(1);
