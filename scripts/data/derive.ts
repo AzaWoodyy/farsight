@@ -165,45 +165,39 @@ type Row = z.infer<typeof StoredCargoRow>;
 type Field = CargoValue | undefined;
 
 /**
- * The summaries in file order, except that the summaries of one game stand together where its first one was, the one
- * to keep first. A game and its remake, or two Riot games filed under one scoreboard, share a `gameId`, and the
- * derivation keeps the first one that maps. The order of the file must not make that choice (a recompute from R2
- * writes the lines as they arrive): the highest `rank` wins, number by number, then the smaller key.
+ * The summaries in file order, except that the summaries of one game are put, among the places they held, the one to
+ * keep first; every other line stays where it was. A game and its remake, or two Riot games filed under one
+ * scoreboard, share a `gameId`, and the derivation keeps the first one that maps. The order of the file must not make
+ * that choice (a recompute from R2 writes the lines as they arrive): the highest `rank` wins, number by number, then
+ * the smaller key.
  */
 export function bestFirst<L extends { key: string }>(all: Iterable<L>, gameOf: (line: L) => number | undefined, rank: (line: L, game: number) => number[]): L[] {
-  const out: L[][] = [];
-  const byGame = new Map<number, L[]>();
+  const out = [...all];
+  const places = new Map<number, number[]>();
 
-  for (const line of all) {
+  out.forEach((line, at) => {
     const game = gameOf(line);
-    const group = game == null ? undefined : byGame.get(game);
 
-    if (group) {
-      group.push(line);
-      continue;
-    }
+    if (game != null) places.set(game, [...(places.get(game) ?? []), at]);
+  });
 
-    const own = [line];
+  for (const [game, at] of places) {
+    if (at.length < 2) continue;
+    const ranked = at.map((i) => ({ line: out[i], rank: rank(out[i], game) }));
 
-    if (game != null) byGame.set(game, own);
-    out.push(own);
-  }
+    ranked.sort((a, b) => {
+      const i = a.rank.findIndex((n, k) => n !== b.rank[k]);
 
-  for (const [game, group] of byGame) {
-    if (group.length < 2) continue;
-    const ranks = new Map(group.map((line) => [line.key, rank(line, game)]));
-
-    group.sort((a, b) => {
-      const ra = ranks.get(a.key)!;
-      const rb = ranks.get(b.key)!;
-      const i = ra.findIndex((n, at) => n !== rb[at]);
-
-      return i === -1 ? (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) : rb[i] - ra[i];
+      return i === -1 ? (a.line.key < b.line.key ? -1 : a.line.key > b.line.key ? 1 : 0) : b.rank[i] - a.rank[i];
     });
+    at.forEach((i, k) => (out[i] = ranked[k].line));
   }
 
-  return out.flat();
+  return out;
 }
+
+/** A summary's length in seconds: a few short games of the first V5 files are still in milliseconds (no game lasts three hours). */
+export const rankedSeconds = (durationS: number | null) => (durationS == null ? 0 : durationS > 10_800 ? durationS / 1000 : durationS);
 
 /** Every row of the database, from the raw cache. */
 export function deriveDataset() {
@@ -767,11 +761,12 @@ export function deriveDataset() {
 
   const scoreboardChampions = new Map([...linesByGame].map(([gid, lines]) => [gid, new Set(lines.map((l) => l.championId))]));
 
-  // Of two summaries of one game, the one with the most champions of the scoreboard, then the longer game.
+  // Of two summaries of one game, the one with the most champions of the scoreboard, then the longer game: the loop
+  // below keeps the first of them it can map.
   const ingame = bestFirst(
     loadIngame().values(),
     (line) => (line.status === "ok" ? gameId.get(line.gameId) : undefined),
-    (line, gid) => (line.status === "ok" ? [line.players.filter((p) => scoreboardChampions.get(gid)?.has(championIdByKey.get(p.championId) ?? -1)).length, line.durationS ?? 0] : [0, 0]),
+    (line, gid) => (line.status === "ok" ? [line.players.filter((p) => scoreboardChampions.get(gid)?.has(championIdByKey.get(p.championId) ?? -1)).length, rankedSeconds(line.durationS)] : [0, 0]),
   );
 
   const doneGames = new Set<number>();

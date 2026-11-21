@@ -203,9 +203,8 @@ export async function pullSummaries(remote: ObjectStore, file = INGAME_FILE): Pr
 }
 
 /**
- * Writes the local summaries (latest line per game, in the order of the file:
- * of two summaries of one game, the derivation keeps the first) to R2, unless
- * they are what `pullSummaries` read. Returns whether R2 holds them
+ * Writes the local summaries (latest line per game, in the order of the
+ * file) to R2, unless they are what `pullSummaries` read. Returns whether R2 holds them
  * now: a failed upload only costs the next run the summaries of this one.
  */
 export async function pushSummaries(remote: ObjectStore, pulled: PulledSummaries | null, file = INGAME_FILE): Promise<boolean> {

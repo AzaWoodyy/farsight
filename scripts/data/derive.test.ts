@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Store, bestFirst } from "./derive";
+import { Store, bestFirst, rankedSeconds } from "./derive";
 
 test("a Riot value only fills what Leaguepedia left empty, by primary key", () => {
   const store = new Store();
@@ -28,8 +28,9 @@ test("of two summaries of one game, the best ranked comes first whatever the ord
 
   const keys = (order: typeof lines) => bestFirst(order, (l) => l.game, (l) => l.rank).map((l) => l.key);
 
-  // The real game before its 28-second remake, the champions of the scoreboard before the length, then the key.
-  expect(keys(lines)).toEqual(["A_2", "A_1", "B_7", "C_3", "D_7", "D_8", "D_9"]);
+  // The real game before its 28-second remake, the champions of the scoreboard before the length, then the key;
+  // the line of another game (B_7) and the one without a game (C_3) stay where they were.
+  expect(keys(lines)).toEqual(["A_2", "B_7", "A_1", "C_3", "D_7", "D_8", "D_9"]);
 
   const kept = (order: typeof lines) => {
     const first = new Map<number, string>();
@@ -41,4 +42,8 @@ test("of two summaries of one game, the best ranked comes first whatever the ord
 
   expect(kept(lines.toReversed())).toEqual(kept(lines));
   expect(kept(lines)).toEqual([[1, "A_2"], [2, "B_7"], [3, "D_7"]]);
+});
+
+test("a 15-second remake left in milliseconds does not rank as a long game", () => {
+  expect([rankedSeconds(15_000), rankedSeconds(2_000), rankedSeconds(5_700), rankedSeconds(null)]).toEqual([15, 2_000, 5_700, 0]);
 });

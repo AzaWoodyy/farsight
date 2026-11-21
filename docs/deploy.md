@@ -182,8 +182,8 @@ aussi sur R2, en un seul objet zstd : `derived/ingame.jsonl.zst` (environ
 26 Mo). `data:fetch` y prend avant les parties les lignes que le fichier local
 n'a pas, puis réécrit l'objet à la fin s'il a changé. La mise à jour
 quotidienne de Postgres y trouve les parties arrivées depuis la dernière
-release. L'objet garde l'ordre du fichier : de deux résumés d'une même partie
-(une partie et son remake), la dérivation garde le premier. Si l'objet manque ou est
+release. L'objet garde l'ordre du fichier, qui ne décide de rien : de deux résumés d'une
+même partie (une partie et son remake), la dérivation garde celui du scoreboard. Si l'objet manque ou est
 illisible, le run garde les résumés qu'il a déjà (ceux de la release
 restaurée, ou du fichier local), recalcule les autres depuis les JSON de R2
 (une dizaine de minutes pour les 40 000, sur une machine qui n'en a aucun) et

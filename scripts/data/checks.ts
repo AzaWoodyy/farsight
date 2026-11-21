@@ -25,8 +25,9 @@ const PARENTS: [string, string, string[], string, string[]][] = [
   ["in-game team rows without game", "game_team_stats", ["game_id"], "game_riot", ["game_id"]],
 ];
 
-/** Columns an ingestion that lost a raw file leaves empty: [table, column or null for "any row", what is missing]. */
+/** What an ingestion that lost a file leaves empty: [table, column or null for "any row", what is missing]. */
 const FILLED: [string, string | null, string][] = [
+  ["game_riot", null, "no game with in-game stats: data:fetch did not write ingame.jsonl"],
   ["player_images", null, "no player photo: data:fetch did not save player_images.json"],
   ["teams", "short", "no team abbreviation: data:fetch did not save teams.json"],
   ["series_results", null, "no series without a scoreboard: data:fetch did not save schedule.json"],

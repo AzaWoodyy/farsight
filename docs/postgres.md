@@ -23,7 +23,7 @@ lignes. Ce document décrit le fonctionnement, l'exploitation et le passage depu
   construit par toutes les migrations, analysées et ouvertes aux rôles de l'app.
   - Avant toute écriture, les lignes dérivées passent les contrôles de `scripts/data/checks.ts`, ceux que `data:package`
     faisait sur le fichier SQLite : pas de ligne sans son parent, pas de ligue du périmètre sans partie, aucun fichier
-    brut que `data:fetch` n'aurait pas enregistré (photos, sigles, calendrier, logos), aucun résumé in-game d'une
+    que `data:fetch` n'aurait pas enregistré (résumés in-game, photos, sigles, calendrier, logos), aucun résumé in-game d'une
     dérivation plus ancienne. `--allow-older-summaries` garde les résumés d'une dérivation ancienne encore compatible
     (la CI, dont le snapshot épinglé ne se recalcule pas) ; `--allow-incomplete` charge quand même (cache local partiel).
   - Avant la bascule, chaque ligue doit garder au moins ses tournois, parties, lignes de joueurs, parties in-game et

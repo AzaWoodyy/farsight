@@ -64,3 +64,11 @@ test("summaries of an older derivation are refused unless the load allows them; 
   expect(datasetProblems(dataset(), older, { leagues: 1, allowOlder: true })).toEqual([]);
   expect(datasetProblems(dataset(), { stale_derive: 3, older_derive: 0 }, { leagues: 1, allowOlder: true })).toHaveLength(1);
 });
+
+test("rows derived without ingame.jsonl are refused: a first load has no live data to compare them with", () => {
+  const empty = { columns: ["game_id"], rows: [] };
+
+  expect(datasetProblems(dataset({ game_riot: empty, game_team_stats: empty, game_player_stats: { columns: ["game_id", "player_id"], rows: [] } }), current, { leagues: 1 })).toEqual([
+    "no game with in-game stats: data:fetch did not write ingame.jsonl",
+  ]);
+});
