@@ -190,22 +190,22 @@ test("match-v4: the same five deaths at level 1 are an ace", () => {
 
 // --- First blood: one credited event for the timeline and the in-game summary ------------------
 
-type FirstBloodCase = { kills: Json[]; killer?: number; team?: 100 | 200; killers?: number[] };
+type FirstBloodCase = { kills: Json[]; killer?: number; team?: 100 | 200; killers?: number[]; denied?: boolean };
 
 /** A game with only `kills` in its timeline and Riot's first-blood flags, match-v5 fields or match-v4 nested stats. */
-function firstBloodGame(version: 4 | 5, { kills, killer, team, killers = killer == null ? [] : [killer] }: FirstBloodCase): RawGame {
+function firstBloodGame(version: 4 | 5, { kills, killer, team, killers = killer == null ? [] : [killer], denied = false }: FirstBloodCase): RawGame {
   const participants = PIDS.map((pid) => {
     const base = { participantId: pid, teamId: teamOf(pid), championId: pid };
 
     // Without flags the fields are absent, as in some old match-v4 games.
-    if (!killers.length) return base;
+    if (!killers.length && !denied) return base;
     const flag = { firstBloodKill: killers.includes(pid) };
 
     return version === 5 ? { ...base, ...flag } : { ...base, stats: flag };
   });
 
   const teams = [100, 200].map((teamId): Json =>
-    team == null
+    team == null && !denied
       ? { teamId, win: teamId === 100 }
       : version === 5
         ? { teamId, win: teamId === 100, objectives: { champion: { first: teamId === team, kills: 0 } } }
@@ -250,11 +250,15 @@ for (const version of [4, 5] as const) {
     expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killer: 3, team: 200 }))).toEqual({ event: null, victim: null });
     // Two players flagged.
     expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killers: [3, 4] }))).toEqual({ event: null, victim: null });
+    // Every player and both teams explicitly denied first blood (flags present, all false).
+    expect(firstBloodOf(firstBloodGame(version, { kills: [kill(70, 3, 8)], killers: [], denied: true }))).toEqual({ event: null, victim: null });
   });
 
   test(`match-v${version}: an unreadable kill before the first readable one makes first blood unknown`, () => {
     expect(firstBloodOf(firstBloodGame(version, { kills: [kill(60, 3, 0), kill(70, 3, 8)], killer: 3, team: 100 }))).toEqual({ event: null, victim: null });
     expect(firstBloodOf(firstBloodGame(version, { kills: [kill(60, 3, 4), kill(70, 3, 8)], killer: 3, team: 100 }))).toEqual({ event: null, victim: null });
+    // A kill without a killer id is unreadable, not an execution.
+    expect(firstBloodOf(firstBloodGame(version, { kills: [{ type: "CHAMPION_KILL", timestamp: 60_000, victimId: 2, assistingParticipantIds: [] }, kill(70, 7, 3)] }))).toEqual({ event: null, victim: null });
   });
 }
 
