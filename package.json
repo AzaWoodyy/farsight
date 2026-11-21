@@ -25,7 +25,7 @@
     "lab:build": "bun scripts/lab/build.ts",
     "eval": "bun scripts/eval.ts",
     "test": "bun test scripts",
-    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --exclude-tags=timeline && bun run build"
+    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --follow-ups --exclude-tags=timeline && bun run build"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.178",

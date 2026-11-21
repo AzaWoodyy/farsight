@@ -1191,6 +1191,9 @@ ORDER BY role, SUM(games) DESC, player`),
     const others = players.filter((p) => !p.starter);
     const roleName = (role: string) => ROLE_LABEL_BY_NAME.get(role) ?? role;
     const where = scope ? ` ${scope}` : "";
+    // The histories the follow-ups lead to read no split: their scope is the competition and the period.
+    const historyScope = scopeLabel(league, input);
+    const historyWhere = historyScope ? ` ${historyScope}` : "";
 
     const inRole = input.role ? players.filter((p) => p.role === input.role) : [];
 
@@ -1235,7 +1238,7 @@ ORDER BY role, SUM(games) DESC, player`),
         ...eventSources(events.map((e) => e.event_page), 12),
         ...starters.map((p) => p.source),
       ],
-      followUps: [say(`Historique de ${team}${where}`, `${team} history${where}`), ...starters.slice(0, 2).map((p) => `${p.player}${where}`)].slice(0, 3),
+      followUps: [say(`Historique de ${team}${historyWhere}`, `${team} history${historyWhere}`), ...starters.slice(0, 2).map((p) => `${p.player}${historyWhere}`)].slice(0, 3),
       totals: { season: input.latest ? (input.yearFrom ?? nd()) : "asked", players: players.length, starters: starters.length, games, wins, events: events.length, ...Object.fromEntries(starters.toReversed().map((p) => [p.role.toLowerCase(), p.player])) },
     };
   },
@@ -2998,7 +3001,12 @@ const riotDataSource = (): Source => ({
  */
 const ingameFollowUp = {
   player: (name: string) => say(`Solo kills de ${name}`, `${name} solo kills`),
-  team: (name: string) => say(`First blood de ${name}`, `${name} first blood`),
+  // A team as the answers show it (no "(European Team)"), its punctuation written in words ("KaBuM! Esports"), as the rules read it.
+  team: (name: string) => {
+    const words = displayTeam(name).replace(/[^\p{L}\p{N}.\-&' ]+/gu, "").replace(/\s+/g, " ").trim();
+
+    return say(`First blood de ${words}`, `${words} first blood`);
+  },
 };
 
 /** "2024", or "2019–2024". */
@@ -3553,7 +3561,8 @@ LIMIT 20`),
       ],
       followUps: [
         ...(rows.length >= 2 ? [`${rows[0].player} vs ${rows[1].player}${scope ? ` ${scope}` : ""}`] : []),
-        ...(input.role ? [say(`Écart d'or à 15 min des ${ROLE_PLAYERS[input.role]} ${inLeague(league) || "aux Worlds"}`, `Gold difference at 15 min of ${ROLE_PLAYERS_EN[input.role]} ${inLeague(league) || "at Worlds"}`)] : []),
+        // No game of the scope has Riot data (the LPL): the gold difference would only say it is absent.
+        ...(input.role && ingame > 0 ? [say(`Écart d'or à 15 min des ${ROLE_PLAYERS[input.role]} ${inLeague(league) || "aux Worlds"}`, `Gold difference at 15 min of ${ROLE_PLAYERS_EN[input.role]} ${inLeague(league) || "at Worlds"}`)] : []),
         ...rows.slice(0, 1).map((r) => ingameFollowUp.player(r.player)),
       ],
       totals: {
@@ -3891,6 +3900,7 @@ function tabLabelFr(tab: string | null): string {
     .replace(/^Day (\d+)/, "jour $1")
     .replace(/^Bracket Round (\d+)/, "tour $1 du bracket")
     .replace(/^Round (\d+)/, "tour $1")
+    .replace(/^Group Stage(?![\p{L}])/u, "phase de groupes")
     .replace(/^Groups? /, "groupes ")
     .replace(/^Group ([A-Z])$/, "groupe $1");
 }

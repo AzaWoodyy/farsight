@@ -13,7 +13,7 @@ commands = {
     "build": ["bash", "-e", "-o", "pipefail", "-c", "bunx --no-install next build && bun run size"],
     "lint": ["bun", "run", "lint", "--deny-warnings"],
     "test": ["python3", "scripts/ci/test.py"],
-    "eval": ["bun", "run", "eval", "--deterministic", "--strict", f"--only={only}"],
+    "eval": ["bun", "run", "eval", "--deterministic", "--strict", "--follow-ups", f"--only={only}"],
 }
 
 
