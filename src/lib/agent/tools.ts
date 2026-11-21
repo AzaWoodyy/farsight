@@ -4931,22 +4931,22 @@ sides AS (
   ${sideOf(2, "red")}
 ),
 picks AS (
-  SELECT p.game_id, p.team, p.champion, p.kills, p.deaths, p.assists FROM v_game_players p WHERE ${competitionScope("p", leagueAndPeriod(input), params)}
+  SELECT p.game_id, p.side, p.champion, p.kills, p.deaths, p.assists FROM v_game_players p WHERE ${competitionScope("p", leagueAndPeriod(input), params)}
 ),
-kda AS (SELECT k.game_id, k.team, SUM(k.kills) AS kills, SUM(k.deaths) AS deaths, SUM(k.assists) AS assists FROM picks k GROUP BY k.game_id, k.team),
+kda AS (SELECT k.game_id, k.side, SUM(k.kills) AS kills, SUM(k.deaths) AS deaths, SUM(k.assists) AS assists FROM picks k GROUP BY k.game_id, k.side),
 ig AS (
   SELECT s.game_id, s.side, s.first_dragon, s.first_herald, s.first_baron, s.gold_diff_15 FROM v_game_team_stats s WHERE ${ingameScope(input, params)}
 ),
 b AS (
   SELECT ${await franchiseName(db, "x.team", params)} AS name, x.*, k.kills, k.deaths, k.assists,
          i.first_dragon, i.first_herald, i.first_baron, i.gold_diff_15
-  FROM sides x LEFT JOIN kda k ON k.game_id = x.game_id AND k.team = x.team
+  FROM sides x LEFT JOIN kda k ON k.game_id = x.game_id AND k.side = x.side
   LEFT JOIN ig i ON i.game_id = x.game_id AND i.side = x.side
   WHERE x.team IS NOT NULL ${side}
 ),
 pool AS (
   SELECT ${await franchiseName(db, "x.team", params)} AS name, COUNT(DISTINCT k.champion) AS champions
-  FROM sides x JOIN picks k ON k.game_id = x.game_id AND k.team = x.team
+  FROM sides x JOIN picks k ON k.game_id = x.game_id AND k.side = x.side
   WHERE x.team IS NOT NULL ${side}
   GROUP BY 1
 )
@@ -5339,7 +5339,7 @@ const gameRecords: ToolDef<GameRecordsInput> = {
     return {
       params,
       sql: tidy(`SELECT x.player, x.champion, c.icon_url AS icon, x.team,
-       CASE WHEN x.team = g.blue_team THEN g.red_team ELSE g.blue_team END AS opponent,
+       CASE WHEN x.side = 1 THEN g.red_team ELSE g.blue_team END AS opponent,
        x.win, x.kills, x.deaths, x.assists, x.${def.column} AS value, g.length_s, x.played_at, x.league_short, x.year, x.event_page
 FROM ${def.ingame ? "v_game_player_stats" : "v_game_players"} x JOIN v_games g ON g.game_id = x.game_id
 LEFT JOIN champions c ON c.name = x.champion
@@ -5468,7 +5468,7 @@ const playerRecentGames: ToolDef<PlayerRecentInput> = {
     return {
       params,
       sql: tidy(`SELECT p.played_at, p.league_short, p.year, p.event_page, g.tab, p.team,
-       CASE WHEN p.team = g.blue_team THEN g.red_team ELSE g.blue_team END AS opponent,
+       CASE WHEN p.side = 1 THEN g.red_team ELSE g.blue_team END AS opponent,
        p.champion, c.icon_url AS icon, p.win, p.kills, p.deaths, p.assists, p.cs, p.damage, g.length_s
 FROM v_game_players p JOIN v_games g ON g.game_id = p.game_id
 LEFT JOIN champions c ON c.name = p.champion
