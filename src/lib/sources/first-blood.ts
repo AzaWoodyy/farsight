@@ -15,8 +15,11 @@
 /** The fields of a CHAMPION_KILL event read here. */
 export type KillEvent = { timestamp: number; killerId?: number; victimId?: number };
 
-/** Riot's end-of-game first-blood flags: participants with `firstBloodKill`, teams with first blood. */
-export type FirstBloodFlags = { killers: readonly number[]; teams: readonly number[] };
+/**
+ * Riot's end-of-game first-blood flags: participants and teams flagged true, and those explicitly flagged false (an
+ * absent flag says nothing).
+ */
+export type FirstBloodFlags = { killers: readonly number[]; teams: readonly number[]; notKillers: readonly number[]; notTeams: readonly number[] };
 
 export type FirstBlood<E extends KillEvent> = { event: E; killerId: number; victimId: number; killerTeam: number; victimTeam: number };
 
@@ -27,9 +30,14 @@ type FlagSource = {
 
 /** Riot's flags, match-v5 (`firstBloodKill`, `objectives.champion.first`) or match-v4 (`stats.firstBloodKill`, `firstBlood`). */
 export function firstBloodFlags(stats: FlagSource): FirstBloodFlags {
+  const killer = (p: FlagSource["participants"][number]) => p.firstBloodKill ?? p.stats?.firstBloodKill;
+  const team = (t: FlagSource["teams"][number]) => t.objectives?.champion?.first ?? t.firstBlood;
+
   return {
-    killers: stats.participants.filter((p) => (p.firstBloodKill ?? p.stats?.firstBloodKill) === true).map((p) => p.participantId),
-    teams: stats.teams.filter((t) => (t.objectives?.champion?.first ?? t.firstBlood) === true).map((t) => t.teamId),
+    killers: stats.participants.filter((p) => killer(p) === true).map((p) => p.participantId),
+    teams: stats.teams.filter((t) => team(t) === true).map((t) => t.teamId),
+    notKillers: stats.participants.filter((p) => killer(p) === false).map((p) => p.participantId),
+    notTeams: stats.teams.filter((t) => team(t) === false).map((t) => t.teamId),
   };
 }
 
@@ -43,18 +51,21 @@ export function firstBlood<E extends KillEvent>(kills: readonly E[], teamOf: Rea
   for (const event of sorted) {
     const victimTeam = event.victimId == null ? undefined : teamOf.get(event.victimId);
 
-    if (victimTeam == null) return null;
-    const killerTeam = event.killerId == null ? undefined : teamOf.get(event.killerId);
+    // Without a killer id the kill cannot be read; 0 (or any id that is no participant) is an execution.
+    if (victimTeam == null || event.killerId == null) return null;
+    const killerTeam = teamOf.get(event.killerId);
 
     // An execution: no champion gets the kill, the next one is first blood.
     if (killerTeam == null) continue;
 
     if (killerTeam === victimTeam) return null;
-    const killerId = event.killerId!;
+    const { killerId } = event;
 
     if (flags.killers.length > 1 || (flags.killers.length === 1 && flags.killers[0] !== killerId)) return null;
 
     if (flags.teams.length > 1 || (flags.teams.length === 1 && flags.teams[0] !== killerTeam)) return null;
+
+    if (flags.notKillers.includes(killerId) || flags.notTeams.includes(killerTeam)) return null;
 
     return { event, killerId, victimId: event.victimId!, killerTeam, victimTeam };
   }
