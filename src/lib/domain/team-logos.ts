@@ -4,7 +4,7 @@ import { wikiImageUrl } from "./wiki-images";
 
 /**
  * Team logos: the square logo file of each team on Leaguepedia, held by the database (`teams.logo`, filled by
- * `data:fetch` / `data:build`, scripts/data/team-logos.ts) under the exact name the wiki stores it. File names only,
+ * `data:fetch` and the derivation, scripts/data/team-logos.ts) under the exact name the wiki stores it. File names only,
  * see wiki-images.ts.
  */
 

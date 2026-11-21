@@ -1,7 +1,7 @@
 /**
- * The rows of the normalized database, computed from the raw cache (data/raw) without writing anything: every
- * writer (the SQLite file of the Data release, scripts/data/build.ts; Postgres, scripts/db/load.ts) stores the
- * same rows. Ids are given in the order rows are first seen, so two runs on the same cache give the same ids.
+ * The rows of the normalized database, computed from the raw cache (data/raw) without writing anything:
+ * scripts/db/load.ts copies them into Postgres. Ids are given in the order rows are first seen, so two runs on the
+ * same cache give the same ids.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
@@ -44,7 +44,7 @@ export function tableColumns(ddl = TABLE_DDL): Map<string, { columns: string[]; 
 }
 
 /**
- * Rows kept in memory, table by table, with the semantics the SQLite build relied on: a plain insert refuses a key
+ * Rows kept in memory, table by table, with the semantics of SQL inserts: a plain insert refuses a key
  * already there, an ignoring insert (`INSERT OR IGNORE`) keeps the first row, an update by id changes it in place.
  */
 export class Store {

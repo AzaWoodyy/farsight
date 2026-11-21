@@ -1,6 +1,7 @@
 /**
- * What the derived rows must hold before they replace the live data: the checks `data:package` ran on the SQLite file
- * of a release, on the rows themselves, so that `db:load` refuses a broken or partial ingestion before it writes.
+ * What the derived rows must hold before they replace the live data: no row without its parent, no
+ * league of the scope without a game, no file `data:fetch` did not save. `db:load` runs them on the rows themselves and
+ * refuses a broken or partial ingestion before it writes.
  */
 import type { Cell } from "./derive";
 import { LEAGUES } from "./scope";
@@ -95,3 +96,9 @@ export function datasetProblems(tables: DerivedTables, summaries: SummaryCounts,
 
   return problems;
 }
+
+/**
+ * The players with a photo the new data lacks, as a loss, when more than 2 % of the live ones are gone: a new load may
+ * lose a few photos to wiki edits, and a partial PlayerImages fetch keeps every league's counts.
+ */
+export const photoLoss = (before: number, after: number): string[] => (after * 100 < before * 98 ? [`players with a photo ${before} → ${after}`] : []);

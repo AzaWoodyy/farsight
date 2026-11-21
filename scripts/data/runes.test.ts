@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { RETIRED_RUNES, RUNE_TREES, runeName } from "./runes";
 
-/** A few ids of the current Data Dragon (16.23), as `data:build` reads them. */
+/** A few ids of the current Data Dragon (16.23), as the derivation reads them. */
 const current = new Map([
   [8135, "Treasure Hunter"],
   [8230, "Stormraider's Surge"],

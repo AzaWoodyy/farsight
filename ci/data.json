@@ -1,12 +1,6 @@
 {
   "repository": "AzaWoodyy/farsight",
   "tag": "data-20261121-4",
-  "schemaVersion": 12,
-  "database": {
-    "asset": "lol.sqlite.zst",
-    "sha256": "538899a100e9d8bcf96ce97b97656aca6cbbb966a98dfc8f25a51c9787a8d1c0",
-    "uncompressedSha256": "f8c835adc17eec7ad837693298ee5c583997179f39b0d295ee54d6a462d7dacf"
-  },
   "ingame": {
     "asset": "ingame.jsonl.zst",
     "sha256": "52b1dfd4de45201abcde5ee565ff180091afe9730f2f5ca905e907e5f1bbc4c6"

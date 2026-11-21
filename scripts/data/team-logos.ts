@@ -5,7 +5,7 @@
  * infobox image, often the wide "logo profile" one: never used.
  *
  * `data:fetch` asks the wiki which of these files exist (`wikiFiles`, 50 names per request) and saves the exact name of
- * each one found in `team_logo_files.json`; `data:build` gives each team the first one found (`teams.logo`).
+ * each one found in `team_logo_files.json`; the derivation gives each team the first one found (`teams.logo`).
  */
 import { type CargoValue, FILES_PER_REQUEST, wikiFiles } from "../../src/lib/sources/leaguepedia";
 import { teamIdentity } from "./identity";
@@ -84,7 +84,7 @@ const TEAM_FIELDS = ["Team", "Team1", "Team2"] as const;
 
 /**
  * Asks the wiki which logo files of the teams these rows name exist: every candidate of every name, as written and as
- * `data:build` will store it (the case of its page), FILES_PER_REQUEST per request. Nothing is kept between runs: about
+ * The derivation will store it (the case of its page), FILES_PER_REQUEST per request. Nothing is kept between runs: about
  * 2 000 names, some forty requests. Returns the rows of `team_logo_files.json`: each file found, as asked (`Asked`) and
  * under its exact name (`File`).
  */

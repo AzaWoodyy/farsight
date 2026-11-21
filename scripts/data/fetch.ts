@@ -19,9 +19,9 @@
  * machine lacks are taken first, and the file is written back to R2 at the end.
  *
  * Leaguepedia is queried one request at a time, ≥ 2 s apart, with backoff, by
- * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: `data:build` keeps the
+ * league with 5000-row pages. The match schedule (MatchSchedule) is saved too: the derivation keeps the
  * series it lists without any scoreboard game (scripts/data/schedule.ts). Every raw response is kept under data/raw/cargo,
- * and the merged datasets under data/raw/*.json feed `data:build`. Which team logo files exist is asked again on every
+ * and the merged datasets under data/raw/*.json feed the derivation. Which team logo files exist is asked again on every
  * run, uncached (about forty MediaWiki API requests, scripts/data/team-logos.ts).
  */
 import { createHash } from "node:crypto";
@@ -156,7 +156,7 @@ function linesQuery(where: string, joinTournaments: boolean): CargoQuery {
  * scoreboard says, not always a player page: an older handle ("ZionSpartan"
  * for Darshan) only exists as a `PlayerRedirects.AllName`, so links are
  * resolved by name first, then the pages they lead to are fetched with the
- * links themselves. `data:build` merges on these rows (scripts/data/identity.ts).
+ * links themselves. The derivation merges on these rows (scripts/data/identity.ts).
  */
 async function fetchPlayers(links: string[], opts: CargoOptions) {
   const players: CargoRow[] = [];
@@ -216,7 +216,7 @@ async function fetchPlayers(links: string[], opts: CargoOptions) {
 /**
  * Every Leaguepedia headshot, dated by the tournament it was taken for (about 30 000 rows, a handful of
  * requests). The whole table rather than the players in scope: an image's link may differ in case or be an
- * older handle, and `data:build` resolves it like a scoreboard link.
+ * older handle, and the derivation resolves it like a scoreboard link.
  */
 function fetchPlayerImages(opts: CargoOptions) {
   return cargoQuery(
@@ -233,7 +233,7 @@ function fetchPlayerImages(opts: CargoOptions) {
 /**
  * Every team page with its abbreviation (Teams.Short, "KCB"), and every name that redirects to a team page
  * (TeamRedirects, an older name such as "Afreeca Freecs" -> "DN SOOPers"): a few requests for the whole tables.
- * `data:build` gives each scoreboard team its abbreviation, and `understand` reads it as an alias.
+ * The derivation gives each scoreboard team its abbreviation, and `understand` reads it as an alias.
  */
 async function fetchTeams(opts: CargoOptions) {
   const teams = await cargoQuery(
@@ -309,7 +309,7 @@ async function fetchDdragon(force: boolean) {
       legacyItems.push({
         version: v,
         items: Object.fromEntries(Object.entries(file.data).map(([id, it]) => [id, it.name])),
-        // Recipe, tags and price: data:build classifies retired items (completed, component, consumable...).
+        // Recipe, tags and price: the derivation classifies retired items (completed, component, consumable...).
         // An entry that does not parse only loses its kind, never its name and icon.
         meta: Object.fromEntries(Object.entries(file.data).flatMap(([id, it]) => {
           const meta = ItemMeta.safeParse(it);

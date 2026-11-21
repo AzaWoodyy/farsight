@@ -17,7 +17,7 @@ Installer la version de Bun indiquée dans `package.json`, Node 26, `zstd`, `psq
 ```sh
 bun install --frozen-lockfile
 cp .env.example .env
-bun scripts/ci/data.ts --raw
+bun scripts/ci/data.ts
 docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
 until pg_isready -h localhost -p 5432; do sleep 1; done
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
@@ -27,7 +27,7 @@ export DATABASE_URL=postgres://farsight_app:local@localhost:5432/postgres
 bun run dev
 ```
 
-L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts --raw` y restaure le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
+L’application lit Postgres à `DATABASE_URL`, sous le rôle en lecture seule `farsight_app`, et échoue dès la première question sans cette variable. `db:load` dérive les lignes du cache brut `data/raw` (`scripts/data/derive.ts`) et les charge : `bun scripts/ci/data.ts` y restaure le snapshot épinglé de la CI ([ci/data.json](ci/data.json)) ; `bun run data:fetch` reconstruit ce cache depuis Leaguepedia. Le reste (driver, rôles, migrations, production) est dans [docs/postgres.md](docs/postgres.md).
 
 Sans clé OpenRouter, les outils déterministes restent utilisables et le secours text-to-SQL est explicitement indisponible. Pour activer le modèle, renseigner `OPENROUTER_API_KEY` avec une clé plafonnée ; `OPENROUTER_MODEL` peut remplacer le modèle par défaut. Les valeurs restent exclusivement dans `.env` et ne doivent pas être commitées.
 
@@ -39,15 +39,14 @@ Les variables facultatives et leur rôle sont dans [.env.example](.env.example).
 - [Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon) fournit les noms et icônes des champions, objets et runes. League of Legends et ses éléments appartiennent à Riot Games ; ce projet indépendant n’est pas affilié à Riot Games.
 - Le périmètre exact est défini dans [leagues.ts](src/lib/domain/leagues.ts) : Worlds, MSI, First Stand et Esports World Cup, ligues majeures coréennes (et la KeSPA Cup), chinoise, européenne et nord-américaines, ligues japonaise, pacifique, vietnamienne et brésilienne avec leurs successeurs (LCP, LTA South), plusieurs ligues de développement, France, et Espagne avec la LES (SuperLiga de 2021 à 2025, SuperLiga Orange avant) et la deuxième division de la SuperLiga. Les périodes datées qui traversent un renommage incluent les noms historiques et affichent une note.
 
-Le workflow quotidien « Postgres update » collecte les nouvelles données et les charge dans Neon (`db:load`) ; l’application les lit dans les cinq minutes, sans déploiement. Le workflow hebdomadaire « Data release » publie, à partir des mêmes lignes, un fichier SQLite versionné en release. Pour reconstruire localement depuis les sources :
+Le workflow quotidien « Postgres update » collecte les nouvelles données et les charge dans Neon (`db:load`) ; l’application les lit dans les cinq minutes, sans déploiement. Pour reconstruire localement depuis les sources :
 
 ```sh
 bun run data:fetch
-bun run data:build
-bun run data:package --tag=data-20000101
+bun run db:load
 ```
 
-`data:fetch` respecte le throttle Leaguepedia et reprend depuis son cache. `data:build` et `data:package` produisent le fichier SQLite de la release ; `bun run db:load` charge Postgres depuis le même cache. Le détail est dans [AGENTS.md](AGENTS.md), [docs/postgres.md](docs/postgres.md) et [docs/deploy.md](docs/deploy.md). Le schéma Postgres est une suite de migrations (`db/migrations/NNNN_nom.sql`), appliquées dans l’ordre avec une somme de contrôle ; une migration ne fait qu’ajouter, et la base chargée passe avant le code qui la lit. Une modification des définitions in-game exige d’incrémenter `DERIVE_VERSION` et de recalculer les résumés. Le packaging refuse de mélanger plusieurs versions.
+`data:fetch` respecte le throttle Leaguepedia et reprend depuis son cache. `bun run db:load` contrôle les lignes dérivées de ce cache puis charge Postgres. Le détail est dans [AGENTS.md](AGENTS.md), [docs/postgres.md](docs/postgres.md) et [docs/deploy.md](docs/deploy.md). Le schéma Postgres est une suite de migrations (`db/migrations/NNNN_nom.sql`), appliquées dans l’ordre avec une somme de contrôle ; une migration ne fait qu’ajouter, et la base chargée passe avant le code qui la lit. Une modification des définitions in-game exige d’incrémenter `DERIVE_VERSION` et de recalculer les résumés. Le chargement refuse de mélanger plusieurs versions.
 
 ## Vérifier une modification
 
@@ -60,7 +59,7 @@ La commande lance dans l’ordre le lint, les types, les tests en ordre normal e
 
 Les tests sont côté serveur. L’interface se vérifie dans l’application. L’eval lit [eval/questions.json](eval/questions.json), avec une date figée et des attentes attachées au snapshot. Les cas qui nécessitent un modèle sont signalés comme non vérifiés en mode déterministe ; les timelines demandent le JSON local ou R2 et sont exclues de la CI sans secrets. `bun run eval:candidates` propose des cas tirés des traces Langfuse de production (questions parties en SQL, pouces bas, mots non lus), dans un rapport local hors du dépôt que seul Enzo relit : rien de ce qu'un visiteur a écrit n'entre dans le dépôt ([docs/eval-candidates.md](docs/eval-candidates.md)).
 
-La CI des PR sélectionne les contrôles selon les fichiers modifiés, lance les commandes indépendantes avec deux workers et collecte chaque statut. Un chemin inconnu déclenche tous les contrôles de code. La reconstruction est réservée aux données, au schéma et à leurs dépendances ; les autres changements utilisent la base épinglée. Les changements d’ingestion reconstruisent et contrôlent la base hors réseau à partir du [snapshot épinglé](ci/data.json). Les contrôles de publication tournent sans compression en CI ; les archives zstd niveau 19 sont créées lors des releases de données. Le cache est revérifié après restauration ; les PR ne sauvegardent pas de cache partagé. La protection de branche doit rendre `PR checks` requis ; le workflow seul n’impose pas cette protection.
+La CI des PR sélectionne les contrôles selon les fichiers modifiés, lance les commandes indépendantes avec deux workers et collecte chaque statut. Un chemin inconnu déclenche tous les contrôles. Les contrôles qui lisent des données chargent un Postgres hors réseau à partir du [snapshot épinglé](ci/data.json). Le cache est revérifié après restauration ; les PR ne sauvegardent pas de cache partagé. La protection de branche doit rendre `PR checks` requis ; le workflow seul n’impose pas cette protection.
 
 ## Limites et confidentialité
 

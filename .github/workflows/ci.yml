@@ -66,7 +66,7 @@ jobs:
       # Direct install measured at 2s; caching the 100MB dependency cache costs more.
       - if: steps.changes.outputs.any == 'true'
         run: bun install --frozen-lockfile
-      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true'
+      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: snapshot
         with:
@@ -74,20 +74,15 @@ jobs:
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
       # Postgres is always loaded from the raw data: the database is derived, so the same inputs give the same rows.
       - name: Restore and verify the pinned snapshot
-        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true'
+        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bun scripts/ci/data.ts --raw
-      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.database == 'true' || steps.changes.outputs.test == 'true')
+        run: bun scripts/ci/data.ts
+      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-data
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
-      - name: Rebuild and validate offline when data dependencies change
-        if: steps.changes.outputs.database == 'true'
-        run: |
-          bun run data:build
-          bun run data:package --check-only
       # The pinned summaries cannot be recomputed here: after a DERIVE_VERSION bump they stay at the older, compatible one.
       - name: Load Postgres from the snapshot (roles, migrations, rows)
         if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'

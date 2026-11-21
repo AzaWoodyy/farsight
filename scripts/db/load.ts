@@ -1,19 +1,19 @@
 /**
- * db:load: (re)build the Postgres database from the raw cache, the Postgres counterpart of data:build.
+ * db:load: (re)build the Postgres database from the raw cache.
  *
  *   bun run db:load                       DATABASE_OWNER_URL (else DATABASE_URL), schema "farsight"
  *   bun run db:load --schema=farsight_ci  another schema (tests, a side-by-side trial)
  *   bun run db:load --allow-older-summaries   keep in-game summaries of an older, compatible derivation (CI's pinned snapshot)
  *   bun run db:load --allow-incomplete        load rows that fail the checks below (a partial local cache)
  *
- * The rows come from scripts/data/derive.ts, as for the SQLite file. They are copied (COPY) into a fresh schema
+ * The rows come from scripts/data/derive.ts. They are copied (COPY) into a fresh schema
  * `<schema>_next` built by every migration, analyzed and granted to the app roles, then swapped in by two renames in
  * one transaction: readers see the old data until the commit, then the new data, never a half-loaded schema. The old
  * schema is dropped afterwards. Connect as the owner role, without a transaction pooler (Neon: the direct host).
  *
  * Nothing is written when the rows fail a check of scripts/data/checks.ts (a row without its parent, a league of the
  * scope without a game, a raw file data:fetch did not save, summaries of an older derivation), or when a league
- * would lose rows the live data has (`--allow-shrink`).
+ * would lose rows the live data has, or more than 2 % of the players with a photo are gone (`--allow-shrink`).
  *
  * The swap holds two copies of the data for the time of the load. Where the storage cannot (Neon's free plan: 1 GB for
  * a database of about 570 MB), `--in-place` drops the live schema first and loads it again under the same name: one
@@ -24,7 +24,7 @@ import { from as copyFrom } from "pg-copy-streams";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { DERIVE_VERSION } from "../data/ingame";
-import { datasetProblems } from "../data/checks";
+import { datasetProblems, photoLoss } from "../data/checks";
 import { type Cell, deriveDataset } from "../data/derive";
 import { SCHEMA_TABLES, SCHEMA_VERSION, SCHEMA_VIEWS } from "../../src/lib/db/schema";
 import { grantReaders, migrate, quoteIdent } from "./migrations";
@@ -144,9 +144,19 @@ function losses(live: LeagueCounts, fresh: LeagueCounts): string[] {
   );
 }
 
+const photoPlayersIn = async (name: string) =>
+  (await client.query<{ n: number }>(`SELECT COUNT(DISTINCT player_id)::integer AS n FROM ${quoteIdent(name)}.player_images`)).rows[0].n;
+
+function derivedPhotoPlayers(): number {
+  const t = derived.tables.get("player_images")!;
+  const at = t.columns.indexOf("player_id");
+
+  return new Set(t.rows.map((r) => r[at])).size;
+}
+
 // In place, the live schema goes before the load: the derived rows are compared with it first, league by league.
 if (inPlace && liveExists && !args.includes("--allow-shrink")) {
-  const lost = losses(await schemaCounts(schema), derivedCounts());
+  const lost = [...losses(await schemaCounts(schema), derivedCounts()), ...photoLoss(await photoPlayersIn(schema), derivedPhotoPlayers())];
 
   if (lost.length) {
     await client.end();
@@ -180,7 +190,7 @@ try {
   for (const r of derived.runs)
     await client.query(insertRun, [r.kind, r.started_at, r.finished_at, SCHEMA_VERSION, JSON.stringify(r.row_counts), JSON.stringify({ requests: r.requests, cached_responses: r.cached_responses })]);
 
-  // Recorded as `build`, as data:build does: the day of this run is the data's day (src/lib/db/release.ts).
+  // Recorded as `build`: the day of this run is the data's day (src/lib/db/release.ts).
   await client.query(insertRun, [
     "build", startedAt, new Date().toISOString(), SCHEMA_VERSION,
     JSON.stringify(Object.fromEntries(SCHEMA_TABLES.filter((t) => t !== "ingest_runs").map((t) => [t, rowCounts[t] ?? 0]))),
@@ -197,7 +207,7 @@ try {
 
   // A partial ingestion must not replace complete data: the staged schema keeps, league by league, what the live one has.
   if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
-    const lost = losses(await schemaCounts(schema), await schemaCounts(next));
+    const lost = [...losses(await schemaCounts(schema), await schemaCounts(next)), ...photoLoss(await photoPlayersIn(schema), await photoPlayersIn(next))];
 
     if (lost.length) {
       await client.query(`DROP SCHEMA ${quoteIdent(next)} CASCADE`);

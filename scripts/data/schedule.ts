@@ -3,7 +3,7 @@
  *
  * Scoreboards (`ScoreboardGames`) are the source of every game, but some matches are only on the schedule:
  * a qualifier, an academy league or an old season whose games were never written up. `data:fetch` saves the
- * whole schedule of the scope (`schedule.json`), and `data:build` keeps, as `series_results`, the decided
+ * whole schedule of the scope (`schedule.json`), and the derivation keeps, as `series_results`, the decided
  * matches that have no scoreboard game (`scheduleOnly`): a series result, without any game statistic.
  */
 import type { CargoQuery } from "../../src/lib/sources/leaguepedia";
@@ -25,7 +25,7 @@ export function scheduleQuery(where: string, joinTournaments: boolean): CargoQue
   };
 }
 
-/** A schedule match between two named teams, as `data:build` reads it. */
+/** A schedule match between two named teams, as the derivation reads it. */
 export type ScheduledSeries = {
   page: string;
   tab: string | null;

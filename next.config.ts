@@ -86,8 +86,8 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   // Nothing under data/ is read at runtime (the app reads Postgres), but the tracer picks up the cache files a shared
-  // module can write: keep them out, or a local `vercel build` with a full cache would ship gigabytes, or the SQLite
-  // file of the Data release. scripts/size.ts checks it.
+  // module can write: keep them out, or a local `vercel build` with a full cache would ship gigabytes.
+  // scripts/size.ts checks it.
   outputFileTracingExcludes: Object.fromEntries(["/api/ask", ...CARD_ROUTES].map((route) => [route, ["./data/**"]])),
   turbopack: {
     rules: {

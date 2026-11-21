@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type DerivedTables, datasetProblems } from "./checks";
+import { type DerivedTables, datasetProblems, photoLoss } from "./checks";
 import type { Cell } from "./derive";
 
 /** A complete, tiny dataset: one league, one game, every raw file present. */
@@ -71,4 +71,11 @@ test("rows derived without ingame.jsonl are refused: a first load has no live da
   expect(datasetProblems(dataset({ game_riot: empty, game_team_stats: empty, game_player_stats: { columns: ["game_id", "player_id"], rows: [] } }), current, { leagues: 1 })).toEqual([
     "no game with in-game stats: data:fetch did not write ingame.jsonl",
   ]);
+});
+
+test("a load keeps at least 98 % of the players with a photo", () => {
+  expect(photoLoss(3_472, 3_403)).toEqual([]);
+  expect(photoLoss(3_472, 3_402)).toEqual(["players with a photo 3472 → 3402"]);
+  // A first load, and photos arriving on a database that had none.
+  expect([photoLoss(0, 0), photoLoss(0, 120)]).toEqual([[], []]);
 });

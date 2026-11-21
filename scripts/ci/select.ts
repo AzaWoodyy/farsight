@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SCHEMA_VERSION } from "../../src/lib/db/schema";
-import { affected, attribution, CHECKS, pushBase, withSnapshotSchema } from "./affected";
+import { affected, attribution, CHECKS, pushBase } from "./affected";
 
 const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, "utf8"));
 let selected = new Set(CHECKS);
@@ -51,12 +50,6 @@ if (event.pull_request) {
   if (base) selected = affected(execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}..${after}`], { encoding: "utf8" }).split("\0").filter(Boolean));
   else console.log("No validated ancestor on main: every check runs.");
 }
-
-const snapshotSchema = Number(JSON.parse(readFileSync("ci/data.json", "utf8")).schemaVersion);
-
-selected = withSnapshotSchema(selected, snapshotSchema, SCHEMA_VERSION);
-
-if (snapshotSchema !== SCHEMA_VERSION) console.log(`CI snapshot is schema v${snapshotSchema}, the code expects v${SCHEMA_VERSION}: database checks rebuild it offline.`);
 
 for (const check of CHECKS) appendFileSync(process.env.GITHUB_OUTPUT!, `${check}=${selected.has(check)}\n`);
 
