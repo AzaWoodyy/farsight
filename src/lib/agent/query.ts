@@ -254,7 +254,7 @@ export const POOL = word(
  */
 export const CHAMPION_RANKING = word(
   "champions? (?:les? |la )?(?:plus|moins)|(?:most|least) (?:played|picked|banned|contested|popular|present) champions?|" +
-    "(?:meilleurs?|best|top ?\\d*|strongest|plus forts?) champions?|champions? (?:avec|with|[àa]u?|ayant) (?:la |le |the )?(?:plus|most|meilleure?|best|highest|pire|worst)|" +
+    "(?:meilleurs?|best|top ?\\d*|strongest|plus forts?|pires?|worst) champions?|champions? (?:avec|with|[àa]u?|ayant) (?:la |le |the )?(?:plus|most|meilleure?|best|highest|pire|worst)|" +
     "classement des champions|champions? ranking|ranking of champions|m[ée]ta|tier ?list|priorit(?:[ée]s?|y)(?: picks?)?|picks? prioritaires?|" +
     "quels? champions?|quelles? champions?|which champions?|what champions?|" +
     "(?:les? )?plus (?:jou[ée]s|bann(?:i|is|ies)|pick[ée]s|choisis|contest[ée]s)|(?:most|least) (?:played|picked|banned|contested)",
@@ -301,6 +301,9 @@ const PER_GAME = word("par (?:partie|game|match)|per (?:game|match)|/ ?(?:partie
 
 /** The ranking only goes from the highest down: "le moins de morts" is not its answer ("au moins 10 picks" is a minimum). */
 const LOWEST = word("(?<!au )moins|(?<!at )least|fewest|lowest|pires?|worst");
+
+/** A superlative of the bottom alone: "le moins de morts" stays a criterion of the player leaderboard. */
+const WORST = word("pires?|worst");
 
 /**
  * The per-game average a champion ranking is asked for ("le plus de morts par game"), null when the question
@@ -397,7 +400,7 @@ export function sideOf(question: string): MapSide | null {
   return asked.length === 1 ? asked[0][0] : null;
 }
 
-const PLAYER_WORDS = word("joueurs?|players?|pros?|laners?|laneurs?");
+const PLAYER_WORDS = word("joueurs?|joueuses?|players?|pros?|laners?|laneurs?");
 
 /** Words that compare the players of a role without naming them: "comparaison des mids", "top laners comparison". */
 const COMPARE = word("compar\\p{L}*|versus|vs\\.?|face[- ][àa][- ]face|head[- ]to[- ]head|duels?|matchups?");
@@ -1162,6 +1165,11 @@ async function routeByRules(question: string, e: Entities, schema: Record<string
   const ranksPlayers = role != null || PLAYER_WORDS.test(question);
   // At most one player named (two go to their comparison above), no team or champion; one only with a role ("Caps, meilleur mid ?").
   const forPlayers = !e.teams.length && !e.champion && (noEntity || (e.players.length === 1 && role != null));
+
+  // "pires joueurs", "worst mids": the leaderboards only rank from the highest down, and the best would be the opposite answer.
+  // A figure of the Riot data where the scope has none (the LPL) is absent, not a ranking.
+  if (noEntity && ranksPlayers && WORST.test(question))
+    return (cue && (await ingameAbsent(e, cue.mention, coverage))) ?? { kind: "sql", reason: msg().route.playerLowest };
 
   // Players ranked on an end-of-game criterion; in-game metrics (gold diff, solo kills...) keep their leaderboard.
   // A role with a comparison word ranks its players too ("comparaison des mids aux Worlds"). "classement" is also a

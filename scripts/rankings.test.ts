@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { guardQuery } from "../src/lib/agent/guard";
-import { withLocale } from "../src/lib/agent/messages";
+import { msg, withLocale } from "../src/lib/agent/messages";
 import { championExtraSortOf, recentCountOf, recordMetricOf, routeQuestion, sideOf, teamCriterionOf, toolPlan } from "../src/lib/agent/query";
 import { execute } from "../src/lib/agent/run";
 import { detectMetric } from "../src/lib/agent/metrics";
@@ -145,6 +145,39 @@ describe("routes of the rankings", () => {
     ["champions les moins joués en LEC Spring 2024", { ...scope("LoL EMEA Championship", "LEC", 2024), split: "Spring" } satisfies Entities],
   ])("a lowest champion ranking goes to generated SQL: %p", async (question, e) => {
     expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  // "pires champions" is a ranking of champions too, from the lowest up.
+  test.each([
+    ["pires champions aux Worlds 2024", WORLDS],
+    ["worst champions at Worlds 2024", WORLDS],
+  ])("the worst champions go to generated SQL: %p", async (question, e) => {
+    expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  // The player leaderboards only rank from the highest down: the worst players would be answered by the best.
+  test.each([
+    ["worst players at Worlds 2024", WORLDS],
+    ["pire joueur de LEC 2025", LEC25],
+    ["pires mids aux Worlds 2024", WORLDS],
+    ["worst laners at Worlds 2024", WORLDS],
+    ["pires joueuses aux Worlds 2024", WORLDS],
+  ])("the worst players go to generated SQL: %p", async (question, e) => {
+    expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  test("a named player called Worst is not a ranking of the worst players", async () => {
+    expect(await route("Worst solo kills as mid at Worlds 2024", { ...WORLDS, players: [player("Worst")] })).not.toMatchObject({ reason: msg().route.playerLowest });
+  });
+
+  test("the worst players on a figure the scope has no Riot data for are absent, not generated SQL", async () => {
+    const lpl = scope("Tencent LoL Pro League", "LPL", 2024);
+
+    expect(await routeQuestion("worst players by solo kills in LPL 2024", lpl, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
+  });
+
+  test("the best players keep their leaderboard", async () => {
+    expect(await route("meilleurs joueurs aux Worlds 2024", WORLDS)).toMatchObject({ kind: "tool", call: { tool: "player_leaderboard" } });
   });
 
   // "au moins 10 picks" is a minimum, not an order.

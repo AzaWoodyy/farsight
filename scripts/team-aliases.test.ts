@@ -229,3 +229,40 @@ describe("a team name longer than four words", () => {
     ]);
   });
 });
+
+/** Zentinel, whose real name Kevin Pires indexes the alias "pires", and Worst, whose handle is a superlative. */
+async function seedSuperlatives() {
+  const db = await testDb();
+
+  for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
+  const worlds = LEAGUES.findIndex((l) => l.name === "World Championship") + 1;
+
+  await db.exec(`
+    INSERT INTO tournaments(id,page,event_page,name,stage,league_id,year) VALUES (1,'2024 Season World Championship/Main Event','2024 Season World Championship','Worlds 2024','main',${worlds},2024);
+    INSERT INTO teams(id,name,short) VALUES (1,'Blue Team',NULL),(2,'Red Team',NULL);
+    INSERT INTO players(id,page,ign) VALUES (1,'Zentinel','Zentinel'),(2,'Worst','Worst');
+    INSERT INTO player_aliases VALUES ('zentinel','Zentinel',1),('pires','Pires',1),('worst','Worst',2);
+    INSERT INTO games(id,tournament_id,blue_team_id,red_team_id,winner_side,played_at) VALUES (1,1,1,2,1,1);
+    INSERT INTO game_players(game_id,player_id,team_id,role,side,win) VALUES (1,1,1,'Mid',1,1),(1,2,2,'Mid',2,0);
+  `);
+
+  return db;
+}
+
+describe("a superlative before what it ranks", () => {
+  test.each([
+    ["pires champions aux Worlds 2024", []],
+    ["worst players at Worlds 2024", []],
+    ["pires mids aux Worlds 2024", []],
+    ["pires midlaneurs aux Worlds 2024", []],
+    ["worst AD carries at Worlds 2024", []],
+    ["worst laners at Worlds 2024", []],
+    ["pires joueuses aux Worlds 2024", []],
+    ["Worst aux Worlds 2024", ["Worst"]],
+    ["stats de Pires", ["Zentinel"]],
+  ])("%p names the players %p", async (question, players) => {
+    const db = await seedSuperlatives();
+
+    expect((await teamsOf(db, question)).players).toEqual(players);
+  });
+});
