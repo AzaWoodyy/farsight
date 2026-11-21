@@ -47,9 +47,9 @@ export function firstBloodFlags(stats: FlagSource): FirstBloodFlags {
 
 /**
  * The credited first blood among `kills` (CHAMPION_KILL events, any order), or null when unknown. `teamOf` gives each
- * participant's Riot team.
+ * participant's Riot team; `version` is the Riot API version of the JSON (4 or 5).
  */
-export function firstBlood<E extends KillEvent>(kills: readonly E[], teamOf: ReadonlyMap<number, number>, flags: FirstBloodFlags): FirstBlood<E> | null {
+export function firstBlood<E extends KillEvent>(kills: readonly E[], teamOf: ReadonlyMap<number, number>, flags: FirstBloodFlags, version: number): FirstBlood<E> | null {
   const sorted = [...kills].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const [i, event] of sorted.entries()) {
@@ -63,7 +63,7 @@ export function firstBlood<E extends KillEvent>(kills: readonly E[], teamOf: Rea
       // match-v5: the first death, an execution, credited to the other team with no player.
       const team = flags.teams.length === 1 ? flags.teams[0] : null;
 
-      if (i === 0 && flags.killers.length === 0 && flags.notKillers.length > 0 && team != null && team !== victimTeam && [...teamOf.values()].includes(team))
+      if (version >= 5 && event.killerId === 0 && i === 0 && flags.killers.length === 0 && flags.notKillers.length > 0 && team != null && team !== victimTeam && [...teamOf.values()].includes(team))
         return { event, killerId: null, victimId: event.victimId!, killerTeam: team, victimTeam };
 
       // Otherwise no champion gets the kill, the next one is first blood.

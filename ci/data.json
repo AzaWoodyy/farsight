@@ -13,7 +13,7 @@
   },
   "raw": {
     "file": "ci/raw.tar.zst",
-    "sha256": "140dfd956569d8ea99d044390c7188348214905413f5b76d00b57377b677943e",
+    "sha256": "32063b3fa7ade01090058fbba2aa7ef9e9b2e34d0fc32b6aa9d16c5477737261",
     "files": {
       "tournaments.json": "8215893a3e359bf78bbbc3cb71eb78dc1df8450e523f4c6d33e191e1fce9edc3",
       "results.json": "1d29c5bc95801ba14113e6ed8a5ac9c7d58ab1a6e763b44291d20a335369c782",

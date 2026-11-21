@@ -340,7 +340,7 @@ export function summarizeGame(raw: RawGame): IngameOk {
   const plates = raw.version >= 5 && hasPlates(stats.gameVersion) && frames ? events.filter((e) => e.type === "TURRET_PLATE_DESTROYED") : null;
   const teamOf = new Map(stats.participants.map((p) => [p.participantId, p.teamId]));
   const names = new Map((stats.participantIdentities ?? []).map((i) => [i.participantId, i.player?.summonerName ?? null]));
-  const credited = firstBlood(kills, teamOf, firstBloodFlags(stats));
+  const credited = firstBlood(kills, teamOf, firstBloodFlags(stats), raw.version);
 
   const endMs = durationMs(stats.gameDuration);
   const lastFrameMs = frames?.length ? frames[frames.length - 1].timestamp : null;

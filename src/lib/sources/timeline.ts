@@ -206,7 +206,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
   // Respawn time of each dead participant, for aces.
   const deadUntil = new Map<number, number>();
   const aced = new Set<RiotTeam>();
-  const first = firstBlood(all.filter((e) => e.type === "CHAMPION_KILL"), teamOf, firstBloodFlags(stats));
+  const first = firstBlood(all.filter((e) => e.type === "CHAMPION_KILL"), teamOf, firstBloodFlags(stats), raw.version);
   let lastGrubs: { team: RiotTeam; ms: number; event: TimelineEvent } | null = null;
 
   for (const e of all) {

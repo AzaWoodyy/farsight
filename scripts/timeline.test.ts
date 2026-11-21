@@ -288,6 +288,16 @@ test("match-v4, real game: the execution is skipped, the next kill is the one Ri
   expect(firstBloodOf(realGame("TRKR1_610063"))).toEqual({ event: [586, 100], victim: [8] });
 });
 
+test("an execution credited to the team only in match-v5, and only for killerId 0", () => {
+  const teamOnly = { kills: [execution(70, 8), kill(100, 1, 7)], killers: [], denied: true, team: 100 as const };
+
+  expect(firstBloodOf(firstBloodGame(5, teamOnly))).toEqual({ event: [70, 100], victim: [8] });
+  // The same flags in match-v4 never credit an execution: the next kill does not match them either.
+  expect(firstBloodOf(firstBloodGame(4, teamOnly))).toEqual({ event: null, victim: null });
+  // An unknown non-zero killer id is no execution Riot credits.
+  expect(firstBloodOf(firstBloodGame(5, { ...teamOnly, kills: [kill(70, 99, 8), kill(100, 1, 7)] }))).toEqual({ event: null, victim: null });
+});
+
 test("an execution still counts as a death for an ace", () => {
   // Team 100 dies in 8 s at level 1, the first death an execution: the ace is still team 200's.
   const kills = [execution(121, 1), kill(123, 6, 2), kill(125, 6, 3), kill(127, 6, 4), kill(129, 7, 5)];
