@@ -136,6 +136,25 @@ describe("routes of the rankings", () => {
     expect(await routeQuestion("quel champion a le plus de pentakills aux Worlds", WORLDS, SCHEMA, { ...COVERAGE, league: () => ({ games: 100, ingame: 0 }) })).toMatchObject({ kind: "missing", coverage: true });
   });
 
+  // The ranking only goes from the highest down: the least played would be answered by the most played.
+  test.each([
+    ["champions les moins joués aux Worlds 2024", WORLDS],
+    ["least played champions at Worlds 2024", WORLDS],
+    ["champions les moins bannis en LEC 2025", LEC25],
+    ["least banned champions", NONE],
+    ["champions les moins joués en LEC Spring 2024", { ...scope("LoL EMEA Championship", "LEC", 2024), split: "Spring" } satisfies Entities],
+  ])("a lowest champion ranking goes to generated SQL: %p", async (question, e) => {
+    expect(await route(question, e)).toMatchObject({ kind: "sql" });
+  });
+
+  // "au moins 10 picks" is a minimum, not an order.
+  test.each([
+    ["champions les plus joués avec au moins 10 picks", 10],
+    ["most played champions with at least 10 picks", 10],
+  ])("a minimum keeps the champion ranking: %p", async (question, minPicks) => {
+    expect(await route(question, WORLDS)).toMatchObject({ kind: "tool", call: { tool: "champion_ranking", input: { sort: "picks", minPicks } } });
+  });
+
   test("teams ranked on a named criterion; the standings keep 'meilleures équipes'", async () => {
     expect(await route("équipes avec le meilleur winrate côté bleu en LEC 2025", LEC25)).toMatchObject({
       kind: "tool", confidence: 0.85, call: { tool: "team_leaderboard", input: { criterion: "winrate", order: "desc", side: "blue", league: "LoL EMEA Championship" } },

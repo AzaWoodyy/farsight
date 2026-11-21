@@ -8304,6 +8304,50 @@
       }
     },
     {
+      "id": "champions-least-played",
+      "question": "champions les moins joués aux Worlds 2024",
+      "tags": [
+        "champion",
+        "ranking",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql"
+      }
+    },
+    {
+      "id": "champions-least-played-en",
+      "question": "least played champions at Worlds 2024",
+      "locale": "en",
+      "tags": [
+        "champion",
+        "ranking",
+        "sql",
+        "english"
+      ],
+      "expect": {
+        "route": "sql"
+      }
+    },
+    {
+      "id": "champions-least-played-split",
+      "question": "champions les moins joués en LEC Spring 2024",
+      "tags": [
+        "lec",
+        "champion",
+        "ranking",
+        "split",
+        "sql"
+      ],
+      "expect": {
+        "route": "sql",
+        "league": "LoL EMEA Championship",
+        "summaryExcludes": [
+          "Champions les plus joués"
+        ]
+      }
+    },
+    {
       "id": "en-champion-ranking-split-summer",
       "question": "Most played champions LEC Summer 2024",
       "locale": "en",
