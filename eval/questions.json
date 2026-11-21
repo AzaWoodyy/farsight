@@ -8131,6 +8131,98 @@
       }
     },
     {
+      "id": "long-team-jag-stealths-2014",
+      "question": "Roster de Jin Air Green Wings Stealths en 2014",
+      "tags": [
+        "roster",
+        "long-team-name"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Jin Air Green Wings Stealths"
+        ],
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "summaryIncludes": [
+          "Jin Air Green Wings Stealths en 2014 : 15 parties (6 victoires) sur 2 tournois"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "en-long-team-jag-stealths-2014",
+      "question": "Jin Air Green Wings Stealths roster in 2014",
+      "locale": "en",
+      "tags": [
+        "roster",
+        "long-team-name",
+        "english"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Jin Air Green Wings Stealths"
+        ],
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "summaryIncludes": [
+          "Jin Air Green Wings Stealths in 2014: 15 games (6 wins) over 2 tournaments"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "long-team-jag-falcons-2014",
+      "question": "Roster de Jin Air Green Wings Falcons en 2014",
+      "tags": [
+        "roster",
+        "long-team-name"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Jin Air Green Wings Falcons"
+        ],
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "summaryIncludes": [
+          "Jin Air Green Wings Falcons en 2014 : 18 parties (4 victoires) sur 3 tournois"
+        ],
+        "attempts": 1
+      }
+    },
+    {
+      "id": "en-long-team-jag-falcons-2014",
+      "question": "Jin Air Green Wings Falcons roster in 2014",
+      "locale": "en",
+      "tags": [
+        "roster",
+        "long-team-name",
+        "english"
+      ],
+      "expect": {
+        "route": "team_roster",
+        "teams": [
+          "Jin Air Green Wings Falcons"
+        ],
+        "input": {
+          "yearFrom": 2014,
+          "yearTo": 2014
+        },
+        "summaryIncludes": [
+          "Jin Air Green Wings Falcons in 2014: 18 games (4 wins) over 3 tournaments"
+        ],
+        "attempts": 1
+      }
+    },
+    {
       "id": "abbr-scope-ryl-worlds-2019",
       "question": "Roster de RYL aux Worlds 2019",
       "tags": [
