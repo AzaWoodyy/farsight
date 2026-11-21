@@ -273,8 +273,12 @@ passe aussi à 5 et aucun résumé plus ancien n'est gardé :
   match-v5). La frame est choisie par son temps, plus par son rang ;
 - la victime du premier sang est celle du kill que Riot crédite
   (`src/lib/sources/first-blood.ts`) : une exécution par une tour ou des
-  sbires n'en est pas un. 32 parties avaient un tueur et une victime du même
-  côté, toutes ouvertes par une exécution. Le même sélecteur donne
+  sbires n'en est pas un en match-v4 (Riot crédite le kill suivant : les 40
+  parties dont le tueur et la victime étaient du même côté). En match-v5,
+  Riot peut créditer l'exécution elle-même à l'équipe adverse, sans joueur
+  (`firstBloodKill` faux partout, drapeau d'équipe chez l'adversaire de
+  l'exécuté, 77 parties) : le premier sang est alors cette exécution, sans
+  tueur. Le même sélecteur donne
   l'événement de la timeline (`TIMELINE_FORMAT` 2 : les timelines en cache
   du format 1 sont ignorées), qui suivait l'adversaire de la première
   victime ; quand le kill ne correspond pas aux drapeaux de Riot, le premier
