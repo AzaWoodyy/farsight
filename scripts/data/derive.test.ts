@@ -59,5 +59,6 @@ test("a remake whose length stayed in milliseconds does not rank before the game
   // Without a scoreboard length: the champions, then the length, three hours being no game.
   expect(first([{ key: "REMAKE_3", champions: 10, durationS: 15_000 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
   expect(first([{ key: "OTHER_1", champions: 4, durationS: 2_400 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
-  expect(summaryRank(10, null, 2_000)).toEqual([10, 0, 0]);
+  // A summary without a length never agrees with the scoreboard, even one of a few seconds.
+  expect([summaryRank(10, null, 2_000), summaryRank(10, null, 5)]).toEqual([[10, 0, 0], [10, 0, 0]]);
 });

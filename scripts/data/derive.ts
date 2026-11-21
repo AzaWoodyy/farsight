@@ -206,9 +206,10 @@ const SAME_LENGTH_S = 5;
  * without one a value no game reaches (three hours) is read as milliseconds.
  */
 export function summaryRank(champions: number, durationS: number | null, scoreboardS: number | null): number[] {
+  if (durationS == null) return [champions, 0, 0];
+
   const near = (seconds: number) => scoreboardS != null && Math.abs(seconds - scoreboardS) <= SAME_LENGTH_S;
-  const duration = durationS ?? 0;
-  const seconds = near(duration) ? duration : near(duration / 1000) || duration > 10_800 ? duration / 1000 : duration;
+  const seconds = near(durationS) ? durationS : near(durationS / 1000) || durationS > 10_800 ? durationS / 1000 : durationS;
 
   return [champions, near(seconds) ? 1 : 0, seconds];
 }
