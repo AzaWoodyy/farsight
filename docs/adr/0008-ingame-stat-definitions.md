@@ -9,7 +9,7 @@ The in-game numbers stored in SQL (`game_player_stats`, `game_team_stats`, `game
 - **Team `kills_10/15/20` and `towers_15`**: counted strictly before the minute, only for a game whose duration and timeline both reach it (NULL otherwise).
 - **Player `kills_10` / `deaths_10` / `assists_10`**: champion kills strictly before 10:00, whenever the game has a timeline (no `reached` condition).
 - **`solo_kills`**: champion kills with no assisting champion, by a champion; executions by towers or minions are excluded.
-- **`first_blood_*`**: Riot's end-of-game flags. The victim comes from the credited first blood of the timeline (`src/lib/sources/first-blood`): an execution is skipped, and the victim is unknown (NULL) when the kill does not match Riot's flags.
+- **`first_blood_*`**: Riot's end-of-game flags. The victim comes from the credited first blood of the timeline (`src/lib/sources/first-blood`): as `docs/adr/0009-first-blood-definition.md` defines it (an execution is skipped in match-v4 and can be the first blood in match-v5), and the victim is unknown (NULL) when the kill does not match Riot's flags.
 - **`plates`**: turret plates destroyed, from match-v5 timelines only. match-v4 timelines have no plate event, even after plates existed, and plates start at patch 9.2 (`hasPlates`): NULL in both cases.
 - **Building events name the loser**: in `BUILDING_KILL` and `TURRET_PLATE_DESTROYED`, `teamId` is the team that lost the building. Towers and plates of a team are the events whose `teamId` is the other team.
 - **`dragons`**: every dragon kill of the timeline, in order: second of the game, Riot team, element (NULL before the elements, patch 6.9); NULL without a timeline. `elder_dragons`: elder dragons a team killed (NULL without a timeline).

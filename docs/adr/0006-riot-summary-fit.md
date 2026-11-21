@@ -4,6 +4,7 @@ A game and its remake, or two Riot games filed under one scoreboard, share a `ga
 
 ## Rules
 
+- `bestFirst` only reorders the summaries of one game among the places those summaries already hold in the file; every other line keeps its position. A global sort would pick the same summary but move the other games, and the derivation must give the same rows whatever the order of the file.
 - A few short games of the first V5 files kept their length in milliseconds: `summarizeGame` only converts a duration above 20 000, so a 5-second remake can be stored as 5 000 and would rank as longer than the real game. `summaryRank` therefore compares both readings (the value, and the value divided by 1000) with the scoreboard's length and keeps the one that agrees.
 - Without a scoreboard length, a value no game reaches (more than 10 800, three hours) is read as milliseconds.
 - A real long game is not mistaken for a remake: 5 700 seconds that match the scoreboard stay 5 700 seconds, and a scoreboard game of 15 seconds whose summary says 15 000 is still the scoreboard's game.

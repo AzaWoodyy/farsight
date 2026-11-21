@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -6,6 +7,7 @@ import type { Extracted } from "./extract.ts";
 type Item = { id: number; cat: string };
 
 const DELETED = new Set(["T", "S", "E", "D"]);
+const KEPT = new Set(["U"]);
 
 function isBlank(line: string | undefined): boolean {
   return line !== undefined && line.trim() === "";
@@ -19,38 +21,28 @@ function closesBlock(line: string | undefined): boolean {
   return line === undefined || /^[)\]}]/u.test(line.trimStart());
 }
 
-function strip(source: string, comments: readonly Extracted[]): string {
+export function strip(source: string, comments: readonly Extracted[]): string {
   const MARK = "\u0000";
   let text = source;
   for (const comment of [...comments].sort((a, b) => b.start - a.start)) {
     if (text.slice(comment.start, comment.end) !== comment.text) {
       throw new Error(`${comment.file}:${comment.line} moved since the extraction; extract again`);
     }
-    let start = comment.start;
-    let end = comment.end;
+    const { start, end } = comment.jsx ?? comment;
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     const newline = text.indexOf("\n", end);
     const lineEnd = newline === -1 ? text.length : newline;
-    let before = text.slice(lineStart, start);
-    let after = text.slice(end, lineEnd);
-    if (before.trimEnd().endsWith("{") && after.trimStart().startsWith("}")) {
-      const open = lineStart + before.lastIndexOf("{");
-      const close = end + after.indexOf("}") + 1;
-      const jsxOnly =
-        text.slice(lineStart, open).trim() === "" && text.slice(close, lineEnd).trim() === "";
-      if (jsxOnly) {
-        start = open;
-        end = close;
-        before = text.slice(lineStart, start);
-        after = text.slice(end, lineEnd);
-      }
-    }
+    const before = text.slice(lineStart, start);
+    const after = text.slice(end, lineEnd);
     if (before.trim() === "" && after.trim() === "") {
       text = `${text.slice(0, lineStart)}${MARK}${text.slice(lineEnd)}`;
     } else if (after.trim() === "") {
       text = `${text.slice(0, lineStart)}${before.trimEnd()}${text.slice(lineEnd)}`;
+    } else if (comment.text.includes("\n")) {
+      text = `${text.slice(0, start)}\n${text.slice(end)}`;
     } else {
-      text = `${text.slice(0, start)}${after.startsWith(" ") && before.endsWith(" ") ? after.slice(1) : after}${text.slice(lineEnd)}`;
+      const glued = /[\w$]$/u.test(before) && /^[\w$]/u.test(after);
+      text = `${text.slice(0, start)}${glued ? " " : ""}${text.slice(end)}`;
     }
   }
 
@@ -83,9 +75,24 @@ function main(): void {
   const items: Item[] = readdirSync(join(workDir, "out"))
     .filter((name) => name.endsWith(".json"))
     .flatMap((name) => JSON.parse(readFileSync(join(workDir, "out", name), "utf8")).items);
-  const category = new Map(items.map((item) => [item.id, item.cat]));
+  const category = new Map<number, string>();
+  for (const item of items) {
+    if (category.has(item.id)) throw new Error(`comment ${item.id} is classified twice`);
+    if (!DELETED.has(item.cat) && !KEPT.has(item.cat)) {
+      throw new Error(`comment ${item.id} has the unknown category ${item.cat}`);
+    }
+    category.set(item.id, item.cat);
+  }
+  const known = new Set(comments.map((comment) => comment.id));
   const missing = comments.filter((comment) => !category.has(comment.id));
+  const foreign = items.filter((item) => !known.has(item.id));
   if (missing.length > 0) throw new Error(`${missing.length} comments have no category`);
+  if (foreign.length > 0) throw new Error(`${foreign.length} categories name no extracted comment`);
+  for (const file of new Set(comments.map((comment) => comment.file))) {
+    const hash = createHash("sha256").update(readFileSync(file, "utf8")).digest("hex");
+    const expected = comments.find((comment) => comment.file === file)?.hash;
+    if (hash !== expected) throw new Error(`${file} changed since the extraction; extract again`);
+  }
 
   const byFile = new Map<string, Extracted[]>();
   for (const comment of comments) {

@@ -5,9 +5,9 @@
 ## Rules
 
 - Gold difference: total gold of team 100 minus team 200 at each frame (one frame per minute, plus the last one at the end of the game).
-- First blood: the credited first blood of `./first-blood`, given to the killer's team; an execution by a tower or minions is not one, and there is none when it is unknown.
+- First blood: the credited first blood of `./first-blood`, given to the killer's team; `docs/adr/0009-first-blood-definition.md` says when an execution by a tower or minions counts (never in match-v4, in match-v5 when Riot credits the opposing team, and the event then has no killer), and there is no event when the first blood is unknown.
 - Towers and inhibitors: a `BUILDING_KILL` event names in `teamId` the team that lost the building. The other team gets the event, whoever last hit it, minions included.
-- Dragons, elder, herald, baron, Atakhan: the killer's team. match-v5 gives it (`killerTeamId`); match-v4 does not, and it is found through the killer's participant (`monsterTeam`). A kill with no champion killer is left out.
+- Dragons, elder, herald, baron, Atakhan: the killer's team. `monsterTeam` takes a valid `killerTeamId` first (match-v5 gives it, even when `killerId` is 0), then the team of the killer's participant (match-v4 has no `killerTeamId`). The event is left out only when both fail.
 - Void grubs taken by the same team within 90 s (`GRUBS_WINDOW_MS`) make one event with a count.
 - Ace: all five players of a team dead at once. Riot's esports timelines carry no ace event, so it is computed: each death lasts the base respawn time of the victim's level (`BASE_RESPAWN_S`, the BRW table by champion level 1 to 18, without the extra time added after 15 minutes). This is an underestimate on purpose: an ace is never reported where the five deaths did not overlap. Do not add the time-based increase without checking it against real games.
 - `gameDuration` is in seconds, but match-v4 and early match-v5 report milliseconds for some games: `durationSeconds` treats a value above 20 000 as milliseconds.

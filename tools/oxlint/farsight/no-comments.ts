@@ -1,4 +1,4 @@
-import { relative } from "node:path";
+import { relative, resolve } from "node:path";
 
 import { defineRule } from "@oxlint/plugins";
 
@@ -6,6 +6,7 @@ import baseline from "./comment-baseline.json" with { type: "json" };
 import { isToolingComment } from "./tooling-comments.ts";
 
 const allowed = new Map<string, number>(Object.entries(baseline));
+const ROOT = resolve(import.meta.dirname, "../../..");
 
 export const noCommentsRule = defineRule({
   meta: {
@@ -30,7 +31,7 @@ export const noCommentsRule = defineRule({
           .getAllComments()
           .filter((comment) => comment.type !== "Shebang" && !isToolingComment(comment.value));
 
-        const file = relative(context.cwd, context.filename).replaceAll("\\", "/");
+        const file = relative(ROOT, resolve(context.cwd, context.filename)).replaceAll("\\", "/");
         const limit = allowed.get(file) ?? 0;
         const data = { count: String(comments.length), allowed: String(limit) };
 

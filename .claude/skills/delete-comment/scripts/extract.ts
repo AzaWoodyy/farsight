@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { parseSync } from "oxc-parser";
@@ -14,7 +15,11 @@ export type Extracted = {
   line: number;
   endLine: number;
   text: string;
+  hash: string;
+  jsx: { start: number; end: number } | null;
 };
+
+type Span = { start: number; end: number };
 
 const SLICE_SIZE = 200;
 
@@ -23,7 +28,21 @@ function trackedSources(paths: readonly string[]): string[] {
   return listed
     .split("\n")
     .filter((file) => /\.tsx?$/u.test(file))
-    .filter((file) => !file.startsWith("tools/oxlint/anti-slop/") && !file.endsWith(".d.ts"));
+    .filter((file) => !file.startsWith("tools/oxlint/anti-slop/"));
+}
+
+function emptyJsxExpressions(node: object, found: Span[] = []): Span[] {
+  for (const value of Object.values(node)) {
+    if (value === null || typeof value !== "object") continue;
+    if (
+      value.type === "JSXExpressionContainer" &&
+      value.expression?.type === "JSXEmptyExpression"
+    ) {
+      found.push({ start: value.start, end: value.end });
+    }
+    emptyJsxExpressions(value, found);
+  }
+  return found;
 }
 
 function lineOf(source: string, offset: number): number {
@@ -34,9 +53,15 @@ function lineOf(source: string, offset: number): number {
 
 export function commentsOf(file: string): Omit<Extracted, "id">[] {
   const source = readFileSync(file, "utf8");
-  return parseSync(file, source)
-    .comments.filter((comment) => !isToolingComment(comment.value))
+  const hash = createHash("sha256").update(source).digest("hex");
+  const parsed = parseSync(file, source);
+  const containers = emptyJsxExpressions(parsed.program);
+  return parsed.comments
+    .filter((comment) => !isToolingComment(comment.value))
     .map((comment) => ({
+      hash,
+      jsx:
+        containers.find((span) => span.start <= comment.start && comment.end <= span.end) ?? null,
       file,
       start: comment.start,
       end: comment.end,
@@ -49,6 +74,9 @@ export function commentsOf(file: string): Omit<Extracted, "id">[] {
 function main(): void {
   const [outDir, ...paths] = process.argv.slice(2);
   if (outDir === undefined) throw new Error("usage: extract.ts <out-dir> [path…]");
+  if (existsSync(join(outDir, "comments.json"))) {
+    throw new Error(`${outDir} already holds an extraction: use a new directory`);
+  }
   const scope = paths.length > 0 ? paths : ["."];
   const comments: Extracted[] = trackedSources(scope)
     .flatMap(commentsOf)
