@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Store, bestFirst, rankedSeconds } from "./derive";
+import { Store, bestFirst, summaryRank } from "./derive";
 
 test("a Riot value only fills what Leaguepedia left empty, by primary key", () => {
   const store = new Store();
@@ -44,6 +44,20 @@ test("of two summaries of one game, the best ranked comes first whatever the ord
   expect(kept(lines)).toEqual([[1, "A_2"], [2, "B_7"], [3, "D_7"]]);
 });
 
-test("a 15-second remake left in milliseconds does not rank as a long game", () => {
-  expect([rankedSeconds(15_000), rankedSeconds(2_000), rankedSeconds(5_700), rankedSeconds(null)]).toEqual([15, 2_000, 5_700, 0]);
+test("a remake whose length stayed in milliseconds does not rank before the game the scoreboard describes", () => {
+  const first = (lines: { key: string; champions: number; durationS: number | null }[], scoreboardS: number | null) =>
+    [lines, lines.toReversed()].map((order) => bestFirst(order, () => 1, (l) => summaryRank(l.champions, l.durationS, scoreboardS))[0].key);
+
+  const full = { key: "FULL_2", champions: 10, durationS: 2_000 };
+
+  // Five seconds written 5 000: longer than the game as a number, not the length of the scoreboard.
+  expect(first([{ key: "REMAKE_1", champions: 10, durationS: 5_000 }, full], 2_000)).toEqual(["FULL_2", "FULL_2"]);
+  // A real 5 700-second game is not a remake.
+  expect(first([{ key: "LONG_1", champions: 10, durationS: 5_700 }, { key: "REMAKE_2", champions: 10, durationS: 28 }], 5_700)).toEqual(["LONG_1", "LONG_1"]);
+  // The scoreboard's game in milliseconds is still the scoreboard's game.
+  expect(summaryRank(10, 15_000, 15)).toEqual([10, 1, 15]);
+  // Without a scoreboard length: the champions, then the length, three hours being no game.
+  expect(first([{ key: "REMAKE_3", champions: 10, durationS: 15_000 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
+  expect(first([{ key: "OTHER_1", champions: 4, durationS: 2_400 }, full], null)).toEqual(["FULL_2", "FULL_2"]);
+  expect(summaryRank(10, null, 2_000)).toEqual([10, 0, 0]);
 });

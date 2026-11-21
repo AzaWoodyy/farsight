@@ -196,8 +196,22 @@ export function bestFirst<L extends { key: string }>(all: Iterable<L>, gameOf: (
   return out;
 }
 
-/** A summary's length in seconds: a few short games of the first V5 files are still in milliseconds (no game lasts three hours). */
-export const rankedSeconds = (durationS: number | null) => (durationS == null ? 0 : durationS > 10_800 ? durationS / 1000 : durationS);
+/** Seconds a summary and its scoreboard may differ by and still be the same game (they agree to the second in practice). */
+const SAME_LENGTH_S = 5;
+
+/**
+ * How well a summary fits its game, best first (`bestFirst`): the champions of the scoreboard it has, whether it
+ * lasted as long as the scoreboard says, then its length. A few short games of the first V5 files kept their length
+ * in milliseconds (`summarizeGame` only converts above 20 000): both readings are compared with the scoreboard, and
+ * without one a value no game reaches (three hours) is read as milliseconds.
+ */
+export function summaryRank(champions: number, durationS: number | null, scoreboardS: number | null): number[] {
+  const near = (seconds: number) => scoreboardS != null && Math.abs(seconds - scoreboardS) <= SAME_LENGTH_S;
+  const duration = durationS ?? 0;
+  const seconds = near(duration) ? duration : near(duration / 1000) || duration > 10_800 ? duration / 1000 : duration;
+
+  return [champions, near(seconds) ? 1 : 0, seconds];
+}
 
 /** Every row of the database, from the raw cache. */
 export function deriveDataset() {
@@ -761,12 +775,22 @@ export function deriveDataset() {
 
   const scoreboardChampions = new Map([...linesByGame].map(([gid, lines]) => [gid, new Set(lines.map((l) => l.championId))]));
 
-  // Of two summaries of one game, the one with the most champions of the scoreboard, then the longer game: the loop
-  // below keeps the first of them it can map.
+  const gamesTable = store.tables.get("games")!;
+  const lengthAt = gamesTable.columns.indexOf("length_s");
+  const scoreboardLength = (gid: number) => Number(gamesTable.byId.get(gid)?.[lengthAt] ?? Number.NaN);
+
+  // Of two summaries of one game, the one that fits the scoreboard best (`summaryRank`): the loop below keeps the
+  // first of them it can map.
   const ingame = bestFirst(
     loadIngame().values(),
     (line) => (line.status === "ok" ? gameId.get(line.gameId) : undefined),
-    (line, gid) => (line.status === "ok" ? [line.players.filter((p) => scoreboardChampions.get(gid)?.has(championIdByKey.get(p.championId) ?? -1)).length, rankedSeconds(line.durationS)] : [0, 0]),
+    (line, gid) => {
+      if (line.status !== "ok") return [0, 0, 0];
+      const champions = line.players.filter((p) => scoreboardChampions.get(gid)?.has(championIdByKey.get(p.championId) ?? -1)).length;
+      const length = scoreboardLength(gid);
+
+      return summaryRank(champions, line.durationS, Number.isFinite(length) ? length : null);
+    },
   );
 
   const doneGames = new Set<number>();
