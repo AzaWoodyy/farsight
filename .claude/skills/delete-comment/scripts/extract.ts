@@ -31,14 +31,21 @@ function trackedSources(paths: readonly string[]): string[] {
     .filter((file) => !file.startsWith("tools/oxlint/anti-slop/"));
 }
 
+function hasVisibleText(node: { type?: string; value?: string } | undefined): boolean {
+  return node?.type === "JSXText" && (node.value ?? "").trim() !== "";
+}
+
 function emptyJsxExpressions(node: object, found: Span[] = []): Span[] {
   for (const value of Object.values(node)) {
     if (value === null || typeof value !== "object") continue;
-    if (
-      value.type === "JSXExpressionContainer" &&
-      value.expression?.type === "JSXEmptyExpression"
-    ) {
-      found.push({ start: value.start, end: value.end });
+    if (Array.isArray(value)) {
+      value.forEach((child, at) => {
+        const empty =
+          child?.type === "JSXExpressionContainer" &&
+          child.expression?.type === "JSXEmptyExpression";
+        const betweenText = hasVisibleText(value[at - 1]) && hasVisibleText(value[at + 1]);
+        if (empty && !betweenText) found.push({ start: child.start, end: child.end });
+      });
     }
     emptyJsxExpressions(value, found);
   }

@@ -48,7 +48,7 @@ export function strip(source: string, comments: readonly Extracted[]): string {
     const after = text.slice(end, lineEnd);
     if (after.trim() === "") {
       text = `${text.slice(0, lineStart)}${before.trimEnd()}${text.slice(lineEnd)}`;
-    } else if (comment.text.includes("\n")) {
+    } else if (/[\n\r\u2028\u2029]/u.test(comment.text)) {
       text = `${text.slice(0, start)}\n${text.slice(end)}`;
     } else {
       const inBraces = comment.jsx !== null;
