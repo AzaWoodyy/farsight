@@ -259,6 +259,31 @@ release du 20/11/2026 : 39 921 parties lues en 15,8 min). Une partie absente de
 R2 et que le budget du wiki n'atteint pas garde son résumé en dérivation 3
 (compté dans `older_derive`) jusqu'au passage suivant.
 
+### Dérivation 5 : minutes atteintes et premier sang crédité
+
+`DERIVE_VERSION` 5 change deux chiffres existants, donc `DERIVE_COMPATIBLE`
+passe aussi à 5 et aucun résumé plus ancien n'est gardé :
+
+- une statistique à la minute (or, XP, CS, or d'équipe à 10/15/20 min, kills
+  d'équipe à ces minutes, tours à 15 min) n'est remplie que si la durée de la
+  partie, en millisecondes, et sa timeline atteignent la minute. La dernière
+  frame d'une timeline match-v5 est la fin de partie : une partie finie à
+  19:46 en avait une vers 20:00, comptée jusque-là comme l'or à 20 min
+  (14 parties pour l'or à 20 min, 24 pour les kills, 1 à 15 min, toutes en
+  match-v5). La frame est choisie par son temps, plus par son rang ;
+- la victime du premier sang est celle du kill que Riot crédite
+  (`src/lib/sources/first-blood.ts`) : une exécution par une tour ou des
+  sbires n'en est pas un. 32 parties avaient un tueur et une victime du même
+  côté, toutes ouvertes par une exécution. Le même sélecteur donne
+  l'événement de la timeline (`TIMELINE_FORMAT` 2 : les timelines en cache
+  du format 1 sont ignorées), qui suivait l'adversaire de la première
+  victime ; quand le kill ne correspond pas aux drapeaux de Riot, le premier
+  sang est inconnu plutôt qu'un kill plus tardif.
+
+La CI reconstruit depuis l'instantané épinglé : elle attend une release dont
+les résumés sont en dérivation 5, recalculés depuis R2 par le workflow Data
+release (aucun résumé en dérivation 4 n'est réutilisé).
+
 ### Première release v4
 
 Le workflow restaure les résumés in-game de la release précédente ; une
