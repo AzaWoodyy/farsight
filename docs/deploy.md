@@ -293,10 +293,10 @@ La migration ne fait qu'ajouter une table et une vue : le code en place
 
 La **Data release** suivante publie le fichier SQLite v11. `data:package` refuse
 une release sans aucune de ces séries ; `--check-only` se contente d'un
-avertissement. `ci/data.json` épingle encore `data-20261120-6` (v10), et
-`ci/raw.tar.zst` contient déjà `schedule.json` : la CI charge Postgres depuis
-l'instantané brut, et reconstruit le fichier SQLite v11 hors ligne jusqu'au
-ré-épinglage sur la première release v11.
+avertissement. `ci/data.json` épingle `data-20261121`, la première release
+v11 (résumés in-game de la dérivation 4), avec `ci/raw.tar.zst` récupéré juste
+après elle : la CI ne reconstruit plus le fichier SQLite hors ligne à chaque
+exécution.
 
 ### Première release v10
 
