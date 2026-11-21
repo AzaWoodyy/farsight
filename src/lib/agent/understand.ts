@@ -901,7 +901,8 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
       const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
 
       if (team && !abbreviationOfPlayer && (team.curated || !players.length || team.games >= players[0].games)) {
-        if (!found.teams.some((t) => t.team === team.team)) {
+        // An abbreviation two teams share stays a mention of its own: the scope may name the other team (buildEntities).
+        if (team.others.length || !found.teams.some((t) => t.team === team.team && !found.otherTeams?.has(t.mention))) {
           found.teams.push({ mention, team: team.team, members: team.members });
 
           if (team.others.length) found.otherTeams?.set(mention, team.others);

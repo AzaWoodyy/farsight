@@ -162,6 +162,13 @@ describe("an abbreviation two teams share", () => {
     expect((await teamsOf(db, q)).teams).toEqual(["Ninjas in Pyjamas.CN"]);
   });
 
+  test("beside the full name of the team with more games, the abbreviation still names the other team", async () => {
+    const db = await seedShared();
+
+    expect((await teamsOf(db, "NIP vs Ninjas in Pyjamas.CN en EU LCS 2017")).teams).toEqual(["Ninjas in Pyjamas", "Ninjas in Pyjamas.CN"]);
+    expect((await teamsOf(db, "Ninjas in Pyjamas.CN vs NIP en EU LCS 2017")).teams).toEqual(["Ninjas in Pyjamas.CN", "Ninjas in Pyjamas"]);
+  });
+
   test("without a question, the abbreviation names the team with more games", async () => {
     const db = await seedShared();
 
