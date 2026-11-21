@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, jest, test } from "bun:test";
 import { getCache } from "@vercel/functions";
 import { TIMELINE_FORMAT } from "../src/lib/sources/timeline";
 import { gameNumberOf, phaseOf, routeQuestion } from "../src/lib/agent/query";
 import type { Entities } from "../src/lib/agent/types";
 import type { Json } from "../src/lib/json";
+import { thousands } from "../src/lib/locale";
 import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../src/lib/sources/riot";
 import { parseTimeline } from "../src/lib/sources/timeline";
 import { loadTimeline, resetTimelineStore } from "../src/lib/storage/timelines";
@@ -206,6 +207,10 @@ beforeAll(() => {
       const url = new URL(req.url);
       const key = decodeURIComponent(url.pathname.replace(/^\/bucket\//, ""));
       seen.push({ method: req.method, key, credential: /Credential=([^/]+)/.exec(req.headers.get("authorization") ?? "")?.[1] ?? "" });
+
+      // A store that never answers, for the read timeout.
+      if (key === rawGameKey("TEST_HANG")) return new Promise<Response>(() => {});
+
       const body = objects.get(key);
 
       return body ? new Response(new Uint8Array(body)) : new Response("<Error><Code>NoSuchKey</Code></Error>", { status: 404 });
@@ -240,7 +245,7 @@ beforeEach(async () => {
   seen.length = 0;
   resetTimelineStore();
   const cache = getCache({ namespace: "lolesport" });
-  await Promise.all(["TEST_V5", "TEST_ABSENT"].map(key => cache.delete(`timeline:v${TIMELINE_FORMAT}:${key}`)));
+  await Promise.all(["TEST_V5", "TEST_ABSENT", "TEST_HANG"].map(key => cache.delete(`timeline:v${TIMELINE_FORMAT}:${key}`)));
 });
 
 test("a timeline is read from R2 with the read-only key, then served from the cache", async () => {
@@ -264,6 +269,28 @@ test("a game missing from R2 is reported missing, and remembered", async () => {
   expect(await loadTimeline("TEST_ABSENT")).toMatchObject({ status: "missing", source: "r2" });
   expect(await loadTimeline("TEST_ABSENT")).toMatchObject({ status: "missing", source: "cache" });
   expect(seen.filter((s) => s.key === rawGameKey("TEST_ABSENT"))).toHaveLength(1);
+});
+
+test("a store that never answers gives a timeout the answer can word in its language", async () => {
+  jest.useFakeTimers();
+
+  try {
+    const load = loadTimeline("TEST_HANG");
+
+    while (!seen.some((s) => s.key === rawGameKey("TEST_HANG"))) await new Promise<void>((done) => setImmediate(done));
+    jest.advanceTimersByTime(8000);
+
+    expect(await load).toMatchObject({ status: "error", timeoutSeconds: 8 });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("the gold gap is written in thousands with one decimal, the language's way", () => {
+  expect(thousands("fr", 1000)).toBe("1,0k");
+  expect(thousands("en", 1000)).toBe("1.0k");
+  expect(thousands("fr", 1234)).toBe("1,2k");
+  expect(thousands("en", 1234)).toBe("1.2k");
 });
 
 // --- Routing ---------------------------------------------------------------------------------

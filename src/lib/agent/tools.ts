@@ -4399,7 +4399,7 @@ ORDER BY g.played_at DESC NULLS LAST, g.game_n NULLS FIRST`,
         followUps: followUpsFor(pick.game_n),
         scoreboard,
         totals: { ...base, timeline: load.status },
-        trace: [{ status: "error", title: say(`Timeline ${pick.riot_key} : ${why}`, `Timeline ${pick.riot_key}: ${why}`), detail: load.status === "error" ? load.message : undefined }],
+        trace: [{ status: "error", title: say(`Timeline ${pick.riot_key} : ${why}`, `Timeline ${pick.riot_key}: ${why}`), detail: load.status === "error" ? (load.timeoutSeconds ? say(`lecture de plus de ${load.timeoutSeconds} s`, `read took more than ${load.timeoutSeconds} s`) : load.message) : undefined }],
         notes,
       };
     }

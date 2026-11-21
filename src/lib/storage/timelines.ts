@@ -30,7 +30,8 @@ export type TimelineLoad =
   | { status: "missing"; source: TimelineSource; ms: number }
   /** No store configured (no R2_READ_* variables and no local cache). */
   | { status: "unconfigured" }
-  | { status: "error"; message: string; ms: number };
+  /** `timeoutSeconds` is set when the store did not answer in time: the answer words it in its own language. */
+  | { status: "error"; message: string; timeoutSeconds?: number; ms: number };
 
 const TTL_S = 30 * 24 * 3600;
 const MISSING_TTL_S = 3600;
@@ -95,10 +96,16 @@ async function writeCache(key: string, value: z.infer<typeof Cached>, ttl: numbe
   }
 }
 
+class ReadTimeout extends Error {
+  constructor(readonly seconds: number) {
+    super(`read took more than ${seconds} s`);
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`lecture de plus de ${ms / 1000} s`)), ms).unref?.()),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new ReadTimeout(ms / 1000)), ms).unref?.()),
   ]);
 }
 
@@ -128,6 +135,10 @@ export async function loadTimeline(key: string): Promise<TimelineLoad> {
 
     return { status: "ok", timeline, source: s.source, ms: ms() };
   } catch (err) {
-    return { status: "error", message: err instanceof Error ? err.message : String(err), ms: ms() };
+    const message = err instanceof Error ? err.message : String(err);
+
+    return err instanceof ReadTimeout
+      ? { status: "error", message, timeoutSeconds: err.seconds, ms: ms() }
+      : { status: "error", message, ms: ms() };
   }
 }
