@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
 import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
+import { IngameLine } from "./ingame";
 import { type RiotGameRow, fetchRiotGames, loadIngame } from "./riot";
 
 /** A minimal S3-compatible server: GET, HEAD, PUT and ListObjectsV2 on one bucket. */
@@ -224,4 +225,115 @@ test("an R2 request that never gets an answer is aborted after the store's timeo
   } finally {
     server.stop(true);
   }
+});
+
+/** The game a page title belongs to: "V5 data:TEST 10/Timeline" → "TEST_10". */
+const gameOf = (title: string) => title.replace(/^V5 data:/, "").replace(/\/Timeline$/, "").replace(" ", "_");
+
+/**
+ * A wiki that leaves the games of `omitted` out of every multi-game response (no
+ * entry at all, not a missing-page marker) and serves them only when asked alone;
+ * the games of `never` are left out of every response. Records the games of each request.
+ */
+function omittingWiki(omitted: string[], never: string[] = []) {
+  const calls: string[][] = [];
+
+  const fetchPages = async (titles: string[]) => {
+    const games = [...new Set(titles.map(gameOf))];
+    calls.push(games);
+    const served = titles.filter((t) => !never.includes(gameOf(t)) && (games.length === 1 || !omitted.includes(gameOf(t))));
+
+    return new Map(
+      served.map((t) => {
+        const raw = game(gameOf(t));
+
+        return [t, { title: t, revid: 1, timestamp: "2026-11-14T00:00:00Z", content: JSON.stringify(t.endsWith("/Timeline") ? raw.timeline : raw.stats) }];
+      }),
+    );
+  };
+
+  return { calls, fetchPages };
+}
+
+const okLines = (file: string) =>
+  readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => IngameLine.parse(JSON.parse(l)));
+
+test("two games left out of a grouped response are each asked again alone, and stored once", async () => {
+  const wiki = omittingWiki(["TEST_10", "TEST_11"]);
+  const local = new FsStore(join(dir, "riot10"));
+  const ingameFile = join(dir, "ingame10.jsonl");
+  const opts = { budgetMinutes: 1, remote: null, rederive: false, local, ingameFile, fetchPages: wiki.fetchPages };
+
+  const counts = await fetchRiotGames([row("TEST_10"), row("TEST_11")], opts);
+
+  expect(wiki.calls).toEqual([["TEST_10", "TEST_11"], ["TEST_10"], ["TEST_11"]]);
+  expect(counts).toMatchObject({ from_wiki: 2, left: 0, missing: 0, invalid: 0 });
+  expect(okLines(ingameFile).map((l) => `${l.key}:${l.status}`)).toEqual(["TEST_10:ok", "TEST_11:ok"]);
+  expect(await local.get(rawGameKey("TEST_11"))).not.toBeNull();
+
+  // The next run skips them.
+  wiki.calls.length = 0;
+  const again = await fetchRiotGames([row("TEST_10"), row("TEST_11")], opts);
+  expect(wiki.calls).toEqual([]);
+  expect(again).toMatchObject({ current: 2, from_wiki: 0, left: 0 });
+});
+
+test("in a mixed response, only the game left out is asked again, before the next batch", async () => {
+  const wiki = omittingWiki(["TEST_21"]);
+  const ingameFile = join(dir, "ingame20.jsonl");
+
+  const counts = await fetchRiotGames([row("TEST_20"), row("TEST_21"), row("TEST_22")], {
+    budgetMinutes: 1,
+    remote: null,
+    rederive: false,
+    local: new FsStore(join(dir, "riot20")),
+    ingameFile,
+    fetchPages: wiki.fetchPages,
+  });
+
+  expect(wiki.calls).toEqual([["TEST_20", "TEST_21"], ["TEST_21"], ["TEST_22"]]);
+  expect(counts).toMatchObject({ from_wiki: 3, left: 0 });
+  expect(okLines(ingameFile).map((l) => l.key)).toEqual(["TEST_20", "TEST_21", "TEST_22"]);
+});
+
+test("a game left out again when asked alone is left for the next run, with no summary", async () => {
+  const wiki = omittingWiki([], ["TEST_30"]);
+  const ingameFile = join(dir, "ingame30.jsonl");
+  const opts = { budgetMinutes: 1, remote: null, rederive: false, local: new FsStore(join(dir, "riot30")), ingameFile, fetchPages: wiki.fetchPages };
+
+  const counts = await fetchRiotGames([row("TEST_30")], opts);
+
+  expect(wiki.calls).toEqual([["TEST_30"], ["TEST_30"]]);
+  expect(counts).toMatchObject({ from_wiki: 0, left: 1, missing: 0, invalid: 0 });
+  expect(loadIngame(ingameFile).get("TEST_30")).toBeUndefined();
+
+  // The next run looks at it again.
+  wiki.calls.length = 0;
+  expect(await fetchRiotGames([row("TEST_30")], opts)).toMatchObject({ left: 1 });
+  expect(wiki.calls).toEqual([["TEST_30"], ["TEST_30"]]);
+});
+
+test("the games waiting for a retry count as left when the time budget runs out", async () => {
+  let clock = 0;
+  const wiki = omittingWiki(["TEST_40", "TEST_41"]);
+
+  const counts = await fetchRiotGames([row("TEST_40"), row("TEST_41"), row("TEST_42")], {
+    budgetMinutes: 1,
+    remote: null,
+    rederive: false,
+    local: new FsStore(join(dir, "riot40")),
+    ingameFile: join(dir, "ingame40.jsonl"),
+    now: () => clock,
+    fetchPages: async (titles) => {
+      clock += 2 * 60_000;
+
+      return wiki.fetchPages(titles);
+    },
+  });
+
+  expect(wiki.calls).toEqual([["TEST_40", "TEST_41"]]);
+  expect(counts).toMatchObject({ from_wiki: 0, left: 3 });
 });
