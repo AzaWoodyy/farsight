@@ -328,6 +328,7 @@ test("a question is one trace: root, step observations and the LLM generation", 
   expect(attr(root, "langfuse.observation.level")).toBe("ERROR");
   expect(attr(root, "langfuse.trace.tags")).toEqual(["empty-result", "error", "self-corrected", "sql-fallback", "llm", "low-confidence", "unresolved-mention"]);
   expect(meta(root, "route")).toBe("sql");
+  expect(meta(root, "locale")).toBe("fr");
   expect(meta(root, "llmCalls")).toBe(1);
   expect(meta(root, "llmInputTokens")).toBe(412);
   expect(meta(root, "llmCostUsd")).toBe(0.00061);
