@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { rulesOnly, runAgent } from "../../src/lib/agent/run";
 
 const args = process.argv.slice(2);
 const option = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -59,12 +60,6 @@ const passes = Number(option("passes") ?? 2);
 
 if (!Number.isSafeInteger(passes) || passes < 2) throw new Error("--passes must be an integer of at least 2 (including the warm-up)");
 
-delete process.env.OPENROUTER_API_KEY;
-
-delete process.env.LANGFUSE_PUBLIC_KEY;
-
-const { runAgent } = await import("../../src/lib/agent/run");
-
 type Answer = Awaited<ReturnType<typeof runAgent>>;
 
 const Questions = z.object({ now: z.string(), questions: z.array(z.object({ id: z.string(), question: z.string(), tags: z.array(z.string()), locale: z.enum(["fr", "en"]).optional() })) });
@@ -79,7 +74,7 @@ let firstMs = 0;
 for (let pass = 0; pass < passes; pass++) {
   for (const [i, c] of cases.entries()) {
     const started = performance.now();
-    const answer = await runAgent(c.question, () => {}, now, undefined, c.locale ?? "fr");
+    const answer = await rulesOnly(() => runAgent(c.question, () => {}, now, undefined, c.locale ?? "fr"));
     const ms = Math.round(performance.now() - started);
 
     if (pass > 0) {

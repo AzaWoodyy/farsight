@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { championSortKey, detectChampionRanking, formatChampionValue, RANK_COLUMN } from "../champions";
 import { DEFAULT_LOCALE, type Locale, numberFormat } from "../locale";
-import { withoutLlm } from "./llm";
-import { runAgent } from "./run";
+import { rulesOnly, runAgent } from "./run";
 import type { Answer, TableCell } from "./types";
 
 export type ShareCard = {
@@ -149,6 +148,6 @@ export function clearShareCards() {
 
 export function shareCard(question: string, locale: Locale = DEFAULT_LOCALE): Promise<ShareCard | null> {
   return rememberCard(`${locale}\n${question}`, async () =>
-    cardOf(await withoutLlm(() => runAgent(question, () => {}, undefined, undefined, locale)), locale),
+    cardOf(await rulesOnly(() => runAgent(question, () => {}, undefined, undefined, locale)), locale),
   );
 }

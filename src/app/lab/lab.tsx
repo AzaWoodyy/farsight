@@ -1,14 +1,15 @@
 "use client";
 
+import { z } from "zod";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import type { Answer, StepName, StepPart } from "@/lib/agent/types";
+import type { StepName, StepPart } from "@/lib/agent/types";
 import { HowIFoundIt, Progress } from "../agent-console";
 import { AnswerView, Feedback } from "../answer-view";
 import { LocaleProvider } from "../i18n/locale-context";
 import { LAB_FIXTURES, LAB_VARIANTS, type LabState } from "./catalog";
+import { LabFixture as Fixture } from "./fixture";
 import { LabMenu } from "./lab-menu";
 
-type Fixture = { question: string; steps: StepPart[]; answer: Answer | null; error: string | null };
 
 type Loaded = Fixture | "missing";
 
@@ -20,9 +21,11 @@ async function fetchFixture(id: string): Promise<Loaded> {
 
     if (!res.ok) return "missing";
 
-    const fixture: Fixture = await res.json();
+    const fixture = Fixture.safeParse(await res.json());
 
-    return fixture;
+    if (!fixture.success) console.warn(`lab fixture ${id}: ${z.prettifyError(fixture.error)}`);
+
+    return fixture.success ? fixture.data : "missing";
   } catch {
     cache.delete(id);
 

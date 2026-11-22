@@ -30,15 +30,13 @@ function configured(): Llm | null {
 export const quotaExhausted = (now = Date.now()): boolean => now < exhaustedUntil;
 
 export function llmStatus(): LlmStatus {
-  if (!configured()) return "missing";
+  if (rulesOnly.getStore() || !configured()) return "missing";
 
   return quotaExhausted() ? "exhausted" : "ready";
 }
 
 export function getLlm(): Llm | null {
   requestSignal.getStore()?.throwIfAborted();
-
-  if (rulesOnly.getStore()) return null;
 
   return llmStatus() === "ready" ? configured() : null;
 }

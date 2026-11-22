@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
+import { rulesOnly, runAgent } from "../src/lib/agent/run";
 import { LOCALES } from "../src/lib/locale";
 import { maskPersonalData } from "../src/lib/tracing/mask";
 import { type Candidate, candidatesOf, guessLocale, REASONS, type TracedQuestion, withoutEvalCases } from "./eval-candidates/select";
@@ -83,8 +84,6 @@ function langfuseKeys() {
 
   const read = (name: string) => process.env[name]?.trim() || fromFile[name]?.trim() || "";
   const keys = { publicKey: read("LANGFUSE_PUBLIC_KEY"), secretKey: read("LANGFUSE_SECRET_KEY"), baseUrl: read("LANGFUSE_BASE_URL").replace(/\/+$/, "") };
-
-  for (const name of Object.keys(process.env)) if (name.startsWith("LANGFUSE_")) delete process.env[name];
 
   if (!keys.publicKey || !keys.secretKey || !keys.baseUrl) {
     console.error("LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY et LANGFUSE_BASE_URL sont requis (.env, .env.local ou ~/.farsight/langfuse.env)");
@@ -182,12 +181,10 @@ async function replayAll(list: Candidate[]): Promise<Map<string, Now>> {
   const result = new Map<string, Now>();
 
   if (!replay) return result;
-  delete process.env.OPENROUTER_API_KEY;
-  const { runAgent } = await import("../src/lib/agent/run");
 
   for (const c of list) {
     try {
-      const answer = await runAgent(c.question, () => {}, new Date(), undefined, c.locale);
+      const answer = await rulesOnly(() => runAgent(c.question, () => {}, new Date(), undefined, c.locale));
       result.set(c.key, { route: answer.meta.route, unread: answer.meta.unread, title: answer.title });
     } catch (err) {
       result.set(c.key, { error: err instanceof Error ? err.message : String(err) });

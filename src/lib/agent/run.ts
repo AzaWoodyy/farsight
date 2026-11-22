@@ -10,12 +10,12 @@ import { type Db, openDb, readSchema, selectAll, type SqlRow } from "../db";
 import { wikiUrl } from "../sources/leaguepedia";
 import { type DecideOutcome, type Decider, decide, describeAttempts } from "./decide";
 import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
-import { getLlm, LLM_CALL, llmStatus, llmSignal, requestAborted, withLlmSignal } from "./llm";
+import { getLlm, LLM_CALL, llmStatus, llmSignal, requestAborted, withLlmSignal, withoutLlm } from "./llm";
 import { msg, withLocale } from "./messages";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { buildQuery, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
 import { nextMove, type Problem, probesEmptiness } from "./recovery";
-import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
+import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport, withoutTracing } from "./trace";
 import type { Answer, AnswerMeta, Entities, PlayerProfile, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { playerProfiles, type ToolCall } from "./tools";
 import { teamBadges, teamNames } from "./team-badges";
@@ -572,6 +572,8 @@ async function format(
 }
 
 const PeriodInput = z.object({ yearFrom: z.number().nullable(), yearTo: z.number().nullable() });
+
+export const rulesOnly = <T>(run: () => T): T => withoutLlm(() => withoutTracing(run));
 
 export function runAgent(question: string, emit: Emit, now: Date = new Date(), signal?: AbortSignal, locale: Locale = DEFAULT_LOCALE): Promise<Answer> {
   return withLocale(locale, () => withLlmSignal(signal, () => run(question, emit, now)));

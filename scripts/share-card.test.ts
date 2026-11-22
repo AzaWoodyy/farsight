@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getLlm, withoutLlm } from "../src/lib/agent/llm";
+import { getLlm, llmStatus, withoutLlm } from "../src/lib/agent/llm";
 import { cardOf, clearShareCards, rememberCard, type ShareCard } from "../src/lib/agent/share";
 import type { ChampionRankingInput } from "../src/lib/agent/tools";
 import type { Answer, ResultRow, SeriesDetail } from "../src/lib/agent/types";
@@ -214,6 +214,7 @@ test("a run for a card never gets the model, whatever the key", () => {
 
   try {
     expect(withoutLlm(() => getLlm())).toBeNull();
+    expect(withoutLlm(() => llmStatus())).toBe("missing");
   } finally {
     if (key === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = key;
