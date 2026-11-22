@@ -36,7 +36,9 @@ export type StepInput = { question: string } | { sql: string | null; params: Que
 
 type Usage = { calls: number; errors: number; inputTokens: number; outputTokens: number; costUsd: number };
 
-type Scope = { root: LangfuseAgent; locale: Locale; usage: Usage; calls: Map<string, LangfuseGeneration> };
+export const CHAT_TAG = "surface:chat";
+
+type Scope = { root: LangfuseAgent; locale: Locale; chat: boolean; usage: Usage; calls: Map<string, LangfuseGeneration> };
 
 const scope = new AsyncLocalStorage<Scope>();
 
@@ -181,8 +183,8 @@ export function outcomeTags(answer: Answer, entities: Entities, steps: Map<StepN
 
 export const localeTag = (locale: Locale) => `locale:${locale}`;
 
-function setTags({ root, locale }: Pick<Scope, "root" | "locale">, tags: string[]) {
-  root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...tags, localeTag(locale)]);
+function setTags({ root, locale, chat }: Pick<Scope, "root" | "locale" | "chat">, tags: string[]) {
+  root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...tags, localeTag(locale), ...(chat ? [CHAT_TAG] : [])]);
 }
 
 export function recordOutcome(answer: Answer, entities: Entities, steps: Map<StepName, StepPart>): void {
@@ -212,15 +214,15 @@ export function recordOutcome(answer: Answer, entities: Entities, steps: Map<Ste
   });
 }
 
-export function traceQuestion<T>(question: string, sessionId: string | null, locale: Locale, run: (traceId: string | null) => Promise<T>): Promise<T> {
+export function traceQuestion<T>(question: string, sessionId: string | null, locale: Locale, run: (traceId: string | null) => Promise<T>, chat = false): Promise<T> {
   const traced = () =>
     startActiveObservation(
       TRACE_NAME,
       (root) => {
         root.update({ input: question });
-        setTags({ root, locale }, []);
+        setTags({ root, locale, chat }, []);
 
-        const current: Scope = { root, locale, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 }, calls: new Map() };
+        const current: Scope = { root, locale, chat, usage: { calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 }, calls: new Map() };
 
         return scope.run(current, async () => {
           try {

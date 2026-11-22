@@ -28,6 +28,8 @@
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.178",
+    "@clerk/localizations": "^4.26.3",
+    "@clerk/nextjs": "7.10.7",
     "@langfuse/otel": "6.1.1",
     "@langfuse/tracing": "6.1.1",
     "@neondatabase/serverless": "1.2.0",

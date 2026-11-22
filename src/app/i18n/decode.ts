@@ -11,9 +11,21 @@ function shuffled(char: string): string {
   return char === char.toLowerCase() ? pick(LOWER) : pick(UPPER);
 }
 
+type Line = { read: () => string | null; write: (value: string) => void; connected: () => boolean; text: string; shown: string; at: number[] };
+
+const timings = (text: string) => Array.from(text, (_, i) => DURATION * (0.15 + 0.85 * ((i / text.length) * 0.65 + Math.random() * 0.35)));
+
+function onScreen(element: Element): boolean {
+  if (!element.checkVisibility()) return false;
+
+  const box = element.getBoundingClientRect();
+
+  return box.bottom >= 0 && box.top <= innerHeight;
+}
+
 export function decode(root: HTMLElement): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const lines: { node: Text; text: string; shown: string; at: number[] }[] = [];
+  const lines: Line[] = [];
 
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node.nodeValue ?? "";
@@ -21,15 +33,35 @@ export function decode(root: HTMLElement): void {
 
     if (!(node instanceof Text) || !text.trim() || !parent || parent.closest("script, style, .sr-only, header a")) continue;
 
-    if (!parent.checkVisibility()) continue;
+    if (!onScreen(parent)) continue;
 
-    const box = parent.getBoundingClientRect();
+    lines.push({
+      read: () => node.nodeValue,
+      write: (value) => {
+        node.nodeValue = value;
+      },
+      connected: () => node.isConnected,
+      text,
+      shown: text,
+      at: timings(text),
+    });
+  }
 
-    if (box.bottom < 0 || box.top > innerHeight) continue;
+  for (const field of root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input[placeholder], textarea[placeholder]")) {
+    const text = field.placeholder;
 
-    const at = Array.from(text, (_, i) => DURATION * (0.15 + 0.85 * ((i / text.length) * 0.65 + Math.random() * 0.35)));
+    if (!text.trim() || !onScreen(field)) continue;
 
-    lines.push({ node, text, shown: text, at });
+    lines.push({
+      read: () => field.placeholder,
+      write: (value) => {
+        field.placeholder = value;
+      },
+      connected: () => field.isConnected,
+      text,
+      shown: text,
+      at: timings(text),
+    });
   }
 
   const start = performance.now();
@@ -42,10 +74,10 @@ export function decode(root: HTMLElement): void {
       last = elapsed;
 
       for (const line of lines) {
-        if (!line.node.isConnected || line.node.nodeValue !== line.shown) continue;
+        if (!line.connected() || line.read() !== line.shown) continue;
 
         line.shown = elapsed >= DURATION ? line.text : Array.from(line.text, (char, i) => (elapsed >= line.at[i] ? char : shuffled(char))).join("");
-        line.node.nodeValue = line.shown;
+        line.write(line.shown);
       }
     }
 

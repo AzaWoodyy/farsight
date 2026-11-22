@@ -14,3 +14,4 @@ Tracing (`src/lib/tracing/langfuse.ts`) exports one trace per question to Langfu
 - Every text attribute of a span is masked by `MaskingSpanProcessor` before the Langfuse processor sees it. The Langfuse processor's own `mask` option is not enough: it only covers Langfuse inputs, outputs and metadata, and the prompt of an LLM call (`gen_ai.input.messages`) would go out as typed.
 - `SEND_TIMEOUT_MS` (3 s) bounds a flush and a score request: Langfuse being slow never holds a function open. `flushTracing` races the flush against it and never throws.
 - A thumbs up / down is a boolean score with a stable id, `<FEEDBACK_SCORE>-<traceId>` (`sendFeedback`): a second click on the same answer replaces the first score instead of adding one.
+- `src/app/api/chat/route.ts` calls `startTracing()` at module level too, for the same reason: the conversation runs the agent from its own route ([0077](0077-langfuse-trace-structure.md)).

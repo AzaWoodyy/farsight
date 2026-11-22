@@ -1,0 +1,43 @@
+import type { Answer } from "../../src/lib/agent/types";
+
+export function emptyAnswer(over: Partial<Omit<Answer, "meta">> = {}, meta: Partial<Answer["meta"]> = {}): Answer {
+  return {
+    title: "Titre",
+    summary: "",
+    rows: [],
+    table: null,
+    timeline: null,
+    scoreboard: null,
+    versus: null,
+    teams: null,
+    roster: null,
+    champion: null,
+    pool: null,
+    runes: null,
+    series: null,
+    icons: {},
+    iconTones: {},
+    teamLeagues: {},
+    profiles: [],
+    sources: [],
+    followUps: [],
+    notes: [],
+    ...over,
+    meta: {
+      route: "sql",
+      sqlAvailable: false,
+      input: null,
+      players: [],
+      teams: [],
+      champion: null,
+      league: null,
+      rowCount: 0,
+      totals: {},
+      ambiguities: [],
+      attempts: 1,
+      unread: [],
+      empty: null,
+      ...meta,
+    },
+  };
+}

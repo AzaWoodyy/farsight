@@ -22,7 +22,7 @@ export type ChatControls = {
   reset: () => void;
 };
 
-function httpErrorMessage(status: number, errors: Ui["errors"]): string {
+export function httpErrorMessage(status: number, errors: Ui["errors"]): string {
   if (status === 429) return errors.tooMany;
 
   if (status === 403) return errors.refused;

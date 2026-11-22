@@ -12,6 +12,8 @@ export const PATHS = {
   legal: { fr: "/mentions-legales", en: "/en/legal-notice" },
 } as const satisfies Record<string, Record<Locale, string>>;
 
+export const CHAT_PATHS: Record<Locale, string> = { fr: "/chat", en: "/en/chat" };
+
 export type PageKey = keyof typeof PATHS;
 
 export const PAGES: PageKey[] = ["home", "how", "legal"];

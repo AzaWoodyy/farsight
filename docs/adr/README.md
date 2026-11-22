@@ -93,6 +93,18 @@ One file per decision area, numbered in the order they were written down. The co
 - [Team badges: which logo and which league a team name gets](0074-team-badges.md)
 - [Answer card: what it draws and how it is remembered](0075-share-card-rules.md)
 
+## Conversation
+
+- [The conversation is a tool loop beside the four-step pipeline](0117-conversation-tool-loop.md)
+- [Earlier turns reach the model as real tool calls](0118-conversation-history-as-tool-calls.md)
+- [A view composed by the agent is drawn in a frame that runs no script](0119-agent-html-views-sandboxed-frame.md)
+- [Result cards of the conversation are built on the server, apart from the answer views](0120-chat-result-cards.md)
+- [Accounts exist on the conversation paths only, and the conversation opens by its configuration](0121-conversation-accounts-and-configuration.md)
+- [A signed-in account talks to the agent only once it is invited](0122-chat-access-by-invitation.md)
+- [Saved conversations and usage live in their own schema, under their own role](0123-conversation-threads-and-usage.md)
+- [Paths of teams between leagues are computed by the code, not by the model](0124-league-paths-tool.md)
+- [The conversation's test data exists in development only](0125-conversation-test-data-toggle.md)
+
 ## Tracing
 
 - [Langfuse tracing: where it is registered and how it is tested](0076-langfuse-tracing-setup.md)

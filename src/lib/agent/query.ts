@@ -1294,7 +1294,7 @@ export async function schemaPrompt(db: Db): Promise<string> {
     .join("\n");
 }
 
-const sqlRules = (language: string) =>
+export const sqlRules = (language: string) =>
   "PostgreSQL dialect. One read-only SELECT statement, no trailing semicolon, no server function (pg_*, set_config...). " +
   "Text matches exactly: use ILIKE for a case-insensitive match. Flags (win, has_ingame, first_*) are 0/1 integers: compare them with = 1 and SUM them. " +
   "Every column selected beside an aggregate is in the GROUP BY. Order a column that can be NULL with NULLS LAST. " +

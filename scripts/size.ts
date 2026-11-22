@@ -9,6 +9,7 @@ const FUNCTION_WARN_BYTES = 225e6;
 
 const FUNCTIONS = [
   { route: "/api/ask", trace: "server/app/api/ask/route.js.nft.json" },
+  { route: "/api/chat", trace: "server/app/api/chat/route.js.nft.json" },
   { route: "/api/card", trace: "server/app/api/card/route.js.nft.json" },
   { route: "/q", trace: "server/app/(fr)/q/page.js.nft.json" },
   { route: "/en/q", trace: "server/app/en/q/page.js.nft.json" },

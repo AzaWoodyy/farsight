@@ -42,6 +42,21 @@ depuis SQLite.
   - `bun run db:migrate` applique une migration d'index ou de vue en place.
 - **Rôles** (`db/roles.sql`) : le propriétaire charge ; `farsight_app`, celui de l'app, est en lecture seule avec un
   `statement_timeout` de 10 s ; `farsight_sql` ne lit que les vues `v_*`.
+- **Fils et usage de la conversation** (`db/threads.sql`, `src/lib/threads/store.ts`) : ce que les comptes écrivent vit
+  à part des données, dans le schéma `farsight_users`, par le rôle `farsight_threads` et sa propre chaîne de connexion
+  (`THREADS_DATABASE_URL`).
+  - `threads` : une ligne par conversation (identifiant UUID choisi par le navigateur, identifiant Clerk du compte,
+    titre, messages en un document `jsonb`, date de mise à jour), avec un index par compte et date. `usage` : un
+    compteur de messages par compte et par jour UTC.
+  - `farsight_threads` n'a de droits que sur ce schéma (`search_path = farsight_users`, `statement_timeout` de 5 s) et
+    ne lit rien des données esport ; `farsight_app` reste en lecture seule et n'a aucun droit sur `farsight_users`.
+  - `db:load` échange le schéma `farsight` et ne touche jamais `farsight_users` : une mise à jour des données ne perd
+    aucune conversation. `db/threads.sql` n'est pas une migration de `db/migrations` : il se lance à la main, une fois
+    par base, et se relance sans risque.
+  - Limites appliquées par le code : 30 conversations par compte, 600 ko par conversation, 100 messages par compte et
+    par jour ; les compteurs de plus de 7 jours sont effacés au fil des messages. Un compte supprimé chez Clerk
+    emporte ses lignes des deux tables.
+  - L'app ouvre pour ce rôle un pool à part, de 3 connexions au plus.
 - **SQL généré** (`src/lib/db/generated-query.ts`, `src/lib/agent/guard.ts`) : transaction `READ ONLY`,
   `SET LOCAL ROLE farsight_sql`, `statement_timeout` de 4 s, au plus 200 lignes et 2 Mo, coupés côté serveur. C'est la
   base qui refuse une table de base, une écriture ou une fonction serveur.
@@ -110,6 +125,12 @@ Vercel.
 
   3. Lancer `db:load` avec la chaîne directe du propriétaire.
   4. Mettre à jour `DATABASE_URL` sur Vercel et les deux secrets GitHub.
+  5. Si la conversation est ouverte, recréer son schéma et son rôle, puis mettre à jour `THREADS_DATABASE_URL` sur
+     Vercel (les conversations de l'ancien projet ne suivent pas) :
+
+     ```sh
+     psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v threads_password="'…'" -f db/threads.sql
+     ```
 
 - **Livrer une migration de table ou de vue** : la base doit passer avant le code, sinon le code neuf refuse
   l'ancienne base. Exception : un code qui lit ce qu'ajoute la migration seulement quand c'est là garde

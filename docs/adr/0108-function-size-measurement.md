@@ -1,6 +1,6 @@
 # How `bun run size` measures a function
 
-`scripts/size.ts` runs at the end of `bun run build` and fails it when a function that reads the database (`/api/ask`, `/api/card`, `/q`, `/en/q`) goes over Vercel's 250 MB uncompressed cap (warning from 225 MB) or ships a `data/*.sqlite` file. What it can measure depends on where the build ran.
+`scripts/size.ts` runs at the end of `bun run build` and fails it when a function that reads the database (`/api/ask`, `/api/chat`, `/api/card`, `/q`, `/en/q`) goes over Vercel's 250 MB uncompressed cap (warning from 225 MB) or ships a `data/*.sqlite` file. What it can measure depends on where the build ran.
 
 ## Rules
 
