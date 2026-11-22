@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { getLlm } from "../src/lib/agent/llm";
 import { rulesOnly, runAgent } from "../src/lib/agent/run";
+import { frenchInEnglishAnswer } from "./english-answer";
 import { TOOLS } from "../src/lib/agent/tools";
 import { type Answer, STEPS, type StepPart } from "../src/lib/agent/types";
 
@@ -170,6 +171,26 @@ const failures: string[] = [];
 const needLlm: string[] = [];
 
 const followUps = new Map<string, { locale: "fr" | "en"; text: string; id: string }>();
+const frenchLeaks: string[] = [];
+
+async function answerInEnglish(question: string) {
+  const steps = new Map<string, StepPart>();
+
+  const answer = await agentMode(() =>
+    runAgent(
+      question,
+      (ev) => {
+        if (ev.type === "step") steps.set(ev.part.step, ev.part);
+      },
+      now,
+      undefined,
+      "en",
+    ),
+  );
+
+  return { answer, steps: [...steps.values()] };
+}
+
 const t0 = performance.now();
 
 for (const c of cases) {
@@ -191,6 +212,13 @@ for (const c of cases) {
     );
 
     checks = score(c, answer, steps);
+
+    if (flag("in-english") && !llm) {
+      const english = c.locale === "en" ? { answer, steps: [...steps.values()] } : await answerInEnglish(c.question);
+
+      for (const leak of frenchInEnglishAnswer(c.question, english.answer, english.steps, c.locale === "en"))
+        frenchLeaks.push(`  - ${c.id} (${leak.field}, « ${leak.word} ») : ${leak.text}`);
+    }
 
     if (flag("follow-ups"))
       for (const text of answer.followUps) {
@@ -272,4 +300,11 @@ if (flag("follow-ups")) {
   }
 }
 
-if (flag("strict") && (failures.length || !judged || missed.length)) process.exit(1);
+if (flag("in-english")) {
+  if (llm) console.log("\n--in-english : mode déterministe seulement");
+  else console.log(`\nen anglais : ${cases.length} questions, ${frenchLeaks.length} textes en français`);
+
+  for (const line of frenchLeaks) console.log(line);
+}
+
+if (flag("strict") && (failures.length || !judged || missed.length || frenchLeaks.length)) process.exit(1);

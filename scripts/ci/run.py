@@ -16,7 +16,7 @@ commands = {
     "build": ["bash", "-e", "-o", "pipefail", "-c", "bunx --no-install next build && bun run size && bun run pages:check"],
     "lint": ["bun", "run", "lint", "--deny-warnings"],
     "test": ["python3", "scripts/ci/test.py"],
-    "eval": ["bun", "run", "eval", "--deterministic", "--strict", "--follow-ups", f"--only={only}"],
+    "eval": ["bun", "run", "eval", "--deterministic", "--strict", "--follow-ups", "--in-english", f"--only={only}"],
 }
 # The tests create their own schemas and never read the loaded rows: they start at once, beside the load the type
 # check, the build and the eval wait for (docs/adr/0113-ci-check-scheduling.md).
