@@ -30,7 +30,7 @@ export async function ChatGate({ locale }: { locale: Locale }) {
   return (
     <ClerkProvider localization={locale === "fr" ? french : undefined} appearance={APPEARANCE}>
       {access.state === "allowed" ? (
-        <ChatRoom locale={locale} />
+        <ChatRoom key={access.userId} locale={locale} account={access.userId} />
       ) : (
         <ChatFrame locale={locale}>
           <ChatDoor locale={locale} pending={access.state === "pending"} />

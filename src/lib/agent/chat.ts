@@ -20,6 +20,8 @@ const CHAT_STEPS = 6;
 const CHAT_OUTPUT_TOKENS = 4000;
 const DIGEST_MAX_LENGTH = 12_000;
 const HISTORY_DIGEST_MAX_LENGTH = 6000;
+const HISTORY_REPLY_MAX_LENGTH = 4000;
+const HISTORY_CALLS_PER_MESSAGE = 3;
 const HTML_MAX_LENGTH = 20_000;
 const SQL_PREVIEW_ROWS = 40;
 
@@ -84,9 +86,12 @@ export function modelHistory(messages: z.infer<typeof ChatMessages>): ModelMessa
   return kept.slice(from).flatMap((m, turn): ModelMessage[] => {
     const text = textOf(m.parts);
 
-    if (m.role === "user") return text ? [{ role: "user", content: text }] : [];
+    if (m.role === "user") return text ? [{ role: "user", content: text.slice(0, CHAT_MESSAGE_MAX_LENGTH) }] : [];
 
-    const calls = m.parts.flatMap((p) => pastCall(p) ?? []).map((call, i) => ({ ...call, toolCallId: `past_${turn}_${i}` }));
+    const calls = m.parts
+      .flatMap((p) => pastCall(p) ?? [])
+      .slice(-HISTORY_CALLS_PER_MESSAGE)
+      .map((call, i) => ({ ...call, toolCallId: `past_${turn}_${i}` }));
 
     return [
       ...(calls.length
@@ -98,7 +103,7 @@ export function modelHistory(messages: z.infer<typeof ChatMessages>): ModelMessa
             },
           ]
         : []),
-      ...(text ? [{ role: "assistant" as const, content: text }] : []),
+      ...(text ? [{ role: "assistant" as const, content: text.slice(0, HISTORY_REPLY_MAX_LENGTH) }] : []),
     ];
   });
 }
@@ -156,7 +161,7 @@ const sameQuestion = (question: string) => question.normalize("NFKC").toLowerCas
 
 type Shown = { id: string; data: ShownAnswer };
 
-const removed = (data: ShownAnswer): ShownAnswer => ({ ...data, card: null, sources: [] });
+const removed = (data: ShownAnswer): ShownAnswer => ({ ...data, card: null, sources: [], digest: null });
 
 function askData(writer: Writer, locale: Locale, signal: AbortSignal | undefined, shown: Shown[]) {
   const asked = new Map<string, string>();

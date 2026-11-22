@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { z } from "zod";
 import { ChatMessages, digestAnswer, lastUserText, modelHistory } from "../src/lib/agent/chat";
+import { StoredMessages } from "../src/lib/agent/chat-parts";
 import { CHAT_HISTORY_MESSAGES } from "../src/lib/agent/chat-types";
 import { emptyAnswer } from "./fixtures/answer";
 
@@ -219,5 +220,22 @@ describe("digestAnswer", () => {
     expect(digest).toHaveLength(12_000 + "… (truncated: the visitor sees the full result)".length);
     expect(digest.startsWith('{"route":"sql","title":"Titre","summary":"xxx')).toBe(true);
     expect(digest.endsWith("x… (truncated: the visitor sees the full result)")).toBe(true);
+  });
+});
+
+describe("the parts kept in a stored message", () => {
+  test("a part the page cannot draw is dropped, the others are kept as they are", () => {
+    const html = { type: "data-html" as const, id: "h", data: { title: "Vue", html: "<p>ok</p>" } };
+    const greeting = { type: "text" as const, text: "Bonjour" };
+
+    const stored = StoredMessages.parse([
+      { id: "m1", role: "assistant", parts: [greeting, { type: "text" }, { type: "data-answer", data: { pending: false } }, { type: "tool-ask_data", state: "output-available" }, html] },
+    ]);
+
+    expect(stored[0].parts).toEqual([greeting, html]);
+  });
+
+  test("an empty list of messages is refused", () => {
+    expect(StoredMessages.safeParse([]).success).toBe(false);
   });
 });

@@ -23,7 +23,7 @@ import { LocaleProvider, useLocale } from "../i18n/locale-context";
 import { CHAT_PATHS, LOCALE_NAME, LOCALES, PATHS } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
 import { ThemeToggle } from "../theme-toggle";
-import { type Conversation, conversations } from "./conversations";
+import { type Conversation, conversations, UNDO_MS } from "./conversations";
 import { DATA_MODE_LABEL, DATA_MODES, type DataMode, dataMode, WORST_LOGIN } from "./worst-case";
 import { HtmlFrame } from "./html-frame";
 
@@ -57,7 +57,6 @@ const CARD_ROWS = 6;
 const DAY_MS = 86_400_000;
 const COMPOSER_MAX_HEIGHT = 200;
 const NEAR_BOTTOM = 160;
-const UNDO_MS = 7000;
 const HASH_PREFIX = "#c=";
 const DESKTOP = "(min-width: 48rem)";
 
@@ -73,15 +72,15 @@ function setAddressConversation(id: string | null) {
   window.history.replaceState(window.history.state, "", id ? `${HASH_PREFIX}${id}` : window.location.pathname + window.location.search);
 }
 
-export function ChatRoom({ locale }: { locale: Locale }) {
+export function ChatRoom({ locale, account }: { locale: Locale; account: string }) {
   return (
     <LocaleProvider locale={locale}>
-      <Shell locale={locale} />
+      <Shell locale={locale} account={account} />
     </LocaleProvider>
   );
 }
 
-function Shell({ locale }: { locale: Locale }) {
+function Shell({ locale, account }: { locale: Locale; account: string }) {
   const t = CHAT[locale].room;
   const shell = SHELL[locale];
   const library = useSyncExternalStore(conversations.subscribe, conversations.snapshot, conversations.serverSnapshot);
@@ -98,8 +97,8 @@ function Shell({ locale }: { locale: Locale }) {
   const stress = useSyncExternalStore(subscribeNever, dataMode, (): DataMode => "demo");
   const login = stress === "worst" ? WORST_LOGIN : (user?.username ?? user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "");
   const activeId = chosen ? chosen.id : linked;
-  const awaited = linked != null && chosen == null && library.state === "loading";
   const active = saved.find((c) => c.id === activeId);
+  const awaited = (linked != null && chosen == null && library.state === "loading") || (active != null && active.messages == null);
 
   function open(id: string | null) {
     setChosen({ id });
@@ -161,6 +160,17 @@ function Shell({ locale }: { locale: Locale }) {
 
     arrival.transition?.skipTransition();
   }, [restored]);
+
+  useEffect(() => {
+    conversations.enter(account);
+    window.addEventListener("pagehide", conversations.flush);
+
+    return () => window.removeEventListener("pagehide", conversations.flush);
+  }, [account]);
+
+  useEffect(() => {
+    if (active && active.messages == null) void conversations.open(active.id);
+  }, [active]);
 
   useEffect(() => {
     if (!removed) return;

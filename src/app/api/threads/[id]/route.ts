@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { chatUser } from "@/lib/auth/chat-access";
 import { chatConfigured } from "@/lib/auth/chat-config";
-import { deleteThread, saveThread, ThreadMessages, threadsConfigured } from "@/lib/threads/store";
+import { deleteThread, readThread, saveThread, ThreadMessages } from "@/lib/threads/store";
 
 const ThreadId = z.uuid();
 const Body = z.object({ messages: ThreadMessages });
@@ -17,9 +17,17 @@ async function request(params: Promise<{ id: string }>): Promise<{ user: string;
 
   if (!id.success) return Response.json({ error: "invalid thread" }, { status: 400 });
 
-  if (!threadsConfigured()) return Response.json({ error: "threads are not stored" }, { status: 503 });
-
   return { user, id: id.data };
+}
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const target = await request(params);
+
+  if (target instanceof Response) return target;
+
+  const thread = await readThread(target.user, target.id);
+
+  return thread ? Response.json({ thread }, { headers: { "Cache-Control": "no-store" } }) : Response.json({ error: "not found" }, { status: 404 });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

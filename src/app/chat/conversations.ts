@@ -1,36 +1,36 @@
 import { z } from "zod";
+import { StoredMessages, ThreadSummary } from "@/lib/agent/chat-parts";
 import type { ChatUIMessage } from "@/lib/agent/chat-types";
 import { dataMode, stressConversations } from "./worst-case";
 
-export type Conversation = { id: string; title: string; updatedAt: number; messages: ChatUIMessage[] };
+export type Conversation = { id: string; title: string; updatedAt: number; messages: ChatUIMessage[] | null };
 
 const TITLE_MAX_LENGTH = 60;
 
-const Listed = z.object({
-  saved: z.boolean(),
-  threads: z.array(
-    z.object({
-      id: z.string().min(1),
-      title: z.string(),
-      updatedAt: z.number(),
-      messages: z.array(z.looseObject({ id: z.string(), role: z.enum(["user", "assistant"]), parts: z.array(z.looseObject({ type: z.string() })) })),
-    }),
-  ),
-});
+export const UNDO_MS = 7000;
+
+const Listed = z.object({ threads: z.array(ThreadSummary) });
+
+const Opened = z.object({ thread: z.object({ messages: StoredMessages }) });
 
 export type Library = { list: Conversation[]; state: "loading" | "ready" | "unsaved" | "failed" };
 
 const LOADING: Library = { list: [], state: "loading" };
 
 let library: Library = LOADING;
-let asked = false;
+let owner: string | null = null;
 const listeners = new Set<() => void>();
+const writes = new Map<string, Promise<void>>();
+const opening = new Set<string>();
+const leaving = new Map<string, number>();
 
 function show(next: Library) {
   library = next;
 
   for (const listener of listeners) listener();
 }
+
+const failed = () => show({ ...library, state: library.state === "unsaved" ? "unsaved" : "failed" });
 
 function titleOf(messages: ChatUIMessage[]): string {
   const first = messages.find((m) => m.role === "user");
@@ -41,60 +41,118 @@ function titleOf(messages: ChatUIMessage[]): string {
 
 const address = (id: string) => `/api/threads/${encodeURIComponent(id)}`;
 
-async function load() {
+function write(account: string, id: string, send: () => Promise<Response>) {
+  const next = (writes.get(id) ?? Promise.resolve()).then(async () => {
+    const res = await send().catch(() => null);
+
+    if (owner === account && !res?.ok) failed();
+  });
+
+  writes.set(id, next);
+}
+
+async function load(account: string) {
   const stressed = stressConversations(dataMode(), Date.now());
 
   if (stressed) return show({ list: stressed, state: "unsaved" });
 
-  try {
-    const res = await fetch("/api/threads", { cache: "no-store" });
-    const listed = Listed.safeParse(res.ok ? await res.json() : null);
+  const res = await fetch("/api/threads", { cache: "no-store" }).catch(() => null);
+  const listed = Listed.safeParse(res?.ok ? await res.json().catch(() => null) : null);
 
-    if (!listed.success) return show({ list: library.list, state: "failed" });
+  if (owner !== account) return;
 
-    const known = new Set(listed.data.threads.map((t) => t.id));
+  if (!listed.success) return failed();
 
-    // SAFETY: the page itself wrote these messages; the schema checks the fields the views read first (id, role, parts[].type).
-    const stored = listed.data.threads as Conversation[];
+  const known = new Set(listed.data.threads.map((t) => t.id));
+  const stored = listed.data.threads.map((t): Conversation => ({ ...t, messages: null }));
 
-    show({ list: [...library.list.filter((c) => !known.has(c.id)), ...stored].toSorted((a, b) => b.updatedAt - a.updatedAt), state: listed.data.saved ? "ready" : "unsaved" });
-  } catch {
-    show({ list: library.list, state: "failed" });
-  }
+  show({ list: [...library.list.filter((c) => !known.has(c.id)), ...stored].toSorted((a, b) => b.updatedAt - a.updatedAt), state: "ready" });
+}
+
+function forget(account: string, id: string) {
+  leaving.delete(id);
+  write(account, id, () => fetch(address(id), { method: "DELETE", keepalive: true }));
 }
 
 export const conversations = {
   subscribe(listener: () => void) {
     listeners.add(listener);
 
-    if (!asked) {
-      asked = true;
-      void load();
-    }
-
     return () => listeners.delete(listener);
   },
   snapshot: () => library,
   serverSnapshot: () => LOADING,
+  enter(account: string) {
+    if (owner === account) return;
+
+    owner = account;
+    writes.clear();
+    opening.clear();
+    leaving.clear();
+    show(LOADING);
+    void load(account);
+  },
+  flush() {
+    const account = owner;
+
+    if (!account) return;
+
+    for (const [id, timer] of leaving) {
+      window.clearTimeout(timer);
+      forget(account, id);
+    }
+  },
+  async open(id: string) {
+    const account = owner;
+    const wanted = library.list.find((c) => c.id === id);
+
+    if (!account || !wanted || wanted.messages || opening.has(id)) return;
+
+    opening.add(id);
+
+    const res = await fetch(address(id), { cache: "no-store" }).catch(() => null);
+    const opened = Opened.safeParse(res?.ok ? await res.json().catch(() => null) : null);
+
+    opening.delete(id);
+
+    if (owner !== account) return;
+
+    if (!opened.success) {
+      show({ ...library, list: library.list.filter((c) => c.id !== id), state: "failed" });
+
+      return;
+    }
+
+    show({ ...library, list: library.list.map((c) => (c.id === id ? { ...c, messages: opened.data.thread.messages } : c)) });
+  },
   save(id: string, messages: ChatUIMessage[]) {
-    if (messages.length === 0) return;
+    const account = owner;
+
+    if (!account || messages.length === 0) return;
 
     show({ ...library, list: [{ id, title: titleOf(messages), updatedAt: Date.now(), messages }, ...library.list.filter((c) => c.id !== id)] });
 
     if (library.state === "unsaved") return;
 
-    void fetch(address(id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages }) }).catch(() => {});
+    write(account, id, () => fetch(address(id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages }) }));
   },
   remove(id: string): Conversation | null {
+    const account = owner;
     const removed = library.list.find((c) => c.id === id) ?? null;
 
     show({ ...library, list: library.list.filter((c) => c.id !== id) });
 
-    if (library.state !== "unsaved") void fetch(address(id), { method: "DELETE" }).catch(() => {});
+    if (account && library.state !== "unsaved")
+      leaving.set(
+        id,
+        window.setTimeout(() => forget(account, id), UNDO_MS),
+      );
 
     return removed;
   },
   restore(conversation: Conversation) {
-    conversations.save(conversation.id, conversation.messages);
+    window.clearTimeout(leaving.get(conversation.id));
+    leaving.delete(conversation.id);
+    show({ ...library, list: [conversation, ...library.list.filter((c) => c.id !== conversation.id)].toSorted((a, b) => b.updatedAt - a.updatedAt) });
   },
 };

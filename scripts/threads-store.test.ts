@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import pg from "pg";
-import { deleteThread, forgetUser, KEPT_THREADS, listThreads, saveThread, spendMessage, THREAD_MAX_BYTES, type ThreadMessages } from "../src/lib/threads/store";
+import { deleteThread, forgetUser, KEPT_THREADS, listThreads, readThread, saveThread, spendMessage, THREAD_MAX_BYTES, type ThreadMessages } from "../src/lib/threads/store";
 import { testDatabaseUrl } from "./fixtures/test-db";
 
 const SCHEMA_STATEMENT = /^CREATE (?:SCHEMA|TABLE|INDEX) /;
@@ -85,7 +85,7 @@ describe("threads of an account", () => {
       [second, "Roster de T1"],
       [first, "Chovy aux Worlds"],
     ]);
-    expect(threads[1].messages).toEqual(messages);
+    expect((await readThread(userId, first))?.messages).toEqual(messages);
     expect(threads[0].updatedAt).toBeGreaterThan(threads[1].updatedAt);
   });
 
@@ -103,7 +103,7 @@ describe("threads of an account", () => {
     const threads = await listThreads(userId);
 
     expect(threads.map((t) => t.id)).toEqual([first, second]);
-    expect(threads[0].messages).toEqual(longer);
+    expect((await readThread(userId, first))?.messages).toEqual(longer);
   });
 
   test.each([
@@ -132,7 +132,9 @@ describe("threads of an account", () => {
     await deleteThread(other, id);
 
     expect(await listThreads(other)).toEqual([]);
-    expect((await listThreads(owner)).map((t) => [t.id, t.title, t.messages])).toEqual([[id, "Question du propriétaire", messages]]);
+    expect(await readThread(other, id)).toBeNull();
+    expect((await listThreads(owner)).map((t) => [t.id, t.title])).toEqual([[id, "Question du propriétaire"]]);
+    expect((await readThread(owner, id))?.messages).toEqual(messages);
   });
 
   test("its owner deletes a thread, and only that one", async () => {
@@ -178,7 +180,7 @@ describe("threads of an account", () => {
     await saveThread(userId, id, messages);
 
     expect(await saveThread(userId, id, asked("x".repeat(THREAD_MAX_BYTES)))).toBe("too_large");
-    expect((await listThreads(userId)).map((t) => t.messages)).toEqual([messages]);
+    expect((await readThread(userId, id))?.messages).toEqual(messages);
   });
 });
 

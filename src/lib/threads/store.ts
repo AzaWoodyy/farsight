@@ -1,5 +1,6 @@
 import { attachDatabasePool } from "@vercel/functions";
 import { z } from "zod";
+import { StoredMessages, type ThreadSummary } from "../agent/chat-parts";
 import { createPool, type PgPool } from "../db/postgres";
 
 export const KEPT_THREADS = 30;
@@ -9,20 +10,19 @@ const USAGE_KEPT_DAYS = 7;
 const CLEANUP_SHARE = 0.02;
 const TITLE_MAX_LENGTH = 60;
 
-export const ThreadMessages = z
-  .array(z.looseObject({ id: z.string(), role: z.enum(["user", "assistant"]), parts: z.array(z.looseObject({ type: z.string() })).max(60) }))
-  .min(1)
-  .max(200);
+export const ThreadMessages = StoredMessages;
 
-export type ThreadMessages = z.infer<typeof ThreadMessages>;
+export type ThreadMessages = StoredMessages;
 
-const Row = z.object({ id: z.string(), title: z.string(), messages: ThreadMessages, updated_at: z.coerce.date() });
+const SummaryRow = z.object({ id: z.string(), title: z.string(), updated_at: z.coerce.date() });
 
-export type Thread = { id: string; title: string; updatedAt: number; messages: ThreadMessages };
+const Row = SummaryRow.extend({ messages: ThreadMessages });
+
+export type Thread = ThreadSummary & { messages: ThreadMessages };
 
 let pool: PgPool | null = null;
 
-export const threadsConfigured = (): boolean => Boolean(process.env.THREADS_DATABASE_URL);
+export const threadsConfigured = (): boolean => Boolean(process.env.THREADS_DATABASE_URL?.trim());
 
 function threads(): PgPool {
   if (pool) return pool;
@@ -38,26 +38,28 @@ function threads(): PgPool {
   return pool;
 }
 
-const TextPart = z.object({ type: z.literal("text"), text: z.string() });
-
 function titleOf(messages: ThreadMessages): string {
   const first = messages.find((m) => m.role === "user");
-  const text = (first?.parts ?? []).flatMap((p) => TextPart.safeParse(p).data?.text ?? []).join(" ").replace(/\s+/g, " ").trim();
+  const text = (first?.parts ?? []).flatMap((p) => (p.type === "text" ? [p.text] : [])).join(" ").replace(/\s+/g, " ").trim();
 
   return text.length > TITLE_MAX_LENGTH ? `${text.slice(0, TITLE_MAX_LENGTH - 1).trimEnd()}…` : text;
 }
 
-export async function listThreads(userId: string): Promise<Thread[]> {
-  const { rows } = await threads().query(
-    "SELECT id, title, messages, updated_at FROM farsight_users.threads WHERE user_id = $1 ORDER BY updated_at DESC LIMIT $2",
-    [userId, KEPT_THREADS],
-  );
+export async function listThreads(userId: string): Promise<ThreadSummary[]> {
+  const { rows } = await threads().query("SELECT id, title, updated_at FROM farsight_users.threads WHERE user_id = $1 ORDER BY updated_at DESC LIMIT $2", [userId, KEPT_THREADS]);
 
   return rows.flatMap((row) => {
-    const thread = Row.safeParse(row);
+    const thread = SummaryRow.safeParse(row);
 
-    return thread.success ? [{ id: thread.data.id, title: thread.data.title, updatedAt: thread.data.updated_at.getTime(), messages: thread.data.messages }] : [];
+    return thread.success ? [{ id: thread.data.id, title: thread.data.title, updatedAt: thread.data.updated_at.getTime() }] : [];
   });
+}
+
+export async function readThread(userId: string, id: string): Promise<Thread | null> {
+  const { rows } = await threads().query("SELECT id, title, messages, updated_at FROM farsight_users.threads WHERE user_id = $1 AND id = $2", [userId, id]);
+  const thread = Row.safeParse(rows[0]);
+
+  return thread.success ? { id: thread.data.id, title: thread.data.title, updatedAt: thread.data.updated_at.getTime(), messages: thread.data.messages } : null;
 }
 
 export async function saveThread(userId: string, id: string, messages: ThreadMessages): Promise<"saved" | "too_large" | "not_yours"> {
