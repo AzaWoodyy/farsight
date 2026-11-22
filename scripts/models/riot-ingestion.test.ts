@@ -41,7 +41,14 @@ class MemoryStore implements ObjectStore {
 
 class Violation extends Error {}
 
-class InjectedFault extends Error {}
+class InjectedFault extends Error {
+  constructor(
+    message: string,
+    readonly stopsTheRun: boolean,
+  ) {
+    super(message);
+  }
+}
 
 function holds(condition: boolean, invariant: string) {
   if (!condition) throw new Violation(invariant);
@@ -61,7 +68,7 @@ class FaultyR2 extends MemoryStore {
   override async get(key: string) {
     if (this.schedule.fault(`R2 read ${key}`, "answers", ["fails"]) === "fails") {
       this.run.faults.add("other");
-      throw new InjectedFault("R2 read failed");
+      throw new InjectedFault("R2 read failed", key === SUMMARIES_KEY);
     }
 
     return super.get(key);
@@ -70,7 +77,7 @@ class FaultyR2 extends MemoryStore {
   override async put(key: string, body: Uint8Array) {
     if (this.schedule.fault(`R2 write ${key}`, "succeeds", ["fails"]) === "fails") {
       this.run.faults.add("other");
-      throw new InjectedFault("R2 write failed");
+      throw new InjectedFault("R2 write failed", false);
     }
 
     this.run.uploads.set(key, (this.run.uploads.get(key) ?? 0) + 1);
@@ -80,7 +87,7 @@ class FaultyR2 extends MemoryStore {
   override async list(prefix: string) {
     if (this.schedule.fault(`R2 list ${prefix}`, "answers", ["fails"]) === "fails") {
       this.run.faults.add("other");
-      throw new InjectedFault("R2 list failed");
+      throw new InjectedFault("R2 list failed", true);
     }
 
     return super.list(prefix);
@@ -89,19 +96,28 @@ class FaultyR2 extends MemoryStore {
 
 function wiki(schedule: Schedule, run: Run, clock: { now: number }) {
   return async (titles: string[]): Promise<Map<string, WikiPage>> => {
+    holds(clock.now <= BUDGET_MINUTES * 60_000, "no wiki request starts after the time budget");
     const asked = ROWS.filter((r) => titles.includes(r.StatsPage));
-    const omissions = asked.map((r) => `leaves out ${r.Key}`);
-    const outcome = schedule.fault(`wiki asked ${asked.map((r) => r.Key).join("+")}`, "answers", ["is down", "answers past the time budget", ...omissions]);
+    const request = `wiki asked ${asked.map((r) => r.Key).join("+")}`;
 
-    if (outcome !== "answers") run.faults.add(asked.length > 1 && omissions.includes(outcome) ? "grouped omission" : "other");
+    if (schedule.fault(request, "answers", ["is down"]) === "is down") {
+      run.faults.add("other");
+      throw new InjectedFault("wiki down", false);
+    }
 
-    if (outcome === "is down") throw new InjectedFault("wiki down");
+    if (schedule.fault(`${request}, answer`, "in time", ["past the time budget"]) !== "in time") {
+      run.faults.add("other");
+      clock.now += 2 * BUDGET_MINUTES * 60_000;
+    }
 
-    if (outcome === "answers past the time budget") clock.now += 2 * BUDGET_MINUTES * 60_000;
     const pages = new Map<string, WikiPage>();
 
     for (const row of asked) {
-      if (outcome === `leaves out ${row.Key}`) continue;
+      if (schedule.fault(`${request}, ${row.Key}`, "served", ["left out"]) !== "served") {
+        run.faults.add(asked.length > 1 ? "grouped omission" : "other");
+        continue;
+      }
+
       const game = riotGame(row.Key);
       pages.set(row.StatsPage, { title: row.StatsPage, revid: 1, timestamp: game.fetchedAt, content: JSON.stringify(game.stats) });
       pages.set(row.TimelinePage!, { title: row.TimelinePage!, revid: 2, timestamp: game.fetchedAt, content: JSON.stringify(game.timeline) });
@@ -155,7 +171,7 @@ async function dailyRun(machine: Machine, r2: Map<string, Uint8Array>, schedule:
     sleep: async () => {},
     });
   } catch (error) {
-    if (error instanceof InjectedFault) return;
+    if (error instanceof InjectedFault && error.stopsTheRun) return;
     throw error;
   }
 
