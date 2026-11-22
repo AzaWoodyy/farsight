@@ -67,7 +67,7 @@ jobs:
       # Direct install measured at 2s; caching the 100MB dependency cache costs more.
       - if: steps.changes.outputs.any == 'true'
         run: bun install --frozen-lockfile
-      - if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true'
+      - if: steps.changes.outputs.typecheck == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: snapshot
         with:
@@ -75,27 +75,24 @@ jobs:
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
       # Postgres is always loaded from the raw data: the database is derived, so the same inputs give the same rows.
       - name: Restore and verify the pinned snapshot
-        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true'
+        if: steps.changes.outputs.typecheck == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/ci/data.ts
-      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && (steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true')
+      - if: github.event_name == 'push' && steps.snapshot.outputs.cache-hit != 'true' && steps.changes.outputs.typecheck == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci-data
           key: snapshot-v1-${{ hashFiles('ci/data.json') }}
       # The tests need the roles and their own database, never the loaded rows.
       - name: Postgres roles and the test database
-        if: steps.changes.outputs.build == 'true' || steps.changes.outputs.eval == 'true' || steps.changes.outputs.test == 'true'
+        if: steps.changes.outputs.typecheck == 'true'
         run: |
           psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE farsight_test"
           psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v app_password="'ci-app'" -f db/roles.sql
-      # Complete type checking before Next rewrites generated route types.
-      - name: Typecheck
-        if: steps.changes.outputs.typecheck == 'true'
-        run: bun run typecheck --incremental false
       # The pinned summaries cannot be recomputed here: after a DERIVE_VERSION bump they stay at the older, compatible one
-      # (db:load --allow-older-summaries, run by scripts/ci/run.py beside the tests).
+      # (db:load --allow-older-summaries, run by scripts/ci/run.py beside the tests). The type check comes after the
+      # load, whose rows next.config.ts reads, and before the build, which rewrites the generated route types.
       - name: Independent checks (two chains, every status collected)
         if: steps.changes.outputs.any == 'true'
         run: python3 scripts/ci/run.py

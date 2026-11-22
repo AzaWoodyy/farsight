@@ -12,14 +12,15 @@ questions = json.loads(Path("eval/questions.json").read_text())["questions"]
 only = ",".join(q["id"] for q in questions if "timeline" not in q["tags"])
 commands = {
     "load": ["bun", "run", "db:load", "--allow-older-summaries"],
+    "typecheck": ["bun", "run", "typecheck", "--incremental", "false"],
     "build": ["bash", "-e", "-o", "pipefail", "-c", "bunx --no-install next build && bun run size"],
     "lint": ["bun", "run", "lint", "--deny-warnings"],
     "test": ["python3", "scripts/ci/test.py"],
     "eval": ["bun", "run", "eval", "--deterministic", "--strict", "--follow-ups", f"--only={only}"],
 }
-# The tests create their own schemas and never read the loaded rows: they start at once, beside the load the build and
-# the eval wait for (docs/adr/0113-ci-check-scheduling.md).
-readers = [name for name in ("build", "eval") if name in selected]
+# The tests create their own schemas and never read the loaded rows: they start at once, beside the load the type
+# check, the build and the eval wait for (docs/adr/0113-ci-check-scheduling.md).
+readers = [name for name in ("typecheck", "build", "eval") if name in selected]
 chains = [
     [name for name in ("lint", "test") if name in selected],
     (["load"] if readers else []) + readers,
