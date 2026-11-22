@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PlayerPhoto } from "@/lib/agent/types";
+import { isMissingWikiImage, loadedMissingWikiImage } from "./missing-wiki-image";
 
 export function PlayerAvatar({ name, photo, size }: { name: string; photo: PlayerPhoto | null | undefined; size: number }) {
   const [failed, setFailed] = useState(false);
@@ -17,6 +18,9 @@ export function PlayerAvatar({ name, photo, size }: { name: string; photo: Playe
   return (
     // oxlint-disable-next-line nextjs/no-img-element
     <img
+      ref={(img) => {
+        if (loadedMissingWikiImage(img)) setFailed(true);
+      }}
       src={photo.url}
       alt=""
       title={`${name} · photo${photo.year == null ? "" : ` ${photo.year}`} (Leaguepedia)`}
@@ -24,6 +28,9 @@ export function PlayerAvatar({ name, photo, size }: { name: string; photo: Playe
       height={size}
       loading="lazy"
       referrerPolicy="strict-origin"
+      onLoad={(e) => {
+        if (isMissingWikiImage(e.currentTarget)) setFailed(true);
+      }}
       onError={() => setFailed(true)}
       className="shrink-0 border border-line bg-line/40 object-cover object-top"
       style={box}
