@@ -12,7 +12,7 @@
 - `asked` starts from `IDLE` whether a chat is mounted or not: the new run starts from nothing, not from what was last shown, and the chat's next report replaces it.
 - `home` drops the chat's state with the question: the chat unmounts with it, so it can no longer report an empty state, and its last one would otherwise stay on screen.
 - `modules_failed` only matters while a question is shown, and `modules_loaded` takes a `load_failed` question up again: the chat, now mounted, sends it. A failure while on the home screen changes nothing; the next question loads the modules again.
-- The agent does not use the chat history: `ask` empties the messages (`setMessages([])`) before each question. Do not send earlier messages.
+- The agent does not use the chat history: `ask` empties the messages (`setMessages([])`) before each question. Do not send earlier messages. This is the console of the home page; the conversation page (`/chat`) is a separate surface with its own component, route and agent loop, and it does send its history ([0117](0117-conversation-tool-loop.md), [0118](0118-conversation-history-as-tool-calls.md)).
 - The transport's `fetch` is `askFetchIn(locale)`: a non-2xx answer (a 429 from the firewall rate limit, a 403 from BotID…) becomes a readable error in the language of the page, instead of the raw response body the transport would show.
 - There is one `DefaultChatTransport` per language, built once at module load (`transports`): `useChat` keeps the transport it was first given, so one built during render would be ignored after the first.
 - The transport's option is typed `typeof fetch`, which also carries `preconnect`; the wrapper is given that property with `Object.assign` only to satisfy the type.
