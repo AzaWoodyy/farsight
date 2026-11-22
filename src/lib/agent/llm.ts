@@ -27,10 +27,12 @@ function configured(): Llm | null {
   return (cached = { model: openrouter(id, { reasoning: { effort: "none" } }), id });
 }
 
+export const quotaExhausted = (now = Date.now()): boolean => now < exhaustedUntil;
+
 export function llmStatus(): LlmStatus {
   if (!configured()) return "missing";
 
-  return Date.now() < exhaustedUntil ? "exhausted" : "ready";
+  return quotaExhausted() ? "exhausted" : "ready";
 }
 
 export function getLlm(): Llm | null {
@@ -51,11 +53,16 @@ function isQuotaError(error: Error): boolean {
   return error.statusCode === 403 && /key limit exceeded/i.test(`${error.message} ${error.responseBody ?? ""}`);
 }
 
-export function describeLlmError(error: Error): string {
-  if (!isQuotaError(error)) return error.message;
-  exhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS;
+export function recordLlmFailure(error: Error, now = Date.now()): void {
+  if (isQuotaError(error)) exhaustedUntil = now + QUOTA_COOLDOWN_MS;
+}
 
-  return msg().llm.quotaError;
+export function resetLlmQuota(): void {
+  exhaustedUntil = 0;
+}
+
+export function describeLlmError(error: Error): string {
+  return isQuotaError(error) ? msg().llm.quotaError : error.message;
 }
 
 const rulesOnly = new AsyncLocalStorage<boolean>();

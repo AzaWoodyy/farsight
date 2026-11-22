@@ -107,6 +107,8 @@ const TOWERS = new Map([
 
 const label = (map: Map<string, string>, key: string | undefined) => (key ? (map.get(key) ?? null) : null);
 
+const grubsDetail = (count: number) => (count === 1 ? "1 larve" : `${count} larves`);
+
 function towerDetail(e: RiotEvent): string | null {
   if (e.towerType === "NEXUS_TURRET") return "du Nexus";
 
@@ -166,7 +168,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
   const deadUntil = new Map<number, number>();
   const aced = new Set<RiotTeam>();
   const first = firstBlood(all.filter((e) => e.type === "CHAMPION_KILL"), teamOf, firstBloodFlags(stats), raw.version);
-  let lastGrubs: { team: RiotTeam; ms: number; event: TimelineEvent } | null = null;
+  let lastGrubs: { team: RiotTeam; ms: number; count: number; event: TimelineEvent } | null = null;
 
   for (const e of all) {
     switch (e.type) {
@@ -213,14 +215,14 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
         else if (e.monsterType === "ATAKHAN") push(e, "atakhan", team);
         else if (e.monsterType === "HORDE") {
           if (lastGrubs && lastGrubs.team === team && e.timestamp - lastGrubs.ms <= GRUBS_WINDOW_MS) {
-            const n = Number(lastGrubs.event.detail?.split(" ")[0] ?? 1) + 1;
-            lastGrubs.event.detail = `${n} larves`;
+            lastGrubs.count++;
             lastGrubs.ms = e.timestamp;
+            lastGrubs.event.detail = grubsDetail(lastGrubs.count);
           } else {
-            const event: TimelineEvent = { s: at(e), kind: "grubs", team, detail: "1 larve" };
+            const event: TimelineEvent = { s: at(e), kind: "grubs", team, detail: grubsDetail(1) };
 
             events.push(event);
-            lastGrubs = { team, ms: e.timestamp, event };
+            lastGrubs = { team, ms: e.timestamp, count: 1, event };
           }
         }
 

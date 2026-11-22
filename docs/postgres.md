@@ -20,8 +20,9 @@ depuis SQLite.
   une migration ne fait donc qu'ajouter, et garde tout ce que le code précédent lit. Les colonnes texte sont en
   `COLLATE "C"` : mêmes tris et comparaisons qu'en SQLite, quelle que soit la locale du serveur.
 - **Chargement** (`bun run db:load`, `scripts/db/load.ts`) : les lignes viennent de `scripts/data/derive.ts`.
-  Elles sont copiées (`COPY`) dans un schéma neuf `farsight_next`
-  construit par toutes les migrations, analysées et ouvertes aux rôles de l'app.
+  Elles sont copiées (`COPY`) dans un schéma neuf `farsight_next`, construit par toutes les migrations et ouvert aux
+  rôles de l'app dans la même transaction, puis analysées. Un chargement qui échoue ne laisse donc aucun schéma
+  à moitié construit.
   - Avant toute écriture, les lignes dérivées passent les contrôles de `scripts/data/checks.ts` : pas de ligne sans son
     parent, pas de ligue du périmètre sans partie, aucun fichier que `data:fetch` n'aurait pas enregistré (résumés
     in-game, photos, sigles, calendrier, logos), aucun résumé in-game d'une dérivation plus ancienne.
@@ -34,7 +35,10 @@ depuis SQLite.
   - La bascule tient en deux renommages dans une transaction : l'app voit l'ancienne base jusqu'au commit, puis la
     nouvelle.
   - `--in-place` (ou `DATABASE_SIZE_LIMIT_MB`, quand le stockage du plan ne tient pas deux copies) recharge sous le même
-    nom, après la même comparaison. L'app n'a alors pas de données pendant le chargement.
+    nom, après la même comparaison. Le schéma en place est supprimé avant la transaction, pour libérer sa place, puis
+    reconstruit dans la transaction. L'app n'a alors pas de données pendant le chargement. S'il échoue avant le commit, la base
+    reste sans schéma (l'app répond `relation "schema_migrations" does not exist`) jusqu'au prochain `db:load` réussi,
+    qui la recharge normalement.
   - `bun run db:migrate` applique une migration d'index ou de vue en place.
 - **Rôles** (`db/roles.sql`) : le propriétaire charge ; `farsight_app`, celui de l'app, est en lecture seule avec un
   `statement_timeout` de 10 s ; `farsight_sql` ne lit que les vues `v_*`.

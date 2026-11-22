@@ -13,14 +13,13 @@ import { ALLOWED_OBJECTS, guardQuery, VIEWS } from "./guard";
 import { getLlm, LLM_CALL, llmStatus, llmSignal, requestAborted, withLlmSignal } from "./llm";
 import { msg, withLocale } from "./messages";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
-import { buildQuery, type CorrectInput, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
+import { buildQuery, correctQuery, coverageLookup, type Route, routeQuestion } from "./query";
+import { nextMove, type Problem, probesEmptiness } from "./recovery";
 import { buildReport, executeReport, formatReport, recordOutcome, traceStep, understandReport } from "./trace";
 import type { Answer, AnswerMeta, Entities, PlayerProfile, QueryPlan, StepName, StepPart, TraceEntry, TraceStatus } from "./types";
 import { playerProfiles, type ToolCall } from "./tools";
 import { teamBadges, teamNames } from "./team-badges";
 import { understandQuestion } from "./understand";
-
-const MAX_ATTEMPTS = 3;
 
 export type AgentEvent = { type: "step"; part: StepPart } | { type: "answer"; answer: Answer };
 
@@ -191,8 +190,6 @@ async function build(db: Db, question: string, entities: Entities, route: Route,
   return plan;
 }
 
-type Problem = CorrectInput["problem"];
-
 type Attempt = { rows: SqlRow[]; problem: null } | { rows: null; problem: Problem };
 
 async function attempt(db: Db, schema: Record<string, string[]>, plan: QueryPlan, step: Step): Promise<Attempt> {
@@ -257,22 +254,23 @@ export async function execute(db: Db, question: string, entities: Entities, firs
       return { rows, plan, problem: null, empty: null };
     }
 
-    const empty = problem.kind === "empty" && (!plan.tool || !plan.relaxed.length) ? await explainEmpty(db, entities, plan.sql) : null;
+    const explanation = probesEmptiness(plan, problem) ? await explainEmpty(db, entities, plan.sql) : null;
+    const move = nextMove(plan, problem, explanation);
 
-    if (empty?.conclusive && (!plan.tool || empty.reason === "no_games")) {
-      step.add(entry({ status: "warn", title: m.emptyExplained, detail: empty.summary }));
-      step.done("warn", empty.title);
+    if (move.kind === "explained") {
+      step.add(entry({ status: "warn", title: m.emptyExplained, detail: move.explanation.summary }));
+      step.done("warn", move.explanation.title);
 
-      return { rows: [], plan, problem, empty };
+      return { rows: [], plan, problem, empty: move.explanation };
     }
 
-    if (problem.kind === "timeout" || plan.attempt >= MAX_ATTEMPTS) {
+    if (move.kind === "given_up") {
       step.done(problem.kind === "empty" ? "warn" : "error", problem.kind === "empty" ? m.noRowsAfter(plan.attempt) : m.givenUpAfter(plan.attempt));
 
       return { rows: [], plan, problem, empty: null };
     }
 
-    const fix = await correctQuery({ db, question, entities, plan, problem });
+    const fix = await correctQuery({ db, question, entities, plan, problem, by: move.by });
 
     if (!fix) {
       step.add(entry({ status: "error", title: m.noFix, detail: problem.message }));

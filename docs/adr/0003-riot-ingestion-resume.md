@@ -4,6 +4,7 @@
 
 ## Rules
 
+- **Where a game stands at the start of a run** is read from its last summary line alone (`summaryState`): `current` (an `ok` line of the current `DERIVE_VERSION`, without `--rederive`) is skipped; `checked` (a `missing` or `invalid` verdict less than `MISSING_RETRY_DAYS` old) is counted and skipped, unless the local cache holds the game; `stale` (no line, an older `ok` line, an older verdict) is summarized from the local cache, else read from R2, else downloaded from the wiki. The cache is read before a verdict is trusted: a game once summarized as `invalid` is summarized again from its cached JSON, which costs no request and picks up a fixed derivation.
 - **A cut line is expected.** An interrupted append can leave the last line of `ingame.jsonl` truncated. `loadIngame` and `latestLines` ignore a line that does not parse instead of failing, and `pullSummaries` starts what it appends with a newline, which closes such an open line before the new ones.
 - **`latestLines` reads without the full schema** (only `key`, `status`, `derive`): `loadIngame` validates a line when it is used, and parsing 40 000 summaries twice more with the schema costs gigabytes of memory.
 - **`pullSummaries`: a read error throws, an unreadable object is ignored.** If the read from R2 fails, the run stops, because it would otherwise recompute everything and replace the object. An object that is there but cannot be decompressed is ignored and replaced by the next push.

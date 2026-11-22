@@ -3,10 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
-import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
+import { RAW_GAME_CONTENT_TYPE, RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
 import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
 import { DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
-import { type RiotGameRow, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries } from "./riot";
+import { type RiotGameRow, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries, summaryState } from "./riot";
 
 function fakeR2(objects: Map<string, Uint8Array>) {
   const requests: string[] = [];
@@ -439,4 +439,46 @@ test("unreadable summaries on R2 are ignored and replaced; a failed read stops t
   } finally {
     r2.stop();
   }
+});
+
+const DAY_MS = 86_400_000;
+
+const checkedLine = (key: string, status: "missing" | "invalid", daysAgo: number, now: number): IngameLine => ({
+  status, key, gameId: `Test/2026 Season_${key}`, checkedAt: new Date(now - daysAgo * DAY_MS).toISOString(), reason: status,
+});
+
+test("where a game stands at the start of a run: current, checked within 30 days, or stale", () => {
+  const now = Date.parse("2026-11-22T00:00:00Z");
+  const ok = summarizeGame(game("STATE_1"));
+
+  expect(summaryState(undefined, false, now)).toEqual({ kind: "stale" });
+  expect(summaryState(ok, false, now)).toEqual({ kind: "current" });
+  expect(summaryState(ok, true, now)).toEqual({ kind: "stale" });
+  expect(summaryState({ ...ok, derive: DERIVE_VERSION - 1 }, false, now)).toEqual({ kind: "stale" });
+  expect(summaryState(checkedLine("STATE_2", "missing", 29, now), false, now)).toEqual({ kind: "checked", status: "missing" });
+  expect(summaryState(checkedLine("STATE_2", "invalid", 1, now), true, now)).toEqual({ kind: "checked", status: "invalid" });
+  expect(summaryState(checkedLine("STATE_2", "missing", 31, now), false, now)).toEqual({ kind: "stale" });
+});
+
+test("a run skips current summaries and recent verdicts, reads the local cache first, and fetches the rest", async () => {
+  const now = Date.now();
+  const local = new FsStore(join(dir, "riot-start"));
+  const ingameFile = join(dir, "ingame-start.jsonl");
+  const wiki = omittingWiki([]);
+
+  await local.put(rawGameKey("START_CACHED"), encodeRawGame(game("START_CACHED")), RAW_GAME_CONTENT_TYPE);
+  writeFileSync(
+    ingameFile,
+    [summarizeGame(game("START_CURRENT")), checkedLine("START_RECENT", "missing", 2, now), checkedLine("START_OLD", "missing", 40, now), checkedLine("START_CACHED", "invalid", 2, now)]
+      .map((l) => `${JSON.stringify(l)}\n`)
+      .join(""),
+  );
+
+  const counts = await fetchRiotGames(["START_CURRENT", "START_RECENT", "START_OLD", "START_CACHED", "START_NEW"].map(row), {
+    budgetMinutes: 1, remote: null, rederive: false, local, ingameFile, fetchPages: wiki.fetchPages,
+  });
+
+  expect(wiki.calls).toEqual([["START_OLD", "START_NEW"]]);
+  expect(counts).toMatchObject({ current: 1, missing: 1, from_cache: 1, from_wiki: 2, left: 0 });
+  expect(loadIngame(ingameFile).get("START_CACHED")?.status).toBe("ok");
 });

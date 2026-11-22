@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { type AgentUIMessage, type Answer, QUESTION_MAX_LENGTH, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
+import { HOME, IDLE, isRunning, screenAfter } from "./console-screen";
 import { HomeExamples } from "./home-examples";
 import { HOME_EVENT } from "./home-link";
 import { LocaleProvider, useLocale, useUi } from "./i18n/locale-context";
@@ -23,8 +24,6 @@ const loadModules = () =>
       loading = null;
       throw new Error("chat modules failed to load");
     }));
-
-const IDLE: ChatState = { messages: [], status: "ready", error: undefined };
 
 const KEPT_ANSWERS = 20;
 
@@ -50,13 +49,11 @@ function Console() {
   const sessionId = useRef<string | null>(null);
 
   const chat = useRef<ChatControls>(null);
-  const [first, setFirst] = useState<{ text: string; sessionId: string; restored?: AgentUIMessage[] } | null>(null);
-  const [chatState, setChatState] = useState<ChatState>(IDLE);
-  const { messages, status, error } = first ? chatState : IDLE;
-  const onChatChange = useCallback((state: ChatState) => setChatState(state), []);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const waiting = first != null && messages.length === 0 && !error && !loadFailed;
-  const running = waiting || status === "submitted" || status === "streaming";
+  const [screen, dispatch] = useReducer(screenAfter, HOME);
+  const first = screen.kind === "home" ? null : screen.question;
+  const { messages, status, error } = screen.kind === "question" ? screen.chat : IDLE;
+  const onChatChange = useCallback((state: ChatState) => dispatch({ type: "chat_changed", chat: state }), []);
+  const running = isRunning(screen);
   const [modules, setModules] = useState<Modules | null>(null);
 
   const preload = useCallback(
@@ -64,9 +61,9 @@ function Console() {
       void loadModules().then(
         (loaded) => {
           setModules(loaded);
-          setLoadFailed(false);
+          dispatch({ type: "modules_loaded" });
         },
-        () => setLoadFailed(true),
+        () => dispatch({ type: "modules_failed" }),
       ),
     [],
   );
@@ -85,18 +82,14 @@ function Console() {
 
     if (!text) return;
 
-    setLoadFailed(false);
     preload();
     form.current?.reset();
     sessionId.current ??= crypto.randomUUID();
 
     if (address === "push") setAddressQuestion(text);
 
-    setFirst({ text, sessionId: sessionId.current });
-
-    if (chat.current) chat.current.ask(text, sessionId.current);
-    else setChatState(IDLE);
-
+    dispatch({ type: "asked", question: { text, sessionId: sessionId.current } });
+    chat.current?.ask(text, sessionId.current);
     scrollToTop();
   }
 
@@ -104,9 +97,7 @@ function Console() {
     if (address === "push") setAddressQuestion(null);
 
     chat.current?.reset();
-    setFirst(null);
-    setChatState(IDLE);
-    setLoadFailed(false);
+    dispatch({ type: "home" });
     form.current?.reset();
     sessionId.current = null;
     scrollToTop();
@@ -149,10 +140,8 @@ function Console() {
     if (!restored) return ask(text, "keep");
 
     sessionId.current ??= crypto.randomUUID();
-    setLoadFailed(false);
     form.current?.reset();
-    setFirst({ text, sessionId: sessionId.current, restored });
-    setChatState({ messages: restored, status: "ready", error: undefined });
+    dispatch({ type: "restored", question: { text, sessionId: sessionId.current }, messages: restored });
     chat.current?.show(restored);
     scrollToTop();
   });
@@ -318,14 +307,14 @@ function Console() {
               <span aria-hidden>xx</span> {error.message}
             </p>
           )}
-          {loadFailed && first && (
+          {screen.kind === "load_failed" && (
             <div className="mt-4 flex flex-wrap items-center gap-x-3 text-sm">
               <p role="alert" className="text-error">
                 <span aria-hidden>xx</span> {ui.console.loadFailed}
               </p>
               <button
                 type="button"
-                onClick={() => ask(first.text)}
+                onClick={() => ask(screen.question.text)}
                 className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
               >
                 {ui.console.retry}

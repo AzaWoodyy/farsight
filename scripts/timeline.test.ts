@@ -164,6 +164,19 @@ test("match-v4: monsters through the killer's team, milliseconds duration, no ac
   ]);
 });
 
+const grub = (s: number, team: 100 | 200): Json => ({ type: "ELITE_MONSTER_KILL", timestamp: s * 1000, killerId: team === 100 ? 1 : 6, killerTeamId: team, monsterType: "HORDE" });
+
+test("void grubs: one event per run of the same team within 90 s, with its count", () => {
+  const runs = [grub(121, 100), grub(130, 100), grub(135, 100), grub(300, 200), grub(400, 200), grub(450, 200)];
+  const events = parseTimeline(v4Game(1, runs))!.events.filter((e) => e.kind === "grubs");
+
+  expect(events.map((e) => [e.s, e.team, e.detail])).toEqual([
+    [121, 100, "3 larves"],
+    [300, 200, "1 larve"],
+    [400, 200, "2 larves"],
+  ]);
+});
+
 test("match-v4: the same five deaths at level 1 are an ace", () => {
   const t = parseTimeline(v4Game())!;
 

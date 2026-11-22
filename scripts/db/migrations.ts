@@ -27,7 +27,16 @@ export function readMigrations(dir = MIGRATIONS_DIR): Migration[] {
   return migrations;
 }
 
-export async function migrate(client: pg.ClientBase, migrations = readMigrations()): Promise<number[]> {
+const TRANSACTIONS = {
+  own: { begin: "BEGIN", commit: "COMMIT", rollback: "ROLLBACK" },
+  caller: { begin: "SAVEPOINT migration", commit: "RELEASE SAVEPOINT migration", rollback: "ROLLBACK TO SAVEPOINT migration" },
+} as const;
+
+export type MigrationTransactions = keyof typeof TRANSACTIONS;
+
+export async function migrate(client: pg.ClientBase, migrations = readMigrations(), transactions: MigrationTransactions = "own"): Promise<number[]> {
+  const tx = TRANSACTIONS[transactions];
+
   await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version integer PRIMARY KEY, name text NOT NULL, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`);
   const { rows } = await client.query<{ version: number; checksum: string }>("SELECT version, checksum FROM schema_migrations ORDER BY version");
@@ -44,15 +53,15 @@ export async function migrate(client: pg.ClientBase, migrations = readMigrations
   const done: number[] = [];
 
   for (const m of migrations.filter((x) => !applied.has(x.version))) {
-    await client.query("BEGIN");
+    await client.query(tx.begin);
 
     try {
       await client.query(m.sql);
       await client.query("INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)", [m.version, m.name, m.checksum]);
-      await client.query("COMMIT");
+      await client.query(tx.commit);
       done.push(m.version);
     } catch (err) {
-      await client.query("ROLLBACK");
+      await client.query(tx.rollback);
       throw new Error(`Migration ${m.version} (${m.name}) failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
