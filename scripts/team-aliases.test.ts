@@ -1,11 +1,25 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { withoutLlm } from "../src/lib/agent/llm";
 import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
-async function seed() {
+const open: TestDb[] = [];
+
+async function opened() {
   const db = await testDb();
+
+  open.push(db);
+
+  return db;
+}
+
+afterEach(async () => {
+  await Promise.all(open.splice(0).map((db) => db.close()));
+});
+
+async function seed() {
+  const db = await opened();
 
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   await db.exec(`
@@ -107,7 +121,7 @@ describe("team abbreviations from Leaguepedia", () => {
 });
 
 async function seedShared() {
-  const db = await testDb();
+  const db = await opened();
   const league = (name: string) => LEAGUES.findIndex((l) => l.name === name) + 1;
 
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
@@ -169,7 +183,7 @@ describe("an abbreviation two teams share", () => {
 });
 
 async function seedLong() {
-  const db = await testDb();
+  const db = await opened();
 
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   await db.exec(`
@@ -218,7 +232,7 @@ describe("a team name longer than four words", () => {
 });
 
 async function seedSuperlatives() {
-  const db = await testDb();
+  const db = await opened();
 
   for (const [i, l] of LEAGUES.entries()) await db.run("INSERT INTO leagues VALUES(?,?,?,?,?)", i + 1, l.name, l.short, l.region, +l.international);
   const worlds = LEAGUES.findIndex((l) => l.name === "World Championship") + 1;
