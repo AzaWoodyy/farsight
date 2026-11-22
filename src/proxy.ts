@@ -1,0 +1,5 @@
+import { clerkMiddleware } from "@clerk/nextjs/server";
+
+export default clerkMiddleware();
+
+export const config = { matcher: ["/chat", "/en/chat", "/api/chat", "/api/threads/:path*"] };

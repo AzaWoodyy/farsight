@@ -45,6 +45,12 @@ const nextConfig: NextConfig = {
       "form-action 'self'",
     ].join("; ");
 
+    const chatCsp = csp
+      .replace("script-src 'self'", "script-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com")
+      .replace("connect-src 'self'", "connect-src 'self' https://*.clerk.accounts.dev https://clerk-telemetry.com")
+      .replace("img-src 'self'", "img-src 'self' https://img.clerk.com")
+      .replace("frame-src 'self'", "frame-src 'self' https://challenges.cloudflare.com");
+
     return [{ source: "/:path*", headers: [
       { key: "Content-Security-Policy", value: csp },
       { key: "X-Content-Type-Options", value: "nosniff" },
@@ -53,7 +59,7 @@ const nextConfig: NextConfig = {
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
       { key: "Referrer-Policy", value: "strict-origin" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-    ] }];
+    ] }, ...["/chat", "/en/chat"].map((source) => ({ source, headers: [{ key: "Content-Security-Policy", value: chatCsp }] }))];
   },
   rewrites: async () => ({
     beforeFiles: [
@@ -66,7 +72,7 @@ const nextConfig: NextConfig = {
   experimental: { globalNotFound: true },
   cacheComponents: true,
   partialPrefetching: true,
-  outputFileTracingExcludes: Object.fromEntries(["/api/ask", ...CARD_ROUTES].map((route) => [route, ["./data/**"]])),
+  outputFileTracingExcludes: Object.fromEntries(["/api/ask", "/api/chat", "/api/threads", "/api/threads/[id]", ...CARD_ROUTES].map((route) => [route, ["./data/**"]])),
   turbopack: {
     rules: {
       "*.css": {

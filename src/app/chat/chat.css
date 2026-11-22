@@ -1,0 +1,332 @@
+.kit {
+  padding: 2px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+
+.kit > * + * {
+  margin-top: 16px;
+}
+
+.kit .kit-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kit .kit-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kit .kit-title::before {
+  content: "# ";
+  color: var(--accent);
+}
+
+.kit .kit-note {
+  max-width: 75ch;
+  border-left: 1px dashed var(--line);
+  padding-left: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.kit .kit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kit .kit-table th {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 12px 6px 0;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kit .kit-table td {
+  border-bottom: 1px dashed var(--line);
+  padding: 6px 12px 6px 0;
+  vertical-align: top;
+}
+
+.kit .kit-table .num {
+  text-align: right;
+}
+
+.kit .kit-table .best {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kit .kit-stats,
+.kit .kit-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.kit .kit-stat {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.kit .kit-stat span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kit .kit-stat b {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kit .kit-bars {
+  display: grid;
+  gap: 6px;
+}
+
+.kit .kit-bar {
+  display: grid;
+  grid-template-columns: minmax(72px, 28%) 1fr minmax(48px, auto);
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--foreground);
+}
+
+.kit .kit-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kit .kit-bar i {
+  position: relative;
+  display: block;
+  height: 10px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 6px);
+}
+
+.kit .kit-bar i::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: clamp(0%, var(--v, 0%), 100%);
+  background: var(--bar, var(--accent));
+}
+
+.kit .kit-bar b {
+  text-align: right;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.kit .kit-bar.blue { --bar: var(--blue); }
+.kit .kit-bar.red { --bar: var(--red); }
+.kit .kit-bar.ok { --bar: var(--ok); }
+.kit .kit-bar.warn { --bar: var(--warn); }
+.kit .kit-bar.error { --bar: var(--error); }
+
+.kit .accent { color: var(--accent); }
+.kit .muted { color: var(--muted); }
+.kit :not(.kit-bar).ok { color: var(--ok); }
+.kit :not(.kit-bar).warn { color: var(--warn); }
+.kit :not(.kit-bar).error { color: var(--error); }
+.kit :not(.kit-bar).blue { color: var(--blue); }
+.kit :not(.kit-bar).red { color: var(--red); }
+
+.kit svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  font-family: inherit;
+}
+
+.kit a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+
+.kit-document,
+.kit-document body {
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.chat-shell {
+  --chat-ease-out: var(--ease-out-strong);
+  --chat-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --shimmer-dur: 2000ms;
+  --shimmer-base: var(--muted);
+  --shimmer-highlight: var(--foreground);
+  --shimmer-band: 400%;
+  --shimmer-ease: linear;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-shell :is(button, a, summary) {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-scroll {
+  overscroll-behavior: contain;
+  scroll-padding-block: 16px;
+}
+
+.chat-prose {
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.chat-in {
+  transition:
+    opacity 220ms var(--chat-ease-out),
+    transform 220ms var(--chat-ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.chat-edge {
+  background: linear-gradient(to bottom, transparent, var(--background));
+}
+
+.chat-jump {
+  transition:
+    opacity 150ms var(--chat-ease-out),
+    transform 150ms var(--chat-ease-out);
+}
+
+.chat-jump[data-hidden] {
+  opacity: 0;
+  transform: scale(0.95) translateY(4px);
+  pointer-events: none;
+}
+
+@media (width < 48rem) {
+  .chat-drawer {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 200ms var(--chat-ease-drawer),
+      visibility 0s 200ms;
+  }
+
+  .chat-drawer[data-open] {
+    transform: none;
+    visibility: visible;
+    transition: transform 300ms var(--chat-ease-drawer);
+  }
+
+  .chat-scrim {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+
+  .chat-scrim[data-open] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (width >= 48rem) {
+  .chat-drawer {
+    transition: width 260ms var(--chat-ease-drawer);
+  }
+
+  .chat-drawer[data-collapsed] {
+    width: 0;
+    visibility: hidden;
+    transition:
+      width 200ms var(--chat-ease-drawer),
+      visibility 0s 200ms;
+  }
+}
+
+.t-shimmer {
+  position: relative;
+  display: inline-block;
+  color: var(--shimmer-base);
+}
+
+.t-shimmer::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg, transparent 0%, transparent 40%, var(--shimmer-highlight) 50%, transparent 60%, transparent 100%);
+  background-size: var(--shimmer-band) 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-shimmer var(--shimmer-dur) var(--shimmer-ease) infinite;
+}
+
+@keyframes t-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-shimmer::before {
+    animation: none !important;
+  }
+
+  .chat-in,
+  .chat-jump {
+    transition: opacity 150ms ease;
+
+    @starting-style {
+      transform: none;
+    }
+  }
+
+  .chat-jump[data-hidden] {
+    transform: none;
+  }
+
+  .chat-drawer,
+  .chat-drawer[data-open],
+  .chat-drawer[data-collapsed] {
+    transition: none;
+  }
+
+  @media (width < 48rem) {
+    .chat-drawer[data-open] {
+      transform: none;
+    }
+  }
+}
