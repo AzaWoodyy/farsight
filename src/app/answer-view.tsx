@@ -410,7 +410,7 @@ function GenericTable({ table, icons, tones, leagues }: { table: Table; icons?: 
   }, [table.rows, sort, locale]);
 
   return (
-    <div className="mt-4 overflow-x-auto border border-line">
+    <div className="relative mt-4 overflow-x-auto border border-line">
       <table className="w-full border-collapse text-left text-xs">
         <thead className="border-b border-line">
           <tr>
