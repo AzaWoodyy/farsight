@@ -119,11 +119,9 @@ export const conversations = {
 
     if (owner !== account) return;
 
-    if (!opened.success) {
-      show({ ...library, list: library.list.map((c) => (c.id === id ? { ...c, unopened: true as const } : c)) });
+    if (res?.status === 404) return show({ ...library, list: library.list.filter((c) => c.id !== id) });
 
-      return;
-    }
+    if (!opened.success) return show({ ...library, list: library.list.map((c) => (c.id === id ? { ...c, unopened: true as const } : c)) });
 
     show({ ...library, list: library.list.map((c) => (c.id === id ? { ...c, messages: opened.data.thread.messages } : c)) });
   },
