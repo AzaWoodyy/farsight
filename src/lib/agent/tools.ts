@@ -514,8 +514,6 @@ const sideLabel = (side: MapSide | null) => (side ? say(` côté ${side === "blu
 
 const leagueAndPeriod = (input: { league: string | null } & Period) => ({ league: input.league, yearFrom: input.yearFrom, yearTo: input.yearTo });
 
-const jsonColumn = <S extends z.ZodType>(schema: S) => schema;
-
 const YearColumn = z.number().catch(0);
 
 const PlayerCounts = z.array(z.object({ player: z.string(), games: z.number() }));
@@ -599,7 +597,7 @@ async function franchiseName(db: Db, column: string, params: Params): Promise<st
 const Text = z.string();
 const NullableText = z.string().nullable();
 
-const pageList = jsonColumn(z.array(z.string()).nullable()).transform((v) => v ?? []);
+const pageList = z.array(z.string()).nullable().transform((v) => v ?? []);
 
 const PlayerHistoryRow = z.object({
   year: YearColumn,
@@ -611,9 +609,7 @@ const PlayerHistoryRow = z.object({
   place: NullableText,
   place_number: z.number().nullable(),
   regular_season: z.number(),
-  champions: jsonColumn(
-    z.array(z.object({ name: z.string(), games: z.number(), wins: z.number(), icon: z.string().nullable() })),
-  ),
+  champions: z.array(z.object({ name: z.string(), games: z.number(), wins: z.number(), icon: z.string().nullable() })),
 });
 
 const TeamHistoryRow = z.object({
@@ -655,7 +651,7 @@ const ChampionStatsRow = z.object({
   picks: z.number(),
   wins: z.number(),
   bans: z.number(),
-  players: jsonColumn(PlayerCounts),
+  players: PlayerCounts,
 });
 
 const StandingsRow = z.object({
@@ -966,7 +962,7 @@ const RosterRow = z.object({
   wins: z.number(),
   first_played: z.number().nullable(),
   last_played: z.number().nullable(),
-  events: jsonColumn(z.array(RosterEvent)),
+  events: z.array(RosterEvent),
 });
 
 const RosterTournamentRow = z.object({ event_page: Text, tournament: NullableText, games: z.number(), wins: z.number(), at: z.number().nullable() });
@@ -977,20 +973,15 @@ const roleRank = (role: string) => {
   return i < 0 ? ROLE_ORDER.length : i;
 };
 
-function splitFilter(column: string, input: { split: string | null }, params: Params): string {
+function splitFilter(column: string, input: { split?: string | null }, params: Params): string {
   if (!input.split) return "";
   params.split = input.split;
 
-  return `AND ${column} IN (SELECT s.tournament_page FROM v_tournaments s WHERE s.split = :split)`;
+  return `AND ${column} IN (SELECT split_scope.tournament_page FROM v_tournaments split_scope WHERE split_scope.split = :split)`;
 }
 
 function rankingScope(alias: string, input: { league: string | null; role?: string | null; side?: MapSide | null; split?: string | null } & Period, params: Params): string {
-  const scope = competitionScope(alias, input, params);
-
-  if (!input.split) return scope;
-  params.split = input.split;
-
-  return `${scope} AND ${alias}.tournament_page IN (SELECT ts.tournament_page FROM v_tournaments ts WHERE ts.split = :split)`;
+  return `${competitionScope(alias, input, params)} ${splitFilter(`${alias}.tournament_page`, input, params)}`.trimEnd();
 }
 
 const rankingScopeLabel = (league: string, input: Period & { split?: string | null }) =>
@@ -2515,7 +2506,7 @@ const ChampionPoolRow = z.object({
   games: z.number(),
   wins: z.number(),
   kda: z.number().nullable(),
-  players: jsonColumn(z.array(z.object({ player: z.string(), games: z.number() }))),
+  players: z.array(z.object({ player: z.string(), games: z.number() })),
   total_games: z.number(),
   total_wins: z.number(),
   total_picks: z.number(),
@@ -2529,9 +2520,8 @@ async function poolScope(db: Db, input: ChampionPoolInput, params: Params): Prom
       : `gp.team IN (${inList("team", (await teamMembers(db, input.name)).members, params)})`;
 
   const league = input.league ? `AND ${leagueFilter("gp.league", input, params)}` : "";
-  const split = input.split ? ((params.split = input.split), "AND gp.tournament_page IN (SELECT t.tournament_page FROM v_tournaments t WHERE t.split = :split)") : "";
 
-  return `${who} AND gp.champion IS NOT NULL AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${split}`;
+  return `${who} AND gp.champion IS NOT NULL AND gp.stage IN (${COMPETITION_STAGES}) ${league} ${periodFilter("gp.year", input, params)} ${splitFilter("gp.tournament_page", input, params)}`;
 }
 
 const championPool: ToolDef<ChampionPoolInput> = {
@@ -3777,7 +3767,7 @@ ORDER BY (k.kind IS NULL), (k.kind = 'elder'), k.dragons DESC, k.kind`),
 
     const games = await selectOne(
       db,
-      z.object({ games: z.number(), pages: jsonColumn(z.array(z.string())), years: jsonColumn(z.array(z.number().nullable())) }),
+      z.object({ games: z.number(), pages: z.array(z.string()), years: z.array(z.number().nullable()) }),
       `SELECT COUNT(DISTINCT s.game_id) AS games, COALESCE(json_agg(DISTINCT s.event_page), '[]'::json) AS pages, COALESCE(json_agg(DISTINCT s.year), '[]'::json) AS years FROM v_game_dragons s WHERE ${scope} ${own}`,
       params,
     );
