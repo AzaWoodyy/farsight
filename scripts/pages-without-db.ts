@@ -27,6 +27,8 @@ function freePort(): number {
   const { port } = probe;
   void probe.stop(true);
 
+  if (port === undefined) throw new Error("no free port for next start");
+
   return port;
 }
 
