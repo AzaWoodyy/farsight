@@ -1,21 +1,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { getLlm } from "../src/lib/agent/llm";
+import { rulesOnly, runAgent } from "../src/lib/agent/run";
+import { TOOLS } from "../src/lib/agent/tools";
+import { type Answer, STEPS, type StepPart } from "../src/lib/agent/types";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
 const only = args.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 
-if (flag("deterministic")) delete process.env.OPENROUTER_API_KEY;
-
-const { runAgent } = await import("../src/lib/agent/run");
-const { getLlm } = await import("../src/lib/agent/llm");
-const { TOOLS } = await import("../src/lib/agent/tools");
-const { STEPS } = await import("../src/lib/agent/types");
-
-type Answer = import("../src/lib/agent/types").Answer;
-
-type StepPart = import("../src/lib/agent/types").StepPart;
+const agentMode: <T>(run: () => T) => T = flag("deterministic") ? rulesOnly : (run) => run();
 
 const Scalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
@@ -164,7 +159,7 @@ function score(c: Case, answer: Answer, steps: Map<string, StepPart>): Check[] {
   return checks;
 }
 
-const llm = getLlm();
+const llm = agentMode(getLlm);
 
 console.log(`eval : ${cases.length} questions · mode ${llm ? `LLM (${llm.id})` : "déterministe (sans clé)"}\n`);
 
@@ -183,14 +178,16 @@ for (const c of cases) {
   const started = performance.now();
 
   try {
-    const answer = await runAgent(
-      c.question,
-      (ev) => {
-        if (ev.type === "step") steps.set(ev.part.step, ev.part);
-      },
-      now,
-      undefined,
-      c.locale,
+    const answer = await agentMode(() =>
+      runAgent(
+        c.question,
+        (ev) => {
+          if (ev.type === "step") steps.set(ev.part.step, ev.part);
+        },
+        now,
+        undefined,
+        c.locale,
+      ),
     );
 
     checks = score(c, answer, steps);
@@ -258,7 +255,7 @@ if (flag("follow-ups")) {
       let reason: string | undefined;
 
       try {
-        const answer = await runAgent(f.text, () => {}, now, undefined, f.locale);
+        const answer = await agentMode(() => runAgent(f.text, () => {}, now, undefined, f.locale));
 
         if (!Object.hasOwn(TOOLS, answer.meta.route)) reason = `route ${answer.meta.route}`;
         else if (answer.meta.unread.length) reason = `mots non compris : ${answer.meta.unread.join(", ")}`;

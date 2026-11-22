@@ -40,6 +40,8 @@ type Scope = { root: LangfuseAgent; locale: Locale; usage: Usage; calls: Map<str
 
 const scope = new AsyncLocalStorage<Scope>();
 
+export const withoutTracing = <T>(run: () => T): T => scope.exit(run);
+
 const LEVELS: Record<TraceStatus, Level> = { ok: "DEFAULT", fix: "DEFAULT", warn: "WARNING", error: "ERROR" };
 
 const DETAIL_MAX = 2000;

@@ -1,7 +1,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LAB_VARIANTS } from "../../src/app/lab/catalog";
-import { runAgent } from "../../src/lib/agent/run";
+import { LabFixture } from "../../src/app/lab/fixture";
+import { rulesOnly, runAgent } from "../../src/lib/agent/run";
 import type { Answer, StepName, StepPart } from "../../src/lib/agent/types";
 
 const out = resolve(import.meta.dirname, "../../public/lab-fixtures");
@@ -13,11 +14,7 @@ if (process.env.VERCEL_ENV === "production") {
   process.exit(0);
 }
 
-delete process.env.OPENROUTER_API_KEY;
-
 mkdirSync(out, { recursive: true });
-
-export type LabFixture = { question: string; steps: StepPart[]; answer: Answer | null; error: string | null };
 
 let bytes = 0;
 
@@ -27,15 +24,16 @@ for (const v of LAB_VARIANTS) {
   let error: string | null = null;
 
   try {
-    answer = await runAgent(v.question, (event) => {
-      if (event.type === "step") steps.set(event.part.step, event.part);
-    });
+    answer = await rulesOnly(() =>
+      runAgent(v.question, (event) => {
+        if (event.type === "step") steps.set(event.part.step, event.part);
+      }),
+    );
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  const fixture: LabFixture = { question: v.question, steps: [...steps.values()], answer, error };
-  const json = JSON.stringify(fixture);
+  const json = JSON.stringify(LabFixture.parse({ question: v.question, steps: [...steps.values()], answer, error }));
 
   bytes += json.length;
   writeFileSync(resolve(out, `${v.id}.json`), json);

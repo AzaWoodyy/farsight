@@ -14,6 +14,7 @@ import {
   traceStep,
   unconsumedWords,
   understandReport,
+  withoutTracing,
 } from "../src/lib/agent/trace";
 import type { Answer, Entities, QueryPlan, StepName, StepPart } from "../src/lib/agent/types";
 import type { Locale } from "../src/lib/locale";
@@ -291,6 +292,15 @@ test("a step outside a question's trace is run without an observation", async ()
   await flushTracing();
   expect(result).toBe(entities);
   expect(exporter.getFinishedSpans()).toEqual([]);
+});
+
+test("a step run without tracing inside a question's trace records no observation", async () => {
+  await traceQuestion(QUESTION, SESSION, "fr", () =>
+    withoutTracing(() => traceStep("understand", { question: QUESTION }, async () => entities, (e) => understandReport(QUESTION, e, undefined))),
+  );
+
+  await flushTracing();
+  expect(exporter.getFinishedSpans().map((s) => s.name)).toEqual([TRACE_NAME]);
 });
 
 test("a question is one trace: root, step observations and the LLM generation", async () => {
