@@ -283,7 +283,7 @@ function Console() {
             >
               Riot Data Dragon
             </a>
-            . {ui.console.photos} {ui.console.cited}
+            . {ui.console.photos}
           </p>
         </div>
       )}

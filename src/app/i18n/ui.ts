@@ -44,7 +44,6 @@ const fr = {
     dataFrom: "Résultats, compositions et stats de partie :",
     iconsFrom: "Noms et icônes des champions, objets et runes :",
     photos: "Photos des joueurs et logos des équipes : Leaguepedia, © Riot Games, les ligues et les équipes.",
-    cited: "Chaque réponse cite ses pages.",
     how: "Comment Farsight trouve ses réponses",
     ready: (title: string) => `Réponse prête : ${title}`,
     restart: "Nouvelle conversation",
@@ -145,7 +144,7 @@ const fr = {
     meetings: "leurs rencontres",
     score: "score",
     showAll: (n: number) => `afficher les ${n} séries`,
-    listed: (shown: number, total: number) => `${shown} séries les plus récentes listées sur ${total} ; le bilan les compte toutes.`,
+    listed: (shown: number, total: number) => `${shown} séries les plus récentes listées sur ${total}.`,
     byTournament: "par tournoi",
   },
 
@@ -169,9 +168,7 @@ const fr = {
   },
 
   comparison: {
-    computed: "calculé par la page à partir des colonnes renvoyées",
-    profiles: " · équipes et rôle lus dans la base, sur la compétition et la période de la question",
-    computedMark: " (calculé)",
+    profiles: "équipes et rôle sur la compétition et la période de la question",
     tie: (a: number, b: number) => `égalité sur les lignes comparées (${a}–${b})`,
     ahead: (wins: number, total: number) => `devant sur ${wins} lignes sur ${total}`,
   },
@@ -257,7 +254,7 @@ const fr = {
     collapse: "réduire",
     showItems: (n: number) => `voir les ${n} items`,
     itemsNote: (min: number) =>
-      `% : part des parties du champion finies avec l'item · winrate dès ${min} parties, à lire avec prudence : un item fini se voit plus dans les parties longues ou gagnées`,
+      `% : part des parties du champion finies avec l'item · winrate dès ${min} parties : un item fini se voit plus dans les parties longues ou gagnées`,
     share: "part",
     poolGamesTitle: "parties jouées sur le champion",
     recordTitle: "victoires - défaites",
@@ -333,7 +330,6 @@ const en: Ui = {
     dataFrom: "Results, drafts and game stats:",
     iconsFrom: "Names and icons of champions, items and runes:",
     photos: "Player photos and team logos: Leaguepedia, © Riot Games, the leagues and the teams.",
-    cited: "Every answer cites its pages.",
     how: "How Farsight finds its answers",
     ready: (title) => `Answer ready: ${title}`,
     restart: "New conversation",
@@ -434,7 +430,7 @@ const en: Ui = {
     meetings: "their meetings",
     score: "score",
     showAll: (n) => `show all ${n} series`,
-    listed: (shown, total) => `The ${shown} most recent series listed out of ${total}; the record counts them all.`,
+    listed: (shown, total) => `The ${shown} most recent series listed out of ${total}.`,
     byTournament: "by tournament",
   },
 
@@ -457,9 +453,7 @@ const en: Ui = {
   },
 
   comparison: {
-    computed: "computed by the page from the returned columns",
-    profiles: " · teams and role read from the database, over the competition and period of the question",
-    computedMark: " (computed)",
+    profiles: "teams and role over the competition and period of the question",
     tie: (a, b) => `tied on the compared rows (${a}–${b})`,
     ahead: (wins, total) => `ahead on ${wins} rows out of ${total}`,
   },
@@ -545,7 +539,7 @@ const en: Ui = {
     collapse: "collapse",
     showItems: (n) => `show all ${n} items`,
     itemsNote: (min) =>
-      `%: share of the champion's games finished with the item · win rate from ${min} games, to be read with care: a finished item shows up more in long or won games`,
+      `%: share of the champion's games finished with the item · win rate from ${min} games: a finished item shows up more in long or won games`,
     share: "share",
     poolGamesTitle: "games played on the champion",
     recordTitle: "wins - losses",

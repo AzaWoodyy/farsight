@@ -23,7 +23,7 @@ const fr = {
     questions: ["Faker contre Chovy", "Stats d'Azir aux Worlds 2025", "Champions les plus bannis en LCK 2025"],
     credit: "Données Leaguepedia et Riot Data Dragon · askfarsight.com",
   },
-  notFound: { title: "Page introuvable", body: "Cette adresse ne mène à aucune page de Farsight.", home: "Retour à l'accueil" },
+  notFound: { title: "Page introuvable", home: "Retour à l'accueil" },
 };
 
 export type Shell = typeof fr;
@@ -51,7 +51,7 @@ const en: Shell = {
     questions: ["Faker vs Chovy", "Azir stats at Worlds 2025", "Most banned champions in LCK 2025"],
     credit: "Data from Leaguepedia and Riot Data Dragon · askfarsight.com",
   },
-  notFound: { title: "Page not found", body: "This address does not lead to any Farsight page.", home: "Back to the home page" },
+  notFound: { title: "Page not found", home: "Back to the home page" },
 };
 
 export const SHELL: Record<Locale, Shell> = { fr, en };
