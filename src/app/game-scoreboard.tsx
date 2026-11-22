@@ -116,7 +116,7 @@ function TeamBlock({
             <col className="w-[64px]" />
           </colgroup>
           <thead>
-            <tr className="text-[11px] text-muted">
+            <tr className="text-[0.6875rem] text-muted">
               <th scope="col" className="px-3 py-1 font-normal">
                 {sb.championPlayer}
               </th>
@@ -174,7 +174,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
             {p.championIcon && p.champion ? (
               <Icon src={p.championIcon} alt={p.champion} size={32} />
             ) : (
-              <span className="flex h-8 w-8 items-center justify-center border border-line text-[10px] text-muted">{p.champion?.slice(0, 3) ?? "?"}</span>
+              <span className="flex h-8 w-8 items-center justify-center border border-line text-[0.625rem] text-muted">{p.champion?.slice(0, 3) ?? "?"}</span>
             )}
             {p.keystoneIcon && p.keystone && (
               <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-background">
@@ -185,12 +185,12 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
           </div>
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="w-7 shrink-0 text-[10px] text-muted">{p.role ? (ROLE_SHORT.get(p.role) ?? p.role) : ""}</span>
+              <span className="w-7 shrink-0 text-[0.625rem] text-muted">{p.role ? (ROLE_SHORT.get(p.role) ?? p.role) : ""}</span>
               <span className="truncate font-semibold" translate="no">
                 {p.player.replace(/\s*\(.*?\)\s*$/, "")}
               </span>
             </div>
-            <div className="ml-9 truncate text-[11px] text-muted" translate="no">
+            <div className="ml-9 truncate text-[0.6875rem] text-muted" translate="no">
               {p.champion ?? ui.scoreboard.championUnknown}
               {p.keystone && !p.keystoneIcon ? ` · ${p.keystone}` : ""}
             </div>
@@ -198,7 +198,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
               <div className="mt-0.5 ml-9 flex items-center gap-2">
                 <ul className="flex gap-0.5" aria-label={ui.scoreboard.spells}>
                   {p.spells.map((s) => (
-                    <li key={s.name} className="text-[10px] text-muted">
+                    <li key={s.name} className="text-[0.625rem] text-muted">
                       {s.iconUrl ? <Icon src={s.iconUrl} alt={s.name} size={14} /> : s.name}
                     </li>
                   ))}
@@ -208,7 +208,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
                     {p.runes
                       .filter((r) => r.kind !== "shard")
                       .map((r, i) => (
-                        <li key={i} className={`text-[10px] text-muted ${r.kind === "secondary" && p.runes[i - 1]?.kind === "primary" ? "ml-1" : ""}`}>
+                        <li key={i} className={`text-[0.625rem] text-muted ${r.kind === "secondary" && p.runes[i - 1]?.kind === "primary" ? "ml-1" : ""}`}>
                           {r.iconUrl ? (
                             // oxlint-disable-next-line nextjs/no-img-element
                             <img src={r.iconUrl} alt={r.name} title={r.name} width={14} height={14} loading="lazy" className="h-3.5 w-3.5" />
@@ -221,7 +221,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
                 )}
               </div>
             )}
-            <div className="ml-9 text-[11px] tabular-nums sm:hidden" aria-hidden>
+            <div className="ml-9 text-[0.6875rem] tabular-nums sm:hidden" aria-hidden>
               {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
               <span className="text-muted"> · {kilo(p.gold)} {ui.scoreboard.gold}</span>
             </div>
@@ -245,7 +245,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
         <div>
           {p.kills ?? "?"}/<span className="text-error">{p.deaths ?? "?"}</span>/{p.assists ?? "?"}
         </div>
-        <div className="text-[11px] text-muted">{kda === undefined ? "" : kda === null ? ui.scoreboard.perfectKda : `KDA ${one.format(kda)}`}</div>
+        <div className="text-[0.6875rem] text-muted">{kda === undefined ? "" : kda === null ? ui.scoreboard.perfectKda : `KDA ${one.format(kda)}`}</div>
       </td>
       <td className="px-2 py-1.5">
         {p.damage == null ? (
@@ -254,7 +254,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
           <div className="w-44">
             <div className="flex items-baseline justify-between gap-2 tabular-nums">
               <span>{int.format(p.damage)}</span>
-              {minutes && <span className="text-[11px] text-muted">{int.format(p.damage / minutes)}/min</span>}
+              {minutes && <span className="text-[0.6875rem] text-muted">{int.format(p.damage / minutes)}/min</span>}
             </div>
             <div className="mt-0.5 h-1.5 bg-line/60">
               <div className={`h-full ${SIDE_BAR[p.side]}`} style={{ width: `${((100 * p.damage) / maxDamage).toFixed(1)}%` }} />
@@ -265,7 +265,7 @@ function PlayerRow({ p, minutes, maxDamage }: { p: ScoreboardPlayer; minutes: nu
       <td className="px-2 py-1.5 text-right tabular-nums">{kilo(p.gold)}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">
         <div>{p.cs ?? ui.noData}</div>
-        {p.cs != null && minutes && <div className="text-[11px] text-muted">{one.format(p.cs / minutes)}/min</div>}
+        {p.cs != null && minutes && <div className="text-[0.6875rem] text-muted">{one.format(p.cs / minutes)}/min</div>}
       </td>
       <td className="px-3 py-1.5 text-right tabular-nums">{p.vision ?? ui.noData}</td>
     </tr>
