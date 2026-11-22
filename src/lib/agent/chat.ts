@@ -27,7 +27,7 @@ const SQL_PREVIEW_ROWS = 40;
 
 const HIDDEN_FROM_MODEL = /icon|image|photo|logo|url|profiles|sources|followUps|teamLeagues|meta/i;
 
-const TRUNCATED = "… (truncated: the visitor sees the full result)";
+const TRUNCATED = "… (truncated)";
 
 const bounded = (body: string) => (body.length > DIGEST_MAX_LENGTH ? `${body.slice(0, DIGEST_MAX_LENGTH)}${TRUNCATED}` : body);
 

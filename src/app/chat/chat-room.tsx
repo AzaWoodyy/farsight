@@ -348,7 +348,7 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
           </p>
         ) : (
         <Room
-          key={`${room}-${linkedIsGone ? "" : (linked ?? "")}`}
+          key={room}
           id={activeId}
           title={active?.title.trim() || t.untitled}
           onStart={(id) => {

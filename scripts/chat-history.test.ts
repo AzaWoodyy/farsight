@@ -217,9 +217,9 @@ describe("digestAnswer", () => {
   test("a digest over the limit is cut and says so", () => {
     const digest = digestAnswer(emptyAnswer({ summary: "x".repeat(13_000) }));
 
-    expect(digest).toHaveLength(12_000 + "… (truncated: the visitor sees the full result)".length);
+    expect(digest).toHaveLength(12_000 + "… (truncated)".length);
     expect(digest.startsWith('{"route":"sql","title":"Titre","summary":"xxx')).toBe(true);
-    expect(digest.endsWith("x… (truncated: the visitor sees the full result)")).toBe(true);
+    expect(digest.endsWith("x… (truncated)")).toBe(true);
   });
 });
 
