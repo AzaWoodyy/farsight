@@ -23,7 +23,7 @@ const HISTORY_DIGEST_MAX_LENGTH = 6000;
 const HTML_MAX_LENGTH = 20_000;
 const SQL_PREVIEW_ROWS = 40;
 
-const HIDDEN_FROM_MODEL = /icon|image|photo|logo|tone|url|profiles|sources|followUps|teamLeagues|meta/i;
+const HIDDEN_FROM_MODEL = /icon|image|photo|logo|url|profiles|sources|followUps|teamLeagues|meta/i;
 
 export function digestAnswer(answer: Answer): string {
   const body = JSON.stringify({ route: answer.meta.route, wordsNotRead: answer.meta.unread, ...answer }, (key, value) => {
