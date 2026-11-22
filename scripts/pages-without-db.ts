@@ -69,7 +69,7 @@ const server = spawn(["bunx", "--no-install", "next", "start", "-p", String(port
 });
 
 const failures: string[] = [];
-const get = (path: string, agent: string) => fetch(`http://127.0.0.1:${port}${path}`, { headers: { "user-agent": agent } });
+const get = (path: string, agent: string) => fetch(`http://127.0.0.1:${port}${path}`, { headers: { "user-agent": agent }, redirect: "manual" });
 
 try {
   await ready(server);
