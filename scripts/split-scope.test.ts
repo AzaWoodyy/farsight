@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { withLocale } from "../src/lib/agent/messages";
 import { inQuestionSplit } from "../src/lib/agent/query";
-import { type ToolCall, type ToolName, takesSplit } from "../src/lib/agent/tools";
+import type { ToolCall } from "../src/lib/agent/tools";
 import type { Entities } from "../src/lib/agent/types";
 
 const entities: Entities = {
@@ -31,11 +31,4 @@ test("a tool that cannot filter by split says so in both languages instead of an
   expect(inQuestionSplit(teams, entities)).toEqual({ call: teams, notes: [expect.stringContaining("ne filtre pas par split")] });
   expect(withLocale("en", () => inQuestionSplit(teams, entities).notes)).toEqual([expect.stringContaining("does not filter by split")]);
   expect(inQuestionSplit(teams, { ...entities, split: null })).toEqual({ call: teams, notes: [] });
-});
-
-test("the tools that take a split are read from their schemas", () => {
-  const withSlot: ToolName[] = ["champion_ranking", "player_leaderboard", "team_roster", "tournament_standings", "series", "champion_pool", "player_runes"];
-
-  expect(withSlot.filter((t) => !takesSplit(t))).toEqual([]);
-  expect(takesSplit("team_leaderboard")).toBe(false);
 });

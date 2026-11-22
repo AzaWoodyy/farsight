@@ -6,4 +6,4 @@ A split the question names ("LEC Spring 2024") was dropped on the way to a tool 
 
 - **One place applies it.** `inQuestionSplit` (`src/lib/agent/query.ts`) runs on every typed call, from the rules router and from the model router, before `bindTool`. A route builder that forgets the split cannot drop it.
 - **A tool takes a split when its schema has a `split` field** (`takesSplit`, read from the registry): no list to keep in step. Such a tool gets the split of the question unless the call already names one.
-- **A tool without a split field answers on the whole season and says so** (`route.splitNotApplied`, in both languages). Giving one of those tools a real split filter removes the note for it, with no other change.
+- **A tool without a split field answers without it and says so** (`route.splitNotApplied`, in both languages). Giving one of those tools a real split filter removes the note for it, with no other change.
