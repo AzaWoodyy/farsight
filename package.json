@@ -17,13 +17,14 @@
     "db:load": "bun scripts/db/load.ts",
     "db:migrate": "bun scripts/db/migrate.ts",
     "size": "bun scripts/size.ts",
+    "pages:check": "bun scripts/pages-without-db.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "ask": "bun scripts/ask.ts",
     "lab:build": "bun scripts/lab/build.ts",
     "eval": "bun scripts/eval.ts",
     "eval:candidates": "bun scripts/eval-candidates.ts",
     "test": "bun test scripts --parallel",
-    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --follow-ups --exclude-tags=timeline && bun run build"
+    "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --follow-ups --exclude-tags=timeline && bun run build && bun run pages:check"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.178",

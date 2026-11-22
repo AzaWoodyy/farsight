@@ -13,7 +13,7 @@ only = ",".join(q["id"] for q in questions if "timeline" not in q["tags"])
 commands = {
     "load": ["bun", "run", "db:load", "--allow-older-summaries"],
     "typecheck": ["bun", "run", "typecheck", "--incremental", "false"],
-    "build": ["bash", "-e", "-o", "pipefail", "-c", "bunx --no-install next build && bun run size"],
+    "build": ["bash", "-e", "-o", "pipefail", "-c", "bunx --no-install next build && bun run size && bun run pages:check"],
     "lint": ["bun", "run", "lint", "--deny-warnings"],
     "test": ["python3", "scripts/ci/test.py"],
     "eval": ["bun", "run", "eval", "--deterministic", "--strict", "--follow-ups", f"--only={only}"],
