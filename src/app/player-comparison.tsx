@@ -16,25 +16,7 @@ export function ComparisonNote({ c }: { c: Comparison }) {
   const ui = useUi();
 
   return (
-    <p className="mt-2 text-[11px] text-muted">
-      <span aria-hidden>*</span> {ui.comparison.computed}
-      {c.players.some((p) => p.profile) ? ui.comparison.profiles : ""}
-    </p>
-  );
-}
-
-function Label({ s }: { s: ComparedStat }) {
-  const ui = useUi();
-
-  return (
-    <>
-      {s.label}
-      {s.derived && (
-        <span aria-label={ui.comparison.computedMark} className="text-muted">
-          *
-        </span>
-      )}
-    </>
+    c.players.some((p) => p.profile) && <p className="mt-2 text-[11px] text-muted">{ui.comparison.profiles}</p>
   );
 }
 
@@ -90,7 +72,7 @@ export function FaceOff({ c, focus = null }: { c: Comparison; focus?: string | n
           >
             <MirrorBar s={s} i={0} />
             <span className={`truncate text-center ${s.key === focus ? "font-semibold text-foreground" : "text-muted"}`}>
-              <Label s={s} />
+              {s.label}
             </span>
             <MirrorBar s={s} i={1} />
           </li>
@@ -143,7 +125,7 @@ export function OneSided({ c, absent, scope, focus = null }: { c: Comparison; ab
           {c.stats.map((s) => (
             <div key={s.key} className={`flex items-baseline justify-between gap-3 border-b border-dashed border-line/60 py-1 last:border-0 ${s.key === focus ? "font-semibold" : ""}`}>
               <dt className={s.key === focus ? "text-foreground" : "text-muted"}>
-                <Label s={s} />
+                {s.label}
               </dt>
               <dd className="tabular-nums">{formatStat(s, s.values[present], locale)}</dd>
             </div>

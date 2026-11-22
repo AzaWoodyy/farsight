@@ -11,7 +11,6 @@ export type ComparedStat = {
   better: Better;
   percent: boolean;
   signed: boolean;
-  derived: boolean;
 };
 
 export type ComparedPlayer = { name: string; profile: PlayerProfile | null };
@@ -138,7 +137,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
       better: total && !totalsComparable ? null : meaning.better,
       percent: meaning.percent ?? false,
       signed: meaning.signed ?? false,
-      derived: false,
     });
   });
 
@@ -161,7 +159,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
       better: "higher",
       percent: true,
       signed: false,
-      derived: true,
     });
 
   const [k, d, as] = ["kills", "deaths", "assists"].map((key) => byBase.get(key));
@@ -178,7 +175,6 @@ export function detectComparison(table: Answer["table"], profiles: PlayerProfile
       better: "higher",
       percent: false,
       signed: false,
-      derived: true,
     });
 
   const all = [...derived, ...stats];

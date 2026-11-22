@@ -144,7 +144,7 @@ async function build(db: Db, question: string, entities: Entities, route: Route,
 
   if (route.kind === "missing") {
     missing.push(...route.concepts);
-    step.add(entry({ status: "warn", title: m.missingData, detail: m.noQuery(route.reason) }));
+    step.add(entry({ status: "warn", title: m.missingData, detail: route.reason }));
     step.done("warn", m.missingData);
 
     return null;

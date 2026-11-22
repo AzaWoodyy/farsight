@@ -18,7 +18,6 @@ export default function GlobalNotFound() {
           {LOCALES.map((locale) => (
             <section key={locale} lang={locale}>
               <h1 className="text-xl leading-snug font-semibold text-balance sm:text-3xl">{SHELL[locale].notFound.title}</h1>
-              <p className="mt-3 text-muted">{SHELL[locale].notFound.body}</p>
               <p className="mt-4">
                 <a className={`tap ${TEXT_LINK}`} href={PATHS.home[locale]}>
                   {SHELL[locale].notFound.home}

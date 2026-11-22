@@ -44,7 +44,6 @@ const fr = {
     outOfScopeQuestion: "Question hors périmètre",
     outOfScope: "Hors périmètre",
     missingData: "Donnée absente de la base",
-    noQuery: (reason: string) => `${reason}\nAucune requête : un chiffre serait inventé.`,
     noTool: "Aucun outil typé ne couvre la question",
     typedTool: (label: string) => `Outil typé : ${label}`,
     generatedQuery: "Requête générée (text-to-SQL)",
@@ -88,10 +87,10 @@ const fr = {
     missingForScope:
       "Les statistiques in-game (or, CS et XP aux minutes clés, first blood, solo kills, multi-kills, wards, plaques, premiers objectifs) " +
       "viennent des données Riot que Leaguepedia publie pour une partie des matchs, et il n'en publie aucune pour ce périmètre (aucune pour la LPL). " +
-      "Les résultats, les drafts et les statistiques de fin de partie (kills, morts, assists, or, CS, dégâts, vision, objectifs) y restent disponibles : aucun chiffre in-game n'est donc donné.",
+      "Les résultats, les drafts et les statistiques de fin de partie (kills, morts, assists, or, CS, dégâts, vision, objectifs) y restent disponibles.",
     missingInGeneral:
       "La base contient les résultats, les drafts, les statistiques de fin de partie (kills, morts, assists, or, CS, dégâts, vision, objets, rune principale, objectifs) " +
-      "et, pour les parties dont Leaguepedia publie les données Riot, les statistiques in-game : aucun chiffre n'est donc donné.",
+      "et, pour les parties dont Leaguepedia publie les données Riot, les statistiques in-game.",
 
     formatting: "Mise en forme…",
     missingFormatted: "Réponse « donnée absente » mise en forme, sans chiffre",
@@ -106,7 +105,7 @@ const fr = {
     emptyFormatted: "Réponse vide mise en forme",
     genericTable: (rows: number, columns: number) => `Tableau générique (${rows} lignes, ${columns} colonnes)`,
     rowCount: (rows: number) => `${rows} lignes`,
-    generatedSummary: (rows: number) => `${rows} ligne(s) renvoyée(s) par une requête générée, validée par le garde-fou.`,
+    generatedSummary: (rows: number) => `${rows} ligne(s) renvoyée(s) par une requête générée.`,
     summaryBy: (llm: boolean) => `Synthèse (${llm ? "LLM" : "modèle de phrase"})`,
     timelineShown: (points: number, events: number) => `Timeline : ${points} points d'or, ${events} événements`,
     tableShown: (rows: number) => `Tableau de ${rows} lignes`,
@@ -267,7 +266,6 @@ const en: Messages = {
     outOfScopeQuestion: "Question out of scope",
     outOfScope: "Out of scope",
     missingData: "Data missing from the database",
-    noQuery: (reason) => `${reason}\nNo query: a figure would be made up.`,
     noTool: "No typed tool covers the question",
     typedTool: (label) => `Typed tool: ${label}`,
     generatedQuery: "Generated query (text-to-SQL)",
@@ -311,10 +309,10 @@ const en: Messages = {
     missingForScope:
       "In-game statistics (gold, CS and XP at key minutes, first blood, solo kills, multi-kills, wards, plates, first objectives) " +
       "come from the Riot data Leaguepedia publishes for part of the matches, and it publishes none for this scope (none for the LPL). " +
-      "Results, drafts and end-of-game statistics (kills, deaths, assists, gold, CS, damage, vision, objectives) remain available there: so no in-game figure is given.",
+      "Results, drafts and end-of-game statistics (kills, deaths, assists, gold, CS, damage, vision, objectives) remain available there.",
     missingInGeneral:
       "The database holds results, drafts, end-of-game statistics (kills, deaths, assists, gold, CS, damage, vision, items, keystone, objectives) " +
-      "and, for the games whose Riot data Leaguepedia publishes, in-game statistics: so no figure is given.",
+      "and, for the games whose Riot data Leaguepedia publishes, in-game statistics.",
 
     formatting: "Laying out…",
     missingFormatted: "\"Missing data\" answer laid out, without a figure",
@@ -329,7 +327,7 @@ const en: Messages = {
     emptyFormatted: "Empty answer laid out",
     genericTable: (rows, columns) => `Generic table (${rows} rows, ${columns} columns)`,
     rowCount: (rows) => `${rows} rows`,
-    generatedSummary: (rows) => `${rows} row(s) returned by a generated query, checked by the guard.`,
+    generatedSummary: (rows) => `${rows} row(s) returned by a generated query.`,
     summaryBy: (llm) => `Summary (${llm ? "LLM" : "sentence template"})`,
     timelineShown: (points, events) => `Timeline: ${points} gold points, ${events} events`,
     tableShown: (rows) => `Table of ${rows} rows`,
