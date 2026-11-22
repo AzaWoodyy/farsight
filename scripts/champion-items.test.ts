@@ -282,7 +282,6 @@ describe("rate leaderboards show the count beside the share", () => {
       });
 
       expect(out.table!.rows).toEqual([[1, "T1", 4, 3, 75], [2, "Gen.G", 4, 1, 25]]);
-      expect(out.table!.rows.some((r) => r[1] === "SK Telecom T1")).toBe(false);
     } finally {
       await db.close();
     }

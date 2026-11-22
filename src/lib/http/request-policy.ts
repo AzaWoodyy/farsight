@@ -7,7 +7,7 @@ const buckets = new Map<string, Bucket>();
 const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_BUCKETS = 10_000;
 
-export const RATE_LIMITS = { ask: 30, feedback: 30, card: 300, link: 300 } as const;
+const RATE_LIMITS ={ ask: 30, feedback: 30, card: 300, link: 300 } as const;
 
 export function rateLimited(req: Request, route: keyof typeof RATE_LIMITS, now = Date.now()): boolean {
   const ip = ipAddress(req) ?? "local";

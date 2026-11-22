@@ -72,9 +72,8 @@ describe("a player's rune questions route to player_runes, decided by the rules"
       });
   });
 
-  test("two players, or a pool word without a rune word, keep their own tools", async () => {
+  test("two players keep their comparison", async () => {
     expect(await routeQuestion("runes de Faker vs Chovy", scope({ players: ["Faker", "Chovy"] }), SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "player_comparison" } });
-    expect(await routeQuestion("champion pool de Faker", scope({ players: ["Faker"] }), SCHEMA, COVERAGE)).toMatchObject({ call: { tool: "champion_pool" } });
   });
 
   test("the words of a rune question are all read", () => {

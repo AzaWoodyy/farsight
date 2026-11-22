@@ -1,10 +1,12 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { teamBadges, teamLeagues, teamNames } from "../src/lib/agent/team-badges";
 import { wikiImageUrl } from "../src/lib/domain/wiki-images";
 import { LEAGUES } from "../src/lib/domain/leagues";
 import { testDb } from "./fixtures/test-db";
 
 const db = await testDb();
+
+afterAll(() => db.close());
 
 const league = (short: string) => LEAGUES.findIndex((l) => l.short === short) + 1;
 

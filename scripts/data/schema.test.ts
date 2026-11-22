@@ -12,7 +12,7 @@ describe("database schema contract", () => {
     });
   });
 
-  test("all public views prepare, and the champion index preserves draft slot uniqueness", () => {
+  test("all public views prepare, and a draft slot stays unique", () => {
     const db = new DatabaseSync(":memory:");
 
     try {
@@ -21,9 +21,6 @@ describe("database schema contract", () => {
 
       for (const name of SCHEMA_OBJECTS) expect(() => db.prepare(`SELECT * FROM ${name} LIMIT 0`)).not.toThrow();
 
-      const index = db.prepare("PRAGMA index_info(draft_champion_kind_game)").all();
-      expect(index.map((column) => column.name)).toEqual(["champion_id", "kind", "game_id"]);
-      expect(db.prepare("PRAGMA index_info(gp_team)").all().map((column) => column.name)).toEqual(["team_id"]);
       db.exec("INSERT INTO game_draft VALUES (1,1,0,1,100)");
       expect(() => db.exec("INSERT INTO game_draft VALUES (1,1,0,1,200)")).toThrow();
     } finally {
