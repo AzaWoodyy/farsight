@@ -38,6 +38,16 @@ test("a French word next to a league name is still French, and a table's rows na
   expect(frenchInEnglishAnswer("LES winners", ranked, [], true)).toEqual([]);
 });
 
+test.each(["Poste", "Statut", "Nombre", "Finaliste", "arbre", "Rang", "Vainqueur", "Morts", "Plaques"])("the column label %s is French", (label) => {
+  expect(words(frenchInEnglishAnswer("Who won?", answer({ table: { columns: ["#", label], rows: [] } }), [], true))).toEqual([`column: ${label}`]);
+});
+
+test("a localized scope the answer also keeps in its data is still French in the title", () => {
+  const roster = answer({ title: "T1 roster au split Spring in LCK", teamLeagues: { T1: ["au split Spring in LCK"] } });
+
+  expect(words(frenchInEnglishAnswer("T1 roster", roster, [], true))).toEqual(["title: au"]);
+});
+
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {
   const named = answer({
     summary: "Most titles: Movistar KOI Fénix (3). Data missing: in-game statistics (âmes du dragon) for the LPL.",

@@ -8,6 +8,12 @@ const FRENCH_WORDS = new Set([
   "toutes", "tous", "saison", "saisons", "côté", "tournoi", "tournois", "lecture", "finale", "classement", "écart",
   "rang", "vainqueur", "vainqueurs", "adversaire", "adversaires", "morts", "plaques", "ancestraux", "hérauts", "inhibiteur", "inhibiteurs",
   "moyenne", "joués", "exécution", "analyse", "recherche", "requête",
+  "poste", "statut", "nombre", "finaliste", "arbre", "pris", "bleu", "rouge", "titulaire", "remplaçant", "inconnu", "quart", "historique",
+]);
+
+const ENTITY_FIELDS = new Set([
+  "player", "playerA", "playerB", "realName", "nativeName", "champion", "team", "teamA", "teamB", "blue", "red", "winner", "forfeitedBy",
+  "name", "keystone", "item", "event", "tournament", "chosen", "alternatives", "mention",
 ]);
 
 const FRENCH_LETTER = /[àâçéèêëîïôûùüœ]/;
@@ -27,11 +33,43 @@ const escaped = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const withoutLeagues = (text: string) =>
   LEAGUE_NAMES.reduce((t, name) => t.replace(new RegExp(`(?<![\\p{L}])${escaped(name)}(?![\\p{L}])`, "gu"), " "), text);
 
-function answerData(answer: Answer): string[] {
-  const table = answer.table ? { ...answer.table, columns: [] } : null;
-  const data = JSON.stringify({ ...answer, title: "", summary: "", notes: [], followUps: [], table }).match(/"(?:[^"\\]|\\.)*"/g) ?? [];
+type Data = { all: string[]; entities: string[] };
 
-  return data.map((quoted) => z.string().parse(JSON.parse(quoted)));
+const Json = z.json();
+const Text = z.string();
+const List = z.array(Json);
+const Fields = z.record(z.string(), Json);
+
+function answerData(answer: Answer): Data {
+  const data: Data = { all: [], entities: [] };
+
+  const walk = (value: z.infer<typeof Json>, entity: boolean) => {
+    const text = Text.safeParse(value);
+
+    if (text.success) {
+      data.all.push(text.data);
+
+      if (entity) data.entities.push(text.data);
+
+      return;
+    }
+
+    for (const item of List.safeParse(value).data ?? []) walk(item, entity);
+
+    for (const [key, item] of Object.entries(Fields.safeParse(value).data ?? {})) walk(item, entity || ENTITY_FIELDS.has(key));
+  };
+
+  walk(Json.parse(JSON.parse(JSON.stringify({ ...answer, title: "", summary: "", notes: [], followUps: [], table: null }))), false);
+
+  for (const cell of (answer.table?.rows ?? []).flat()) {
+    const text = Text.safeParse(cell);
+
+    if (!text.success) continue;
+    data.all.push(text.data);
+    data.entities.push(text.data);
+  }
+
+  return data;
 }
 
 function namedWords(question: string, data: string[], englishQuestion: boolean): Set<string> {
@@ -67,8 +105,8 @@ const isFrench = (word: string, named: Set<string>) => {
 
 export function frenchInEnglishAnswer(question: string, answer: Answer, steps: ShownStep[], englishQuestion: boolean): FrenchText[] {
   const data = answerData(answer);
-  const named = namedWords(question, data, englishQuestion);
-  const names = [...new Set(data.filter((d) => words(d).length > 1 && words(d).some(capitalized)))].toSorted((a, b) => b.length - a.length);
+  const named = namedWords(question, data.all, englishQuestion);
+  const names = [...new Set(data.entities.filter((d) => words(d).length > 1))].toSorted((a, b) => b.length - a.length);
 
   const shown: [string, string][] = [
     ["title", answer.title],
