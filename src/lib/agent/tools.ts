@@ -12,7 +12,7 @@ import { z } from "zod";
 import { type Db, selectAll, selectOne, type SqlRow } from "../db";
 import { DDRAGON_BASE } from "../sources/ddragon";
 import { wikiUrl } from "../sources/leaguepedia";
-import { clock, type ParsedTimeline, type RiotTeam } from "../sources/timeline";
+import { clock, type EventDetail, type ParsedTimeline, type RiotTeam, type TowerTier } from "../sources/timeline";
 import { loadTimeline } from "../storage/timelines";
 import { MAX_ROWS } from "./guard";
 import {
@@ -3967,20 +3967,24 @@ const KIND_COUNT: { kind: ParsedTimeline["events"][number]["kind"]; one: string;
   { kind: "inhibitor", one: "inhibiteur", many: "inhibiteurs", en: "inhibitor" },
 ];
 
-const DETAIL_EN: [RegExp, string][] = [
-  [/^1 larve$/, "1 grub"],
-  [/^(\d+) larves$/, "$1 grubs"],
-  [/océan/, "ocean"],
-  [/montagne/, "mountain"],
-  [/nuage/, "cloud"],
-  [/ancestral/, "elder"],
-  [/extérieure/, "outer"],
-  [/intérieure/, "inner"],
-  [/d'inhibiteur/, "inhibitor"],
-  [/du Nexus/, "Nexus"],
-];
+const TOWER_TIER_LABELS: Record<TowerTier, Phrase> = {
+  outer: phrase("extérieure", "outer"),
+  inner: phrase("intérieure", "inner"),
+  inhibitor: phrase("d'inhibiteur", "inhibitor"),
+  nexus: phrase("du Nexus", "Nexus"),
+};
 
-const eventDetail = (detail: string | null) => (detail == null ? null : say(detail, DETAIL_EN.reduce((text, [fr, en]) => text.replace(fr, en), detail)));
+export function eventDetail(detail: EventDetail | null): string | null {
+  if (detail == null) return null;
+
+  if ("grubs" in detail) return say(detail.grubs === 1 ? "1 larve" : `${detail.grubs} larves`, detail.grubs === 1 ? "1 grub" : `${detail.grubs} grubs`);
+
+  if ("dragon" in detail) return dragonLabel(detail.dragon);
+
+  if ("tower" in detail) return [detail.tower ? tr(TOWER_TIER_LABELS[detail.tower]) : null, detail.lane].filter(Boolean).join(" ") || null;
+
+  return detail.lane;
+}
 
 const sideOf = (team: RiotTeam, swapped: boolean): Side => ((team === 100) !== swapped ? "blue" : "red");
 

@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { getCache } from "@vercel/functions";
 import { z } from "zod";
 import { loadRawGame } from "../sources/riot";
-import { EVENT_KINDS, type ParsedTimeline, parseTimeline, TIMELINE_FORMAT } from "../sources/timeline";
+import { DRAGON_KINDS } from "../domain/dragons";
+import { EVENT_KINDS, LANES, type ParsedTimeline, parseTimeline, TIMELINE_FORMAT, TOWER_TIERS } from "../sources/timeline";
 import { FsStore, type ObjectStore, R2Store, r2ReadConfigFromEnv } from ".";
 
 type ObjectReader = Pick<ObjectStore, "label" | "get">;
@@ -39,6 +40,15 @@ export function resetTimelineStore() {
   store = undefined;
 }
 
+const Lane = z.enum(LANES);
+
+const Detail = z.union([
+  z.strictObject({ tower: z.enum(TOWER_TIERS).nullable(), lane: Lane.nullable() }),
+  z.strictObject({ lane: Lane }),
+  z.strictObject({ dragon: z.enum(DRAGON_KINDS) }),
+  z.strictObject({ grubs: z.number().int().positive() }),
+]);
+
 const Cached = z.union([
   z.object({
     format: z.literal(TIMELINE_FORMAT),
@@ -48,7 +58,7 @@ const Cached = z.union([
     winner: z.union([z.literal(100), z.literal(200)]).nullable(),
     gold: z.array(z.object({ s: z.number(), diff: z.number() })),
     events: z.array(
-      z.object({ s: z.number(), kind: z.enum(EVENT_KINDS), team: z.union([z.literal(100), z.literal(200)]), detail: z.string().nullable() }),
+      z.object({ s: z.number(), kind: z.enum(EVENT_KINDS), team: z.union([z.literal(100), z.literal(200)]), detail: Detail.nullable() }),
     ),
   }),
   z.object({ missing: z.literal(true) }),

@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { DRAGON_LABELS, dragonKind } from "../domain/dragons";
+import { type DragonKind, dragonKind } from "../domain/dragons";
 import type { Json } from "../json";
 import { firstBlood, firstBloodFlags } from "./first-blood";
 import type { RawGame } from "./riot";
 
-export const TIMELINE_FORMAT = 2;
+export const TIMELINE_FORMAT = 3;
 
 export type RiotTeam = 100 | 200;
 
@@ -12,11 +12,25 @@ export const EVENT_KINDS = ["first_blood", "tower", "inhibitor", "dragon", "elde
 
 export type EventKind = (typeof EVENT_KINDS)[number];
 
+export const LANES = ["top", "mid", "bot"] as const;
+
+export type Lane = (typeof LANES)[number];
+
+export const TOWER_TIERS = ["outer", "inner", "inhibitor", "nexus"] as const;
+
+export type TowerTier = (typeof TOWER_TIERS)[number];
+
+export type EventDetail =
+  | { tower: TowerTier | null; lane: Lane | null }
+  | { lane: Lane }
+  | { dragon: DragonKind }
+  | { grubs: number };
+
 export type TimelineEvent = {
   s: number;
   kind: EventKind;
   team: RiotTeam;
-  detail: string | null;
+  detail: EventDetail | null;
 };
 
 export type GoldPoint = { s: number; diff: number };
@@ -87,32 +101,41 @@ function unwrap(json: Json): Json {
 const asTeam = (n: number | undefined): RiotTeam | null => (n === 100 || n === 200 ? n : null);
 const other = (t: RiotTeam): RiotTeam => (t === 100 ? 200 : 100);
 
-function dragonElement(subType: string | undefined): string | null {
-  const kind = dragonKind(subType);
+function dragonDetail(subType: string | undefined): EventDetail | null {
+  const dragon = dragonKind(subType);
 
-  return kind ? DRAGON_LABELS[kind] : null;
+  return dragon ? { dragon } : null;
 }
 
-const LANES = new Map([
+const RIOT_LANES = new Map<string, Lane>([
   ["TOP_LANE", "top"],
   ["MID_LANE", "mid"],
   ["BOT_LANE", "bot"],
 ]);
 
-const TOWERS = new Map([
-  ["OUTER_TURRET", "extérieure"],
-  ["INNER_TURRET", "intérieure"],
-  ["BASE_TURRET", "d'inhibiteur"],
+const RIOT_TOWERS = new Map<string, TowerTier>([
+  ["OUTER_TURRET", "outer"],
+  ["INNER_TURRET", "inner"],
+  ["BASE_TURRET", "inhibitor"],
+  ["NEXUS_TURRET", "nexus"],
 ]);
 
-const label = (map: Map<string, string>, key: string | undefined) => (key ? (map.get(key) ?? null) : null);
+const laneOf = (e: RiotEvent) => (e.laneType ? (RIOT_LANES.get(e.laneType) ?? null) : null);
 
-const grubsDetail = (count: number) => (count === 1 ? "1 larve" : `${count} larves`);
+function towerDetail(e: RiotEvent): EventDetail | null {
+  const tower = e.towerType ? (RIOT_TOWERS.get(e.towerType) ?? null) : null;
 
-function towerDetail(e: RiotEvent): string | null {
-  if (e.towerType === "NEXUS_TURRET") return "du Nexus";
+  if (tower === "nexus") return { tower, lane: null };
 
-  return [label(TOWERS, e.towerType), label(LANES, e.laneType)].filter(Boolean).join(" ") || null;
+  const lane = laneOf(e);
+
+  return tower || lane ? { tower, lane } : null;
+}
+
+function inhibitorDetail(e: RiotEvent): EventDetail | null {
+  const lane = laneOf(e);
+
+  return lane ? { lane } : null;
 }
 
 const BASE_RESPAWN_S = [10, 10, 12, 12, 14, 16, 20, 25, 28, 32.5, 35, 37.5, 40, 42.5, 45, 47.5, 50, 52.5];
@@ -159,7 +182,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
   const events: TimelineEvent[] = [];
   const at = (e: RiotEvent) => Math.round(e.timestamp / 1000);
 
-  const push = (e: RiotEvent, kind: EventKind, team: RiotTeam | null, detail: string | null = null) => {
+  const push = (e: RiotEvent, kind: EventKind, team: RiotTeam | null, detail: EventDetail | null = null) => {
     if (team) events.push({ s: at(e), kind, team, detail });
   };
 
@@ -198,7 +221,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
         if (!loser) break;
 
         if (e.buildingType === "TOWER_BUILDING") push(e, "tower", other(loser), towerDetail(e));
-        else if (e.buildingType === "INHIBITOR_BUILDING") push(e, "inhibitor", other(loser), label(LANES, e.laneType));
+        else if (e.buildingType === "INHIBITOR_BUILDING") push(e, "inhibitor", other(loser), inhibitorDetail(e));
         break;
       }
 
@@ -209,7 +232,7 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
 
         if (e.monsterType === "DRAGON") {
           if (e.monsterSubType === "ELDER_DRAGON") push(e, "elder", team);
-          else push(e, "dragon", team, dragonElement(e.monsterSubType));
+          else push(e, "dragon", team, dragonDetail(e.monsterSubType));
         } else if (e.monsterType === "BARON_NASHOR") push(e, "baron", team);
         else if (e.monsterType === "RIFTHERALD") push(e, "herald", team);
         else if (e.monsterType === "ATAKHAN") push(e, "atakhan", team);
@@ -217,9 +240,9 @@ export function parseTimeline(raw: RawGame): ParsedTimeline | null {
           if (lastGrubs && lastGrubs.team === team && e.timestamp - lastGrubs.ms <= GRUBS_WINDOW_MS) {
             lastGrubs.count++;
             lastGrubs.ms = e.timestamp;
-            lastGrubs.event.detail = grubsDetail(lastGrubs.count);
+            lastGrubs.event.detail = { grubs: lastGrubs.count };
           } else {
-            const event: TimelineEvent = { s: at(e), kind: "grubs", team, detail: grubsDetail(1) };
+            const event: TimelineEvent = { s: at(e), kind: "grubs", team, detail: { grubs: 1 } };
 
             events.push(event);
             lastGrubs = { team, ms: e.timestamp, count: 1, event };

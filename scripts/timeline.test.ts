@@ -7,6 +7,8 @@ import { TIMELINE_FORMAT } from "../src/lib/sources/timeline";
 import { gameNumberOf, phaseOf, routeQuestion } from "../src/lib/agent/query";
 import type { Entities } from "../src/lib/agent/types";
 import type { Json } from "../src/lib/json";
+import { withLocale } from "../src/lib/agent/messages";
+import { eventDetail } from "../src/lib/agent/tools";
 import { thousands } from "../src/lib/locale";
 import { RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../src/lib/sources/riot";
 import { parseTimeline } from "../src/lib/sources/timeline";
@@ -135,17 +137,17 @@ test("match-v5: gold difference per frame and every key event, with its team", (
     { s: 262, diff: 5000 },
   ]);
   expect(t.events.map((e) => [e.s, e.kind, e.team, e.detail])).toEqual([
-    [125, "grubs", 200, "3 larves"],
-    [175, "dragon", 100, "infernal"],
+    [125, "grubs", 200, { grubs: 3 }],
+    [175, "dragon", 100, { dragon: "infernal" }],
     [181, "first_blood", 100, null],
     [189, "ace", 100, null],
-    [245, "tower", 100, "extérieure bot"],
-    [250, "inhibitor", 100, "mid"],
+    [245, "tower", 100, { tower: "outer", lane: "bot" }],
+    [250, "inhibitor", 100, { lane: "mid" }],
     [255, "herald", 100, null],
     [256, "baron", 100, null],
     [257, "elder", 200, null],
     [258, "atakhan", 200, null],
-    [259, "tower", 200, "du Nexus"],
+    [259, "tower", 200, { tower: "nexus", lane: null }],
   ]);
 });
 
@@ -158,9 +160,9 @@ test("match-v4: monsters through the killer's team, milliseconds duration, no ac
   expect(t.gold.map((g) => g.diff)).toEqual([0, -250, -1500, -4000]);
   expect(t.events.map((e) => [e.s, e.kind, e.team, e.detail])).toEqual([
     [70, "first_blood", 200, null],
-    [80, "dragon", 200, "océan"],
+    [80, "dragon", 200, { dragon: "ocean" }],
     [95, "herald", 100, null],
-    [190, "tower", 200, "intérieure top"],
+    [190, "tower", 200, { tower: "inner", lane: "top" }],
   ]);
 });
 
@@ -171,9 +173,9 @@ test("void grubs: one event per run of the same team within 90 s, with its count
   const events = parseTimeline(v4Game(1, runs))!.events.filter((e) => e.kind === "grubs");
 
   expect(events.map((e) => [e.s, e.team, e.detail])).toEqual([
-    [121, 100, "3 larves"],
-    [300, 200, "1 larve"],
-    [400, 200, "2 larves"],
+    [121, 100, { grubs: 3 }],
+    [300, 200, { grubs: 1 }],
+    [400, 200, { grubs: 2 }],
   ]);
 });
 
@@ -379,6 +381,14 @@ test("a store that never answers gives a timeout the answer can word in its lang
   } finally {
     jest.useRealTimers();
   }
+});
+
+test("an event detail is data, written in the answer's language", () => {
+  const details = parseTimeline(v5Game())!.events.map((e) => e.detail);
+
+  expect(withLocale("fr", () => details.map(eventDetail))).toEqual(["3 larves", "infernal", null, null, "extérieure bot", "mid", null, null, null, null, "du Nexus"]);
+  expect(withLocale("en", () => details.map(eventDetail))).toEqual(["3 grubs", "infernal", null, null, "outer bot", "mid", null, null, null, null, "Nexus"]);
+  expect(withLocale("en", () => [{ grubs: 1 }, { dragon: "ocean" as const }, { tower: "inner" as const, lane: "top" as const }, { tower: null, lane: "mid" as const }].map(eventDetail))).toEqual(["1 grub", "ocean", "inner top", "mid"]);
 });
 
 test("the gold gap is written in thousands with one decimal, the language's way", () => {
