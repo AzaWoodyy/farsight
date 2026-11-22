@@ -23,6 +23,13 @@ réglages à faire à la main dans les dashboards GitHub, Vercel et OpenRouter.
   si c'est un bot). Hors Vercel (`bun run dev`, `next start` en local), la
   vérification répond « humain ». `bun run ask` et `bun run eval` appellent
   l'agent directement et ne passent pas par la route.
+- **Conversation** (`/chat`, `/en/chat`) : fermée tant que ses trois
+  variables manquent (voir « 8. Conversation »). Ouverte, elle ajoute les
+  fonctions `/api/chat` (mesurée par `bun run size` comme `/api/ask`),
+  `/api/threads` et `/api/clerk/webhook`, et un proxy (`src/proxy.ts`) qui ne
+  s'applique qu'à ces pages et à leurs API. BotID protège aussi les
+  `POST /api/chat`. Sans clé OpenRouter, `/api/chat` répond 503 : la
+  conversation n'a pas de mode déterministe.
 - **Quota OpenRouter** : une réponse 402, ou 403 « Key limit exceeded »,
   coupe le LLM pendant 15 minutes sur l'instance. La requête en cours et les
   suivantes repassent au niveau `rules` (mode déterministe), et la réponse
@@ -440,6 +447,8 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
   workflow « Deploy » avec le CLI, les previews à la main (`vercel deploy`).
 - `/api/ask` : `maxDuration = 90` (dans la route). Au pire cinq appels LLM de
   15 s ; le défaut de Vercel est 300 s.
+- `/api/chat` : `maxDuration = 120` (dans la route). Un tour de conversation
+  enchaîne jusqu'à six étapes du modèle, dont des appels au pipeline.
 
 `.vercelignore` : le CLI ne lit pas `.gitignore`. Sans ce fichier,
 `vercel deploy` enverrait `.env` et `data/` (cache brut compris).
@@ -456,11 +465,22 @@ Versionnés dans `vercel.json`, rien à saisir dans le dashboard :
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | clés du projet Langfuse (traçage des questions) ; sans les trois variables `LANGFUSE_*` obligatoires, rien n'est tracé | secrète : oui, Sensitive ; publique : non | runtime | Production |
 | `LANGFUSE_BASE_URL` | région du projet Langfuse : `https://cloud.langfuse.com` (UE) | non | runtime | Production |
 | `LANGFUSE_SAMPLE_RATE` | part des questions tracées, de 0 à 1 (défaut 1) | non | runtime | facultatif |
+| `CLERK_SECRET_KEY` | clé secrète de l'instance Clerk (comptes de la conversation) | oui, Sensitive | build et runtime | Production (instance de production), Preview (instance de développement) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | clé publique de la même instance ; l'hôte Clerk des en-têtes de sécurité de `/chat` en est tiré | non | build et runtime | comme `CLERK_SECRET_KEY` |
+| `THREADS_DATABASE_URL` | chaîne de connexion Postgres du rôle `farsight_threads` (`db/threads.sql`) : conversations enregistrées et compteur de messages par jour | oui, Sensitive | build et runtime | là où la conversation est ouverte |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | secret de signature du webhook Clerk (`user.deleted`) ; absent, `/api/clerk/webhook` répond 404 | oui, Sensitive | runtime | là où le webhook est configuré |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `LEAGUEPEDIA_*`, `RIOT_GAMES_PER_REQUEST` | ingestion uniquement (local, workflow) ; `R2_ENDPOINT` seulement pour la juridiction EU | — | — | ne pas définir |
 
 Preview : sans `OPENROUTER_API_KEY` en Preview, les déploiements de preview
 répondent en mode déterministe et ne consomment pas de crédit. L'y ajouter
 seulement pour tester le LLM avant la production.
+
+Conversation : elle n'est ouverte que si `CLERK_SECRET_KEY`,
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` et `THREADS_DATABASE_URL` sont toutes les
+trois définies ; sinon `/chat` dit qu'elle est fermée et ses API répondent 404.
+Elles sont lues aussi au build (le lien de l'accueil vers la conversation et
+les en-têtes de sécurité de `/chat` sont figés à ce moment) : après les avoir
+ajoutées, changées ou retirées, redéployer.
 
 ## À faire à la main
 
@@ -593,6 +613,16 @@ mémoire de la page, qui ne permet pas de reconnaître un visiteur d'une visite
 à l'autre. Les e-mails, adresses IP et numéros de téléphone tapés dans une
 question sont masqués avant l'envoi. Les traces sont lisibles 30 jours.
 
+Conversation (`/chat`) : chaque tour est une trace de la même forme, avec le
+tag `surface:chat` en plus (à cocher dans **Tags** pour ne voir que la
+conversation, ou à exclure pour ne voir que les questions de l'accueil). Son
+entrée est le dernier message ; les appels du modèle de la boucle sont des
+générations `chat`, et chaque appel au pipeline y pose ses quatre étapes. La
+session est l'identifiant de la conversation : le même UUID que celui sous
+lequel elle est enregistrée, donc une conversation reprise un autre jour reste
+dans la même session. Le compte n'est jamais envoyé : ni identifiant Clerk, ni
+e-mail, ni nom.
+
 Unités : 6 par question sans LLM (la trace et 5 observations), 1 de plus par
 appel LLM, 1 par avis. Avec la clé OpenRouter, une question courante en
 consomme 7 (la phrase de synthèse passe par le LLM) et le pire cas 12, soit
@@ -683,6 +713,79 @@ production déployée :
 4. Quelques jours plus tard, rapport **Pages** : les nouvelles adresses doivent
    être « Indexées », chacune avec son canonical et sa version dans l'autre
    langue reconnue. L'indexation reste la décision de Google.
+
+### 8. Conversation (`/chat`)
+
+La conversation demande un compte Clerk, une invitation et un schéma Postgres
+à elle. Rien de ce qui suit n'est nécessaire au reste du site.
+
+1. **Schéma et rôle des fils.** Avec la chaîne directe du propriétaire, et un
+   mot de passe aléatoire d'au moins 16 caractères donné sur la ligne de
+   commande :
+
+   ```sh
+   psql "$DATABASE_OWNER_URL" -v ON_ERROR_STOP=1 -v threads_password="'…'" -f db/threads.sql
+   ```
+
+   Le script crée le rôle `farsight_threads`, le schéma `farsight_users` et ses
+   deux tables ; il se relance sans risque (chaque instruction est idempotente,
+   le mot de passe est remis à la valeur donnée). `THREADS_DATABASE_URL` est la
+   chaîne de ce rôle, sur l'hôte poolé comme `DATABASE_URL`
+   (`docs/postgres.md`).
+2. **Instance Clerk.** Une application Clerk a deux instances, aux clés et aux
+   comptes distincts :
+   - **développement** (clés `pk_test_…` / `sk_test_…`) : elle fonctionne sur
+     n'importe quel hôte, donc en local et sur les previews `*.vercel.app`.
+     Ses clés vont dans l'environnement Preview de Vercel et dans `.env.local` ;
+   - **production** (clés `pk_live_…` / `sk_live_…`) : elle est liée au domaine
+     du site. Clerk donne les enregistrements DNS à créer chez le registrar du
+     domaine, à faire vérifier avant de s'en servir. Ses clés vont dans
+     l'environnement Production.
+
+   L'hôte Clerk autorisé par les en-têtes de sécurité de `/chat` est lu dans la
+   clé publique : rien d'autre à régler quand on change d'instance, hormis
+   redéployer.
+3. **Jeton de session.** Dans les réglages de session de chaque instance,
+   personnaliser le jeton de session avec :
+
+   ```json
+   {"metadata": "{{user.public_metadata}}"}
+   ```
+
+   L'app lit alors l'invitation dans le jeton, sans appeler l'API de Clerk.
+   Sans ce réglage la conversation fonctionne quand même : l'accès est lu par
+   l'API, gardé 5 minutes en mémoire quand il est ouvert et 10 secondes sinon.
+4. **Webhook de suppression de compte.** Dans chaque instance, créer un
+   webhook vers `https://<hôte>/api/clerk/webhook`, abonné au seul événement
+   `user.deleted`, et mettre son secret de signature dans
+   `CLERK_WEBHOOK_SIGNING_SECRET`. Un compte supprimé emporte alors ses
+   conversations et son compteur. Sans la variable, la route répond 404 et
+   rien n'est supprimé.
+5. **Variables Vercel**, puis redéployer : les trois variables d'ouverture et
+   le secret du webhook (tableau plus haut). `OPENROUTER_API_KEY` doit être
+   présente dans le même environnement, sinon `/api/chat` répond 503.
+6. **Ouvrir l'accès à un compte.** La personne crée son compte depuis `/chat` ;
+   la page lui dit alors que son compte n'a pas encore accès, avec l'adresse
+   e-mail du compte. Dans le dashboard Clerk de la bonne instance, ouvrir cet
+   utilisateur et mettre dans ses métadonnées **publiques** :
+
+   ```json
+   {"chat": true}
+   ```
+
+   La personne recharge la page. Pour retirer l'accès, enlever la clé : le
+   retrait prend effet au renouvellement du jeton de session, et au plus tard
+   5 minutes après sur une instance qui avait lu l'accès par l'API.
+
+Limites en place, dans le code (`src/lib/threads/store.ts`) : 30 conversations
+par compte (une 31ᵉ supprime la plus ancienne), 100 messages par compte et par
+jour (UTC), 600 ko et 200 messages par conversation. Une conversation est
+gardée jusqu'à ce que son propriétaire la supprime ou supprime son compte.
+
+Pour vérifier : `/chat` sans session affiche la porte et le bouton de
+connexion ; un compte non invité voit « Ton compte n'a pas encore accès » ;
+un compte invité arrive dans la conversation, pose une question, recharge la
+page et retrouve sa conversation dans la barre latérale.
 
 ## Contrôles avant déploiement
 
