@@ -6,12 +6,14 @@ import type { Locale } from "../locale";
 import { LEAGUES } from "../domain/leagues";
 import { wikiUrl } from "../sources/leaguepedia";
 import { chatCard, tableCard } from "./chat-card";
+import { LEAGUE_TIERS, leaguePaths } from "./chat-paths";
 import { CHAT_HISTORY_MESSAGES, CHAT_MESSAGE_MAX_LENGTH, type ChatUIMessage, type ShownAnswer } from "./chat-types";
 import { guardQuery, VIEWS } from "./guard";
 import { getLlm, withLlmSignal } from "./llm";
-import { messagesIn, withLocale } from "./messages";
+import { messagesIn, say, withLocale } from "./messages";
 import { schemaPrompt, sqlRules } from "./query";
 import { runAgent } from "./run";
+import { renamedTeams } from "./understand";
 import type { Answer, TableCell } from "./types";
 
 const CHAT_STEPS = 6;
@@ -120,7 +122,7 @@ const KIT =
   "For a bar chart always use kit-bars, never an svg. An inline svg is only for a line or a curve over time: stroke and fill with var(--accent), var(--muted), var(--line), var(--blue), var(--red) or currentColor, font-size 11px, and give it a viewBox and width=\"100%\". " +
   "Images are not available. Keep it compact and readable on a phone (no fixed width over 320px).";
 
-function instructions(locale: Locale, schema: string): string {
+function instructions(locale: Locale, schema: string, renamed: { team: string; members: string[] }[]): string {
   const language = messagesIn(locale).route.promptLanguage;
 
   return [
@@ -129,11 +131,14 @@ function instructions(locale: Locale, schema: string): string {
     "Follow the conversation: a follow-up keeps the player, team, champion, competition, period and metric of the earlier turns unless the visitor changes them.",
     "Tools:",
     "- ask_data: the main tool. Give it one standalone question, in the visitor's language, that names everything the follow-up leaves implicit. Pass a message that is already standalone word for word: never change what it asks for (results stay results, a roster stays a roster). It runs the site's typed tools (player history, comparisons, champion pools, rankings, head-to-heads, series, rosters, runes, records, game timelines...) and shows the visitor a compact card of the result (a few key figures and a short table or bars). Use it first, once per distinct question; you may call it several times to gather data for a comparison.",
+    "- league_paths: teams that played a lower league (second division, national or regional league, Masters, challengers) before the LEC or the LCK. Call it straight away for promotions and paths between tiers; a team with few games in the top league only played one of its open tournaments, so say so instead of calling it a promotion.",
     "- run_sql: your own query when ask_data cannot answer or when you need a cut it does not offer. The result table is shown to the visitor.",
     "Check every ask_data result against the question before you answer. Its `route` is the tool it picked and `wordsNotRead` are the words of the question it ignored: when those words carry what was asked, or the result is about something else (a ranking instead of a path between leagues, a list instead of a count), it did not answer. Then write run_sql, with replacesEarlierResult true, instead of presenting it.",
     "Only say that the data does not hold something after a run_sql attempt came back empty, or when no view has a column for it. A question the typed tools do not cover is a reason to write SQL, never a reason to give up.",
     `Leagues in the data, with their short name and region: ${LEAGUES.map((l) => `${l.name} (${l.short}, ${l.region})`).join("; ")}. In SQL the column league holds the full name written here, never the short one (league_short).`,
     "Each region has tiers: a top league (LEC and its former name EU LCS in Europe, LCK, LPL, LCS, CBLOL...), and under it national or regional leagues (in Europe: La Ligue Française, LVP SuperLiga and its successors, their second divisions, and the European then EMEA Masters their best teams play), plus academy and challenger leagues (LCK Challengers League, Challengers Korea, LCK Academy Series). 'Division 2', 'second division', 'ERL' or 'regional league' of a top league means those lower leagues of its region.",
+    `Teams that played under several names, each group being one team: ${renamed.map((r) => `${r.team} = ${r.members.join(", ")}`).join("; ")}. In a query that follows teams across seasons, fold each group into its current name (a CASE on the team name) before grouping. Other teams may have changed name without being listed here: when an answer depends on a team's whole history, say in one clause that a renamed team can be missing.`,
+    "Unless the visitor names one league, 'division 2' of a top league counts every lower league of its region (national leagues, their second divisions, and the Masters), and your comment names the leagues you counted.",
     "A team's path between leagues (promotion, relegation, a team that played a lower league before a top one) is read with run_sql from v_games: one row per game with blue_team, red_team, league and year. Put both sides in one list with UNION ALL, group by team and league, and compare the first year in each league. Show years rather than played_at, which is a Unix timestamp no visitor can read.",
     "- render_html: build a custom view (a side-by-side comparison, bars, a small chart, a recap card) from figures you already got from the other tools in this conversation. Use it when the visitor asks for a visual, a chart, a recap or a custom layout, or when several results are better read together; never to repeat a table already shown.",
     "Never write text before a tool call or between tool calls: call the tools first, in silence. Then reply like a person in a chat: one or two short sentences giving the takeaway (and a caveat from the notes only if it changes the reading). The visitor already sees the result card, so never list its rows, never describe the card, never mention sources or how you searched, and do not end with an offer or a suggestion unless the visitor seems stuck.",
@@ -150,6 +155,8 @@ type Writer = UIMessageStreamWriter<ChatUIMessage>;
 const sameQuestion = (question: string) => question.normalize("NFKC").toLowerCase().replace(/[\s?!.]+/g, " ").trim();
 
 type Shown = { id: string; data: ShownAnswer };
+
+const removed = (data: ShownAnswer): ShownAnswer => ({ ...data, card: null, sources: [] });
 
 function askData(writer: Writer, locale: Locale, signal: AbortSignal | undefined, shown: Shown[]) {
   const asked = new Map<string, string>();
@@ -183,7 +190,7 @@ const Cell = z.union([z.string(), z.number(), z.null()]).catch((ctx) => String(c
 
 function runSql(writer: Writer, locale: Locale, signal: AbortSignal | undefined, shown: Shown[]) {
   return tool({
-    description: "Run one read-only SELECT of your own on the v_* views and show its result table to the visitor.",
+    description: "Run one read-only SELECT of your own on the v_* views and show its result table to the visitor. A turn shows one query result: a later query of the same turn replaces the earlier one on screen.",
     inputSchema: z.object({
       title: z.string().min(2).max(120).describe("Title of the result, in the visitor's language."),
       sql: z.string().min(10).max(4000),
@@ -208,16 +215,52 @@ function runSql(writer: Writer, locale: Locale, signal: AbortSignal | undefined,
 
       const card = tableCard(title, columns, table.rows);
 
-      if (replacesEarlierResult)
-        for (const earlier of shown.splice(0)) writer.write({ type: "data-answer", id: earlier.id, data: { ...earlier.data, card: null, sources: [] } });
+      const outdated = shown.filter((earlier) => replacesEarlierResult || earlier.data.via === "sql");
 
-      writer.write({
-        type: "data-answer",
-        id: toolCallId,
-        data: { asked: title, via: "sql", pending: false, card, sources: [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }], digest },
-      });
+      for (const earlier of outdated) {
+        shown.splice(shown.indexOf(earlier), 1);
+        writer.write({ type: "data-answer", id: earlier.id, data: removed(earlier.data) });
+      }
+
+      const data: ShownAnswer = { asked: title, via: "sql", pending: false, card, sources: [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }], digest };
+
+      shown.push({ id: toolCallId, data });
+      writer.write({ type: "data-answer", id: toolCallId, data });
 
       return digest;
+    },
+  });
+}
+
+const shortOf = new Map<string, string>(LEAGUES.map((l) => [l.name, l.short]));
+
+function leaguePathsTool(writer: Writer, locale: Locale, shown: Shown[]) {
+  return tool({
+    description:
+      "Teams that played a lower league of a region before reaching its top league: promotions, teams coming from a second division, a national or regional league, or the Masters. Deterministic, and a team that changed name is followed under its names. Use it instead of run_sql for these questions.",
+    inputSchema: z.object({
+      top: z.enum(["LEC", "LCK"]).describe("Top league reached. LEC also covers its former name EU LCS; LCK also covers OGN Champions."),
+      scope: z.enum(["lower", "second"]).describe("'lower': every league under the top one (national leagues, their second divisions, Masters or challenger leagues). 'second': only the leagues named second division or challengers."),
+    }),
+    execute: async ({ top, scope }, { toolCallId }) => {
+      const paths = await leaguePaths(openDb(), top, scope);
+
+      if (!paths.length) return "No team of the data played one of those leagues before the top league.";
+
+      return withLocale(locale, () => {
+        const title = scope === "second" ? say(`Équipes passées d'une division 2 à la ${top}`, `Teams that went from a second division to the ${top}`) : say(`Équipes passées d'une ligue inférieure à la ${top}`, `Teams that went from a lower league to the ${top}`);
+        const columns = [say("Équipe", "Team"), say("Ligues avant", "Leagues before"), say(`Arrivée en ${top}`, `Reached the ${top}`), say(`Parties en ${top}`, `Games in the ${top}`)];
+        const rows = paths.map((p): TableCell[] => [p.team, p.before.map((b) => `${shortOf.get(b.league) ?? b.league} ${b.year}`).join(", "), p.arrived, p.topGames]);
+        const digest = JSON.stringify({ title, leaguesCounted: (scope === "second" ? LEAGUE_TIERS[top].second : LEAGUE_TIERS[top].lower).map((l) => shortOf.get(l) ?? l), columns, rows });
+        const data: ShownAnswer = { asked: title, via: "sql", pending: false, card: tableCard(title, columns, rows), sources: [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }], digest };
+
+        for (const earlier of shown.splice(0)) writer.write({ type: "data-answer", id: earlier.id, data: removed(earlier.data) });
+
+        shown.push({ id: toolCallId, data });
+        writer.write({ type: "data-answer", id: toolCallId, data });
+
+        return digest;
+      });
     },
   });
 }
@@ -248,9 +291,14 @@ export async function streamChat(history: ModelMessage[], writer: Writer, locale
 
   const result = streamText({
     model: llm.model,
-    instructions: instructions(locale, await schemaPrompt(openDb())),
+    instructions: instructions(locale, await schemaPrompt(openDb()), await renamedTeams(openDb())),
     messages: history,
-    tools: { ask_data: askData(writer, locale, signal, shown), run_sql: runSql(writer, locale, signal, shown), render_html: renderHtml(writer) },
+    tools: {
+      ask_data: askData(writer, locale, signal, shown),
+      league_paths: leaguePathsTool(writer, locale, shown),
+      run_sql: runSql(writer, locale, signal, shown),
+      render_html: renderHtml(writer),
+    },
     stopWhen: isStepCount(CHAT_STEPS),
     maxOutputTokens: CHAT_OUTPUT_TOKENS,
     maxRetries: 1,

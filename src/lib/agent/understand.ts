@@ -313,6 +313,7 @@ const FRANCHISES: { team: string; members: string[]; aliases: string[] }[] = [
     aliases: ["mkoi", "koi", "mdk", "mad", "mad lions", "madlions", "mad lions koi", "movistar koi"],
   },
   { team: "GIANTX", members: ["Excel Esports", "GIANTX"], aliases: ["gx", "giantx", "excel", "xl", "excel esports"] },
+  { team: "Karmine Corp", members: ["Kameto Corp", "Karmine Corp"], aliases: ["kcorp", "karmine", "karmine corp", "kameto corp"] },
   {
     team: "DRX",
     members: ["Longzhu Gaming", "Kingzone DragonX", "DragonX", "DRX", "Kiwoom DRX"],
