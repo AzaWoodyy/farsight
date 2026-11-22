@@ -322,7 +322,7 @@ const AnswerSchema = z.object({
   meta: Meta,
 });
 
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 export const schemaMatchesTypes: Same<z.infer<typeof AnswerSchema>, Answer> & Same<z.infer<typeof Step>, StepPart> = true;
 
