@@ -799,9 +799,11 @@ function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer
         )}
         {table && open && table.total > table.rows.length && <span>{t.truncated(table.rows.length, table.total)}</span>}
         {shown.sources.length > 0 && (
-          <details className="min-w-0">
+          <details data-how className="min-w-0">
             <summary className="press inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 hover:text-accent sm:pointer-fine:min-h-8">
-              <span aria-hidden>›</span>
+              <span aria-hidden data-chevron className="inline-block">
+                ›
+              </span>
               {t.sources}
             </summary>
             <ul className="pb-1 leading-6">
