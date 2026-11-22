@@ -11,6 +11,8 @@ const FRENCH_WORDS = new Set([
   "poste", "statut", "nombre", "finaliste", "arbre", "pris", "bleu", "rouge", "titulaire", "remplaçant", "inconnu", "quart", "historique",
 ]);
 
+const ENTITY_COLUMN = /team|player|champion|opponent|winner|blue|red|tournament|event/i;
+
 const ENTITY_FIELDS = new Set([
   "player", "playerA", "playerB", "realName", "nativeName", "champion", "team", "teamA", "teamB", "blue", "red", "winner", "forfeitedBy",
   "name", "keystone", "item", "event", "tournament", "chosen", "alternatives", "mention",
@@ -31,8 +33,21 @@ const capitalized = (word: string) => word[0] !== word[0]!.toLowerCase();
 
 const escaped = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const withoutLeagues = (text: string) =>
-  LEAGUE_NAMES.reduce((t, name) => t.replace(new RegExp(`(?<![\\p{L}])${escaped(name)}(?![\\p{L}])`, "gu"), " "), text);
+type Span = [number, number];
+
+const leagueSpans = (text: string): Span[] =>
+  LEAGUE_NAMES.flatMap((name) => [...text.matchAll(new RegExp(`(?<![\\p{L}])${escaped(name)}(?![\\p{L}])`, "gu"))].map((m): Span => [m.index, m.index + m[0].length]));
+
+const nameSpans = (text: string, names: string[]): Span[] =>
+  names.flatMap((name) => {
+    const spans: Span[] = [];
+
+    for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) spans.push([at, at + name.length]);
+
+    return spans;
+  });
+
+const blanked = (text: string, spans: Span[]) => spans.reduce((t, [from, to]) => t.slice(0, from) + " ".repeat(to - from) + t.slice(to), text);
 
 type Data = { all: string[]; entities: string[] };
 
@@ -62,25 +77,28 @@ function answerData(answer: Answer): Data {
 
   walk(Json.parse(JSON.parse(JSON.stringify({ ...answer, title: "", summary: "", notes: [], followUps: [], table: null }))), false);
 
-  for (const cell of (answer.table?.rows ?? []).flat()) {
-    const text = Text.safeParse(cell);
+  const columns = answer.table?.columns ?? [];
 
-    if (!text.success) continue;
-    data.all.push(text.data);
-    data.entities.push(text.data);
-  }
+  for (const row of answer.table?.rows ?? [])
+    for (const [i, cell] of row.entries()) {
+      const text = Text.safeParse(cell);
+
+      if (!text.success) continue;
+      data.all.push(text.data);
+
+      if (ENTITY_COLUMN.test(columns[i] ?? "")) data.entities.push(text.data);
+    }
 
   return data;
 }
 
 const namedWords = (data: string[]): Set<string> => new Set(data.flatMap(words).filter(capitalized));
 
-const withoutNames = (text: string, names: string[]) => names.reduce((t, name) => t.split(name).join(" "), text);
 
-function unquoted(text: string, question: string): string {
+function quoteSpans(text: string, question: string): Span[] {
   const asked = question.match(TOKEN) ?? [];
   const shown = [...text.matchAll(TOKEN)];
-  let out = text;
+  const spans: Span[] = [];
 
   for (let i = 0; i < shown.length; i++)
     for (let j = 0; j < asked.length; j++) {
@@ -88,13 +106,10 @@ function unquoted(text: string, question: string): string {
 
       while (i + n < shown.length && j + n < asked.length && shown[i + n]![0] === asked[j + n]) n++;
 
-      if (n < 2) continue;
-      const from = shown[i]!.index;
-      const to = shown[i + n - 1]!.index + shown[i + n - 1]![0].length;
-      out = out.slice(0, from) + " ".repeat(to - from) + out.slice(to);
+      if (n >= 2) spans.push([shown[i]!.index, shown[i + n - 1]!.index + shown[i + n - 1]![0].length]);
     }
 
-  return out;
+  return spans;
 }
 
 const isFrench = (word: string, named: Set<string>) => {
@@ -118,7 +133,7 @@ export function frenchInEnglishAnswer(question: string, answer: Answer, steps: S
   ];
 
   return shown.flatMap(([field, text]) => {
-    const word = words(withoutLeagues(withoutNames(unquoted(text, question), names))).find((w) => isFrench(w, named));
+    const word = words(blanked(text, [...quoteSpans(text, question), ...leagueSpans(text), ...nameSpans(text, names)])).find((w) => isFrench(w, named));
 
     return word ? [{ field, word, text }] : [];
   });

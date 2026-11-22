@@ -67,6 +67,13 @@ test("capitals excuse a word only from an entity, and a quote is read before nam
   expect(frenchInEnglishAnswer("What does en LEC mean?", answer({ summary: "Could not interpret “en LEC”." }), [], true)).toEqual([]);
 });
 
+test("only entity columns name things, and a quote overlapping a competition does not hide it", () => {
+  const status = answer({ title: "Titulaire for T1", table: { columns: ["Player", "Status"], rows: [["Faker", "Titulaire"]] } });
+
+  expect(words(frenchInEnglishAnswer("T1 roster", status, [], true))).toEqual(["title: Titulaire"]);
+  expect(frenchInEnglishAnswer("Which League of Legends teams won?", answer({ title: "Liga Española de League of Legends standings" }), [], true)).toEqual([]);
+});
+
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {
   const named = answer({
     summary: "Most titles: Movistar KOI Fénix (3). Data missing: in-game statistics (âmes du dragon) for the LPL.",
