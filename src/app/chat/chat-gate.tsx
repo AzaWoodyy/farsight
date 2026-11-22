@@ -8,7 +8,7 @@ import { ChatRoom } from "./chat-room";
 
 const APPEARANCE = {
   variables: {
-    colorPrimary: "var(--accent)",
+    colorPrimary: "var(--door-accent)",
     colorBackground: "var(--background)",
     colorForeground: "var(--foreground)",
     colorMutedForeground: "var(--muted)",
@@ -20,7 +20,27 @@ const APPEARANCE = {
     borderRadius: "0",
     fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
   },
-  elements: { avatarBox: { borderRadius: 0 }, userButtonAvatarBox: { borderRadius: 0, width: "2rem", height: "2rem" }, userButtonTrigger: { padding: "6px", borderRadius: 0 } },
+  elements: {
+    avatarBox: { borderRadius: 0 },
+    userButtonAvatarBox: { borderRadius: 0, width: "2rem", height: "2rem" },
+    userButtonTrigger: { padding: "6px", borderRadius: 0 },
+    modalBackdrop: { alignItems: "center", backgroundColor: "color-mix(in srgb, var(--background) 82%, transparent)" },
+    modalContent: { margin: "auto" },
+    cardBox: { border: "1px solid var(--line)", boxShadow: "none" },
+    card: { backgroundColor: "var(--background)", boxShadow: "none" },
+    footer: { background: "var(--background)" },
+    formFieldInput: { borderWidth: "1px !important", borderStyle: "solid", borderColor: "var(--line)", boxShadow: "none !important", minHeight: "2.75rem", fontSize: "16px", "&:focus": { borderColor: "var(--accent)" } },
+    formButtonPrimary: {
+      color: "var(--background)",
+      boxShadow: "none !important",
+      minHeight: "2.75rem",
+      textTransform: "uppercase",
+      letterSpacing: "0.05em",
+      "&::after": { display: "none" },
+    },
+    socialButtonsBlockButton: { borderWidth: "1px !important", borderStyle: "solid", borderColor: "var(--line)", boxShadow: "none !important", minHeight: "2.75rem" },
+    socialButtonsIconButton: { borderWidth: "1px !important", borderStyle: "solid", borderColor: "var(--line)", boxShadow: "none !important", minHeight: "2.75rem" },
+  },
 };
 
 export async function ChatGate({ locale }: { locale: Locale }) {
