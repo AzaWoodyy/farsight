@@ -8,7 +8,7 @@ import type { WikiPage } from "../../src/lib/sources/leaguepedia";
 import { rawGameKey } from "../../src/lib/sources/riot";
 import type { ObjectStore } from "../../src/lib/storage";
 import { DERIVE_VERSION } from "../data/ingame";
-import { SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries } from "../data/riot";
+import { type PulledSummaries, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries } from "../data/riot";
 import { riotGame, riotRow } from "../fixtures/riot-games";
 import { type Schedule, explore } from "./explore";
 
@@ -154,7 +154,7 @@ async function dailyRun(machine: Machine, r2: Map<string, Uint8Array>, schedule:
   const run: Run = { faults: new Set(), uploads: new Map(), lateRequests: 0 };
   const remote = new FaultyR2(r2, schedule, run);
   const clock = { now: 0 };
-  let pulled;
+  let pulled: PulledSummaries | null = null;
   let counts;
 
   try {
