@@ -35,7 +35,7 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
 
   return (
     <div className="mt-8">
-      <h2 className="text-base font-semibold">
+      <h2 className="text-base font-semibold text-balance">
         <span className="text-accent">#</span> {answer.title}
       </h2>
       {answer.profiles.length === 1 && answer.profiles[0].teams.length > 0 && <PlayerHeader p={answer.profiles[0]} />}
@@ -58,13 +58,13 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       )}
       {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
       {answer.timeline && <GameTimeline timeline={answer.timeline} />}
-      <p className="mt-4 max-w-[75ch] text-sm leading-relaxed">{prose(answer.summary)}</p>
+      <p className="mt-4 max-w-[75ch] text-sm leading-relaxed text-pretty">{prose(answer.summary)}</p>
       {answer.notes.map((n) => (
-        <p key={n} className="mt-2 max-w-[75ch] text-xs leading-relaxed text-warn">
+        <p key={n} className="mt-2 max-w-[75ch] text-xs leading-relaxed text-pretty text-warn">
           {ui.answer.note} {prose(n)}
         </p>
       ))}
-      <div className="mt-6">
+      <div className="mt-10">
         <h3 className="text-xs text-muted">── {ui.answer.followUps}</h3>
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {answer.followUps.map((f) => (
@@ -91,7 +91,7 @@ function Sources({ sources }: { sources: Answer["sources"] }) {
   const leaguepedia = sources.every((s) => s.label.startsWith(SOURCE_PREFIX));
 
   return (
-    <div className="mt-6 text-xs text-muted">
+    <div className="mt-10 text-xs text-muted">
       <h3>
         ── {ui.answer.sources}
         {leaguepedia && " · Leaguepedia"}
