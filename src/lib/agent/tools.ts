@@ -4686,7 +4686,7 @@ ORDER BY played_at NULLS FIRST, tournament_page, tab NULLS FIRST, match_n NULLS 
       : say(`${phrase} : ${list.length} séries. ${list.slice(0, 8).map(score).join(" ; ")}${list.length > 8 ? " ; …" : ""}.`, `${phrase}: ${list.length} series. ${list.slice(0, 8).map(score).join("; ")}${list.length > 8 ? "; …" : ""}.`);
 
     const askAgain = (s: SeriesDetail) =>
-      say(`${s.teamA} vs ${s.teamB} ${input.phase ? `${tr(PHASE_LABEL[input.phase])} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`, `${s.teamA} vs ${s.teamB} ${input.phase ? `${tr(PHASE_LABEL[input.phase])} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`);
+      `${s.teamA} vs ${s.teamB} ${input.phase ? `${tr(PHASE_LABEL[input.phase])} ${s.label.split(" · ")[0]}` : s.label.replace(" · ", " ")}`;
 
     const followUps = one
       ? [
