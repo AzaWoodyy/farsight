@@ -13,16 +13,12 @@ function Chips({ examples, onAsk, copy }: AskProps & { examples: Example[]; copy
         type="button"
         tabIndex={copy ? -1 : undefined}
         onClick={() => onAsk(e.question)}
-        className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-sm whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
+        className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-[13px] whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
       >
         <span aria-hidden className="text-accent">
           &gt;
         </span>
         {e.question}
-        <span className="text-xs text-muted">
-          <span aria-hidden># </span>
-          {e.display}
-        </span>
       </button>
     </li>
   ));

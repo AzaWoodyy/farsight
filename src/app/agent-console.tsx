@@ -240,7 +240,7 @@ function Console() {
         <button
           type="submit"
           disabled={running}
-          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 group-has-[input:invalid]:opacity-40 sm:pointer-fine:min-h-9"
+          className="press min-h-11 shrink-0 border border-line px-4 text-[13px] tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 group-has-[input:invalid]:opacity-40 sm:pointer-fine:min-h-9"
         >
           {running ? "…" : ui.console.ask}
         </button>
