@@ -1,6 +1,7 @@
 "use client";
 
 import { SignInButton, SignOutButton, useAuth, useUser } from "@clerk/nextjs";
+import "./chat.css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -15,6 +16,7 @@ const TEXT = {
     heading: "La conversation est réservée aux comptes invités.",
     intro: "Ce prototype consomme plus de crédit que les questions du site : il faut se connecter, puis qu’Enzo ouvre l’accès au compte.",
     signIn: "Se connecter",
+    preparing: "Préparation de la connexion…",
     pendingHeading: "Ton compte n’a pas encore accès.",
     pending: (email: string) => `Tu es connecté${email ? ` avec ${email}` : ""}. Demande à Enzo d’ouvrir l’accès à ce compte, puis recharge la page.`,
     signOut: "Se déconnecter",
@@ -24,6 +26,7 @@ const TEXT = {
     heading: "The conversation is for invited accounts only.",
     intro: "This prototype costs more credit than the site’s questions: sign in, then Enzo opens access for the account.",
     signIn: "Sign in",
+    preparing: "Preparing sign-in…",
     pendingHeading: "Your account does not have access yet.",
     pending: (email: string) => `You are signed in${email ? ` as ${email}` : ""}. Ask Enzo to open access for this account, then reload the page.`,
     signOut: "Sign out",
@@ -49,7 +52,7 @@ export function ChatDoor({ locale, pending }: { locale: Locale; pending: boolean
   }, [isLoaded, isSignedIn, pending, router]);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 sm:px-6">
+    <div className="chat-shell mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 sm:px-6">
       <header className="pt-5 sm:pt-8">
         <Link href={PATHS.home[locale]} aria-label={SHELL[locale].homeLabel} className="press inline-flex min-h-11 items-center gap-2.5 hover:text-accent">
           <Mark size={32} />
@@ -75,8 +78,14 @@ export function ChatDoor({ locale, pending }: { locale: Locale; pending: boolean
             </SignOutButton>
           ) : (
             <SignInButton mode="modal" forceRedirectUrl={here} signUpForceRedirectUrl={here}>
-              <button type="button" className={`${BUTTON} border-accent text-accent`}>
-                {t.signIn}
+              <button type="button" disabled={!isLoaded} aria-busy={!isLoaded} className={`${BUTTON} border-accent text-accent disabled:border-line disabled:text-muted`}>
+                {isLoaded ? (
+                  t.signIn
+                ) : (
+                  <span className="t-shimmer" data-text={t.preparing}>
+                    {t.preparing}
+                  </span>
+                )}
               </button>
             </SignInButton>
           )}

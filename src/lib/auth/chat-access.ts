@@ -1,9 +1,13 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { z } from "zod";
 
 export type ChatAccess = { state: "anonymous" } | { state: "pending"; userId: string } | { state: "allowed"; userId: string };
 
-const REMEMBERED_MS = 60_000;
+const GRANTED_MS = 5 * 60_000;
+const PENDING_MS = 10_000;
 const MAX_REMEMBERED = 500;
+
+const GrantClaim = z.object({ metadata: z.object({ chat: z.literal(true) }) });
 
 const remembered = new Map<string, { allowed: boolean; until: number }>();
 
@@ -17,15 +21,17 @@ async function allowed(userId: string): Promise<boolean> {
   const granted = user.publicMetadata.chat === true;
 
   if (remembered.size >= MAX_REMEMBERED) remembered.clear();
-  remembered.set(userId, { allowed: granted, until: Date.now() + REMEMBERED_MS });
+  remembered.set(userId, { allowed: granted, until: Date.now() + (granted ? GRANTED_MS : PENDING_MS) });
 
   return granted;
 }
 
 export async function chatAccess(): Promise<ChatAccess> {
-  const { userId } = await auth();
+  const { userId, sessionClaims } = await auth();
 
   if (!userId) return { state: "anonymous" };
+
+  if (GrantClaim.safeParse(sessionClaims).success) return { state: "allowed", userId };
 
   return (await allowed(userId)) ? { state: "allowed", userId } : { state: "pending", userId };
 }
