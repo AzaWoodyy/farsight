@@ -66,7 +66,7 @@ export function HtmlFrame({ title, html }: { title: string; html: string }) {
 
   return (
     <figure>
-      <figcaption className="text-sm font-semibold">
+      <figcaption className="text-sm font-semibold text-balance">
         <span className="text-accent">#</span> {title}
       </figcaption>
       {srcDoc && (

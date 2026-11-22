@@ -1,16 +1,18 @@
 import "./chat.css";
 import type { Locale } from "@/lib/locale";
-
-const TEXT: Record<Locale, string> = { fr: "Ouverture de la conversation…", en: "Opening the conversation…" };
+import { SHELL } from "../i18n/shell";
+import { ChatFrame } from "./chat-frame";
 
 export function ChatLoading({ locale }: { locale: Locale }) {
+  const label = SHELL[locale].chat.opening;
+
   return (
-    <div className="chat-shell mx-auto flex min-h-dvh w-full max-w-6xl flex-col justify-center px-4 sm:px-6">
-      <p role="status" className="text-sm">
-        <span className="t-shimmer" data-text={TEXT[locale]}>
-          {TEXT[locale]}
+    <ChatFrame locale={locale}>
+      <p role="status" className="mt-10 text-sm sm:mt-16">
+        <span className="t-shimmer" data-text={label}>
+          {label}
         </span>
       </p>
-    </div>
+    </ChatFrame>
   );
 }

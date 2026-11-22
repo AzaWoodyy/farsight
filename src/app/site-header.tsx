@@ -6,7 +6,19 @@ import { CHAT_PATHS, isPublic, LOCALE_NAME, LOCALES, type Locale, type PageKey, 
 import { SHELL } from "./i18n/shell";
 import { ThemeToggle } from "./theme-toggle";
 
-export function SiteHeader({ locale, page, trail, chat = false }: { locale: Locale; page: PageKey; trail: string; chat?: boolean }) {
+export function SiteHeader({
+  locale,
+  page,
+  trail,
+  chat = false,
+  switchTo,
+}: {
+  locale: Locale;
+  page: PageKey;
+  trail: string;
+  chat?: boolean;
+  switchTo?: Record<Locale, string>;
+}) {
   const shell = SHELL[locale];
 
   return (
@@ -20,26 +32,24 @@ export function SiteHeader({ locale, page, trail, chat = false }: { locale: Loca
             prefetch={false}
             className="press inline-flex min-h-11 shrink-0 items-center gap-2 border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
           >
-            <span aria-hidden className="max-[359px]:hidden sm:hidden">
-              {shell.chat.short}
-            </span>
-            <span className="sr-only sm:not-sr-only">{shell.chat.label}</span>
+            <span className="max-[359px]:hidden sm:hidden">{shell.chat.short}</span>
+            <span className="hidden sm:inline">{shell.chat.label}</span>
             <span className="text-accent">{shell.chat.stage}</span>
           </Link>
         )}
-        <LocaleSwitch locale={locale} page={page} />
+        <LocaleSwitch locale={locale} page={page} switchTo={switchTo} />
         <ThemeToggle toLight={shell.theme.toLight} toDark={shell.theme.toDark} />
       </div>
     </header>
   );
 }
 
-function LocaleSwitch({ locale, page }: { locale: Locale; page: PageKey }) {
+function LocaleSwitch({ locale, page, switchTo }: { locale: Locale; page: PageKey; switchTo?: Record<Locale, string> }) {
   return LOCALES.filter((other) => other !== locale && isPublic(other)).map((other) => (
     <LocaleLink
       key={other}
-      href={PATHS[page][other]}
-      carryQuestion={page === "home"}
+      href={switchTo?.[other] ?? PATHS[page][other]}
+      carryQuestion={page === "home" && !switchTo}
       hrefLang={other}
       lang={other}
       aria-label={LOCALE_NAME[other]}

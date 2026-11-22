@@ -46,8 +46,8 @@ const nextConfig: NextConfig = {
     ].join("; ");
 
     const chatCsp = csp
-      .replace("script-src 'self'", "script-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com")
-      .replace("connect-src 'self'", "connect-src 'self' https://*.clerk.accounts.dev https://clerk-telemetry.com")
+      .replace("script-src 'self'", "script-src 'self' https://*.clerk.accounts.dev https://cdn.protect.clerk.com https://challenges.cloudflare.com")
+      .replace("connect-src 'self'", "connect-src 'self' https://*.clerk.accounts.dev https://*.protect.clerk.com https://*.client.protect.clerk.com:* https://clerk-telemetry.com")
       .replace("img-src 'self'", "img-src 'self' https://img.clerk.com")
       .replace("frame-src 'self'", "frame-src 'self' https://challenges.cloudflare.com");
 

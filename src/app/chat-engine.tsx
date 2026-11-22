@@ -36,7 +36,7 @@ function httpErrorMessage(status: number, errors: Ui["errors"]): string {
   return errors.other(status);
 }
 
-const askFetchIn = (locale: Locale) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+export const askFetchIn = (locale: Locale) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const { errors } = UI[locale];
   let res: Response;
 

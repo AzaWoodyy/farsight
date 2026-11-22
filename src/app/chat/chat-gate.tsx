@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { chatAccess } from "@/lib/auth/chat-access";
 import type { Locale } from "@/lib/locale";
 import { ChatDoor } from "./chat-door";
+import { ChatFrame } from "./chat-frame";
 import { FRENCH_AT_THE_DOOR, FRENCH_IN_THE_ROOM } from "./clerk-french";
 import { ChatRoom } from "./chat-room";
 
@@ -19,6 +20,7 @@ const APPEARANCE = {
     borderRadius: "0",
     fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
   },
+  elements: { avatarBox: { borderRadius: 0 }, userButtonAvatarBox: { borderRadius: 0 } },
 };
 
 export async function ChatGate({ locale }: { locale: Locale }) {
@@ -27,7 +29,13 @@ export async function ChatGate({ locale }: { locale: Locale }) {
 
   return (
     <ClerkProvider localization={locale === "fr" ? french : undefined} appearance={APPEARANCE}>
-      {access.state === "allowed" ? <ChatRoom locale={locale} /> : <ChatDoor locale={locale} pending={access.state === "pending"} />}
+      {access.state === "allowed" ? (
+        <ChatRoom locale={locale} />
+      ) : (
+        <ChatFrame locale={locale}>
+          <ChatDoor locale={locale} pending={access.state === "pending"} />
+        </ChatFrame>
+      )}
     </ClerkProvider>
   );
 }

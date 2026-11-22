@@ -111,7 +111,7 @@ const KIT =
   "Your HTML is placed in the body of a document that already loads the site's stylesheet, so write a fragment only (no html, head, body, script, link, iframe or form; scripts never run). " +
   "Colours come from these CSS variables only, which follow the light and dark theme: --background, --foreground, --muted, --line, --accent, --ok, --warn, --error, --blue (blue side), --red (red side). Never write a literal colour. " +
   "Ready-made classes: " +
-  "kit-title (a heading, the '#' mark is added for you); kit-label (small muted caption); kit-note (muted remark with a dashed rule); " +
+  "kit-title (a heading, the '#' mark is added for you); kit-label (small muted caption); kit-note (muted remark with a dashed rule, only for a caveat the figures need, never to restate them); " +
   "kit-table on a table (th are captions, add class num on numeric cells and class best on a cell to highlight); " +
   "kit-stats containing kit-stat blocks, each with a span (caption) and a b (value); " +
   "kit-bars containing rows written <div class=\"kit-bar\" style=\"--v:62%\"><span>label</span><i></i><b>62 %</b></div> (add class blue, red, ok, warn or error on the row to colour the bar); " +

@@ -10,6 +10,7 @@ import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useRef, use
 import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, type ShownAnswer } from "@/lib/agent/chat-types";
 import type { Locale } from "@/lib/locale";
 import { Mark } from "../brand/logo";
+import { askFetchIn } from "../chat-engine";
 import { EntityIcon } from "../entity-icon";
 import { PlayerAvatar } from "../player-avatar";
 import { SITE } from "../brand/site";
@@ -25,7 +26,6 @@ import { HtmlFrame } from "./html-frame";
 const TEXT = {
   fr: {
     heading: "De quoi veux-tu parler ?",
-    intro: "Pose une question sur l’esport LoL, puis enchaîne. Demande un graphique quand tu veux voir les chiffres.",
     placeholder: "Écris ton message…",
     label: "Ton message",
     send: "Envoyer",
@@ -52,19 +52,18 @@ const TEXT = {
     more: (n: number) => `Voir les ${n} lignes`,
     less: "Réduire",
     truncated: (shown: number, total: number) => `${shown} lignes sur ${total}`,
-    asking: (q: string) => `Recherche : ${q}…`,
+    asking: "Recherche dans les données…",
     querying: "Requête sur mesure…",
     drawing: "Composition de la vue…",
     examples: [
-      { label: "Un joueur", text: "Résultats de Chovy à tous les Worlds" },
-      { label: "Un duel", text: "T1 vs Gen.G en LCK 2024" },
-      { label: "Un champion", text: "Champion pool de Caps en LEC 2024" },
-      { label: "Un graphique", text: "Fais-moi un graphique des taux de victoire de Faker aux Worlds, année par année" },
+      "Résultats de Chovy à tous les Worlds",
+      "T1 vs Gen.G en LCK 2024",
+      "Champion pool de Caps en LEC 2024",
+      "Fais-moi un graphique des taux de victoire de Faker aux Worlds, année par année",
     ],
   },
   en: {
     heading: "What do you want to talk about?",
-    intro: "Ask about LoL esports, then follow up. Ask for a chart when you want to see the figures.",
     placeholder: "Write your message…",
     label: "Your message",
     send: "Send",
@@ -91,21 +90,23 @@ const TEXT = {
     more: (n: number) => `Show all ${n} rows`,
     less: "Collapse",
     truncated: (shown: number, total: number) => `${shown} rows of ${total}`,
-    asking: (q: string) => `Looking up: ${q}…`,
+    asking: "Searching the data…",
     querying: "Custom query…",
     drawing: "Composing the view…",
     examples: [
-      { label: "A player", text: "Chovy’s results at every Worlds" },
-      { label: "A matchup", text: "T1 vs Gen.G in LCK 2024" },
-      { label: "A champion", text: "Caps champion pool in LEC 2024" },
-      { label: "A chart", text: "Draw a chart of Faker’s win rates at Worlds, year by year" },
+      "Chovy’s results at every Worlds",
+      "T1 vs Gen.G in LCK 2024",
+      "Caps champion pool in LEC 2024",
+      "Draw a chart of Faker’s win rates at Worlds, year by year",
     ],
   },
 } as const;
 
 type Texts = (typeof TEXT)[Locale];
 
-const transport = new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" });
+const transports = new Map(
+  LOCALES.map((locale) => [locale, new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat", fetch: Object.assign(askFetchIn(locale), { preconnect: fetch.preconnect }) })]),
+);
 
 const CARD_ROWS = 6;
 const DAY_MS = 86_400_000;
@@ -234,9 +235,9 @@ function Shell({ locale }: { locale: Locale }) {
         aria-label={t.history}
         data-open={menuOpen ? "" : undefined}
         data-collapsed={collapsed ? "" : undefined}
-        className="chat-drawer fixed inset-y-0 left-0 z-30 w-72 max-w-[85vw] shrink-0 overflow-hidden bg-background md:static md:w-64"
+        className="chat-drawer fixed inset-y-0 left-0 z-30 w-72 max-w-[85vw] shrink-0 bg-background md:relative md:inset-auto md:w-64"
       >
-        <div className="flex h-full w-72 max-w-[85vw] flex-col border-r border-line pb-[env(safe-area-inset-bottom,0px)] md:w-64">
+        <div className="chat-drawer-panel flex h-full w-72 max-w-[85vw] flex-col border-r border-line bg-background pb-[env(safe-area-inset-bottom,0px)] md:absolute md:inset-y-0 md:left-0 md:w-64">
         <div className="flex items-center justify-between gap-2 px-3 pt-3">
           <Link href={PATHS.home[locale]} aria-label={shell.homeLabel} className="press inline-flex min-h-11 items-center gap-2.5 hover:text-accent">
             <Mark size={26} />
@@ -419,7 +420,7 @@ function History({ t, saved, activeId, onOpen, onRemove }: { t: Texts; saved: Co
 
 function Room({ id, title, onStart, locale, t, initial }: { id: string | null; title: string; onStart: (id: string) => void; locale: Locale; t: Texts; initial: ChatUIMessage[] }) {
   const [opened] = useState(initial);
-  const { messages, sendMessage, status, error, stop } = useChat<ChatUIMessage>({ transport, messages: opened });
+  const { messages, sendMessage, status, error, stop } = useChat<ChatUIMessage>({ transport: transports.get(locale), messages: opened });
   const own = useRef(id);
   const running = status === "submitted" || status === "streaming";
   const scroller = useRef<HTMLDivElement>(null);
@@ -501,24 +502,25 @@ function Room({ id, title, onStart, locale, t, initial }: { id: string | null; t
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 sm:px-6">
           {messages.length === 0 ? (
             <div className="my-auto py-10">
-              <h1 className="text-xl leading-tight font-semibold tracking-tight text-balance sm:text-2xl">
+              <h1 className="max-w-3xl text-xl leading-snug font-semibold text-balance sm:text-3xl">
                 <span aria-hidden className="text-accent">
                   &gt;{" "}
                 </span>
                 {t.heading}
                 <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
               </h1>
-              <p className="chat-prose mt-3 max-w-[60ch] text-sm text-muted">{t.intro}</p>
-              <ul className="mt-8 grid gap-2 sm:grid-cols-2">
+              <ul className="mt-8 flex flex-wrap gap-2">
                 {t.examples.map((example) => (
-                  <li key={example.text}>
+                  <li key={example} className="flex min-w-0">
                     <button
                       type="button"
-                      onClick={() => ask(example.text)}
-                      className="press flex h-full min-h-16 w-full flex-col items-start justify-center gap-1 border border-line px-3 py-2 text-left hover:border-accent"
+                      onClick={() => ask(example)}
+                      className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-left text-[13px] hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
                     >
-                      <span className="text-xs text-muted">{example.label}</span>
-                      <span className="text-xs leading-relaxed">{example.text}</span>
+                      <span aria-hidden className="text-accent">
+                        &gt;
+                      </span>
+                      {example}
                     </button>
                   </li>
                 ))}
@@ -605,14 +607,14 @@ function Room({ id, title, onStart, locale, t, initial }: { id: string | null; t
               <button
                 type="button"
                 onClick={() => void stop()}
-                className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-error hover:text-error sm:pointer-fine:min-h-9"
+                className="press min-h-11 shrink-0 border border-line px-4 text-[13px] tracking-wider uppercase hover:border-error hover:text-error sm:pointer-fine:min-h-9"
               >
                 {t.stop}
               </button>
             ) : (
               <button
                 type="submit"
-                className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
+                className="press min-h-11 shrink-0 border border-line px-4 text-[13px] tracking-wider uppercase hover:border-accent hover:text-accent sm:pointer-fine:min-h-9"
               >
                 {t.send}
               </button>
@@ -649,7 +651,7 @@ function Card({ children, animated }: { children: ReactNode; animated: boolean }
 
 function CardTitle({ title }: { title: string }) {
   return (
-    <h2 className="text-sm font-semibold">
+    <h2 className="text-sm font-semibold text-balance">
       <span aria-hidden className="text-accent">
         #{" "}
       </span>
@@ -717,7 +719,7 @@ function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer
             <thead>
               <tr>
                 {table.columns.map((c, i) => (
-                  <th key={c} scope="col" className={`border-b border-line py-1.5 pr-4 text-xs font-normal whitespace-nowrap text-muted last:pr-0 ${table.numeric[i] ? "text-right" : "text-left"}`}>
+                  <th key={c} scope="col" className={`border-b border-line py-1.5 pr-4 text-xs font-normal tracking-wider whitespace-nowrap text-muted uppercase last:pr-0 ${table.numeric[i] ? "text-right" : "text-left"}`}>
                     {c}
                   </th>
                 ))}
@@ -813,7 +815,7 @@ function Reply({ message, t, live, animated }: { message: ChatUIMessage; t: Text
       );
 
     if (part.type === "data-answer") {
-      if (part.data.pending) return live ? status(key, t.asking(part.data.asked)) : null;
+      if (part.data.pending) return live ? status(key, t.asking) : null;
 
       return part.data.card ? <ResultCard key={key} t={t} shown={part.data} card={part.data.card} animated={animated} /> : null;
     }
