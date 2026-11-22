@@ -18,7 +18,7 @@ Installer la version de Bun indiquée dans `package.json`, Node 26, `zstd`, `psq
 bun install --frozen-lockfile
 cp .env.example .env
 bun scripts/ci/data.ts
-docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
+docker run -d --name farsight-pg --shm-size=1g -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
 until pg_isready -h localhost -p 5432; do sleep 1; done
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
 psql postgres://postgres:postgres@localhost:5432/postgres -v app_password="'local'" -f db/roles.sql
