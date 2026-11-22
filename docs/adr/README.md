@@ -134,6 +134,7 @@ One file per decision area, numbered in the order they were written down. The co
 - [The in-code rate limit: per instance, bounded, second to the firewall](0106-instance-rate-limit.md)
 - [Functions never ship the data/ directory](0107-function-tracing-excludes-data.md)
 - [How `bun run size` measures a function](0108-function-size-measurement.md)
+- [Every page is requested without a database after the build](0116-pages-checked-without-database.md)
 - [CI on main compares a push with the newest validated ancestor](0109-ci-push-range-and-snapshot.md)
 - [Invariants the backend tests rely on](0110-backend-test-invariants.md)
 - [The eval scores only what could run, and a gate that ran nothing fails](0111-eval-scoring-without-llm.md)
