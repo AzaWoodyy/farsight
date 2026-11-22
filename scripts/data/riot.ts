@@ -186,6 +186,7 @@ export type RiotFetchOptions = {
   ingameFile?: string;
   fetchPages?: typeof wikiPages;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export type RiotFetchCounts = {
@@ -343,6 +344,31 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
     listed: rows.length, current: 0, from_cache: 0, from_r2: 0, from_wiki: 0, missing: 0, invalid: 0, r2_errors: 0, uploaded: 0, upload_errors: 0, left: 0,
   };
 
+  const upload = async (key: string, body: Uint8Array): Promise<boolean> => {
+    if (!opts.remote) return true;
+
+    try {
+      await opts.remote.put(key, body, RAW_GAME_CONTENT_TYPE);
+      counts.uploaded++;
+
+      return true;
+    } catch (err) {
+      counts.upload_errors++;
+      console.warn(`  riot: upload of ${key} failed (${err instanceof Error ? err.message : String(err)}), left for the next run`);
+
+      return false;
+    }
+  };
+
+  let remoteKeys: Set<string> | null = null;
+
+  const onRemote = async (key: string, body: Uint8Array): Promise<boolean> => {
+    if (!opts.remote) return true;
+    remoteKeys ??= new Set(await opts.remote.list("games/"));
+
+    return remoteKeys.has(key) || upload(key, body);
+  };
+
   const cached = new Set(await local.list("games"));
   let todo: RiotGameRow[] = [];
 
@@ -355,10 +381,12 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
     }
 
     const key = rawGameKey(row.Key);
-    const raw = cached.has(key) ? readRaw(await local.get(key)) : null;
+    const body = cached.has(key) ? await local.get(key) : null;
+    const raw = readRaw(body);
 
-    if (raw) {
-      if (summarize(raw, summaries, counts)) counts.from_cache++;
+    if (body && raw) {
+      if (!(await onRemote(key, body))) counts.left++;
+      else if (summarize(raw, summaries, counts)) counts.from_cache++;
       continue;
     }
 
@@ -376,6 +404,7 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   if (todo.length) console.log(`riot: ${todo.length} games to download from the wiki (${GAMES_PER_REQUEST} per request)`);
 
   const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const deadline = opts.budgetMinutes == null ? Infinity : now() + opts.budgetMinutes * 60_000;
   const started = Date.now();
   const total = todo.length;
@@ -389,22 +418,7 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
     const key = rawGameKey(raw.key);
     await local.put(key, body, RAW_GAME_CONTENT_TYPE);
 
-    if (!opts.remote) return true;
-
-    try {
-      await opts.remote.put(key, body, RAW_GAME_CONTENT_TYPE);
-      counts.uploaded++;
-
-      return true;
-    } catch (err) {
-      counts.upload_errors++;
-      console.warn(
-        `  riot: upload of ${key} failed (${err instanceof Error ? err.message : String(err)}), left for the next run ` +
-          "(on a machine that keeps data/raw/riot, `bun run data:sync` uploads it)",
-      );
-
-      return false;
-    }
+    return upload(key, body);
   };
 
   while (todo.length || retries.length) {
@@ -427,7 +441,7 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
 
       if (++failures >= MAX_OUTAGE_PAUSES) throw err;
       console.warn(`  riot: ${err instanceof Error ? err.message : String(err)}; pausing ${OUTAGE_PAUSE_MS / 60_000} min (${failures}/${MAX_OUTAGE_PAUSES})`);
-      await new Promise((r) => setTimeout(r, OUTAGE_PAUSE_MS));
+      await sleep(OUTAGE_PAUSE_MS);
       continue;
     }
 
