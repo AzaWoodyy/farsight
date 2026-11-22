@@ -30,6 +30,8 @@ type SortKey = "year" | "team" | "place" | "record" | "winrate";
 
 export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: string) => void }) {
   const ui = useUi();
+  const locale = useLocale();
+  const prose = (text: string) => locale === "fr" ? text.replace(/(\d) *%/g, "$1\u00a0%") : text;
 
   return (
     <div className="mt-8">
@@ -56,10 +58,10 @@ export function AnswerView({ answer, onAsk }: { answer: Answer; onAsk: (q: strin
       )}
       {answer.scoreboard && <GameScoreboard scoreboard={answer.scoreboard} />}
       {answer.timeline && <GameTimeline timeline={answer.timeline} />}
-      <p className="mt-4 max-w-3xl text-sm leading-relaxed">{answer.summary}</p>
+      <p className="mt-4 max-w-[75ch] text-sm leading-relaxed">{prose(answer.summary)}</p>
       {answer.notes.map((n) => (
-        <p key={n} className="mt-2 text-xs text-warn">
-          {ui.answer.note} {n}
+        <p key={n} className="mt-2 max-w-[75ch] text-xs leading-relaxed text-warn">
+          {ui.answer.note} {prose(n)}
         </p>
       ))}
       <div className="mt-6">
