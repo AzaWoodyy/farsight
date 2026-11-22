@@ -3,7 +3,7 @@ import { StoredMessages, ThreadSummary } from "@/lib/agent/chat-parts";
 import type { ChatUIMessage } from "@/lib/agent/chat-types";
 import { dataMode, stressConversations } from "./worst-case";
 
-export type Conversation = { id: string; title: string; updatedAt: number; messages: ChatUIMessage[] | null };
+export type Conversation = { id: string; title: string; updatedAt: number; messages: ChatUIMessage[] | null; unopened?: true };
 
 const TITLE_MAX_LENGTH = 60;
 
@@ -80,7 +80,7 @@ export const conversations = {
 
     return () => listeners.delete(listener);
   },
-  snapshot: () => library,
+  snapshotOf: (account: string) => () => (owner === account ? library : LOADING),
   serverSnapshot: () => LOADING,
   enter(account: string) {
     if (owner === account) return;
@@ -110,6 +110,8 @@ export const conversations = {
 
     opening.add(id);
 
+    if (wanted.unopened) show({ ...library, list: library.list.map((c) => (c.id === id ? { id: c.id, title: c.title, updatedAt: c.updatedAt, messages: null } : c)) });
+
     const res = await fetch(address(id), { cache: "no-store" }).catch(() => null);
     const opened = Opened.safeParse(res?.ok ? await res.json().catch(() => null) : null);
 
@@ -118,7 +120,7 @@ export const conversations = {
     if (owner !== account) return;
 
     if (!opened.success) {
-      show({ ...library, list: library.list.filter((c) => c.id !== id), state: "failed" });
+      show({ ...library, list: library.list.map((c) => (c.id === id ? { ...c, unopened: true as const } : c)) });
 
       return;
     }

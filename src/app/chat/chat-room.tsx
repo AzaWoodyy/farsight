@@ -7,7 +7,7 @@ import { UserButton, useUser } from "@clerk/nextjs";
 import { DefaultChatTransport } from "ai";
 import Link from "next/link";
 import { z } from "zod";
-import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, DAILY_LIMIT_ERROR, type ShownAnswer } from "@/lib/agent/chat-types";
 import type { Locale } from "@/lib/locale";
 import { Mark } from "../brand/logo";
@@ -83,7 +83,8 @@ export function ChatRoom({ locale, account }: { locale: Locale; account: string 
 function Shell({ locale, account }: { locale: Locale; account: string }) {
   const t = CHAT[locale].room;
   const shell = SHELL[locale];
-  const library = useSyncExternalStore(conversations.subscribe, conversations.snapshot, conversations.serverSnapshot);
+  const snapshot = useMemo(() => conversations.snapshotOf(account), [account]);
+  const library = useSyncExternalStore(conversations.subscribe, snapshot, conversations.serverSnapshot);
   const saved = library.list;
   const linked = useSyncExternalStore(subscribeNever, arrivalConversation, () => null);
   const [chosen, setChosen] = useState<{ id: string | null } | null>(null);
@@ -162,14 +163,19 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
   }, [restored]);
 
   useEffect(() => {
-    conversations.enter(account);
-    window.addEventListener("pagehide", conversations.flush);
+    const leave = () => {
+      conversations.flush();
+      setRemoved(null);
+    };
 
-    return () => window.removeEventListener("pagehide", conversations.flush);
+    conversations.enter(account);
+    window.addEventListener("pagehide", leave);
+
+    return () => window.removeEventListener("pagehide", leave);
   }, [account]);
 
   useEffect(() => {
-    if (active && active.messages == null) void conversations.open(active.id);
+    if (active && active.messages == null && !active.unopened) void conversations.open(active.id);
   }, [active]);
 
   useEffect(() => {
@@ -316,7 +322,20 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
           ))}
           <ThemeToggle toLight={shell.theme.toLight} toDark={shell.theme.toDark} />
         </header>
-        {awaited ? (
+        {active?.unopened ? (
+          <div className="flex flex-wrap items-center gap-x-3 p-6 text-sm">
+            <p role="alert" className="text-error">
+              <span aria-hidden>xx</span> {t.openFailed}
+            </p>
+            <button
+              type="button"
+              onClick={() => void conversations.open(active.id)}
+              className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
+            >
+              {t.retry}
+            </button>
+          </div>
+        ) : awaited ? (
           <p className="p-6 text-sm">
             <span className="t-shimmer" data-text={t.loading}>
               {t.loading}
