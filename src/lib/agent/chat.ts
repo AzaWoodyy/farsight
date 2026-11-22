@@ -9,7 +9,7 @@ import { chatCard, tableCard } from "./chat-card";
 import { LEAGUE_TIERS, leaguePaths } from "./chat-paths";
 import { CHAT_HISTORY_MESSAGES, CHAT_MESSAGE_MAX_LENGTH, type ChatUIMessage, type ShownAnswer } from "./chat-types";
 import { guardQuery, VIEWS } from "./guard";
-import { getLlm, withLlmSignal } from "./llm";
+import { getLlm, recordLlmFailure, withLlmSignal } from "./llm";
 import { messagesIn, say, withLocale } from "./messages";
 import { schemaPrompt, sqlRules } from "./query";
 import { runAgent } from "./run";
@@ -27,6 +27,10 @@ const SQL_PREVIEW_ROWS = 40;
 
 const HIDDEN_FROM_MODEL = /icon|image|photo|logo|url|profiles|sources|followUps|teamLeagues|meta/i;
 
+const TRUNCATED = "… (truncated: the visitor sees the full result)";
+
+const bounded = (body: string) => (body.length > DIGEST_MAX_LENGTH ? `${body.slice(0, DIGEST_MAX_LENGTH)}${TRUNCATED}` : body);
+
 export function digestAnswer(answer: Answer): string {
   const body = JSON.stringify({ route: answer.meta.route, wordsNotRead: answer.meta.unread, ...answer }, (key, value) => {
     if (HIDDEN_FROM_MODEL.test(key) || value == null || (Array.isArray(value) && value.length === 0)) return undefined;
@@ -35,7 +39,7 @@ export function digestAnswer(answer: Answer): string {
     return play.success ? `${play.data.name} ${play.data.wins}/${play.data.games}` : value;
   });
 
-  return body.length > DIGEST_MAX_LENGTH ? `${body.slice(0, DIGEST_MAX_LENGTH)}… (truncated: the visitor sees the full result)` : body;
+  return bounded(body);
 }
 
 const Play = z.strictObject({ name: z.string(), games: z.number(), wins: z.number(), imageUrl: z.string().nullable().optional() });
@@ -210,22 +214,22 @@ function runSql(writer: Writer, locale: Locale, signal: AbortSignal | undefined,
 
       const rows = await withLocale(locale, () => executeGeneratedQuery(guard.sql, {}, { signal, pool: db.pool }));
 
-      if (!rows.length) return "The query returned no rows.";
-
-      const columns = Object.keys(rows[0]);
-      const table = { columns, rows: rows.map((r) => columns.map((c): TableCell => Cell.parse(r[c]))) };
-      const digest = JSON.stringify({ title, columns, rows: table.rows.slice(0, SQL_PREVIEW_ROWS), totalRows: rows.length });
-
-      if (exploratory) return digest;
-
-      const card = tableCard(title, columns, table.rows);
-
-      const outdated = shown.filter((earlier) => replacesEarlierResult || earlier.data.via === "sql");
+      const outdated = exploratory ? [] : shown.filter((earlier) => replacesEarlierResult || earlier.data.via === "sql");
 
       for (const earlier of outdated) {
         shown.splice(shown.indexOf(earlier), 1);
         writer.write({ type: "data-answer", id: earlier.id, data: removed(earlier.data) });
       }
+
+      if (!rows.length) return "The query returned no rows.";
+
+      const columns = Object.keys(rows[0]);
+      const table = { columns, rows: rows.map((r) => columns.map((c): TableCell => Cell.parse(r[c]))) };
+      const digest = bounded(JSON.stringify({ title, columns, rows: table.rows.slice(0, SQL_PREVIEW_ROWS), totalRows: rows.length }));
+
+      if (exploratory) return digest;
+
+      const card = tableCard(title, columns, table.rows);
 
       const data: ShownAnswer = { asked: title, via: "sql", pending: false, card, sources: [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }], digest };
 
@@ -256,7 +260,7 @@ function leaguePathsTool(writer: Writer, locale: Locale, shown: Shown[]) {
         const title = scope === "second" ? say(`Équipes passées d'une division 2 à la ${top}`, `Teams that went from a second division to the ${top}`) : say(`Équipes passées d'une ligue inférieure à la ${top}`, `Teams that went from a lower league to the ${top}`);
         const columns = [say("Équipe", "Team"), say("Ligues avant", "Leagues before"), say(`Arrivée en ${top}`, `Reached the ${top}`), say(`Parties en ${top}`, `Games in the ${top}`)];
         const rows = paths.map((p): TableCell[] => [p.team, p.before.map((b) => `${shortOf.get(b.league) ?? b.league} ${b.year}`).join(", "), p.arrived, p.topGames]);
-        const digest = JSON.stringify({ title, leaguesCounted: (scope === "second" ? LEAGUE_TIERS[top].second : LEAGUE_TIERS[top].lower).map((l) => shortOf.get(l) ?? l), columns, rows });
+        const digest = bounded(JSON.stringify({ title, leaguesCounted: (scope === "second" ? LEAGUE_TIERS[top].second : LEAGUE_TIERS[top].lower).map((l) => shortOf.get(l) ?? l), columns, rows }));
         const data: ShownAnswer = { asked: title, via: "sql", pending: false, card: tableCard(title, columns, rows), sources: [{ label: "Leaguepedia", url: wikiUrl("League of Legends Esports Wiki") }], digest };
 
         for (const earlier of shown.splice(0)) writer.write({ type: "data-answer", id: earlier.id, data: removed(earlier.data) });
@@ -309,6 +313,12 @@ export async function streamChat(history: ModelMessage[], writer: Writer, locale
     maxRetries: 1,
     abortSignal: signal,
     telemetry: { functionId: "chat" },
+    onError: ({ error }) => {
+      const failure = error instanceof Error ? error : new Error(String(error));
+
+      recordLlmFailure(failure);
+      console.error(`chat: ${failure.name}`);
+    },
   });
 
   writer.merge(toUIMessageStream({ stream: result.stream, sendStart: false }));

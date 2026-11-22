@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { HomeLink } from "./home-link";
 import { LANG_SWITCH_ATTR } from "./i18n/arrival";
 import { LocaleLink } from "./i18n/locale-link";
@@ -27,15 +26,14 @@ export function SiteHeader({
       <div className="flex items-center gap-2">
         <span className="mr-2 hidden text-xs text-muted sm:block">~/ {trail}</span>
         {chat && (
-          <Link
+          <a
             href={CHAT_PATHS[locale]}
-            prefetch={false}
             className="press inline-flex min-h-11 shrink-0 items-center gap-2 border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
           >
             <span className="max-[359px]:hidden sm:hidden">{shell.chat.short}</span>
             <span className="hidden sm:inline">{shell.chat.label}</span>
             <span className="text-accent">{shell.chat.stage}</span>
-          </Link>
+          </a>
         )}
         <LocaleSwitch locale={locale} page={page} switchTo={switchTo} />
         <ThemeToggle toLight={shell.theme.toLight} toDark={shell.theme.toDark} />

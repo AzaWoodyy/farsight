@@ -92,6 +92,14 @@ export const conversations = {
     show(LOADING);
     void load(account);
   },
+  reload() {
+    const account = owner;
+
+    if (!account) return;
+
+    show({ ...library, state: "loading" });
+    void load(account);
+  },
   flush() {
     const account = owner;
 

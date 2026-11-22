@@ -5,7 +5,6 @@ import "./chat.css";
 import { useChat } from "@ai-sdk/react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { DefaultChatTransport } from "ai";
-import Link from "next/link";
 import { z } from "zod";
 import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, DAILY_LIMIT_ERROR, type ShownAnswer } from "@/lib/agent/chat-types";
@@ -97,9 +96,11 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
   const { user } = useUser();
   const stress = useSyncExternalStore(subscribeNever, dataMode, (): DataMode => "demo");
   const login = stress === "worst" ? WORST_LOGIN : (user?.username ?? user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "");
-  const activeId = chosen ? chosen.id : linked;
+  const linkedIsGone = chosen == null && linked != null && library.state === "ready" && !saved.some((c) => c.id === linked);
+  const activeId = chosen ? chosen.id : linkedIsGone ? null : linked;
   const active = saved.find((c) => c.id === activeId);
   const awaited = (linked != null && chosen == null && library.state === "loading") || (active != null && active.messages == null);
+  const unconfirmed = linked != null && chosen == null && !active && library.state === "failed";
 
   function open(id: string | null) {
     setChosen({ id });
@@ -179,6 +180,10 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
   }, [active]);
 
   useEffect(() => {
+    if (linkedIsGone) setAddressConversation(null);
+  }, [linkedIsGone]);
+
+  useEffect(() => {
     if (!removed) return;
     const id = window.setTimeout(() => setRemoved(null), UNDO_MS);
 
@@ -203,12 +208,12 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
       >
         <div className="chat-drawer-panel flex h-full w-72 max-w-[85vw] flex-col border-r border-line bg-background pb-[env(safe-area-inset-bottom,0px)] md:absolute md:inset-y-0 md:left-0 md:w-64">
         <div className="flex items-center justify-between gap-2 px-3 pt-3">
-          <Link href={PATHS.home[locale]} aria-label={shell.homeLabel} className="press inline-flex min-h-11 items-center gap-2.5 hover:text-accent">
+          <a href={PATHS.home[locale]} aria-label={shell.homeLabel} className="press inline-flex min-h-11 items-center gap-2.5 hover:text-accent">
             <Mark size={26} />
             <span translate="no" className="text-sm font-semibold lowercase">
               {SITE.name}
             </span>
-          </Link>
+          </a>
           <button
             type="button"
             aria-label={t.closeMenu}
@@ -322,14 +327,14 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
           ))}
           <ThemeToggle toLight={shell.theme.toLight} toDark={shell.theme.toDark} />
         </header>
-        {active?.unopened ? (
+        {active?.unopened || unconfirmed ? (
           <div className="flex flex-wrap items-center gap-x-3 p-6 text-sm">
             <p role="alert" className="text-error">
               <span aria-hidden>xx</span> {t.openFailed}
             </p>
             <button
               type="button"
-              onClick={() => void conversations.open(active.id)}
+              onClick={() => (active ? void conversations.open(active.id) : conversations.reload())}
               className="press inline-flex min-h-11 items-center border border-line px-3 text-xs hover:border-accent hover:text-accent sm:pointer-fine:min-h-8"
             >
               {t.retry}
@@ -343,7 +348,7 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
           </p>
         ) : (
         <Room
-          key={`${room}-${linked ?? ""}`}
+          key={`${room}-${linkedIsGone ? "" : (linked ?? "")}`}
           id={activeId}
           title={active?.title.trim() || t.untitled}
           onStart={(id) => {
