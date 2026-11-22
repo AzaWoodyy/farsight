@@ -5,7 +5,7 @@ import { bindTool, TOOLS } from "../src/lib/agent/tools";
 import type { Entities, LeagueName, ResolvedPlayer, ResolvedTeam } from "../src/lib/agent/types";
 import { resolveTeam, understandQuestion } from "../src/lib/agent/understand";
 import { readSchema } from "../src/lib/db";
-import { LEAGUES } from "../src/lib/domain/leagues";
+import { LEAGUES, leagueMembers } from "../src/lib/domain/leagues";
 import { testDb, type TestDb } from "./fixtures/test-db";
 
 const SCHEMA = { v_games: ["game_id"] };
@@ -309,8 +309,13 @@ describe("a competition the LLM router adds on its own", () => {
   const history = (league: LeagueName, y: number | null = 2014) => ({ tool: "player_event_history" as const, input: { player: "Looper", league, yearFrom: y, yearTo: y } });
   const roster = (league: LeagueName | null) => ({ tool: "team_roster" as const, input: { team: "Samsung White", league, yearFrom: 2014, yearTo: 2014, split: null, role: null } });
   const WORLDS_NAME: LeagueName = "World Championship";
-  // Not the LEC: its family holds "LoL The Champions", where the seeded team played.
-  const LEC: LeagueName = "LoL EMEA Championship";
+  const NOT_PLAYED: LeagueName = "LoL EMEA Championship";
+  const SEEDED_LEAGUE = "LoL The Champions";
+
+  test("the competition the router adds is one the seeded team never played in, under any of its names", () => {
+    expect(leagueMembers(NOT_PLAYED, 2014, 2014)).not.toContain(SEEDED_LEAGUE);
+    expect(leagueMembers("LoL Champions Korea", 2014, 2014)).toContain(SEEDED_LEAGUE);
+  });
 
   test("no game of the player in it: back to the rules' competition for the same tool, to every competition otherwise", async () => {
     const db = await testDb();
@@ -323,10 +328,10 @@ describe("a competition the LLM router adds on its own", () => {
       const rules = await routeQuestion("Looper 2014", e, SCHEMA, coverage);
 
       expect(rules).toMatchObject({ call: { tool: "player_event_history", input: { league: WORLDS_NAME } } });
-      expect(await groundLeague(db, history(LEC), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: LEC });
-      expect(await groundLeague(db, roster(LEC), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: LEC });
+      expect(await groundLeague(db, history(NOT_PLAYED), e, rules, coverage)).toEqual({ call: history(WORLDS_NAME), dropped: NOT_PLAYED });
+      expect(await groundLeague(db, roster(NOT_PLAYED), entities({ teams: [SSW], ...year(2014) }), rules, coverage)).toEqual({ call: roster(null), dropped: NOT_PLAYED });
       expect(await groundLeague(db, history(WORLDS_NAME, 2015), entities({ players: [player("Homme")], ...year(2014) }), rules, coverage)).toEqual({ call: history(WORLDS_NAME, 2015), dropped: null });
-      expect(await groundLeague(db, history(LEC), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: LEC });
+      expect(await groundLeague(db, history(NOT_PLAYED), e, { kind: "sql", reason: "", open: true }, coverage)).toEqual({ call: null, dropped: NOT_PLAYED });
     } finally {
       await db.close();
     }
@@ -342,9 +347,9 @@ describe("a competition the LLM router adds on its own", () => {
       const kept = async (call: Parameters<typeof groundLeague>[1], e: Entities) => expect(await groundLeague(db, call, e, open, coverage)).toEqual({ call, dropped: null });
 
       await kept(history(WORLDS_NAME), entities({ players: [looper], ...year(2014) }));
-      await kept(history(LEC), entities({ players: [looper], ...league(LEC, "LEC"), ...year(2014) }));
-      await kept(roster(LEC), entities({ ...year(2014) }));
-      await kept(history(LEC, 2020), entities({ players: [looper], ...year(2020) }));
+      await kept(history(NOT_PLAYED), entities({ players: [looper], ...league(NOT_PLAYED, "LEC"), ...year(2014) }));
+      await kept(roster(NOT_PLAYED), entities({ ...year(2014) }));
+      await kept(history(NOT_PLAYED, 2020), entities({ players: [looper], ...year(2020) }));
       await kept(roster(null), entities({ teams: [SSW], ...year(2014) }));
     } finally {
       await db.close();

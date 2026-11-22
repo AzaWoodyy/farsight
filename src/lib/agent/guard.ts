@@ -176,7 +176,8 @@ function scanSql(sql: string): { ok: true; code: string } | { ok: false; issue: 
       if (!closed) return { ok: false, issue: "Unclosed SQL literal or identifier." };
       code += char === "'" ? "''" : token;
     } else if (char === "-" && sql[i + 1] === "-") {
-      for (i += 2; i < sql.length && sql[i] !== "\n" && sql[i] !== "\r"; i++) { /* line comment */ }
+      const lineEnd = sql.slice(i + 2).search(/[\r\n]/);
+      i = lineEnd < 0 ? sql.length : i + 2 + lineEnd;
 
       code += "\n";
     } else if (char === "/" && sql[i + 1] === "*") {

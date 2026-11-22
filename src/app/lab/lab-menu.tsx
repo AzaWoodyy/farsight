@@ -28,14 +28,20 @@ function storedNotes() {
   return stored;
 }
 
+function storeIfAllowed(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function saveNotes(notes: Notes) {
   stored = JSON.stringify(notes);
 
-  try {
-    localStorage.setItem(NOTES_KEY, stored);
-  } catch {
-    // Private window or full storage: the notes live until the page is closed.
-  }
+  storeIfAllowed(NOTES_KEY, stored);
 
   window.dispatchEvent(new Event(NOTES_EVENT));
 }
