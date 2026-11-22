@@ -1,4 +1,4 @@
-"""Prove test isolation: one process per file, in the written order, then in a random order drawn for this run."""
+"""Prove test isolation: each file in its own global, in the written order, then in a random order drawn for this run."""
 import random
 import subprocess
 import sys
