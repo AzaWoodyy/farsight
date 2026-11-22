@@ -148,6 +148,7 @@ function Shell({ locale }: { locale: Locale }) {
   const [room, setRoom] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarMove, setSidebarMove] = useState<"opening" | "closing" | null>(null);
   const [removed, setRemoved] = useState<Conversation | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const { user } = useUser();
@@ -317,14 +318,17 @@ function Shell({ locale }: { locale: Locale }) {
         </div>
       </aside>
 
-      <div inert={menuOpen} className="flex min-w-0 flex-1 flex-col">
+      <div inert={menuOpen} data-sidebar={sidebarMove ?? undefined} className="chat-main flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 sm:px-5">
           <button
             type="button"
             aria-label={collapsed ? t.openMenu : t.closeMenu}
             title={collapsed ? t.openMenu : t.closeMenu}
             aria-expanded={!collapsed}
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() => {
+              setSidebarMove(collapsed ? "opening" : "closing");
+              setCollapsed(!collapsed);
+            }}
             className="press hidden size-8 shrink-0 items-center justify-center border border-line text-muted hover:border-accent hover:text-accent pointer-coarse:size-11 md:inline-flex"
           >
             <span aria-hidden>{collapsed ? "»" : "«"}</span>
