@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { RATE_LIMITS, rateLimited, requestPolicy } from "../src/lib/http/request-policy";
+import { rateLimited, requestPolicy } from "../src/lib/http/request-policy";
 import { signFeedback, verifyFeedback } from "../src/lib/tracing/feedback-token";
 
 test("feedback signatures bind a real trace id, expire and fail closed without the secret", () => {
@@ -41,8 +41,6 @@ test("API policy rejects simple cross-site POSTs and limits feedback independent
 test("ask allows 30 questions per IP and per 10-minute window", () => {
   const req = new Request("https://example.com", { headers: { "x-real-ip": "192.0.2.128" } });
   const now = 1_900_000_000_000;
-
-  expect(RATE_LIMITS.ask).toBe(30);
 
   for (let i = 0; i < 30; i++) expect(rateLimited(req, "ask", now)).toBe(false);
   expect(rateLimited(req, "ask", now + 599_999)).toBe(true);

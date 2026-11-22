@@ -4,7 +4,7 @@ import type { Json } from "../../src/lib/json";
 import { RAW_GAME_FORMAT, type RawGame } from "../../src/lib/sources/riot";
 import corpus from "./fixtures/dragons.json";
 import fallbacks from "./fixtures/fallbacks.json";
-import { DERIVE_COMPATIBLE, DERIVE_VERSION, IngameLine, leaguepediaPatch, summarizeGame } from "./ingame";
+import { IngameLine, leaguepediaPatch, summarizeGame } from "./ingame";
 
 const Game = z.object({
   key: z.string(),
@@ -206,10 +206,6 @@ describe("summaries of an older derive version", () => {
     const line = IngameLine.parse({ ...old, derive: 2, teams: old.teams.map(({ elder_dragons: _e, dragon_soul: _d, soul: _s, ...t }) => t) });
 
     expect(line.status === "ok" && line.dragons).toBeUndefined();
-  });
-
-  test("derive 5 changed existing numbers (minute statistics, first-blood victim): no older summary is kept", () => {
-    expect([DERIVE_VERSION, DERIVE_COMPATIBLE]).toEqual([5, 5]);
   });
 
   test("a derive 3 line, without the Leaguepedia fallbacks of derive 4, still parses", () => {

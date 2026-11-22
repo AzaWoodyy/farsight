@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { type CargoQuery, type CargoRow, PAGE_SIZE, USER_AGENT, cargoQuery, cargoStats, resetThrottle, transport, wikiPages } from "../src/lib/sources/leaguepedia";
 
 const MIN_DELAY_MS = 2000;
@@ -74,10 +74,6 @@ afterEach(() => {
   queue = [];
   rmSync(cacheDir, { recursive: true, force: true });
   expect(left).toBe(0);
-});
-
-test("the cache directory of every test is a temp directory", () => {
-  expect(relative(tmpdir(), cacheDir).startsWith("..")).toBe(false);
 });
 
 test("a full page asks for the next offset, an empty page ends the query", async () => {

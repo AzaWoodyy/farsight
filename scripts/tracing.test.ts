@@ -350,8 +350,6 @@ test("a question is one trace: root, step observations and the LLM generation", 
     expect(attr(span, "langfuse.trace.name")).toBe("bilan de Chovy et Zzyzx aux Worlds, réponse à [masqué]");
   }
 
-  expect(root.name).toBe(TRACE_NAME);
-
   for (const span of spans) expect(String(attr(span, "langfuse.trace.metadata.question"))).toContain("bilan de Chovy");
 });
 

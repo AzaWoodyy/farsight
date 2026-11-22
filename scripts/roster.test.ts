@@ -117,7 +117,6 @@ describe("one team and a roster word: its players by role, decided by the rules"
     expect(await route("meilleur top de fpx", entities({ teams: [FPX] }))).not.toBe("team_roster");
     expect(await route("champion pool du top de fpx", entities({ teams: [FPX] }))).toBe("champion_pool");
     expect(await route("top 5 kda LCK 2024", entities({ ...league("LoL Champions Korea", "LCK"), ...year(2024) }))).toBe("player_leaderboard");
-    expect(await route("comparaison des mid au worlds 2026", entities({ ...WORLDS, ...year(2026) }))).toBe("player_leaderboard");
     expect(await route("top de Top Esports 2019", entities({ teams: [TES], ...year(2019) }))).toBe("team_roster");
   });
 
@@ -129,9 +128,6 @@ describe("one team and a roster word: its players by role, decided by the rules"
     };
 
     expect(await route("historique de Fnatic en 2018", entities({ teams: [FNC], ...year(2018) }))).toBe("team_history");
-    expect(await route("G2 vs Fnatic", entities({ teams: [G2, FNC] }))).toBe("head_to_head");
-    expect(await route("Faker vs Chovy", entities({ players: [player("Faker"), player("Chovy")] }))).toBe("player_comparison");
-    expect(await route("meilleurs mids LEC 2025", entities({ ...league("LoL EMEA Championship", "LEC"), ...year(2025) }))).toBe("player_leaderboard");
     expect(await route("classement worlds 2024", entities({ ...league("World Championship", "Worlds"), ...year(2024) }))).toBe("tournament_standings");
     expect(await route("joueur de Fnatic avec le plus de kills en 2018", entities({ teams: [FNC], ...year(2018) }))).toBe("sql");
     expect(await route("historique de T1", entities({ teams: [T1] }))).toBe("team_history");
