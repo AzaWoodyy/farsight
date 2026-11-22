@@ -5,7 +5,7 @@ import { CC_BY_SA_URL, RIOT_BOILERPLATE, TEXT_LINK } from "../site-footer";
 const CONTACT_URL = "https://www.enzoneault.dev";
 const LICENSE_URL = "https://github.com/AzaWoodyy/farsight/blob/main/LICENSE";
 
-export const LEGAL_UPDATED = "2026-11-15";
+export const LEGAL_UPDATED = "2026-11-22";
 
 const updatedOn = (tag: string) => new Intl.DateTimeFormat(tag, { dateStyle: "long", timeZone: "UTC" }).format(new Date(LEGAL_UPDATED));
 
@@ -105,7 +105,11 @@ const fr: Legal = {
             <a className={TEXT_LINK} href="#contact">
               Contact
             </a>
-            ). Le site fonctionne sans compte et ne dépose aucun cookie.
+            ). Les questions du site fonctionnent sans compte et sans cookie. Seule la conversation demande un compte : voir{" "}
+            <a className={TEXT_LINK} href="#conversation">
+              Conversation
+            </a>
+            .
           </p>
           <p>
             Les questions posées sont enregistrées chez Langfuse, sans adresse IP ni identifiant de visiteur, pour
@@ -134,6 +138,42 @@ const fr: Legal = {
             Tu peux demander l&apos;accès à tes données, leur rectification ou leur suppression, ou t&apos;opposer à
             leur traitement, en écrivant à l&apos;éditeur. Tu peux aussi adresser une réclamation à la{" "}
             <Ext href="https://www.cnil.fr/fr/plaintes">CNIL</Ext>.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: "conversation",
+      label: "Conversation",
+      body: (
+        <>
+          <p>
+            La conversation (<code>/chat</code>) est en bêta et réservée aux comptes que l&apos;éditeur invite. Elle
+            demande de se connecter, et rien de ce qui suit ne concerne le reste du site.
+          </p>
+          <p>
+            Les comptes sont gérés par <Ext href="https://clerk.com">Clerk</Ext> (Clerk, Inc., États-Unis), qui reçoit
+            ton adresse e-mail, ou ton identité Google si tu choisis ce mode de connexion, ainsi que ton adresse IP et
+            des informations sur ton navigateur pour protéger la connexion contre les robots. Clerk dépose les cookies
+            nécessaires à la session, sur les pages de conversation uniquement.
+          </p>
+          <p>
+            Tes conversations (tes messages et les résultats affichés) sont enregistrées dans la base de Farsight,
+            hébergée par Neon à Francfort, et rattachées à l&apos;identifiant de ton compte. Les 30 plus récentes sont
+            gardées jusqu&apos;à ce que tu les supprimes, une par une depuis la liste. Supprimer ton compte, depuis le
+            menu du compte ou en écrivant à l&apos;éditeur, supprime aussi tes conversations. Le nombre de messages
+            envoyés chaque jour par un compte est gardé 7 jours, pour appliquer la limite de 100 messages par jour.
+          </p>
+          <p>
+            Chaque message est envoyé à OpenRouter et au fournisseur du modèle de langage avec les échanges précédents
+            de la conversation, et enregistré chez Langfuse avec un identifiant de conversation, sans ton adresse
+            e-mail. L&apos;éditeur peut consulter ces enregistrements pendant 30 jours, et tes conversations tant
+            qu&apos;elles existent.
+          </p>
+          <p>
+            Ces traitements servent à fournir le service que tu demandes en te connectant. Clerk est une société
+            américaine : des données sont traitées hors de l&apos;Union européenne. Tes droits et la façon de les
+            exercer sont les mêmes que dans la section Confidentialité.
           </p>
         </>
       ),
@@ -229,7 +269,11 @@ const en: Legal = {
             <a className={TEXT_LINK} href="#contact">
               Contact
             </a>
-            ). The site works without an account and sets no cookie.
+            ). The site's questions work without an account and without a cookie. Only the conversation asks for an account: see{" "}
+            <a className={TEXT_LINK} href="#conversation">
+              Conversation
+            </a>
+            .
           </p>
           <p>
             The questions asked are logged at Langfuse, without an IP address or a visitor identifier, to improve the
@@ -256,6 +300,41 @@ const en: Legal = {
             You can ask for access to your data, for its correction or its deletion, or object to its processing, by
             writing to the publisher. You can also lodge a complaint with the{" "}
             <Ext href="https://www.cnil.fr/en/plaintes">CNIL</Ext>, the French data protection authority.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: "conversation",
+      label: "Conversation",
+      body: (
+        <>
+          <p>
+            The conversation (<code>/en/chat</code>) is in beta and open to the accounts the publisher invites. It
+            asks you to sign in, and nothing below applies to the rest of the site.
+          </p>
+          <p>
+            Accounts are handled by <Ext href="https://clerk.com">Clerk</Ext> (Clerk, Inc., United States), which
+            receives your email address, or your Google identity if you sign in that way, as well as your IP address
+            and information about your browser to protect sign-in against bots. Clerk sets the cookies the session
+            needs, on the conversation pages only.
+          </p>
+          <p>
+            Your conversations (your messages and the results shown) are stored in Farsight&apos;s database, hosted by
+            Neon in Frankfurt, and tied to your account identifier. The 30 most recent are kept until you delete
+            them, one by one from the list. Deleting your account, from the account menu or by writing to the
+            publisher, deletes your conversations too. The number of messages an account sends each day is kept for
+            7 days, to apply the limit of 100 messages a day.
+          </p>
+          <p>
+            Each message is sent to OpenRouter and to the language model provider with the earlier turns of the
+            conversation, and logged at Langfuse with a conversation identifier, without your email address. The
+            publisher can read these logs for 30 days, and your conversations for as long as they exist.
+          </p>
+          <p>
+            This processing serves to provide the service you ask for by signing in. Clerk is a US company: data is
+            processed outside the European Union. Your rights, and how to exercise them, are those of the Privacy
+            section.
           </p>
         </>
       ),
