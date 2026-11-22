@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ChatUIMessage } from "@/lib/agent/chat-types";
+import { dataMode, stressConversations } from "./worst-case";
 
 export type Conversation = { id: string; title: string; updatedAt: number; messages: ChatUIMessage[] };
 
@@ -41,6 +42,10 @@ function titleOf(messages: ChatUIMessage[]): string {
 const address = (id: string) => `/api/threads/${encodeURIComponent(id)}`;
 
 async function load() {
+  const stressed = stressConversations(dataMode(), Date.now());
+
+  if (stressed) return show({ list: stressed, state: "unsaved" });
+
   try {
     const res = await fetch("/api/threads", { cache: "no-store" });
     const listed = Listed.safeParse(res.ok ? await res.json() : null);

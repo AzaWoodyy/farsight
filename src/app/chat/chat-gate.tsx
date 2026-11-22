@@ -20,7 +20,7 @@ const APPEARANCE = {
     borderRadius: "0",
     fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
   },
-  elements: { avatarBox: { borderRadius: 0 }, userButtonAvatarBox: { borderRadius: 0 } },
+  elements: { avatarBox: { borderRadius: 0 }, userButtonAvatarBox: { borderRadius: 0, width: "2rem", height: "2rem" }, userButtonTrigger: { padding: "6px", borderRadius: 0 } },
 };
 
 export async function ChatGate({ locale }: { locale: Locale }) {

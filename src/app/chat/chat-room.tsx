@@ -6,6 +6,7 @@ import { useChat } from "@ai-sdk/react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { DefaultChatTransport } from "ai";
 import Link from "next/link";
+import { z } from "zod";
 import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, type ShownAnswer } from "@/lib/agent/chat-types";
 import type { Locale } from "@/lib/locale";
@@ -16,11 +17,12 @@ import { PlayerAvatar } from "../player-avatar";
 import { SITE } from "../brand/site";
 import { LANG_SWITCH_ATTR } from "../i18n/arrival";
 import { decode } from "../i18n/decode";
-import { LocaleProvider } from "../i18n/locale-context";
+import { LocaleProvider, useLocale } from "../i18n/locale-context";
 import { CHAT_PATHS, LOCALE_NAME, LOCALES, PATHS } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
 import { ThemeToggle } from "../theme-toggle";
 import { type Conversation, conversations } from "./conversations";
+import { DATA_MODE_LABEL, DATA_MODES, type DataMode, dataMode, WORST_LOGIN } from "./worst-case";
 import { HtmlFrame } from "./html-frame";
 
 const TEXT = {
@@ -149,7 +151,8 @@ function Shell({ locale }: { locale: Locale }) {
   const [removed, setRemoved] = useState<Conversation | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const { user } = useUser();
-  const login = user?.username ?? user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "";
+  const stress = useSyncExternalStore(subscribeNever, dataMode, (): DataMode => "demo");
+  const login = stress === "worst" ? WORST_LOGIN : (user?.username ?? user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "");
   const activeId = chosen ? chosen.id : linked;
   const awaited = linked != null && chosen == null && library.state === "loading";
   const active = saved.find((c) => c.id === activeId);
@@ -230,6 +233,7 @@ function Shell({ locale }: { locale: Locale }) {
       >
         {t.skip}
       </a>
+      {process.env.NODE_ENV === "development" && <DataToggle active={stress} />}
       <div aria-hidden data-open={menuOpen ? "" : undefined} onClick={closeMenu} className="chat-scrim fixed inset-0 z-20 bg-background/75 md:hidden" />
       <aside
         aria-label={t.history}
@@ -304,7 +308,7 @@ function Shell({ locale }: { locale: Locale }) {
         <div className="flex items-center gap-3 px-4 pt-2 pb-3">
           <UserButton />
           <p className="min-w-0 text-xs leading-relaxed">
-            <span translate="no" className="block truncate">
+            <span translate="no" title={login} className="block truncate">
               {login}
             </span>
             {(library.state === "unsaved" || library.state === "failed") && <span className="block text-warn">{t.unsaved}</span>}
@@ -321,7 +325,7 @@ function Shell({ locale }: { locale: Locale }) {
             title={collapsed ? t.openMenu : t.closeMenu}
             aria-expanded={!collapsed}
             onClick={() => setCollapsed((c) => !c)}
-            className="press hidden size-8 shrink-0 items-center justify-center border border-line text-muted hover:border-accent hover:text-accent md:inline-flex"
+            className="press hidden size-8 shrink-0 items-center justify-center border border-line text-muted hover:border-accent hover:text-accent pointer-coarse:size-11 md:inline-flex"
           >
             <span aria-hidden>{collapsed ? "»" : "«"}</span>
           </button>
@@ -335,9 +339,9 @@ function Shell({ locale }: { locale: Locale }) {
           >
             <span aria-hidden>≡</span>
           </button>
-          <p className="min-w-0 flex-1 truncate text-xs text-muted">
+          <p title={active?.title.trim() || t.untitled} className="min-w-0 flex-1 truncate text-xs text-muted">
             <span aria-hidden>~/ </span>
-            {active?.title || t.untitled}
+            {active?.title.trim() || t.untitled}
           </p>
           {LOCALES.filter((other) => other !== locale).map((other) => (
             <a
@@ -365,7 +369,7 @@ function Shell({ locale }: { locale: Locale }) {
         <Room
           key={`${room}-${linked ?? ""}`}
           id={activeId}
-          title={active?.title || t.untitled}
+          title={active?.title.trim() || t.untitled}
           onStart={(id) => {
             setChosen({ id });
             setAddressConversation(id);
@@ -377,6 +381,18 @@ function Shell({ locale }: { locale: Locale }) {
         )}
       </div>
     </div>
+  );
+}
+
+function DataToggle({ active }: { active: DataMode }) {
+  return (
+    <nav aria-label="Test data" className="fixed bottom-24 left-1/2 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 gap-0.5 overflow-x-auto rounded-md bg-neutral-300 p-0.5 font-sans text-[11px] text-neutral-700 shadow">
+      {DATA_MODES.map((mode) => (
+        <a key={mode} href={mode === "demo" ? "?" : `?data=${mode}`} aria-current={mode === active ? "true" : undefined} className={`rounded px-2 py-1 whitespace-nowrap ${mode === active ? "bg-white text-black" : ""}`}>
+          {DATA_MODE_LABEL[mode]}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -399,13 +415,14 @@ function History({ t, saved, activeId, onOpen, onRemove }: { t: Texts; saved: Co
               type="button"
               aria-current={c.id === activeId ? "page" : undefined}
               onClick={() => onOpen(c.id)}
+              title={c.title.trim() || t.untitled}
               className={`press min-h-11 min-w-0 flex-1 truncate px-2 text-left text-xs hover:text-accent sm:pointer-fine:min-h-8 ${c.id === activeId ? "text-foreground" : "text-muted"}`}
             >
-              {c.title || t.untitled}
+              {c.title.trim() || t.untitled}
             </button>
             <button
               type="button"
-              aria-label={t.remove(c.title || t.untitled)}
+              aria-label={t.remove(c.title.trim() || t.untitled)}
               onClick={() => onRemove(c.id)}
               className="press inline-flex size-11 shrink-0 items-center justify-center text-muted hover:text-error focus-visible:opacity-100 sm:pointer-fine:size-8 md:pointer-fine:opacity-0 md:pointer-fine:group-hover/item:opacity-100 md:pointer-fine:group-focus-within/item:opacity-100"
             >
@@ -569,7 +586,7 @@ function Room({ id, title, onStart, locale, t, initial }: { id: string | null; t
             data-hidden={away ? undefined : ""}
             tabIndex={away ? 0 : -1}
             onClick={toBottom}
-            className="chat-jump press absolute -top-12 left-1/2 -ml-5 inline-flex size-10 items-center justify-center border border-line bg-background text-muted hover:border-accent hover:text-accent"
+            className="chat-jump press absolute -top-12 left-1/2 inline-flex size-10 -translate-x-1/2 items-center pointer-coarse:-top-14 pointer-coarse:size-11 justify-center border border-line bg-background text-muted hover:border-accent hover:text-accent"
           >
             <span aria-hidden>↓</span>
           </button>
@@ -628,7 +645,7 @@ function Room({ id, title, onStart, locale, t, initial }: { id: string | null; t
 
 function Asked({ message, you }: { message: ChatUIMessage; you: string }) {
   return (
-    <p className="chat-prose max-w-[85%] border border-line px-3 py-2 text-sm whitespace-pre-wrap wrap-anywhere">
+    <p dir="auto" className="chat-prose max-w-[85%] border border-line px-3 py-2 text-sm whitespace-pre-wrap wrap-anywhere">
       <span className="sr-only">{you} : </span>
       {message.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")}
     </p>
@@ -664,7 +681,20 @@ function CardImage({ name, image, size }: { name: string; image: ChatCardImage; 
   return image.photo ? <PlayerAvatar name={name} photo={{ url: image.src, year: null, source: image.src }} size={size} /> : <EntityIcon src={image.src} size={size} tone={image.tone} />;
 }
 
+const FIGURE = { maximumFractionDigits: 2, useGrouping: false } as const;
+
+const FIGURES: Record<Locale, Intl.NumberFormat> = { fr: new Intl.NumberFormat("fr", FIGURE), en: new Intl.NumberFormat("en", FIGURE) };
+
+function shownCell(cell: string | number | null, locale: Locale): string {
+  if (cell == null) return "–";
+
+  const figure = z.number().safeParse(cell);
+
+  return figure.success ? FIGURES[locale].format(figure.data) : String(cell);
+}
+
 function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer; card: ChatCard; animated: boolean }) {
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const table = card.table;
   const rows = table ? (open ? table.rows : table.rows.slice(0, CARD_ROWS)) : [];
@@ -678,10 +708,14 @@ function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer
             <li key={subject.name} className="flex min-w-0 items-center gap-2.5">
               {subject.image && <CardImage name={subject.name} image={subject.image} size={subject.image.photo ? 40 : 28} />}
               <span className="min-w-0">
-                <span translate="no" className="block truncate text-sm font-semibold">
+                <span translate="no" dir="auto" className="block text-sm font-semibold wrap-anywhere">
                   {subject.name}
                 </span>
-                {subject.line && <span className="block truncate text-xs text-muted">{subject.line}</span>}
+                {subject.line && (
+                  <span title={subject.line} className="block truncate text-xs text-muted">
+                    {subject.line}
+                  </span>
+                )}
               </span>
             </li>
           ))}
@@ -703,7 +737,9 @@ function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer
             <li key={b.label} className="grid grid-cols-[minmax(5rem,30%)_1fr_auto] items-center gap-3 text-xs">
               <span className="flex min-w-0 items-center gap-2">
                 {card.icons?.[b.label] && <CardImage name={b.label} image={card.icons[b.label]} size={18} />}
-                <span className="truncate">{b.label}</span>
+                <span dir="auto" title={b.label} className="truncate">
+                  {b.label}
+                </span>
               </span>
               <span aria-hidden className="relative block h-2 bg-line/60">
                 <span className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${Math.min(100, Math.max(0, b.value)).toFixed(1)}%` }} />
@@ -729,14 +765,14 @@ function ResultCard({ t, shown, card, animated }: { t: Texts; shown: ShownAnswer
               {rows.map((row, r) => (
                 <tr key={r}>
                   {row.map((cell, i) => (
-                    <td key={i} className={`border-b border-dashed border-line py-1.5 pr-4 align-top last:pr-0 ${table.numeric[i] ? "text-right whitespace-nowrap" : ""} ${cell == null ? "text-muted" : ""}`}>
+                    <td key={i} className={`border-b border-dashed border-line py-1.5 pr-4 align-top last:pr-0 ${table.numeric[i] ? "text-right whitespace-nowrap" : "min-w-28 break-words"} ${cell == null ? "text-muted" : ""}`}>
                       {cell != null && card.icons?.[String(cell)] ? (
                         <span className="inline-flex items-center gap-2">
                           <CardImage name={String(cell)} image={card.icons[String(cell)]} size={18} />
                           {cell}
                         </span>
                       ) : (
-                        (cell ?? "–")
+                        shownCell(cell, locale)
                       )}
                     </td>
                   ))}
@@ -802,7 +838,7 @@ function Reply({ message, t, live, animated }: { message: ChatUIMessage; t: Text
 
     if (part.type === "text")
       return part.text.trim() ? (
-        <p key={key} className={`chat-prose max-w-[68ch] text-sm whitespace-pre-wrap ${animated ? "chat-in" : ""}`}>
+        <p key={key} dir="auto" className={`chat-prose max-w-full text-sm whitespace-pre-wrap wrap-anywhere sm:max-w-[68ch] ${animated ? "chat-in" : ""}`}>
           {part.text.trim()}
         </p>
       ) : null;
