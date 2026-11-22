@@ -5,7 +5,7 @@ import { CC_BY_SA_URL, RIOT_BOILERPLATE, TEXT_LINK } from "../site-footer";
 const CONTACT_URL = "https://www.enzoneault.dev";
 const LICENSE_URL = "https://github.com/AzaWoodyy/farsight/blob/main/LICENSE";
 
-export const LEGAL_UPDATED = "2026-11-22";
+export const LEGAL_UPDATED = "2026-11-23";
 
 const updatedOn = (tag: string) => new Intl.DateTimeFormat(tag, { dateStyle: "long", timeZone: "UTC" }).format(new Date(LEGAL_UPDATED));
 
@@ -153,7 +153,7 @@ const fr: Legal = {
           </p>
           <p>
             Les comptes sont gérés par <Ext href="https://clerk.com">Clerk</Ext> (Clerk, Inc., États-Unis), qui reçoit
-            ton adresse e-mail, ou ton identité Google si tu choisis ce mode de connexion, ainsi que ton adresse IP et
+            ton adresse e-mail, ou ton identité Google ou GitHub si tu choisis ce mode de connexion, ainsi que ton adresse IP et
             des informations sur ton navigateur pour protéger la connexion contre les robots. Clerk dépose les cookies
             nécessaires à la session, sur les pages de conversation uniquement.
           </p>
@@ -315,7 +315,7 @@ const en: Legal = {
           </p>
           <p>
             Accounts are handled by <Ext href="https://clerk.com">Clerk</Ext> (Clerk, Inc., United States), which
-            receives your email address, or your Google identity if you sign in that way, as well as your IP address
+            receives your email address, or your Google or GitHub identity if you sign in that way, as well as your IP address
             and information about your browser to protect sign-in against bots. Clerk sets the cookies the session
             needs, on the conversation pages only.
           </p>

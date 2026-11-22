@@ -1,3 +1,7 @@
+body {
+  --door-accent: var(--accent);
+}
+
 .kit {
   padding: 2px;
   font-size: 13px;
