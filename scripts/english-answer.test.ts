@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { Answer, StepPart } from "../src/lib/agent/types";
-import { frenchInEnglishAnswer } from "./english-answer";
+import type { Answer } from "../src/lib/agent/types";
+import { frenchInEnglishAnswer, type ShownStep } from "./english-answer";
 
 function answer(over: Partial<Answer>): Answer {
   return {
@@ -13,7 +13,7 @@ function answer(over: Partial<Answer>): Answer {
   };
 }
 
-const step = (title: string): StepPart => ({ step: "execute", state: "done", status: "error", title, entries: [{ status: "error", title, at: "" }] });
+const step = (title: string): ShownStep => ({ step: "execute", title });
 const words = (found: ReturnType<typeof frenchInEnglishAnswer>) => found.map((f) => `${f.field}: ${f.word}`);
 
 test("an English answer reads clean", () => {
@@ -28,6 +28,14 @@ test("French the site wrote is found wherever it shows: a column (#127), a leagu
     "column: victoires",
     "step execute: lecture",
   ]);
+});
+
+test("a French word next to a league name is still French, and a table's rows name its teams", () => {
+  expect(words(frenchInEnglishAnswer("Who won?", answer({ summary: "Winner de la LEC 2025: G2 Esports." }), [], true))).toEqual(["summary: de"]);
+  expect(words(frenchInEnglishAnswer("Who won?", answer({ table: { columns: ["Rang", "Team"], rows: [] } }), [], true))).toEqual(["column: Rang"]);
+
+  const ranked = answer({ summary: "Winners of LES: Movistar KOI Fénix (3).", table: { columns: ["#", "Team"], rows: [[1, "Movistar KOI Fénix"]] } });
+  expect(frenchInEnglishAnswer("LES winners", ranked, [], true)).toEqual([]);
 });
 
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {

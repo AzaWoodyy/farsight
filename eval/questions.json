@@ -8804,6 +8804,23 @@
           "ne filtre pas par split"
         ]
       }
+    },
+    {
+      "id": "en-ingame-player-absent-first-stand",
+      "question": "Faker solo kills at First Stand 2025",
+      "locale": "en",
+      "tags": [
+        "ingame",
+        "player",
+        "missing",
+        "english"
+      ],
+      "expect": {
+        "route": "missing_data",
+        "summaryIncludes": [
+          "in-game statistics (solo kills) of Faker at First Stand"
+        ]
+      }
     }
   ]
 }

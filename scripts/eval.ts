@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { getLlm } from "../src/lib/agent/llm";
 import { rulesOnly, runAgent } from "../src/lib/agent/run";
-import { frenchInEnglishAnswer } from "./english-answer";
+import { frenchInEnglishAnswer, type ShownStep } from "./english-answer";
 import { TOOLS } from "../src/lib/agent/tools";
 import { type Answer, STEPS, type StepPart } from "../src/lib/agent/types";
 
@@ -173,14 +173,24 @@ const needLlm: string[] = [];
 const followUps = new Map<string, { locale: "fr" | "en"; text: string; id: string }>();
 const frenchLeaks: string[] = [];
 
+type StepsSeen = { steps: Map<string, StepPart>; titles: Map<string, ShownStep> };
+
+const shownSteps = (): StepsSeen => ({ steps: new Map(), titles: new Map() });
+
+function record(shown: StepsSeen, part: StepPart) {
+  shown.steps.set(part.step, part);
+
+  for (const title of [part.title, ...part.entries.map((e) => e.title)]) shown.titles.set(`${part.step}\n${title}`, { step: part.step, title });
+}
+
 async function answerInEnglish(question: string) {
-  const steps = new Map<string, StepPart>();
+  const shown = shownSteps();
 
   const answer = await agentMode(() =>
     runAgent(
       question,
       (ev) => {
-        if (ev.type === "step") steps.set(ev.part.step, ev.part);
+        if (ev.type === "step") record(shown, ev.part);
       },
       now,
       undefined,
@@ -188,13 +198,14 @@ async function answerInEnglish(question: string) {
     ),
   );
 
-  return { answer, steps: [...steps.values()] };
+  return { answer, steps: [...shown.titles.values()] };
 }
 
 const t0 = performance.now();
 
 for (const c of cases) {
-  const steps = new Map<string, StepPart>();
+  const shown = shownSteps();
+  const steps = shown.steps;
   let checks: Check[];
   const started = performance.now();
 
@@ -203,7 +214,7 @@ for (const c of cases) {
       runAgent(
         c.question,
         (ev) => {
-          if (ev.type === "step") steps.set(ev.part.step, ev.part);
+          if (ev.type === "step") record(shown, ev.part);
         },
         now,
         undefined,
@@ -214,7 +225,7 @@ for (const c of cases) {
     checks = score(c, answer, steps);
 
     if (flag("in-english") && !llm) {
-      const english = c.locale === "en" ? { answer, steps: [...steps.values()] } : await answerInEnglish(c.question);
+      const english = c.locale === "en" ? { answer, steps: [...shown.titles.values()] } : await answerInEnglish(c.question);
 
       for (const leak of frenchInEnglishAnswer(c.question, english.answer, english.steps, c.locale === "en"))
         frenchLeaks.push(`  - ${c.id} (${leak.field}, « ${leak.word} ») : ${leak.text}`);
