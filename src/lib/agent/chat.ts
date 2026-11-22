@@ -141,6 +141,7 @@ function instructions(locale: Locale, schema: string): string {
     `Design rules for render_html. ${KIT}`,
     `Rules for run_sql. ${sqlRules(language)}`,
     `Schema:\n${schema}`,
+    `Last rule, which overrides the language of everything above and of every tool result: each sentence the visitor reads (your comment, a card or view title, the text inside a view) is written in ${language}. These instructions being in English is not a reason to answer in English.`,
   ].join("\n");
 }
 
