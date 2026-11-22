@@ -24,8 +24,10 @@ import {
   type PlayerCriterion,
   type RecordMetric,
   type TeamCriterion,
+  takesSplit,
   type ToolCall,
   withLeague,
+  withSplit,
 } from "./tools";
 import { detectMetric, DRAGON_ELEMENT, isDragonCue, isSnapshot, type MetricCue, type Minute, MINUTE, MINUTES } from "./metrics";
 import { ROLE_CUES as ROLES, roleOf, TEAM_ROLE_CUES, teamRoleOf } from "./roles";
@@ -1369,14 +1371,23 @@ type BuildInput = { db: Db; question: string; entities: Entities; route: Route }
 
 export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; missing: string[]; notes: string[] };
 
+export type ScopedCall = { call: ToolCall; notes: string[] };
+
+export function inQuestionSplit(call: ToolCall, e: Entities): ScopedCall {
+  if (!e.split || ("split" in call.input && call.input.split)) return { call, notes: [] };
+
+  return takesSplit(call.tool) ? { call: withSplit(call, e.split), notes: [] } : { call, notes: [msg().route.splitNotApplied(e.split)] };
+}
+
 const rulesRouter: Decider<BuildInput, BuildResult> = {
   level: "rules",
   id: "typed_tool",
-  run: async ({ db, route }) => {
+  run: async ({ db, entities, route }) => {
     if (route.kind !== "tool") return null;
+    const scoped = inQuestionSplit(route.call, entities);
 
     return {
-      result: { plan: toolPlan(await bindTool(db, route.call), 1), notes: route.notes },
+      result: { plan: toolPlan(await bindTool(db, scoped.call), 1), notes: [...route.notes, ...scoped.notes] },
       confidence: route.confidence,
       level: "rules",
       reason: route.reason,
@@ -1458,9 +1469,11 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
 
     if (!call) return null;
     const said = msg().route.modelSays(llm.id, `${picked.tool}(${JSON.stringify(picked.input)})`);
+    const scoped = inQuestionSplit(call, entities);
+    const routeNotes = route.kind === "tool" && route.call.tool === call.tool ? route.notes : [];
 
     return {
-      result: { plan: toolPlan(await bindTool(db, call), 1), notes: route.kind === "tool" && route.call.tool === call.tool ? route.notes : [] },
+      result: { plan: toolPlan(await bindTool(db, scoped.call), 1), notes: [...routeNotes, ...scoped.notes] },
       confidence: 0.85,
       level: "llm",
       reason: dropped ? `${said} ; ${msg().route.leagueDropped(dropped)}` : said,
