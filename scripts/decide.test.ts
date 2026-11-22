@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { APICallError } from "ai";
-import { type Decider, type DecisionLevel, decide } from "../src/lib/agent/decide";
+import { type Decider, type DecisionLevel, decide, describeAttempts } from "../src/lib/agent/decide";
+import { withLocale } from "../src/lib/agent/messages";
 import { describeLlmError, QUOTA_COOLDOWN_MS, quotaExhausted, recordLlmFailure, resetLlmQuota, withLlmSignal } from "../src/lib/agent/llm";
 
 const input = { question: "q" };
 
 const failing = (error: Error, before?: () => void, level: DecisionLevel = "rules"): Decider<typeof input, string> => ({
   level,
-  name: "a",
+  id: "alias",
   run: () => {
     before?.();
     throw error;
@@ -19,7 +20,7 @@ function counted() {
 
   const decider: Decider<typeof input, string> = {
     level: "rules",
-    name: "b",
+    id: "typed_tool",
     run: () => {
       calls.count++;
 
@@ -67,6 +68,18 @@ describe("decide", () => {
 
     await expect(withLlmSignal(controller.signal, () => decide(input, [aborting, decider]))).rejects.toThrow("network");
     expect(calls.count).toBe(0);
+  });
+});
+
+describe("describing a cascade", () => {
+  const attempts = [
+    { id: "typed_tool" as const, level: "rules" as const, confidence: null },
+    { id: "sql_repair" as const, level: "llm" as const, confidence: 0.9 },
+  ];
+
+  test("each decider is named in the answer's language", () => {
+    expect(describeAttempts(attempts)).toBe("rules/outil typé: indisponible → llm/réparation SQL: confiance 0.90");
+    expect(withLocale("en", () => describeAttempts(attempts))).toBe("rules/typed tool: unavailable → llm/SQL repair: confidence 0.90");
   });
 });
 

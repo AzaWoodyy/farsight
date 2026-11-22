@@ -1,9 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DEFAULT_LOCALE, type Locale } from "../locale";
 import { englishBare, englishIn, frenchIn, frenchNamed } from "../domain/leagues";
+import type { DeciderId } from "./decide";
 import type { LlmStatus } from "./llm";
-
-const OWN_NAMES: Record<string, string> = {};
 
 const fr = {
   run: {
@@ -202,7 +201,17 @@ const fr = {
   },
 
   decide: {
-    names: OWN_NAMES,
+    names: {
+      alias: "regex + alias",
+      understand_llm: "OpenRouter",
+      typed_tool: "outil typé",
+      tool_choice: "choix d'outil",
+      text_to_sql: "text-to-SQL",
+      corrections: "corrections déterministes",
+      sql_repair: "réparation SQL",
+      sentence_template: "modèle de phrase",
+      writing: "rédaction",
+    } satisfies Record<DeciderId, string>,
     failed: (who: string, error: string) => `${who}: erreur (${error})`,
     unavailable: (who: string) => `${who}: indisponible`,
     confidence: (who: string, value: string) => `${who}: confiance ${value}`,
@@ -424,13 +433,15 @@ const en: Messages = {
 
   decide: {
     names: {
-      "regex + alias": "regex + alias",
-      "outil typé": "typed tool",
-      "choix d'outil": "tool choice",
-      "corrections déterministes": "deterministic corrections",
-      "réparation SQL": "SQL repair",
-      "modèle de phrase": "sentence template",
-      rédaction: "writing",
+      alias: "regex + alias",
+      understand_llm: "OpenRouter",
+      typed_tool: "typed tool",
+      tool_choice: "tool choice",
+      text_to_sql: "text-to-SQL",
+      corrections: "deterministic corrections",
+      sql_repair: "SQL repair",
+      sentence_template: "sentence template",
+      writing: "writing",
     },
     failed: (who, error) => `${who}: error (${error})`,
     unavailable: (who) => `${who}: unavailable`,

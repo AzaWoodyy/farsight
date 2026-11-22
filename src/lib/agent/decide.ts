@@ -10,20 +10,31 @@ export type Decision<T> = {
   reason?: string;
 };
 
+export type DeciderId =
+  | "alias"
+  | "understand_llm"
+  | "typed_tool"
+  | "tool_choice"
+  | "text_to_sql"
+  | "corrections"
+  | "sql_repair"
+  | "sentence_template"
+  | "writing";
+
 export type Decider<I, O> = {
   level: DecisionLevel;
-  name: string;
+  id: DeciderId;
   run: (input: I) => Promise<Decision<O> | null> | Decision<O> | null;
 };
 
 export type DecisionAttempt = {
-  name: string;
+  id: DeciderId;
   level: DecisionLevel;
   confidence: number | null;
   error?: string;
 };
 
-export type DecideOutcome<T> = Decision<T> & { name: string; attempts: DecisionAttempt[] };
+export type DecideOutcome<T> = Decision<T> & { id: DeciderId; attempts: DecisionAttempt[] };
 
 export async function decide<I, O>(
   input: I,
@@ -31,7 +42,7 @@ export async function decide<I, O>(
   { threshold = 0.75 }: { threshold?: number } = {},
 ): Promise<DecideOutcome<O> | null> {
   const attempts: DecisionAttempt[] = [];
-  let best: (Decision<O> & { name: string }) | null = null;
+  let best: (Decision<O> & { id: DeciderId }) | null = null;
 
   for (const d of cascade) {
     let decision: Decision<O> | null = null;
@@ -43,15 +54,15 @@ export async function decide<I, O>(
       const error = err instanceof Error ? err : new Error(String(err));
 
       if (d.level === "llm") recordLlmFailure(error);
-      attempts.push({ name: d.name, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
+      attempts.push({ id: d.id, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
       continue;
     }
 
-    attempts.push({ name: d.name, level: d.level, confidence: decision?.confidence ?? null });
+    attempts.push({ id: d.id, level: d.level, confidence: decision?.confidence ?? null });
 
     if (!decision) continue;
 
-    if (!best || decision.confidence > best.confidence) best = { ...decision, name: d.name };
+    if (!best || decision.confidence > best.confidence) best = { ...decision, id: d.id };
 
     if (decision.confidence >= threshold) break;
   }
@@ -64,7 +75,7 @@ export function describeAttempts(attempts: DecisionAttempt[]): string {
 
   return attempts
     .map((a) => {
-      const who = `${a.level}/${m.names[a.name] ?? a.name}`;
+      const who = `${a.level}/${m.names[a.id]}`;
 
       return a.error ? m.failed(who, a.error) : a.confidence == null ? m.unavailable(who) : m.confidence(who, a.confidence.toFixed(2));
     })

@@ -963,7 +963,7 @@ type Input = { db: Db; question: string; now: Date };
 
 const rulesDecider: Decider<Input, Entities> = {
   level: "rules",
-  name: "regex + alias",
+  id: "alias",
   run: async ({ db, question, now }) => {
     const entities = await buildEntities(db, question, now, await detectMentions(db, question));
     const n = entities.players.length + entities.teams.length + (entities.champion ? 1 : 0);
@@ -1003,7 +1003,7 @@ const LlmEntities = z.object({
 
 const llmDecider: Decider<Input, Entities> = {
   level: "llm",
-  name: "OpenRouter",
+  id: "understand_llm",
   run: async ({ db, question, now }) => {
     const llm = getLlm();
 
