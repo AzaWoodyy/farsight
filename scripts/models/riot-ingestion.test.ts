@@ -54,7 +54,7 @@ function holds(condition: boolean, invariant: string) {
   if (!condition) throw new Violation(invariant);
 }
 
-type Run = { faults: Set<"grouped omission" | "other">; uploads: Map<string, number> };
+type Run = { faults: Set<"grouped omission" | "other">; uploads: Map<string, number>; lateRequests: number };
 
 class FaultyR2 extends MemoryStore {
   constructor(
@@ -96,7 +96,7 @@ class FaultyR2 extends MemoryStore {
 
 function wiki(schedule: Schedule, run: Run, clock: { now: number }) {
   return async (titles: string[]): Promise<Map<string, WikiPage>> => {
-    holds(clock.now <= BUDGET_MINUTES * 60_000, "no wiki request starts after the time budget");
+    if (clock.now > BUDGET_MINUTES * 60_000) run.lateRequests++;
     const asked = ROWS.filter((r) => titles.includes(r.StatsPage));
     const request = `wiki asked ${asked.map((r) => r.Key).join("+")}`;
 
@@ -151,29 +151,31 @@ let files = 0;
 const ephemeral = (): Machine => ({ local: new MemoryStore("local"), file: join(dir, `ci-${++files}.jsonl`) });
 
 async function dailyRun(machine: Machine, r2: Map<string, Uint8Array>, schedule: Schedule) {
-  const run: Run = { faults: new Set(), uploads: new Map() };
+  const run: Run = { faults: new Set(), uploads: new Map(), lateRequests: 0 };
   const remote = new FaultyR2(r2, schedule, run);
   const clock = { now: 0 };
   let pulled;
-
   let counts;
 
   try {
     pulled = await pullSummaries(remote, machine.file);
     counts = await fetchRiotGames(ROWS, {
-    budgetMinutes: BUDGET_MINUTES,
-    remote,
-    rederive: false,
-    local: machine.local,
-    ingameFile: machine.file,
-    fetchPages: wiki(schedule, run, clock),
-    now: () => clock.now,
-    sleep: async () => {},
+      budgetMinutes: BUDGET_MINUTES,
+      remote,
+      rederive: false,
+      local: machine.local,
+      ingameFile: machine.file,
+      fetchPages: wiki(schedule, run, clock),
+      now: () => clock.now,
+      sleep: async () => {},
     });
   } catch (error) {
-    if (error instanceof InjectedFault && error.stopsTheRun) return;
-    throw error;
+    if (!(error instanceof InjectedFault && error.stopsTheRun)) throw error;
   }
+
+  holds(run.lateRequests === 0, "no wiki request starts after the time budget");
+
+  if (!counts) return;
 
   const verdicts = loadIngame(machine.file);
   holds(counts.left === ROWS.filter((r) => !verdicts.has(r.Key)).length, "every game of the run ends with a verdict, or is counted as left for the next run");
