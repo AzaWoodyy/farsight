@@ -3,7 +3,7 @@ import { type Db, selectAll, selectOne } from "../db";
 import { leagueMembers } from "../domain/leagues";
 import { PLAYER_METRIC_DEFS, TEAM_METRIC_DEFS } from "./metrics";
 import { say } from "./messages";
-import { allCompetitions, scopeLabel } from "./tools";
+import { scopeLabel } from "./tools";
 import type { Entities } from "./types";
 
 export type EmptyReason = "no_games" | "qualifier_only" | "zero_count" | "no_ingame" | "unexplained";
@@ -70,7 +70,7 @@ function scopeText(e: Entities) {
   const named = [...players, ...e.teams.map((t) => t.team)].join(say(" et ", " and "));
   const champion = e.champion ? (named ? say(` sur ${e.champion.champion}`, ` on ${e.champion.champion}`) : e.champion.champion) : "";
   const period = { yearFrom: e.yearFrom, yearTo: e.yearTo };
-  const where = [e.split ? say(`au split ${e.split}`, `in the ${e.split} split`) : "", scopeLabel(e.leagueShort ?? e.league ?? allCompetitions(), period)].filter(Boolean).join(" ");
+  const where = [e.split ? say(`au split ${e.split}`, `in the ${e.split} split`) : "", scopeLabel(e.leagueShort ?? e.league ?? null, period)].filter(Boolean).join(" ");
 
   return { subject: `${named}${champion}`, where };
 }
