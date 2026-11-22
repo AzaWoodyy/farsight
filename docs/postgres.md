@@ -118,7 +118,7 @@ Vercel.
 ## En local
 
 ```sh
-docker run -d --name farsight-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
+docker run -d --name farsight-pg --shm-size=1g -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_INITDB_ARGS="--locale=C.UTF-8" postgres:18
 psql postgres://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE farsight_test"
 psql postgres://postgres:postgres@localhost:5432/postgres -v app_password="'local'" -f db/roles.sql
 DATABASE_OWNER_URL=postgres://postgres:postgres@localhost:5432/postgres bun run db:load

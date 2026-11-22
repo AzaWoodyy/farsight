@@ -22,7 +22,7 @@
     "lab:build": "bun scripts/lab/build.ts",
     "eval": "bun scripts/eval.ts",
     "eval:candidates": "bun scripts/eval-candidates.ts",
-    "test": "bun test scripts",
+    "test": "bun test scripts --parallel",
     "verify": "bun run lint --deny-warnings && bun run typecheck && python3 scripts/ci/test.py && bun run eval --deterministic --strict --follow-ups --exclude-tags=timeline && bun run build"
   },
   "dependencies": {
