@@ -139,3 +139,4 @@ One file per decision area, numbered in the order they were written down. The co
 - [The eval scores only what could run, and a gate that ran nothing fails](0111-eval-scoring-without-llm.md)
 - [eval:candidates: keeping visitor questions and keys out of the repository and the logs](0112-eval-candidates-report-safety.md)
 - [CI checks run as two chains, and each test file in its own global](0113-ci-check-scheduling.md)
+- [Retry and resume code is checked against every fault schedule](0114-fault-schedule-models.md)

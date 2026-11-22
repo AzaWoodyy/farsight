@@ -3,10 +3,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
-import { RAW_GAME_CONTENT_TYPE, RAW_GAME_FORMAT, type RawGame, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
+import { RAW_GAME_CONTENT_TYPE, encodeRawGame, rawGameKey } from "../../src/lib/sources/riot";
 import { FsStore, type ObjectStore, R2Store } from "../../src/lib/storage";
+import { riotGame as game, riotRow as row } from "../fixtures/riot-games";
 import { DERIVE_VERSION, IngameLine, summarizeGame } from "./ingame";
-import { type RiotGameRow, SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries, summaryState } from "./riot";
+import { SUMMARIES_KEY, fetchRiotGames, loadIngame, pullSummaries, pushSummaries, summaryState } from "./riot";
 
 function fakeR2(objects: Map<string, Uint8Array>) {
   const requests: string[] = [];
@@ -42,52 +43,6 @@ function fakeR2(objects: Map<string, Uint8Array>) {
 
   return { store, requests, stop: () => server.stop(true) };
 }
-
-function game(key: string): RawGame {
-  const frame = (m: number) => ({
-    timestamp: m * 60_000,
-    participantFrames: {
-      1: { participantId: 1, totalGold: 500 + 300 * m, xp: 100 * m, minionsKilled: 8 * m, jungleMinionsKilled: 0 },
-      2: { participantId: 2, totalGold: 500 + 250 * m, xp: 90 * m, minionsKilled: 7 * m, jungleMinionsKilled: 0 },
-    },
-    events: m === 4 ? [{ type: "CHAMPION_KILL", timestamp: 4 * 60_000 + 5_000, killerId: 1, victimId: 2, assistingParticipantIds: [] }] : [],
-  });
-
-  return {
-    format: RAW_GAME_FORMAT,
-    key,
-    gameId: `Test/2026 Season_${key}`,
-    version: 5,
-    statsPage: `V5 data:${key.replace("_", " ")}`,
-    timelinePage: `V5 data:${key.replace("_", " ")}/Timeline`,
-    statsRevid: 1,
-    timelineRevid: 2,
-    fetchedAt: "2026-11-14T00:00:00.000Z",
-    stats: {
-      gameDuration: 660,
-      gameVersion: "16.20.1",
-      participants: [
-        { participantId: 1, teamId: 100, championId: 103, championName: "Ahri", kills: 1, deaths: 0, assists: 0, firstBloodKill: true, pentaKills: 0 },
-        { participantId: 2, teamId: 200, championId: 1, championName: "Annie", kills: 0, deaths: 1, assists: 0, firstBloodKill: false, pentaKills: 0 },
-      ],
-      teams: [
-        { teamId: 100, objectives: { champion: { first: true, kills: 1 } } },
-        { teamId: 200, objectives: { champion: { first: false, kills: 0 } } },
-      ],
-    },
-    timeline: { frames: Array.from({ length: 11 }, (_, m) => frame(m)) },
-  };
-}
-
-const row = (key: string): RiotGameRow => ({
-  Key: key,
-  GameId: `Test/2026 Season_${key}`,
-  StatsPage: `V5 data:${key.replace("_", " ")}`,
-  TimelinePage: `V5 data:${key.replace("_", " ")}/Timeline`,
-  Version: 5,
-  Page: "Test/2026 Season",
-  League: "Test",
-});
 
 const dir = mkdtempSync(join(tmpdir(), "riot-test-"));
 
@@ -152,56 +107,6 @@ test("a game absent from R2 goes to the wiki", async () => {
   }
 });
 
-test("a game whose upload to R2 fails is left for the next run", async () => {
-  const failing: ObjectStore = {
-    label: "r2:failing",
-    get: async () => null,
-    put: async () => {
-      throw new Error("R2 PUT: HTTP 500");
-    },
-    has: async () => false,
-    list: async () => [],
-  };
-
-  const raw = game("TEST_3");
-  const local = new FsStore(join(dir, "riot3"));
-  const ingameFile = join(dir, "ingame3.jsonl");
-
-  const counts = await fetchRiotGames([row("TEST_3")], {
-    budgetMinutes: 1,
-    remote: failing,
-    rederive: false,
-    local,
-    ingameFile,
-    fetchPages: async (titles) =>
-      new Map(titles.map((t) => [t, { title: t, revid: 1, timestamp: "2026-11-14T00:00:00Z", content: JSON.stringify(t.endsWith("/Timeline") ? raw.timeline : raw.stats) }])),
-  });
-
-  expect(counts).toMatchObject({ upload_errors: 1, uploaded: 0, from_wiki: 0, left: 1 });
-  expect(loadIngame(ingameFile).get("TEST_3")).toBeUndefined();
-  expect(await local.get(rawGameKey("TEST_3"))).not.toBeNull();
-
-  const r2 = fakeR2(new Map());
-
-  try {
-    const again = await fetchRiotGames([row("TEST_3")], {
-      budgetMinutes: 1,
-      remote: r2.store,
-      rederive: false,
-      local,
-      ingameFile,
-      fetchPages: async () => {
-        throw new Error("the wiki must not be called");
-      },
-    });
-
-    expect(again).toMatchObject({ from_cache: 1, from_wiki: 0, left: 0 });
-    expect(loadIngame(ingameFile).get("TEST_3")?.status).toBe("ok");
-  } finally {
-    r2.stop();
-  }
-});
-
 test("an R2 request that never gets an answer is aborted after the store's timeout", async () => {
   const server = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
 
@@ -225,16 +130,14 @@ test("an R2 request that never gets an answer is aborted after the store's timeo
 
 const gameOf = (title: string) => title.replace(/^V5 data:/, "").replace(/\/Timeline$/, "").replace(" ", "_");
 
-function omittingWiki(omitted: string[], never: string[] = []) {
+function recordingWiki() {
   const calls: string[][] = [];
 
   const fetchPages = async (titles: string[]) => {
-    const games = [...new Set(titles.map(gameOf))];
-    calls.push(games);
-    const served = titles.filter((t) => !never.includes(gameOf(t)) && (games.length === 1 || !omitted.includes(gameOf(t))));
+    calls.push([...new Set(titles.map(gameOf))]);
 
     return new Map(
-      served.map((t) => {
+      titles.map((t) => {
         const raw = game(gameOf(t));
 
         return [t, { title: t, revid: 1, timestamp: "2026-11-14T00:00:00Z", content: JSON.stringify(t.endsWith("/Timeline") ? raw.timeline : raw.stats) }];
@@ -244,87 +147,6 @@ function omittingWiki(omitted: string[], never: string[] = []) {
 
   return { calls, fetchPages };
 }
-
-const okLines = (file: string) =>
-  readFileSync(file, "utf8")
-    .trim()
-    .split("\n")
-    .map((l) => IngameLine.parse(JSON.parse(l)));
-
-test("two games left out of a grouped response are each asked again alone, and stored once", async () => {
-  const wiki = omittingWiki(["TEST_10", "TEST_11"]);
-  const local = new FsStore(join(dir, "riot10"));
-  const ingameFile = join(dir, "ingame10.jsonl");
-  const opts = { budgetMinutes: 1, remote: null, rederive: false, local, ingameFile, fetchPages: wiki.fetchPages };
-
-  const counts = await fetchRiotGames([row("TEST_10"), row("TEST_11")], opts);
-
-  expect(wiki.calls).toEqual([["TEST_10", "TEST_11"], ["TEST_10"], ["TEST_11"]]);
-  expect(counts).toMatchObject({ from_wiki: 2, left: 0, missing: 0, invalid: 0 });
-  expect(okLines(ingameFile).map((l) => `${l.key}:${l.status}`)).toEqual(["TEST_10:ok", "TEST_11:ok"]);
-  expect(await local.get(rawGameKey("TEST_11"))).not.toBeNull();
-
-  wiki.calls.length = 0;
-  const again = await fetchRiotGames([row("TEST_10"), row("TEST_11")], opts);
-  expect(wiki.calls).toEqual([]);
-  expect(again).toMatchObject({ current: 2, from_wiki: 0, left: 0 });
-});
-
-test("in a mixed response, only the game left out is asked again, before the next batch", async () => {
-  const wiki = omittingWiki(["TEST_21"]);
-  const ingameFile = join(dir, "ingame20.jsonl");
-
-  const counts = await fetchRiotGames([row("TEST_20"), row("TEST_21"), row("TEST_22")], {
-    budgetMinutes: 1,
-    remote: null,
-    rederive: false,
-    local: new FsStore(join(dir, "riot20")),
-    ingameFile,
-    fetchPages: wiki.fetchPages,
-  });
-
-  expect(wiki.calls).toEqual([["TEST_20", "TEST_21"], ["TEST_21"], ["TEST_22"]]);
-  expect(counts).toMatchObject({ from_wiki: 3, left: 0 });
-  expect(okLines(ingameFile).map((l) => l.key)).toEqual(["TEST_20", "TEST_21", "TEST_22"]);
-});
-
-test("a game left out again when asked alone is left for the next run, with no summary", async () => {
-  const wiki = omittingWiki([], ["TEST_30"]);
-  const ingameFile = join(dir, "ingame30.jsonl");
-  const opts = { budgetMinutes: 1, remote: null, rederive: false, local: new FsStore(join(dir, "riot30")), ingameFile, fetchPages: wiki.fetchPages };
-
-  const counts = await fetchRiotGames([row("TEST_30")], opts);
-
-  expect(wiki.calls).toEqual([["TEST_30"], ["TEST_30"]]);
-  expect(counts).toMatchObject({ from_wiki: 0, left: 1, missing: 0, invalid: 0 });
-  expect(loadIngame(ingameFile).get("TEST_30")).toBeUndefined();
-
-  wiki.calls.length = 0;
-  expect(await fetchRiotGames([row("TEST_30")], opts)).toMatchObject({ left: 1 });
-  expect(wiki.calls).toEqual([["TEST_30"], ["TEST_30"]]);
-});
-
-test("the games waiting for a retry count as left when the time budget runs out", async () => {
-  let clock = 0;
-  const wiki = omittingWiki(["TEST_40", "TEST_41"]);
-
-  const counts = await fetchRiotGames([row("TEST_40"), row("TEST_41"), row("TEST_42")], {
-    budgetMinutes: 1,
-    remote: null,
-    rederive: false,
-    local: new FsStore(join(dir, "riot40")),
-    ingameFile: join(dir, "ingame40.jsonl"),
-    now: () => clock,
-    fetchPages: async (titles) => {
-      clock += 2 * 60_000;
-
-      return wiki.fetchPages(titles);
-    },
-  });
-
-  expect(wiki.calls).toEqual([["TEST_40", "TEST_41"]]);
-  expect(counts).toMatchObject({ from_wiki: 0, left: 3 });
-});
 
 const noWiki = async () => {
   throw new Error("the wiki must not be called");
@@ -464,7 +286,7 @@ test("a run skips current summaries and recent verdicts, reads the local cache f
   const now = Date.now();
   const local = new FsStore(join(dir, "riot-start"));
   const ingameFile = join(dir, "ingame-start.jsonl");
-  const wiki = omittingWiki([]);
+  const wiki = recordingWiki();
 
   await local.put(rawGameKey("START_CACHED"), encodeRawGame(game("START_CACHED")), RAW_GAME_CONTENT_TYPE);
   writeFileSync(
