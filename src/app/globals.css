@@ -305,8 +305,7 @@ details[data-how][open] > summary [data-chevron] {
 }
 
 .marquee:focus-within .marquee-track,
-.marquee:has(:active) .marquee-track,
-[data-paused] > .marquee .marquee-track {
+.marquee:has(:active) .marquee-track {
   animation-play-state: paused;
 }
 
@@ -364,38 +363,38 @@ details[data-how][open] > summary [data-chevron] {
 
 /* The same still, wrapped rows while the keyboard is in the examples: a drifting row would leave the focused
    example outside its frame. */
-.marquees:has(:focus-visible) .marquee {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee {
   overflow: visible;
   mask-image: none;
 }
 
-.marquees:has(:focus-visible) .marquee-track {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track {
   width: auto;
   flex-wrap: wrap;
   row-gap: 8px;
   animation: none;
 }
 
-.marquees:has(:focus-visible) .marquee-track > li {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track > li {
   flex-shrink: 1;
   min-width: 0;
 }
 
-.marquees:has(:focus-visible) .marquee-track button {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track button {
   display: block;
   white-space: normal;
   text-align: left;
 }
 
-.marquees:has(:focus-visible) .marquee-track button > span {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track button > span {
   margin-inline: 0.5rem;
 }
 
-.marquees:has(:focus-visible) .marquee-track button > span:first-child {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track button > span:first-child {
   margin-inline-start: 0;
 }
 
-.marquees:has(:focus-visible) .marquee-track > [data-copy] {
+.marquees:is([data-paused], :has(:focus-visible)) .marquee-track > [data-copy] {
   display: none;
 }
 

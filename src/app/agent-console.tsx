@@ -46,7 +46,7 @@ export function AgentConsole({ locale }: { locale: Locale }) {
 function Console() {
   const ui = useUi();
   const locale = useLocale();
-  const [question, setQuestion] = useState("");
+  const form = useRef<HTMLFormElement>(null);
   const sessionId = useRef<string | null>(null);
 
   const chat = useRef<ChatControls>(null);
@@ -87,7 +87,7 @@ function Console() {
 
     setLoadFailed(false);
     preload();
-    setQuestion("");
+    form.current?.reset();
     sessionId.current ??= crypto.randomUUID();
 
     if (address === "push") setAddressQuestion(text);
@@ -107,7 +107,7 @@ function Console() {
     setFirst(null);
     setChatState(IDLE);
     setLoadFailed(false);
-    setQuestion("");
+    form.current?.reset();
     sessionId.current = null;
     scrollToTop();
   }
@@ -150,7 +150,7 @@ function Console() {
 
     sessionId.current ??= crypto.randomUUID();
     setLoadFailed(false);
-    setQuestion("");
+    form.current?.reset();
     setFirst({ text, sessionId: sessionId.current, restored });
     setChatState({ messages: restored, status: "ready", error: undefined });
     chat.current?.show(restored);
@@ -221,11 +221,14 @@ function Console() {
       )}
 
       <form
+        ref={form}
+        action={PATHS.home[locale]}
+        method="get"
         onSubmit={(e) => {
           e.preventDefault();
-          ask(question);
+          ask(new FormData(e.currentTarget).get("q")?.toString() ?? "");
         }}
-        className={`${askedText ? "mt-6" : "mt-8"} flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
+        className={`${askedText ? "mt-6" : "mt-8"} group flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
       >
         <span aria-hidden className="text-accent">
           &gt;
@@ -235,9 +238,10 @@ function Console() {
         </label>
         <input
           id="question"
-          value={question}
+          name="q"
+          required
+          pattern={".*\\S.*"}
           maxLength={QUESTION_MAX_LENGTH}
-          onChange={(e) => setQuestion(e.target.value)}
           onFocus={preload}
           placeholder={ui.console.placeholder}
           autoComplete="off"
@@ -246,8 +250,8 @@ function Console() {
         />
         <button
           type="submit"
-          disabled={running || !question.trim()}
-          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 sm:pointer-fine:min-h-9"
+          disabled={running}
+          className="press min-h-11 shrink-0 border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 group-has-[input:invalid]:opacity-40 sm:pointer-fine:min-h-9"
         >
           {running ? "…" : ui.console.ask}
         </button>
@@ -290,7 +294,7 @@ function Console() {
             {running ? progressLabel(steps, ui) : answer ? ui.console.ready(answer.title) : ""}
           </p>
           <div className="flex flex-wrap items-start justify-between gap-x-4">
-            <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm sm:pt-1">
+            <p className="min-w-0 flex-1 basis-40 pt-2.5 text-sm wrap-anywhere sm:pt-1">
               <span aria-hidden className="text-muted">
                 ?
               </span>{" "}
