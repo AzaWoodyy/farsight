@@ -6,6 +6,7 @@ import { type Db, readSchema, selectAll, selectOne } from "../db";
 import { type Decider, decide } from "./decide";
 import { allowedSchema, VIEWS, MAX_ROWS } from "./guard";
 import { getLlm, LLM_CALL, llmSignal } from "./llm";
+import type { Correction, Problem } from "./recovery";
 import {
   aiTools,
   type BoundTool,
@@ -1496,7 +1497,8 @@ export type CorrectInput = {
   question: string;
   entities: Entities;
   plan: QueryPlan;
-  problem: { kind: "guard" | "error" | "empty" | "timeout"; message: string };
+  problem: Problem;
+  by: Correction;
 };
 
 type Fix = { plan: QueryPlan; note?: string };
@@ -1504,8 +1506,8 @@ type Fix = { plan: QueryPlan; note?: string };
 const rulesCorrector: Decider<CorrectInput, Fix> = {
   level: "rules",
   name: "corrections déterministes",
-  run: async ({ entities, plan, problem }) => {
-    if (!plan.tool || problem.kind !== "empty") return null;
+  run: async ({ entities, plan, by }) => {
+    if (by !== "relax" || !plan.tool) return null;
     const next = plan.tool.relaxations(entities).find((r) => !plan.relaxed.includes(r.key));
 
     if (!next) return null;
@@ -1522,8 +1524,8 @@ const rulesCorrector: Decider<CorrectInput, Fix> = {
 const llmCorrector: Decider<CorrectInput, Fix> = {
   level: "llm",
   name: "réparation SQL",
-  run: async ({ db, question, plan, problem }) => {
-    if (problem.kind === "empty" && plan.intent !== "sql") return null;
+  run: async ({ db, question, plan, problem, by }) => {
+    if (by !== "repair") return null;
 
     const reply = await askSql(
       db,

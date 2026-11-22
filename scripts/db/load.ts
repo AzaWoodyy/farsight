@@ -6,7 +6,7 @@ import { DERIVE_VERSION } from "../data/ingame";
 import { datasetProblems, photoLoss } from "../data/checks";
 import { type Cell, deriveDataset } from "../data/derive";
 import { SCHEMA_TABLES, SCHEMA_VERSION, SCHEMA_VIEWS } from "../../src/lib/db/schema";
-import { grantReaders, migrate, quoteIdent } from "./migrations";
+import { grantReaders, migrate, quoteIdent, readMigrations } from "./migrations";
 
 const args = process.argv.slice(2);
 const option = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -137,18 +137,22 @@ if (inPlace && liveExists && !args.includes("--allow-shrink")) {
   }
 }
 
-if (inPlace) console.warn(`in place: ${schema} is dropped before the load (${(liveBytes / 1e6).toFixed(0)} MB live${limitMb ? `, limit ${limitMb} MB` : ""}); the app has no data until it commits`);
+if (inPlace) {
+  console.warn(
+    `in place: ${schema} is dropped before the load (${(liveBytes / 1e6).toFixed(0)} MB live${limitMb ? `, limit ${limitMb} MB` : ""}); ` +
+      "the app has no data until the load commits, and none at all if it fails before",
+  );
+}
 
 try {
   await client.query(`DROP SCHEMA IF EXISTS ${quoteIdent(next)} CASCADE`);
+  await client.query("BEGIN");
   await client.query(`CREATE SCHEMA ${quoteIdent(next)}`);
   await client.query(`SET search_path TO ${quoteIdent(next)}`);
-  await migrate(client);
+  await migrate(client, readMigrations(), "caller");
 
   const copyStarted = performance.now();
   const rowCounts: Record<string, number> = {};
-
-  await client.query("BEGIN");
 
   for (const [name, { columns, rows }] of derived.tables) {
     const stream = client.query(copyFrom(`COPY ${quoteIdent(name)} (${columns.map(quoteIdent).join(", ")}) FROM STDIN`));
@@ -168,13 +172,13 @@ try {
     JSON.stringify(Object.fromEntries(SCHEMA_TABLES.filter((t) => t !== "ingest_runs").map((t) => [t, rowCounts[t] ?? 0]))),
     JSON.stringify({ target: "postgres", derive_version: DERIVE_VERSION, ddragon_version: derived.ddragonVersion, ...derived.report }),
   ]);
+  await grantReaders(client, next, SCHEMA_VIEWS);
   await client.query("COMMIT");
 
   const copiedIn = seconds(copyStarted);
   const analyzeStarted = performance.now();
 
   await client.query("ANALYZE");
-  await grantReaders(client, next, SCHEMA_VIEWS);
   const analyzedIn = seconds(analyzeStarted);
 
   if (!inPlace && !args.includes("--allow-shrink") && liveExists) {
@@ -205,7 +209,7 @@ try {
 
   const mb = (bytes: string) => `${(Number(bytes) / 1e6).toFixed(1)} MB`;
 
-  console.log(`loaded schema ${schema} in ${seconds(t0)} (derive ${derivedIn}, copy ${copiedIn}, analyze and grants ${analyzedIn})`);
+  console.log(`loaded schema ${schema} in ${seconds(t0)} (derive ${derivedIn}, copy and grants ${copiedIn}, analyze ${analyzedIn})`);
   console.log(`size: schema ${mb(size.rows[0].schema)} (tables and indexes), database ${mb(size.rows[0].database)}, schema v${SCHEMA_VERSION}${inPlace ? ", loaded in place" : ", swapped in"}; rows:`);
   console.log(rowCounts);
 } catch (err) {

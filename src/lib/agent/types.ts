@@ -89,14 +89,14 @@ import type { ToolName } from "./tools";
 
 export type Intent = ToolName | "sql";
 
-export type QueryPlan = {
-  intent: Intent;
-  tool: BoundTool | null;
+type PlanQuery = {
   sql: string;
   params: Record<string, string | number>;
   attempt: number;
   relaxed: string[];
 };
+
+export type QueryPlan = (PlanQuery & { intent: ToolName; tool: BoundTool }) | (PlanQuery & { intent: "sql"; tool: null });
 
 export type ChampionPlay = {
   name: string;

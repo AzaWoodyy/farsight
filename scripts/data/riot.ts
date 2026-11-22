@@ -202,7 +202,15 @@ export type RiotFetchCounts = {
   left: number;
 };
 
-const recent = (iso: string) => Date.now() - Date.parse(iso) < MISSING_RETRY_DAYS * 86400_000;
+export type SummaryState = { kind: "current" } | { kind: "checked"; status: "missing" | "invalid" } | { kind: "stale" };
+
+export function summaryState(line: IngameLine | undefined, rederive: boolean, now = Date.now()): SummaryState {
+  if (!line) return { kind: "stale" };
+
+  if (line.status === "ok") return line.derive === DERIVE_VERSION && !rederive ? { kind: "current" } : { kind: "stale" };
+
+  return now - Date.parse(line.checkedAt) < MISSING_RETRY_DAYS * 86400_000 ? { kind: "checked", status: line.status } : { kind: "stale" };
+}
 
 const R2_CONCURRENCY = 16;
 
@@ -339,30 +347,23 @@ export async function fetchRiotGames(rows: RiotGameRow[], opts: RiotFetchOptions
   let todo: RiotGameRow[] = [];
 
   for (const row of rows) {
-    const line = index.get(row.Key);
+    const state = summaryState(index.get(row.Key), opts.rederive);
 
-    if (line?.status === "ok" && line.derive === DERIVE_VERSION && !opts.rederive) {
+    if (state.kind === "current") {
       counts.current++;
       continue;
     }
 
     const key = rawGameKey(row.Key);
+    const raw = cached.has(key) ? readRaw(await local.get(key)) : null;
 
-    if (cached.has(key)) {
-      const raw = readRaw(await local.get(key));
-
-      if (raw) {
-        if (summarize(raw, summaries, counts)) counts.from_cache++;
-        continue;
-      }
-    }
-
-    if (line && line.status !== "ok" && recent(line.checkedAt)) {
-      counts[line.status]++;
+    if (raw) {
+      if (summarize(raw, summaries, counts)) counts.from_cache++;
       continue;
     }
 
-    todo.push(row);
+    if (state.kind === "checked") counts[state.status]++;
+    else todo.push(row);
   }
 
   console.log(

@@ -84,6 +84,36 @@ describe("migrations", () => {
     await expect(migrate(client, readMigrations(dir))).rejects.toThrow(/changed after it was applied/);
   });
 
+  test("inside the caller's transaction, the caller's rollback undoes every migration, a failed one included", async () => {
+    const own = mkdtempSync(join(tmpdir(), "migrations-caller-"));
+    const staged = `${schema}_caller`;
+    const exists = async () => (await client.query("SELECT to_regnamespace($1) AS ns", [staged])).rows[0].ns != null;
+
+    try {
+      writeFileSync(join(own, "0001_first.sql"), "CREATE TABLE a (x integer);");
+      writeFileSync(join(own, "0002_second.sql"), "CREATE VIEW v AS SELECT x FROM a;");
+      await client.query("BEGIN");
+      await client.query(`CREATE SCHEMA ${quoteIdent(staged)}`);
+      await client.query(`SET LOCAL search_path TO ${quoteIdent(staged)}`);
+      expect(await migrate(client, readMigrations(own), "caller")).toEqual([1, 2]);
+      await client.query("ROLLBACK");
+      expect(await exists()).toBe(false);
+
+      writeFileSync(join(own, "0003_broken.sql"), "SELECT * FROM missing;");
+      await client.query("BEGIN");
+      await client.query(`CREATE SCHEMA ${quoteIdent(staged)}`);
+      await client.query(`SET LOCAL search_path TO ${quoteIdent(staged)}`);
+      await expect(migrate(client, readMigrations(own), "caller")).rejects.toThrow(/Migration 3 \(broken\) failed/);
+      expect((await client.query("SELECT version FROM schema_migrations ORDER BY version")).rows.map((r) => r.version)).toEqual([1, 2]);
+      await client.query("ROLLBACK");
+      expect(await exists()).toBe(false);
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.query(`SET search_path TO ${quoteIdent(schema)}`);
+      rmSync(own, { recursive: true, force: true });
+    }
+  });
+
   test("file names are numbered without gaps", () => {
     const gaps = mkdtempSync(join(tmpdir(), "migrations-gap-"));
 

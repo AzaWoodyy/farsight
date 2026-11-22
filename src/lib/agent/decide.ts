@@ -1,4 +1,4 @@
-import { describeLlmError, requestAborted } from "./llm";
+import { describeLlmError, recordLlmFailure, requestAborted } from "./llm";
 import { msg } from "./messages";
 
 export type DecisionLevel = "rules" | "llm";
@@ -41,6 +41,8 @@ export async function decide<I, O>(
     } catch (err) {
       if (requestAborted()) throw err;
       const error = err instanceof Error ? err : new Error(String(err));
+
+      if (d.level === "llm") recordLlmFailure(error);
       attempts.push({ name: d.name, level: d.level, confidence: null, error: d.level === "llm" ? describeLlmError(error) : error.message });
       continue;
     }

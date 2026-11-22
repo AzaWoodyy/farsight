@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { type Ref, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { AgentUIMessage } from "@/lib/agent/types";
+import type { Question } from "./console-screen";
 import { type Locale, LOCALES } from "@/lib/locale";
 import { useLocale } from "./i18n/locale-context";
 import { UI, type Ui } from "./i18n/ui";
@@ -65,7 +66,7 @@ export function ChatEngine({
 }: {
   controls: Ref<ChatControls>;
   onChange: (state: ChatState) => void;
-  first: { text: string; sessionId: string; restored?: AgentUIMessage[] } | null;
+  first: Question | null;
 }) {
   const locale = useLocale();
 
@@ -77,6 +78,7 @@ export function ChatEngine({
   const running = status === "submitted" || status === "streaming";
 
   const current = useRef<{ text: string; sessionId: string } | null>(null);
+  const phase = useRef<"new" | "shown" | "left">("new");
 
   const send = useCallback(
     (question: { text: string; sessionId: string }) => {
@@ -91,19 +93,19 @@ export function ChatEngine({
     () => ({
       ask(text, sessionId) {
         if (running) void stop();
-        left.current = false;
+        phase.current = "shown";
         setMessages([]);
         send({ text, sessionId });
       },
       show(restored) {
         if (running) void stop();
-        left.current = false;
+        phase.current = "shown";
         current.current = null;
         setMessages(restored);
       },
       reset() {
         if (running) void stop();
-        left.current = false;
+        phase.current = "shown";
         current.current = null;
         setMessages([]);
       },
@@ -113,16 +115,15 @@ export function ChatEngine({
 
   useEffect(() => onChange({ messages, status, error }), [messages, status, error, onChange]);
 
-  const mounted = useRef(false);
-  const left = useRef(false);
-
   useEffect(() => {
-    if (!mounted.current && first && !first.restored) send(first);
+    if (phase.current === "new") {
+      phase.current = "shown";
 
-    mounted.current = true;
+      if (first && !first.restored) send(first);
+    }
 
     return () => {
-      left.current = true;
+      phase.current = "left";
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -130,9 +131,9 @@ export function ChatEngine({
   const answered = messages.some((m) => m.role === "assistant" && m.parts.some((p) => p.type === "data-answer"));
 
   useEffect(() => {
-    if (!left.current || running) return;
+    if (phase.current !== "left" || running) return;
 
-    left.current = false;
+    phase.current = "shown";
 
     if (!current.current || error || answered) return;
 
