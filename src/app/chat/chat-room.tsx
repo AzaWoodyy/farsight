@@ -207,10 +207,10 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
         className="chat-drawer fixed inset-y-0 left-0 z-30 w-72 max-w-[85vw] shrink-0 bg-background md:relative md:inset-auto md:w-64"
       >
         <div className="chat-drawer-panel flex h-full w-72 max-w-[85vw] flex-col border-r border-line bg-background pb-[env(safe-area-inset-bottom,0px)] md:absolute md:inset-y-0 md:left-0 md:w-64">
-        <div className="flex items-center justify-between gap-2 px-3 pt-3">
+        <div className="flex items-center justify-between gap-2 px-3 pt-3 md:px-5 md:pt-8">
           <a href={PATHS.home[locale]} aria-label={shell.homeLabel} className="press inline-flex min-h-11 items-center gap-2.5 hover:text-accent">
-            <Mark size={26} />
-            <span translate="no" className="text-sm font-semibold lowercase">
+            <Mark size={32} />
+            <span translate="no" className="text-base font-semibold lowercase">
               {SITE.name}
             </span>
           </a>
@@ -283,7 +283,7 @@ function Shell({ locale, account }: { locale: Locale; account: string }) {
       </aside>
 
       <div inert={menuOpen} data-sidebar={sidebarMove ?? undefined} className="chat-main flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 sm:px-5">
+        <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 pt-5 pb-3 sm:px-6 sm:pt-8 md:box-content md:h-11 md:px-5">
           <button
             type="button"
             aria-label={collapsed ? t.openMenu : t.closeMenu}
