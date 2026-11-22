@@ -1,8 +1,9 @@
 import { chatUser } from "@/lib/auth/chat-access";
+import { chatConfigured } from "@/lib/auth/chat-config";
 import { listThreads, threadsConfigured } from "@/lib/threads/store";
 
 export async function GET() {
-  if (process.env.VERCEL_ENV === "production") return Response.json({ error: "not found" }, { status: 404 });
+  if (!chatConfigured()) return Response.json({ error: "not found" }, { status: 404 });
 
   const user = await chatUser();
 

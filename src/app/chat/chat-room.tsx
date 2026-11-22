@@ -8,14 +8,16 @@ import { DefaultChatTransport } from "ai";
 import Link from "next/link";
 import { z } from "zod";
 import { type ReactNode, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, type ShownAnswer } from "@/lib/agent/chat-types";
+import { CHAT_MESSAGE_MAX_LENGTH, type ChatCard, type ChatCardImage, type ChatUIMessage, DAILY_LIMIT_ERROR, type ShownAnswer } from "@/lib/agent/chat-types";
 import type { Locale } from "@/lib/locale";
 import { Mark } from "../brand/logo";
-import { askFetchIn } from "../chat-engine";
+import { httpErrorMessage } from "../chat-engine";
 import { EntityIcon } from "../entity-icon";
 import { PlayerAvatar } from "../player-avatar";
 import { SITE } from "../brand/site";
 import { LANG_SWITCH_ATTR } from "../i18n/arrival";
+import { CHAT, type ChatTexts } from "../i18n/chat";
+import { UI } from "../i18n/ui";
 import { decode } from "../i18n/decode";
 import { LocaleProvider, useLocale } from "../i18n/locale-context";
 import { CHAT_PATHS, LOCALE_NAME, LOCALES, PATHS } from "../i18n/locales";
@@ -25,89 +27,30 @@ import { type Conversation, conversations } from "./conversations";
 import { DATA_MODE_LABEL, DATA_MODES, type DataMode, dataMode, WORST_LOGIN } from "./worst-case";
 import { HtmlFrame } from "./html-frame";
 
-const TEXT = {
-  fr: {
-    heading: "De quoi veux-tu parler ?",
-    placeholder: "Écris ton message…",
-    label: "Ton message",
-    send: "Envoyer",
-    stop: "Arrêter",
-    skip: "Aller à la saisie",
-    unsaved: "Les conversations ne sont pas enregistrées pour l’instant.",
-    loading: "Chargement…",
-    newChat: "Nouvelle conversation",
-    newChatKeys: "Nouvelle conversation (Ctrl ou ⌘ + Maj + O)",
-    history: "Conversations",
-    noHistory: "Tes conversations apparaîtront ici.",
-    remove: (title: string) => `Supprimer « ${title} »`,
-    removed: "Conversation supprimée.",
-    undo: "Annuler",
-    openMenu: "Afficher les conversations",
-    closeMenu: "Masquer les conversations",
-    untitled: "Nouvelle conversation",
-    groups: { today: "Aujourd’hui", week: "7 derniers jours", older: "Plus ancien" },
-    thinking: "Réflexion…",
-    answered: "Réponse prête.",
-    you: "toi",
-    bottom: "Aller au dernier message",
-    sources: "Sources",
-    more: (n: number) => `Voir les ${n} lignes`,
-    less: "Réduire",
-    truncated: (shown: number, total: number) => `${shown} lignes sur ${total}`,
-    asking: "Recherche dans les données…",
-    querying: "Requête sur mesure…",
-    drawing: "Composition de la vue…",
-    examples: [
-      "Résultats de Chovy à tous les Worlds",
-      "T1 vs Gen.G en LCK 2024",
-      "Champion pool de Caps en LEC 2024",
-      "Fais-moi un graphique des taux de victoire de Faker aux Worlds, année par année",
-    ],
-  },
-  en: {
-    heading: "What do you want to talk about?",
-    placeholder: "Write your message…",
-    label: "Your message",
-    send: "Send",
-    stop: "Stop",
-    skip: "Skip to the message field",
-    unsaved: "Conversations are not being saved right now.",
-    loading: "Loading…",
-    newChat: "New conversation",
-    newChatKeys: "New conversation (Ctrl or ⌘ + Shift + O)",
-    history: "Conversations",
-    noHistory: "Your conversations will show up here.",
-    remove: (title: string) => `Delete “${title}”`,
-    removed: "Conversation deleted.",
-    undo: "Undo",
-    openMenu: "Show conversations",
-    closeMenu: "Hide conversations",
-    untitled: "New conversation",
-    groups: { today: "Today", week: "Last 7 days", older: "Older" },
-    thinking: "Thinking…",
-    answered: "Answer ready.",
-    you: "you",
-    bottom: "Jump to the latest message",
-    sources: "Sources",
-    more: (n: number) => `Show all ${n} rows`,
-    less: "Collapse",
-    truncated: (shown: number, total: number) => `${shown} rows of ${total}`,
-    asking: "Searching the data…",
-    querying: "Custom query…",
-    drawing: "Composing the view…",
-    examples: [
-      "Chovy’s results at every Worlds",
-      "T1 vs Gen.G in LCK 2024",
-      "Caps champion pool in LEC 2024",
-      "Draw a chart of Faker’s win rates at Worlds, year by year",
-    ],
-  },
-} as const;
+type Texts = ChatTexts["room"];
 
-type Texts = (typeof TEXT)[Locale];
+const DailyLimit = z.object({ error: z.literal(DAILY_LIMIT_ERROR), limit: z.number() });
+
+const chatFetchIn = (locale: Locale) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const { errors } = UI[locale];
+  let res: Response;
+
+  try {
+    res = await fetch(input, init);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new Error(errors.offline);
+  }
+
+  if (res.ok) return res;
+
+  const limit = res.status === 429 ? DailyLimit.safeParse(await res.json().catch(() => null)) : null;
+
+  throw new Error(limit?.success ? CHAT[locale].room.dailyLimit(limit.data.limit) : httpErrorMessage(res.status, errors));
+};
 
 const transports = new Map(
-  LOCALES.map((locale) => [locale, new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat", fetch: Object.assign(askFetchIn(locale), { preconnect: fetch.preconnect }) })]),
+  LOCALES.map((locale) => [locale, new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat", fetch: Object.assign(chatFetchIn(locale), { preconnect: fetch.preconnect }) })]),
 );
 
 const CARD_ROWS = 6;
@@ -139,7 +82,7 @@ export function ChatRoom({ locale }: { locale: Locale }) {
 }
 
 function Shell({ locale }: { locale: Locale }) {
-  const t = TEXT[locale];
+  const t = CHAT[locale].room;
   const shell = SHELL[locale];
   const library = useSyncExternalStore(conversations.subscribe, conversations.snapshot, conversations.serverSnapshot);
   const saved = library.list;
@@ -497,7 +440,7 @@ function Room({ id, title, onStart, locale, t, initial }: { id: string | null; t
       onStart(own.current);
     }
 
-    void sendMessage({ text }, { body: { locale } });
+    void sendMessage({ text }, { body: { locale, conversationId: own.current } });
   }
 
   const waiting = running && last?.role === "user";

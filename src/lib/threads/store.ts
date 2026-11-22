@@ -4,6 +4,9 @@ import { createPool, type PgPool } from "../db/postgres";
 
 export const KEPT_THREADS = 30;
 export const THREAD_MAX_BYTES = 600_000;
+export const DAILY_MESSAGES = 100;
+const USAGE_KEPT_DAYS = 7;
+const CLEANUP_SHARE = 0.02;
 const TITLE_MAX_LENGTH = 60;
 
 export const ThreadMessages = z
@@ -83,4 +86,23 @@ export async function saveThread(userId: string, id: string, messages: ThreadMes
 
 export async function deleteThread(userId: string, id: string): Promise<void> {
   await threads().query("DELETE FROM farsight_users.threads WHERE user_id = $1 AND id = $2", [userId, id]);
+}
+
+export async function forgetUser(userId: string): Promise<void> {
+  await threads().query("DELETE FROM farsight_users.threads WHERE user_id = $1", [userId]);
+  await threads().query("DELETE FROM farsight_users.usage WHERE user_id = $1", [userId]);
+}
+
+export async function spendMessage(userId: string, limit: number = DAILY_MESSAGES): Promise<boolean> {
+  const { rows } = await threads().query(
+    `INSERT INTO farsight_users.usage (user_id, day, messages) VALUES ($1, (now() AT TIME ZONE 'UTC')::date, 1)
+     ON CONFLICT (user_id, day) DO UPDATE SET messages = farsight_users.usage.messages + 1
+     WHERE farsight_users.usage.messages < $2
+     RETURNING messages`,
+    [userId, limit],
+  );
+
+  if (Math.random() < CLEANUP_SHARE) await threads().query("DELETE FROM farsight_users.usage WHERE day < (now() AT TIME ZONE 'UTC')::date - $1::integer", [USAGE_KEPT_DAYS]);
+
+  return rows.length > 0;
 }

@@ -5,6 +5,8 @@ export const CHAT_MESSAGE_MAX_LENGTH = 500;
 
 export const CHAT_HISTORY_MESSAGES = 12;
 
+export const DAILY_LIMIT_ERROR = "daily_limit";
+
 export type ChatCardTable = { columns: string[]; rows: TableCell[][]; numeric: boolean[]; total: number };
 
 export type ChatCardImage = { src: string; tone?: "dark" | "light"; photo?: boolean };

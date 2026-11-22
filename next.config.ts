@@ -1,6 +1,7 @@
 import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 import pg from "pg";
+import { clerkHost } from "./src/lib/auth/chat-config";
 
 if (process.env.VERCEL === "1" && !process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set for the build (see docs/postgres.md).");
 
@@ -45,9 +46,12 @@ const nextConfig: NextConfig = {
       "form-action 'self'",
     ].join("; ");
 
+    const clerk = clerkHost(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+    const clerkOrigin = clerk ? ` https://${clerk}` : "";
+
     const chatCsp = csp
-      .replace("script-src 'self'", "script-src 'self' https://*.clerk.accounts.dev https://cdn.protect.clerk.com https://challenges.cloudflare.com")
-      .replace("connect-src 'self'", "connect-src 'self' https://*.clerk.accounts.dev https://*.protect.clerk.com https://*.client.protect.clerk.com:* https://clerk-telemetry.com")
+      .replace("script-src 'self'", `script-src 'self'${clerkOrigin} https://cdn.protect.clerk.com https://challenges.cloudflare.com`)
+      .replace("connect-src 'self'", `connect-src 'self'${clerkOrigin} https://*.protect.clerk.com https://*.client.protect.clerk.com:* https://clerk-telemetry.com`)
       .replace("img-src 'self'", "img-src 'self' https://img.clerk.com")
       .replace("frame-src 'self'", "frame-src 'self' https://challenges.cloudflare.com");
 

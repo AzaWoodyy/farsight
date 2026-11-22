@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS farsight_users.threads (
 
 CREATE INDEX IF NOT EXISTS threads_by_user ON farsight_users.threads (user_id, updated_at DESC);
 
+-- One counter per account and UTC day: the chat refuses a message past the daily limit (src/lib/threads/store.ts).
+CREATE TABLE IF NOT EXISTS farsight_users.usage (
+  user_id text NOT NULL,
+  day date NOT NULL,
+  messages integer NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
+
 REVOKE ALL ON SCHEMA farsight_users FROM PUBLIC;
 GRANT USAGE ON SCHEMA farsight_users TO farsight_threads;
-GRANT SELECT, INSERT, UPDATE, DELETE ON farsight_users.threads TO farsight_threads;
+GRANT SELECT, INSERT, UPDATE, DELETE ON farsight_users.threads, farsight_users.usage TO farsight_threads;

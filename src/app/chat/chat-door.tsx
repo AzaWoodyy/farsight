@@ -5,33 +5,13 @@ import "./chat.css";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import type { Locale } from "@/lib/locale";
+import { CHAT } from "../i18n/chat";
 import { CHAT_PATHS } from "../i18n/locales";
-
-const TEXT = {
-  fr: {
-    heading: "La conversation est réservée aux comptes invités.",
-    intro: "Connecte-toi, puis Enzo ouvre l’accès à ton compte.",
-    signIn: "Se connecter",
-    preparing: "Préparation de la connexion…",
-    pendingHeading: "Ton compte n’a pas encore accès.",
-    pending: (email: string) => `${email ? `Compte : ${email}. ` : ""}Demande à Enzo d’ouvrir l’accès, puis recharge la page.`,
-    signOut: "Se déconnecter",
-  },
-  en: {
-    heading: "The conversation is for invited accounts only.",
-    intro: "Sign in, then Enzo opens access for your account.",
-    signIn: "Sign in",
-    preparing: "Preparing sign-in…",
-    pendingHeading: "Your account does not have access yet.",
-    pending: (email: string) => `${email ? `Account: ${email}. ` : ""}Ask Enzo to open access, then reload the page.`,
-    signOut: "Sign out",
-  },
-} as const;
 
 const BUTTON = "press inline-flex min-h-11 items-center border border-line px-4 text-[13px] tracking-wider uppercase hover:border-accent hover:text-accent sm:pointer-fine:min-h-9";
 
 export function ChatDoor({ locale, pending }: { locale: Locale; pending: boolean }) {
-  const t = TEXT[locale];
+  const t = CHAT[locale].door;
   const { user } = useUser();
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();

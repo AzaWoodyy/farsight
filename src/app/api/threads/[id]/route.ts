@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { chatUser } from "@/lib/auth/chat-access";
+import { chatConfigured } from "@/lib/auth/chat-config";
 import { deleteThread, saveThread, ThreadMessages, threadsConfigured } from "@/lib/threads/store";
 
 const ThreadId = z.uuid();
 const Body = z.object({ messages: ThreadMessages });
 
 async function request(params: Promise<{ id: string }>): Promise<{ user: string; id: string } | Response> {
-  if (process.env.VERCEL_ENV === "production") return Response.json({ error: "not found" }, { status: 404 });
+  if (!chatConfigured()) return Response.json({ error: "not found" }, { status: 404 });
 
   const user = await chatUser();
 
