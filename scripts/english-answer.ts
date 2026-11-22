@@ -79,19 +79,22 @@ const withoutNames = (text: string, names: string[]) => names.reduce((t, name) =
 
 function unquoted(text: string, question: string): string {
   const asked = question.match(TOKEN) ?? [];
-  const shown = text.match(TOKEN) ?? [];
-  const quoted = new Set<number>();
+  const shown = [...text.matchAll(TOKEN)];
+  let out = text;
 
   for (let i = 0; i < shown.length; i++)
     for (let j = 0; j < asked.length; j++) {
       let n = 0;
 
-      while (i + n < shown.length && j + n < asked.length && shown[i + n] === asked[j + n]) n++;
+      while (i + n < shown.length && j + n < asked.length && shown[i + n]![0] === asked[j + n]) n++;
 
-      if (n >= 2) for (let k = i; k < i + n; k++) quoted.add(k);
+      if (n < 2) continue;
+      const from = shown[i]!.index;
+      const to = shown[i + n - 1]!.index + shown[i + n - 1]![0].length;
+      out = out.slice(0, from) + " ".repeat(to - from) + out.slice(to);
     }
 
-  return shown.filter((_, i) => !quoted.has(i)).join(" ");
+  return out;
 }
 
 const isFrench = (word: string, named: Set<string>) => {
@@ -102,7 +105,7 @@ const isFrench = (word: string, named: Set<string>) => {
 
 export function frenchInEnglishAnswer(question: string, answer: Answer, steps: ShownStep[], englishQuestion: boolean): FrenchText[] {
   const data = answerData(answer);
-  const named = namedWords(data.all);
+  const named = namedWords(data.entities);
   const names = [...new Set(data.entities.filter((d) => words(d).length > 1))].toSorted((a, b) => b.length - a.length);
 
   const shown: [string, string][] = [
@@ -115,7 +118,7 @@ export function frenchInEnglishAnswer(question: string, answer: Answer, steps: S
   ];
 
   return shown.flatMap(([field, text]) => {
-    const word = words(unquoted(withoutLeagues(withoutNames(text, names)), question)).find((w) => isFrench(w, named));
+    const word = words(withoutLeagues(withoutNames(unquoted(text, question), names))).find((w) => isFrench(w, named));
 
     return word ? [{ field, word, text }] : [];
   });

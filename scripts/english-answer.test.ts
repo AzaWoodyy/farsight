@@ -62,6 +62,11 @@ test("a quote keeps its numbers and its case, capitals are no excuse, and a ques
   expect(words(frenchInEnglishAnswer("Liga Española de League of Legends standings", answer({ summary: "Wins de Faker." }), [], true))).toEqual(["summary: de"]);
 });
 
+test("capitals excuse a word only from an entity, and a quote is read before names are removed", () => {
+  expect(words(frenchInEnglishAnswer("Who won?", answer({ title: "ÉQUIPE of the year", teamLeagues: { T1: ["ÉQUIPE"] } }), [], true))).toEqual(["title: ÉQUIPE"]);
+  expect(frenchInEnglishAnswer("What does en LEC mean?", answer({ summary: "Could not interpret “en LEC”." }), [], true)).toEqual([]);
+});
+
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {
   const named = answer({
     summary: "Most titles: Movistar KOI Fénix (3). Data missing: in-game statistics (âmes du dragon) for the LPL.",
