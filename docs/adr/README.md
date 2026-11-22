@@ -73,6 +73,7 @@ One file per decision area, numbered in the order they were written down. The co
 - [Finding the final, semifinal or play-in of an event from Leaguepedia tabs](0055-series-phases.md)
 - [Finding the final and the semifinals of a competition from Leaguepedia tabs](0056-series-stage-detection.md)
 - [Saying when a ranking covers an edition still being played](0057-in-progress-editions.md)
+- [The split of the question reaches every tool call, or the answer says it was not applied](0115-question-split-contract.md)
 - [Ranking thresholds, totals and what the router's input is corrected to](0058-ranking-thresholds-and-input-normalization.md)
 - [Rankings only go from the highest down, and what their answers hand on must stay readable](0059-ranking-tool-limits.md)
 - [Which season a roster shows and who counts as a starter](0060-team-roster-rules.md)

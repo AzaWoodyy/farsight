@@ -8746,6 +8746,64 @@
           "Flakked"
         ]
       }
+    },
+    {
+      "id": "split-not-applied-team-ranking",
+      "question": "classement des équipes LCK Spring 2024 au winrate",
+      "tags": [
+        "lck",
+        "team",
+        "ranking",
+        "split"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL Champions Korea",
+        "notes": [
+          "ne filtre pas par split",
+          "au split Spring"
+        ]
+      }
+    },
+    {
+      "id": "split-not-applied-team-ranking-en",
+      "question": "LCK Spring 2024 team ranking by winrate",
+      "locale": "en",
+      "tags": [
+        "lck",
+        "team",
+        "ranking",
+        "split",
+        "english"
+      ],
+      "expect": {
+        "route": "team_leaderboard",
+        "league": "LoL Champions Korea",
+        "notes": [
+          "does not filter by split",
+          "to the Spring split"
+        ]
+      }
+    },
+    {
+      "id": "split-not-applied-h2h",
+      "question": "T1 contre Gen.G en LCK Spring 2024",
+      "tags": [
+        "lck",
+        "team",
+        "h2h",
+        "split"
+      ],
+      "expect": {
+        "route": "head_to_head",
+        "teams": [
+          "T1",
+          "Gen.G"
+        ],
+        "notes": [
+          "ne filtre pas par split"
+        ]
+      }
     }
   ]
 }

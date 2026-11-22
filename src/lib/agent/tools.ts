@@ -41,6 +41,7 @@ import {
   type SeriesList,
   type SeriesGame,
   type SeriesPick,
+  type Split,
   type TeamHeadToHead,
   type TeamRoster,
   type RosterPlayer,
@@ -5514,6 +5515,13 @@ export const aiTools = Object.fromEntries(Object.entries(TOOLS).map(([name, def]
 
 export function normalizeToolCall(db: Db, call: StaticToolCall<typeof aiTools>): Promise<ToolCall | null> {
   return TOOLS[call.toolName].normalize(db, call.input);
+}
+
+export const takesSplit = (tool: ToolName): boolean => "split" in TOOLS[tool].input.shape;
+
+export function withSplit(call: ToolCall, split: Split): ToolCall {
+  // SAFETY: the schema of call.tool parsed the input, so the pair is still a call of that tool.
+  return { tool: call.tool, input: TOOLS[call.tool].input.parse({ ...call.input, split }) } as ToolCall;
 }
 
 export async function withLeague(db: Db, call: ToolCall, league: string | null): Promise<ToolCall | null> {
