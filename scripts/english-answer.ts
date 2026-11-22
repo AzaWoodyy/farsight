@@ -18,6 +18,7 @@ const ENTITY_FIELDS = new Set([
 
 const FRENCH_LETTER = /[àâçéèêëîïôûùüœ]/;
 const WORD = /\p{L}[\p{L}\p{M}'’]*/gu;
+const TOKEN = /[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}'’]|[.,](?=\p{N}))*/gu;
 const LEAGUE_NAMES = LEAGUES.flatMap((l) => [l.name, l.short]).toSorted((a, b) => b.length - a.length);
 
 export type FrenchText = { field: string; word: string; text: string };
@@ -72,24 +73,20 @@ function answerData(answer: Answer): Data {
   return data;
 }
 
-function namedWords(question: string, data: string[], englishQuestion: boolean): Set<string> {
-  const asked = words(question).filter((w) => englishQuestion || capitalized(w));
-
-  return new Set([...asked, ...data.flatMap(words).filter(capitalized)]);
-}
+const namedWords = (data: string[]): Set<string> => new Set(data.flatMap(words).filter(capitalized));
 
 const withoutNames = (text: string, names: string[]) => names.reduce((t, name) => t.split(name).join(" "), text);
 
 function unquoted(text: string, question: string): string {
-  const asked = words(question).map((w) => w.toLowerCase());
-  const shown = words(text);
+  const asked = question.match(TOKEN) ?? [];
+  const shown = text.match(TOKEN) ?? [];
   const quoted = new Set<number>();
 
   for (let i = 0; i < shown.length; i++)
     for (let j = 0; j < asked.length; j++) {
       let n = 0;
 
-      while (i + n < shown.length && j + n < asked.length && shown[i + n]!.toLowerCase() === asked[j + n]) n++;
+      while (i + n < shown.length && j + n < asked.length && shown[i + n] === asked[j + n]) n++;
 
       if (n >= 2) for (let k = i; k < i + n; k++) quoted.add(k);
     }
@@ -100,12 +97,12 @@ function unquoted(text: string, question: string): string {
 const isFrench = (word: string, named: Set<string>) => {
   const lower = word.toLowerCase();
 
-  return !named.has(word) && word !== word.toUpperCase() && (FRENCH_WORDS.has(lower) || FRENCH_LETTER.test(lower));
+  return !named.has(word) && (FRENCH_WORDS.has(lower) || FRENCH_LETTER.test(lower));
 };
 
 export function frenchInEnglishAnswer(question: string, answer: Answer, steps: ShownStep[], englishQuestion: boolean): FrenchText[] {
   const data = answerData(answer);
-  const named = namedWords(question, data.all, englishQuestion);
+  const named = namedWords(data.all);
   const names = [...new Set(data.entities.filter((d) => words(d).length > 1))].toSorted((a, b) => b.length - a.length);
 
   const shown: [string, string][] = [

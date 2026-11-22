@@ -56,6 +56,12 @@ test("a scope inside an entity's profile is not an entity name", () => {
   expect(words(frenchInEnglishAnswer("Ahri at First Stand", answer({ title: "Ahri au First Stand", champion }), [], true))).toEqual(["title: au"]);
 });
 
+test("a quote keeps its numbers and its case, capitals are no excuse, and a question's single words excuse nothing", () => {
+  expect(words(frenchInEnglishAnswer("Faker vs Chovy gold diff à 10 min", answer({ title: "Gold difference à 25 min" }), [], true))).toEqual(["title: à"]);
+  expect(words(frenchInEnglishAnswer("Who won?", answer({ title: "ÉQUIPE of the year" }), [], true))).toEqual(["title: ÉQUIPE"]);
+  expect(words(frenchInEnglishAnswer("Liga Española de League of Legends standings", answer({ summary: "Wins de Faker." }), [], true))).toEqual(["summary: de"]);
+});
+
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {
   const named = answer({
     summary: "Most titles: Movistar KOI Fénix (3). Data missing: in-game statistics (âmes du dragon) for the LPL.",
