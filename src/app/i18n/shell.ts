@@ -7,6 +7,7 @@ const fr = {
   dataset:
     "Wiki communautaire de l'esport League of Legends : résultats des matchs, compositions, picks et bans, statistiques des joueurs et des équipes de chaque compétition.",
   homeLabel: "Farsight, retour à l'accueil",
+  chat: { label: "Conversation", short: "Chat", stage: "bêta" },
   theme: { toLight: "Passer au thème clair", toDark: "Passer au thème sombre" },
   footer: {
     data: "Données",
@@ -35,6 +36,7 @@ const en: Shell = {
   dataset:
     "Community wiki of League of Legends esports: match results, drafts, picks and bans, player and team statistics of every competition.",
   homeLabel: "Farsight, back to the home page",
+  chat: { label: "Conversation", short: "Chat", stage: "beta" },
   theme: { toLight: "Switch to the light theme", toDark: "Switch to the dark theme" },
   footer: {
     data: "Data from",

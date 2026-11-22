@@ -9,7 +9,7 @@ export function HomePage({ locale }: { locale: Locale }) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(locale) }} />
-      <SiteHeader locale={locale} page="home" trail={SHELL[locale].tagline.toLowerCase()} />
+      <SiteHeader locale={locale} page="home" trail={SHELL[locale].tagline.toLowerCase()} chat={process.env.VERCEL_ENV !== "production"} />
       <main className="pb-8">
         <AgentConsole locale={locale} />
       </main>

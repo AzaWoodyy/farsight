@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import type { Locale } from "@/lib/locale";
 import { Mark } from "../brand/logo";
 import { SITE } from "../brand/site";
-import { PATHS } from "../i18n/locales";
+import { CHAT_PATHS, PATHS } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
 
 const TEXT = {
@@ -31,8 +31,6 @@ const TEXT = {
   },
 } as const;
 
-const CHAT_PATH: Record<Locale, string> = { fr: "/chat", en: "/en/chat" };
-
 const BUTTON = "press inline-flex min-h-11 items-center border border-line px-4 text-xs tracking-wider uppercase hover:border-accent hover:text-accent sm:pointer-fine:min-h-9";
 
 export function ChatDoor({ locale, pending }: { locale: Locale; pending: boolean }) {
@@ -41,7 +39,7 @@ export function ChatDoor({ locale, pending }: { locale: Locale; pending: boolean
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const refreshed = useRef(false);
-  const here = CHAT_PATH[locale];
+  const here = CHAT_PATHS[locale];
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || pending || refreshed.current) return;

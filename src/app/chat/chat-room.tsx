@@ -16,7 +16,7 @@ import { SITE } from "../brand/site";
 import { LANG_SWITCH_ATTR } from "../i18n/arrival";
 import { decode } from "../i18n/decode";
 import { LocaleProvider } from "../i18n/locale-context";
-import { LOCALE_NAME, LOCALES, PATHS } from "../i18n/locales";
+import { CHAT_PATHS, LOCALE_NAME, LOCALES, PATHS } from "../i18n/locales";
 import { SHELL } from "../i18n/shell";
 import { ThemeToggle } from "../theme-toggle";
 import { type Conversation, conversations } from "./conversations";
@@ -114,7 +114,6 @@ const NEAR_BOTTOM = 160;
 const UNDO_MS = 7000;
 const HASH_PREFIX = "#c=";
 const DESKTOP = "(min-width: 48rem)";
-const CHAT_PATH: Record<Locale, string> = { fr: "/chat", en: "/en/chat" };
 
 const NO_MESSAGES: ChatUIMessage[] = [];
 
@@ -342,7 +341,7 @@ function Shell({ locale }: { locale: Locale }) {
           {LOCALES.filter((other) => other !== locale).map((other) => (
             <a
               key={other}
-              href={`${CHAT_PATH[other]}${activeId ? `${HASH_PREFIX}${activeId}` : ""}`}
+              href={`${CHAT_PATHS[other]}${activeId ? `${HASH_PREFIX}${activeId}` : ""}`}
               hrefLang={other}
               lang={other}
               aria-label={LOCALE_NAME[other]}
