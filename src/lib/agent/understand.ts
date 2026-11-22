@@ -692,17 +692,27 @@ type Mentions = {
   otherTeams?: Map<string, ResolvedTeam[]>;
 };
 
-function aliasCandidates(tokens: string[]): string[] {
+export const PLAYER_SPAN_WIDTH = 4;
+
+function ignoredSpan(words: string[]): boolean {
+  return words.every((w) => STOPWORDS.has(w.toLowerCase())) || /^\d+$/.test(words.join(""));
+}
+
+export function playerSpan(words: string[]): string | null {
+  if (!words.length || words.length > PLAYER_SPAN_WIDTH || ignoredSpan(words)) return null;
+  const mention = words.join(" ");
+
+  return normalizeAlias(mention).length >= (/[\p{Script=Hangul}\p{Script=Han}]/u.test(mention) ? 2 : 3) ? mention : null;
+}
+
+export function aliasCandidates(tokens: string[]): string[] {
   const out = new Set<string>();
 
-  for (let size = 4; size >= 1; size--)
+  for (let size = PLAYER_SPAN_WIDTH; size >= 1; size--)
     for (let i = 0; i + size <= tokens.length; i++) {
-      const words = tokens.slice(i, i + size);
+      const mention = playerSpan(tokens.slice(i, i + size));
 
-      if (words.every((w) => STOPWORDS.has(w.toLowerCase())) || (size === 1 && STOPWORDS.has(words[0].toLowerCase())) || /^\d+$/.test(words.join(""))) continue;
-      const mention = words.join(" ");
-
-      if (normalizeAlias(mention).length >= (/[\p{Script=Hangul}\p{Script=Han}]/u.test(mention) ? 2 : 3)) out.add(mention);
+      if (mention) out.add(mention);
     }
 
   return [...out];
@@ -746,14 +756,9 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
       if (span.some((k) => used.has(k))) continue;
       const words = tokens.slice(i, i + size);
 
-      if (words.every((w) => STOPWORDS.has(w.toLowerCase()))) continue;
-
-      if (size === 1 && STOPWORDS.has(words[0].toLowerCase())) continue;
-
-      if (/^\d+$/.test(words.join(""))) continue;
+      if (ignoredSpan(words)) continue;
       const mention = words.join(" ");
       const norm = normalizeAlias(mention);
-      const isHangulOrHan = /[\p{Script=Hangul}\p{Script=Han}]/u.test(mention);
 
       if (norm.length < 2) continue;
 
@@ -779,7 +784,8 @@ async function detectMentions(db: Db, question: string): Promise<Mentions> {
 
       const hit = teams.get(norm);
       const team = hit?.caps && mention !== mention.toUpperCase() ? undefined : hit;
-      const players = norm.length >= (isHangulOrHan ? 2 : 3) ? hits.get(mention) ?? [] : [];
+      const playerMention = playerSpan(words);
+      const players = playerMention ? hits.get(playerMention) ?? [] : [];
 
       const abbreviationOfPlayer = team?.rank === ALIAS_RANK.alias && players.length > 0 && mention !== mention.toUpperCase();
 
