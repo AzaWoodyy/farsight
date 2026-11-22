@@ -11,11 +11,11 @@ const FRENCH_WORDS = new Set([
   "poste", "statut", "nombre", "finaliste", "arbre", "pris", "bleu", "rouge", "titulaire", "remplaçant", "inconnu", "quart", "historique",
 ]);
 
-const ENTITY_COLUMN = /team|player|champion|opponent|winner|blue|red|tournament|event/i;
+const ENTITY_COLUMN = /team|player|champion|opponent|winner|blue|red|tournament|event|rune|keystone|item|spell/i;
 
 const ENTITY_FIELDS = new Set([
   "player", "playerA", "playerB", "realName", "nativeName", "champion", "team", "teamA", "teamB", "blue", "red", "winner", "forfeitedBy",
-  "name", "keystone", "item", "event", "tournament", "chosen", "alternatives", "mention",
+  "name", "keystone", "rune", "item", "event", "tournament", "chosen", "alternatives", "mention",
 ]);
 
 const FRENCH_LETTER = /[àâçéèêëîïôûùüœ]/;
