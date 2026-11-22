@@ -54,7 +54,9 @@ function holds(condition: boolean, invariant: string) {
   if (!condition) throw new Violation(invariant);
 }
 
-type Run = { faults: Set<"grouped omission" | "other">; uploads: Map<string, number>; lateRequests: number };
+type Run = { blocked: Set<string>; budgetReached: boolean; uploads: Map<string, number>; lateRequests: number };
+
+const gameOfObject = (key: string) => KEYS.find((k) => rawGameKey(k) === key);
 
 class FaultyR2 extends MemoryStore {
   constructor(
@@ -67,7 +69,6 @@ class FaultyR2 extends MemoryStore {
 
   override async get(key: string) {
     if (this.schedule.fault(`R2 read ${key}`, "answers", ["fails"]) === "fails") {
-      this.run.faults.add("other");
       throw new InjectedFault("R2 read failed", key === SUMMARIES_KEY);
     }
 
@@ -76,7 +77,9 @@ class FaultyR2 extends MemoryStore {
 
   override async put(key: string, body: Uint8Array) {
     if (this.schedule.fault(`R2 write ${key}`, "succeeds", ["fails"]) === "fails") {
-      this.run.faults.add("other");
+      const game = gameOfObject(key);
+
+      if (game) this.run.blocked.add(game);
       throw new InjectedFault("R2 write failed", false);
     }
 
@@ -86,7 +89,6 @@ class FaultyR2 extends MemoryStore {
 
   override async list(prefix: string) {
     if (this.schedule.fault(`R2 list ${prefix}`, "answers", ["fails"]) === "fails") {
-      this.run.faults.add("other");
       throw new InjectedFault("R2 list failed", true);
     }
 
@@ -101,12 +103,11 @@ function wiki(schedule: Schedule, run: Run, clock: { now: number }) {
     const request = `wiki asked ${asked.map((r) => r.Key).join("+")}`;
 
     if (schedule.fault(request, "answers", ["is down"]) === "is down") {
-      run.faults.add("other");
       throw new InjectedFault("wiki down", false);
     }
 
     if (schedule.fault(`${request}, answer`, "in time", ["past the time budget"]) !== "in time") {
-      run.faults.add("other");
+      run.budgetReached = true;
       clock.now += 2 * BUDGET_MINUTES * 60_000;
     }
 
@@ -114,7 +115,7 @@ function wiki(schedule: Schedule, run: Run, clock: { now: number }) {
 
     for (const row of asked) {
       if (schedule.fault(`${request}, ${row.Key}`, "served", ["left out"]) !== "served") {
-        run.faults.add(asked.length > 1 ? "grouped omission" : "other");
+        if (asked.length === 1) run.blocked.add(row.Key);
         continue;
       }
 
@@ -151,7 +152,7 @@ let files = 0;
 const ephemeral = (): Machine => ({ local: new MemoryStore("local"), file: join(dir, `ci-${++files}.jsonl`) });
 
 async function dailyRun(machine: Machine, r2: Map<string, Uint8Array>, schedule: Schedule) {
-  const run: Run = { faults: new Set(), uploads: new Map(), lateRequests: 0 };
+  const run: Run = { blocked: new Set(), budgetReached: false, uploads: new Map(), lateRequests: 0 };
   const remote = new FaultyR2(r2, schedule, run);
   const clock = { now: 0 };
   let pulled: PulledSummaries | null = null;
@@ -181,7 +182,9 @@ async function dailyRun(machine: Machine, r2: Map<string, Uint8Array>, schedule:
   holds(counts.left === ROWS.filter((r) => !verdicts.has(r.Key)).length, "every game of the run ends with a verdict, or is counted as left for the next run");
   holds([...run.uploads.values()].every((n) => n === 1), "a game is uploaded at most once per run");
 
-  if (![...run.faults].some((f) => f === "other")) holds(counts.left === 0, "a game the wiki serves when asked alone is downloaded in the same run");
+  if (!run.budgetReached)
+    for (const key of KEYS.filter((k) => !run.blocked.has(k)))
+      holds(verdicts.get(key)?.status === "ok", "a game is summarized in the run unless the wiki left it out when asked alone, its upload failed, or time ran out");
 
   await pushSummaries(remote, pulled, machine.file);
 
