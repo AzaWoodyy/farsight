@@ -56,7 +56,7 @@ function answerData(answer: Answer): Data {
 
     for (const item of List.safeParse(value).data ?? []) walk(item, entity);
 
-    for (const [key, item] of Object.entries(Fields.safeParse(value).data ?? {})) walk(item, entity || ENTITY_FIELDS.has(key));
+    for (const [key, item] of Object.entries(Fields.safeParse(value).data ?? {})) walk(item, ENTITY_FIELDS.has(key));
   };
 
   walk(Json.parse(JSON.parse(JSON.stringify({ ...answer, title: "", summary: "", notes: [], followUps: [], table: null }))), false);

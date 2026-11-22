@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Answer } from "../src/lib/agent/types";
+import type { Answer, ChampionProfile } from "../src/lib/agent/types";
 import { frenchInEnglishAnswer, type ShownStep } from "./english-answer";
 
 function answer(over: Partial<Answer>): Answer {
@@ -46,6 +46,14 @@ test("a localized scope the answer also keeps in its data is still French in the
   const roster = answer({ title: "T1 roster au split Spring in LCK", teamLeagues: { T1: ["au split Spring in LCK"] } });
 
   expect(words(frenchInEnglishAnswer("T1 roster", roster, [], true))).toEqual(["title: au"]);
+});
+
+test("a scope inside an entity's profile is not an entity name", () => {
+  // SAFETY: the detector reads the profile as JSON; only its champion name and its scope matter here.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- A partial profile stands for the whole one.
+  const champion = { champion: "Ahri", scope: "au First Stand" } as unknown as ChampionProfile;
+
+  expect(words(frenchInEnglishAnswer("Ahri at First Stand", answer({ title: "Ahri au First Stand", champion }), [], true))).toEqual(["title: au"]);
 });
 
 test("names, the visitor's own words and their follow-ups are not French the site wrote", () => {
