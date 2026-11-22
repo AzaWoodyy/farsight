@@ -295,13 +295,13 @@ type SummaryInput = { question: string; facts: string };
 
 const templateSummary: Decider<SummaryInput, string> = {
   level: "rules",
-  name: "modèle de phrase",
+  id: "sentence_template",
   run: ({ facts }) => ({ result: facts, confidence: 0.7, level: "rules", reason: msg().run.summaryFromAggregates }),
 };
 
 const llmSummary: Decider<SummaryInput, string> = {
   level: "llm",
-  name: "rédaction",
+  id: "writing",
   run: async ({ question, facts }) => {
     const llm = getLlm();
 

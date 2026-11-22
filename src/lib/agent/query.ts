@@ -1371,7 +1371,7 @@ export type BuildResult = { plan: QueryPlan; notes: string[] } | { plan: null; m
 
 const rulesRouter: Decider<BuildInput, BuildResult> = {
   level: "rules",
-  name: "outil typé",
+  id: "typed_tool",
   run: async ({ db, route }) => {
     if (route.kind !== "tool") return null;
 
@@ -1421,7 +1421,7 @@ export async function groundLeague(db: Db, call: ToolCall, e: Entities, route: R
 
 const llmRouter: Decider<BuildInput, BuildResult> = {
   level: "llm",
-  name: "choix d'outil",
+  id: "tool_choice",
   run: async ({ db, question, entities, route }) => {
     const llm = getLlm();
 
@@ -1470,7 +1470,7 @@ const llmRouter: Decider<BuildInput, BuildResult> = {
 
 const textToSqlDecider: Decider<BuildInput, BuildResult> = {
   level: "llm",
-  name: "text-to-SQL",
+  id: "text_to_sql",
   run: async ({ db, question, entities }) => {
     const reply = await askSql(db, `Question: ${question}\nResolved entities: ${entitySummary(entities)}`, "generate-sql");
 
@@ -1505,7 +1505,7 @@ type Fix = { plan: QueryPlan; note?: string };
 
 const rulesCorrector: Decider<CorrectInput, Fix> = {
   level: "rules",
-  name: "corrections déterministes",
+  id: "corrections",
   run: async ({ entities, plan, by }) => {
     if (by !== "relax" || !plan.tool) return null;
     const next = plan.tool.relaxations(entities).find((r) => !plan.relaxed.includes(r.key));
@@ -1523,7 +1523,7 @@ const rulesCorrector: Decider<CorrectInput, Fix> = {
 
 const llmCorrector: Decider<CorrectInput, Fix> = {
   level: "llm",
-  name: "réparation SQL",
+  id: "sql_repair",
   run: async ({ db, question, plan, problem, by }) => {
     if (by !== "repair") return null;
 
