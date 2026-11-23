@@ -12,7 +12,7 @@ export default function LabPage() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       <SiteHeader locale="fr" page="home" trail="lab des affichages" />
-      <main className="pb-8">
+      <main id="main" tabIndex={-1} className="outline-none pb-8">
         <Lab />
       </main>
       <SiteFooter locale="fr" />

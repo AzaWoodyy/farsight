@@ -4,7 +4,7 @@ import { Glob } from "bun";
 
 test("every application environment variable is documented with an empty value", () => {
   const example = readFileSync(".env.example", "utf8");
-  const platform = /^((?:NEXT_PUBLIC_)?VERCEL(?:_.*)?|NODE_ENV|PATH|CI|GITHUB_.*|RUNNER_TEMP|HOW_FACTS)$/;
+  const platform = /^((?:NEXT_PUBLIC_)?VERCEL(?:_.*)?|NODE_ENV|PATH|CI|GITHUB_.*|RUNNER_TEMP|HOW_FACTS|HOME_PROOFS)$/;
   const missing = new Set<string>();
 
   for (const root of ["src", "scripts"]) {

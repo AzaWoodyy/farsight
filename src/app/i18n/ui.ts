@@ -37,14 +37,10 @@ const fr = {
     } satisfies Record<StepName, string>,
     heading: "Pose une question sur l'esport League of Legends.",
     intro:
-      "Farsight cherche dans les résultats et les matchs pros de LoL (Worlds, MSI, LCK, LPL, LEC, LCS…) et répond avec un tableau, une phrase de résumé et les pages d'où viennent les chiffres.",
+      "Farsight répond à partir des résultats et des matchs pros de LoL : Worlds, MSI, LCK, LPL, LEC, LCS…",
     questionLabel: "Ta question",
-    placeholder: "Faker contre Chovy",
+    placeholder: "Faker contre Chovy…",
     ask: "Demander",
-    dataFrom: "Résultats, compositions et stats de partie :",
-    iconsFrom: "Noms et icônes des champions, objets et runes :",
-    photos: "Photos des joueurs et logos des équipes : Leaguepedia, © Riot Games, les ligues et les équipes.",
-    how: "Comment Farsight trouve ses réponses",
     ready: (title: string) => `Réponse prête : ${title}`,
     restart: "Nouvelle conversation",
     copyLink: "Copier le lien",
@@ -70,7 +66,7 @@ const fr = {
   },
 
   examples: {
-    heading: "Essaie par exemple",
+    heading: "Ce que tu peux demander",
     pause: "[ pause ]",
     resume: "[ reprendre ]",
   },
@@ -323,14 +319,10 @@ const en: Ui = {
     steps: { understand: "1 understand", build: "2 build", execute: "3 execute", format: "4 format" },
     heading: "Ask a question about League of Legends esports.",
     intro:
-      "Farsight searches pro LoL results and matches (Worlds, MSI, LCK, LPL, LEC, LCS…) and answers with a table, a one-sentence summary and the pages the figures come from.",
+      "Farsight answers from pro LoL results and matches: Worlds, MSI, LCK, LPL, LEC, LCS…",
     questionLabel: "Your question",
-    placeholder: "Faker vs Chovy",
+    placeholder: "Faker vs Chovy…",
     ask: "Ask",
-    dataFrom: "Results, drafts and game stats:",
-    iconsFrom: "Names and icons of champions, items and runes:",
-    photos: "Player photos and team logos: Leaguepedia, © Riot Games, the leagues and the teams.",
-    how: "How Farsight finds its answers",
     ready: (title) => `Answer ready: ${title}`,
     restart: "New conversation",
     copyLink: "Copy link",
@@ -356,7 +348,7 @@ const en: Ui = {
   },
 
   examples: {
-    heading: "Try for example",
+    heading: "What you can ask",
     pause: "[ pause ]",
     resume: "[ resume ]",
   },

@@ -24,7 +24,7 @@ export function SiteHeader({
     <header className="flex items-center justify-between gap-4 pt-5 sm:pt-8">
       <HomeLink href={PATHS.home[locale]} label={shell.homeLabel} />
       <div className="flex items-center gap-2">
-        <span className="mr-2 hidden text-xs text-muted sm:block">~/ {trail}</span>
+        {trail && <span className="mr-2 hidden text-xs text-muted sm:block">~/ {trail}</span>}
         {chat && (
           <a
             href={CHAT_PATHS[locale]}

@@ -11,7 +11,7 @@ export function ChatFrame({ locale, children }: { locale: Locale; children: Reac
     <FullNavigation>
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
         <SiteHeader locale={locale} page="home" trail={SHELL[locale].chat.trail} switchTo={CHAT_PATHS} />
-        <main className="chat-shell pb-8">{children}</main>
+        <main id="main" tabIndex={-1} className="outline-none chat-shell pb-8">{children}</main>
         <SiteFooter locale={locale} />
       </div>
     </FullNavigation>

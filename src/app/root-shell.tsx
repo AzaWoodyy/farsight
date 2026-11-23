@@ -6,6 +6,7 @@ import { PALETTE } from "./brand/site";
 import { THEME_SCRIPT } from "./brand/theme";
 import { ARRIVAL_SCRIPT } from "./i18n/arrival";
 import type { Locale } from "./i18n/locales";
+import { SHELL } from "./i18n/shell";
 import { QUESTION_LINK_SCRIPT } from "./question-link";
 import "./globals.css";
 
@@ -27,6 +28,9 @@ export function RootShell({ locale, children }: { locale: Locale; children: Reac
       </head>
       <body className="min-h-full flex flex-col">
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <a href="#main" className="skip-link">
+          {SHELL[locale].skip}
+        </a>
         {children}
         <SiteAnalytics />
       </body>
