@@ -50,7 +50,7 @@ const old = `${schema}_old`;
 
 const liveExists = Boolean((await client.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [schema])).rowCount);
 
-const METRICS = ["tournaments", "games", "player lines", "in-game games", "standings"] as const;
+const METRICS = ["played tournaments", "games", "player lines", "in-game games", "standings"] as const;
 
 type LeagueCounts = Map<string, number[]>;
 
@@ -61,7 +61,9 @@ async function schemaCounts(name: string): Promise<LeagueCounts> {
 
   const { rows } = await client.query<{ league: string; counts: number[] }>(
     `SELECT l.name AS league, ARRAY[
-       ${inLeague("tournaments", "t", "")},
+       (SELECT COUNT(*)::integer FROM ${s}.tournaments t WHERE t.league_id = l.id
+          AND (EXISTS (SELECT 1 FROM ${s}.games g WHERE g.tournament_id = t.id)
+            OR EXISTS (SELECT 1 FROM ${s}.tournament_results x WHERE x.tournament_id = t.id))),
        ${inLeague("games", "g", `JOIN ${s}.tournaments t ON t.id = g.tournament_id`)},
        ${inLeague("game_players", "x", viaGame)},
        ${inLeague("game_riot", "x", viaGame)},
@@ -91,7 +93,10 @@ function derivedCounts(): LeagueCounts {
     if (league != null) counts.get(league)![metric]++;
   };
 
-  for (const r of tournaments.rows) add(leagueOfTournament.get(r[tournaments.col("id")]), 0);
+  const results = rowsOf("tournament_results");
+  const played = new Set([...games.rows.map((r) => r[games.col("tournament_id")]), ...results.rows.map((r) => r[results.col("tournament_id")])]);
+
+  for (const id of played) add(leagueOfTournament.get(id), 0);
 
   for (const r of games.rows) add(leagueOfGame.get(r[games.col("id")]), 1);
 
@@ -100,8 +105,6 @@ function derivedCounts(): LeagueCounts {
 
     for (const r of t.rows) add(leagueOfGame.get(r[t.col(key)]), metric);
   }
-
-  const results = rowsOf("tournament_results");
 
   for (const r of results.rows) add(leagueOfTournament.get(r[results.col("tournament_id")]), 4);
 
