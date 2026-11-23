@@ -29,7 +29,7 @@ depuis SQLite.
     `--allow-older-summaries` garde les résumés d'une dérivation ancienne encore compatible (la CI, dont le snapshot
     épinglé ne se recalcule pas) ; `--allow-incomplete` charge quand même (cache local partiel).
   - Avant la bascule, au moins 98 % des joueurs avec photo doivent le rester, et chaque ligue doit garder au moins
-    ses tournois, parties, lignes de joueurs, parties in-game et
+    ses tournois joués (avec parties ou classement ; une page vide d'un tournoi à venir peut disparaître), parties, lignes de joueurs, parties in-game et
     classements. Sinon, le schéma préparé est supprimé et la base en place ne change pas ; `--allow-shrink` force le
     chargement.
   - La bascule tient en deux renommages dans une transaction : l'app voit l'ancienne base jusqu'au commit, puis la

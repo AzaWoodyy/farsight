@@ -4,7 +4,7 @@
 
 ## Rules
 
-- A partial ingestion must not replace complete data: unless `--allow-shrink` is passed, the load is refused when a live league would lose tournaments, games, player lines, in-game games or standings, or when too many players with a photo are gone (`photoLoss`). With a swap the staged schema is compared with the live one and dropped on a loss. In place, the live schema is dropped before the load, so the derived rows are compared with it first, league by league, before anything is written.
+- A partial ingestion must not replace complete data: unless `--allow-shrink` is passed, the load is refused when a live league would lose tournaments with games or standings, games, player lines, in-game games or standings, or when too many players with a photo are gone (`photoLoss`). With a swap the staged schema is compared with the live one and dropped on a loss. In place, the live schema is dropped before the load, so the derived rows are compared with it first, league by league, before anything is written. A tournament without games or standings is not counted: Leaguepedia creates and deletes such placeholders for upcoming events (three 2027 pages on 2026-11-23), and losing one loses no data.
 - The per-league counts (`schemaCounts`) start from `leagues`, not from the games, so that a league with standings and no game is counted too.
 - In place is chosen automatically when two copies of about the live size would not fit under `DATABASE_SIZE_LIMIT_MB` with a tenth to spare (`2 * live > 0.9 * limit`).
 - Each load inserts an `ingest_runs` row of kind `build`. That kind is a contract: the day of this run is the data's day, read back with `kind = 'build'` (`next.config.ts`, `src/lib/db/release.ts` for the day). Do not rename it.
