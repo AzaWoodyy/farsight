@@ -191,6 +191,21 @@ body {
 /* One visible focus ring for every control, keyboard only. In the base layer, so a utility (the question
    field's outline-none, whose frame shows focus instead) can override it. */
 @layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  a,
+  button {
+    touch-action: manipulation;
+  }
+
+  button {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -413,4 +428,118 @@ details[data-how][open] > summary [data-chevron] {
   to {
     visibility: visible;
   }
+}
+
+.proof-stack > [data-proof-item] {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  opacity: 0;
+}
+
+[data-proofs]:not([data-proof]) [data-proof-item="0"],
+[data-proofs][data-proof="0"] [data-proof-item="0"],
+[data-proofs][data-proof="1"] [data-proof-item="1"],
+[data-proofs][data-proof="2"] [data-proof-item="2"],
+[data-proofs][data-proof="3"] [data-proof-item="3"],
+[data-proofs][data-proof="4"] [data-proof-item="4"] {
+  visibility: visible;
+  opacity: 1;
+}
+
+.proof-progress {
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+[data-proofs]:not([data-proof]) [data-proof-pick="0"] .proof-progress,
+[data-proofs][data-proof="0"] [data-proof-pick="0"] .proof-progress,
+[data-proofs][data-proof="1"] [data-proof-pick="1"] .proof-progress,
+[data-proofs][data-proof="2"] [data-proof-pick="2"] .proof-progress,
+[data-proofs][data-proof="3"] [data-proof-pick="3"] .proof-progress,
+[data-proofs][data-proof="4"] [data-proof-pick="4"] .proof-progress {
+  transform: scaleX(1);
+}
+
+[data-proofs]:not([data-proof]) .proof-pager,
+[data-proofs][data-proof-fixed] .proof-toggle {
+  display: none;
+}
+
+@keyframes proof-progress {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .proof-stack > [data-proof-item] {
+    filter: blur(2px);
+    transition:
+      opacity 150ms var(--ease-out-strong),
+      filter 150ms var(--ease-out-strong),
+      visibility 0s linear 150ms;
+  }
+
+  [data-proofs]:not([data-proof]) [data-proof-item="0"],
+  [data-proofs][data-proof="0"] [data-proof-item="0"],
+  [data-proofs][data-proof="1"] [data-proof-item="1"],
+  [data-proofs][data-proof="2"] [data-proof-item="2"],
+  [data-proofs][data-proof="3"] [data-proof-item="3"],
+  [data-proofs][data-proof="4"] [data-proof-item="4"] {
+    filter: none;
+    transition:
+      opacity 250ms var(--ease-out-strong) 150ms,
+      filter 250ms var(--ease-out-strong) 150ms,
+      visibility 0s linear 150ms;
+  }
+
+  [data-proofs]:not([data-proof]) [data-proof-pick="0"] .proof-progress,
+  [data-proofs][data-proof="0"] [data-proof-pick="0"] .proof-progress,
+  [data-proofs][data-proof="1"] [data-proof-pick="1"] .proof-progress,
+  [data-proofs][data-proof="2"] [data-proof-pick="2"] .proof-progress,
+  [data-proofs][data-proof="3"] [data-proof-pick="3"] .proof-progress,
+  [data-proofs][data-proof="4"] [data-proof-pick="4"] .proof-progress {
+    animation: proof-progress 10s linear both;
+  }
+
+  [data-proofs]:focus-within .proof-pager [data-proof-pick] .proof-progress {
+    animation-play-state: paused;
+  }
+
+  [data-proofs][data-proof-fixed] .proof-pager [data-proof-pick] .proof-progress,
+  [data-proofs] .proof-pager[data-stopped] [data-proof-pick] .proof-progress {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  [data-proofs]:hover .proof-pager [data-proof-pick] .proof-progress {
+    animation-play-state: paused;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proof-toggle {
+    display: none;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 60;
+  padding: 0.5rem 0.75rem;
+  background: var(--background);
+  border: 1px solid var(--accent);
+  font-size: 0.875rem;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
 }

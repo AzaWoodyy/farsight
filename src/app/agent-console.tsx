@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useEffectEvent, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { type AgentUIMessage, type Answer, QUESTION_MAX_LENGTH, STEPS, type StepName, type StepPart, type TraceStatus } from "@/lib/agent/types";
 import type { ChatControls, ChatState } from "./chat-engine";
 import { HOME, IDLE, isRunning, screenAfter } from "./console-screen";
-import { HomeExamples } from "./home-examples";
+import { AskContext } from "./ask-link";
 import { HOME_EVENT } from "./home-link";
 import { LocaleProvider, useLocale, useUi } from "./i18n/locale-context";
 import { PATHS } from "./i18n/locales";
@@ -34,15 +33,17 @@ const STATUS: Record<TraceStatus, { mark: string; cls: string }> = {
   fix: { mark: "~>", cls: "text-fix" },
 };
 
-export function AgentConsole({ locale }: { locale: Locale }) {
+type HomeParts = { proof: ReactNode; coverage: ReactNode; below: ReactNode };
+
+export function AgentConsole({ locale, ...home }: { locale: Locale } & HomeParts) {
   return (
     <LocaleProvider locale={locale}>
-      <Console />
+      <Console {...home} />
     </LocaleProvider>
   );
 }
 
-function Console() {
+function Console({ proof, coverage, below }: HomeParts) {
   const ui = useUi();
   const locale = useLocale();
   const form = useRef<HTMLFormElement>(null);
@@ -189,93 +190,58 @@ function Console() {
   return (
     <section data-console>
       {first && modules && <modules.chat.ChatEngine controls={chat} onChange={onChatChange} first={first} />}
-      {askedText ? (
-        <h1 className="sr-only">{askedText}</h1>
-      ) : (
-        <div className="mt-10 sm:mt-16">
-          <h1 className="max-w-3xl text-xl leading-snug font-semibold text-balance sm:text-3xl">
+      {askedText && <h1 className="sr-only">{askedText}</h1>}
+      <div className={askedText ? undefined : "mt-8 grid items-start gap-x-10 gap-y-10 sm:mt-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]"}>
+        <div>
+          {!askedText && (
+            <>
+              <h1 className="text-3xl leading-tight font-semibold tracking-[-0.02em] text-balance sm:text-4xl">{ui.console.heading}</h1>
+              <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-pretty text-muted">{ui.console.intro}</p>
+            </>
+          )}
+
+          <form
+            ref={form}
+            action={PATHS.home[locale]}
+            method="get"
+            onSubmit={(e) => {
+              e.preventDefault();
+              ask(new FormData(e.currentTarget).get("q")?.toString() ?? "");
+            }}
+            className={`${askedText ? "mt-6" : "mt-8"} flex items-center gap-2 border border-foreground/50 bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
+          >
             <span aria-hidden className="text-accent">
-              &gt;{" "}
+              &gt;
             </span>
-            {ui.console.heading}
-            <span aria-hidden className="cursor ml-1 inline-block h-[1em] w-[0.55em] translate-y-[0.15em] bg-accent" />
-          </h1>
-          <p className="mt-4 max-w-[68ch] border-l border-dashed border-line pl-3 text-sm leading-relaxed text-pretty text-muted">
-            {ui.console.intro}{" "}
-            <Link className="underline decoration-line underline-offset-2 hover:text-accent" href={PATHS.how[locale]}>
-              {ui.console.how}
-            </Link>
-          </p>
-        </div>
-      )}
-
-      <form
-        ref={form}
-        action={PATHS.home[locale]}
-        method="get"
-        onSubmit={(e) => {
-          e.preventDefault();
-          ask(new FormData(e.currentTarget).get("q")?.toString() ?? "");
-        }}
-        className={`${askedText ? "mt-6" : "mt-8"} group flex items-center gap-2 border border-line bg-background py-1 pr-1 pl-3 has-[input:focus]:border-accent has-[input:focus]:shadow-[0_0_0_1px_var(--accent)]`}
-      >
-        <span aria-hidden className="text-accent">
-          &gt;
-        </span>
-        <label htmlFor="question" className="sr-only">
-          {ui.console.questionLabel}
-        </label>
-        <input
-          id="question"
-          name="q"
-          required
-          pattern={".*\\S.*"}
-          maxLength={QUESTION_MAX_LENGTH}
-          onFocus={preload}
-          placeholder={ui.console.placeholder}
-          autoComplete="off"
-          enterKeyHint="search"
-          className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:text-sm"
-        />
-        <button
-          type="submit"
-          disabled={running}
-          className="press min-h-11 shrink-0 border border-line px-4 text-[13px] tracking-wider uppercase hover:border-accent hover:text-accent disabled:opacity-40 group-has-[input:invalid]:opacity-40 sm:pointer-fine:min-h-9"
-        >
-          {running ? "…" : ui.console.ask}
-        </button>
-      </form>
-
-      {!askedText && (
-        <div className="mt-8">
-          <HomeExamples onAsk={ask} />
-          <p className="mt-6 max-w-[70ch] text-xs leading-relaxed text-muted">
-            {ui.console.dataFrom}{" "}
-            <a className="underline decoration-line underline-offset-2 hover:text-accent" href="https://lol.fandom.com" target="_blank" rel="noreferrer">
-              Leaguepedia
-            </a>{" "}
-            (
-            <a
-              className="underline decoration-line underline-offset-2 hover:text-accent"
-              href="https://creativecommons.org/licenses/by-sa/3.0/"
-              target="_blank"
-              rel="noreferrer license"
+            <label htmlFor="question" className="sr-only">
+              {ui.console.questionLabel}
+            </label>
+            <input
+              id="question"
+              name="q"
+              required
+              pattern={".*\\S.*"}
+              maxLength={QUESTION_MAX_LENGTH}
+              onFocus={preload}
+              placeholder={ui.console.placeholder}
+              autoComplete="off"
+              enterKeyHint="search"
+              className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:pointer-fine:text-sm"
+            />
+            <button
+              type="submit"
+              disabled={running}
+              className="press min-h-11 shrink-0 bg-accent px-5 text-sm font-semibold text-background hover:bg-foreground disabled:opacity-40 sm:pointer-fine:min-h-9"
             >
-              CC BY-SA 3.0
-            </a>
-            ). {ui.console.iconsFrom}{" "}
-            <a
-              className="underline decoration-line underline-offset-2 hover:text-accent"
-              href="https://developer.riotgames.com/docs/lol#data-dragon"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Riot Data Dragon
-            </a>
-            . {ui.console.photos}
-          </p>
+              {running ? "…" : ui.console.ask}
+            </button>
+          </form>
+          {!askedText && coverage}
         </div>
-      )}
+        {!askedText && proof}
+      </div>
+
+      {!askedText && <AskContext value={ask}>{below}</AskContext>}
 
       {askedText && (
         <div data-running={running ? "" : undefined} className={`mt-8 ${running ? "min-h-svh" : ""}`}>

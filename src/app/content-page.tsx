@@ -19,7 +19,7 @@ export function ContentPage({ locale, page, trail, title, dated, toc, sections }
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
       <SiteHeader locale={locale} page={page} trail={trail} />
-      <main className="flex-1 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
+      <main id="main" tabIndex={-1} className="outline-none flex-1 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
         <div className="max-w-[75ch]">
           <h1 className="text-xl leading-snug font-semibold text-balance sm:text-3xl">{title}</h1>
           <p className="mt-3 text-xs text-muted">{dated}</p>

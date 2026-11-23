@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 import pg from "pg";
@@ -22,6 +26,21 @@ async function howFacts(): Promise<string> {
     return JSON.stringify({ built, leagues });
   } finally {
     await client.end();
+  }
+}
+
+function homeProofs(): string {
+  if (!process.env.DATABASE_URL) return "";
+  const dir = mkdtempSync(join(tmpdir(), "farsight-home-"));
+
+  try {
+    const file = join(dir, "proofs.json");
+
+    execFileSync("bun", ["scripts/home/proofs.ts", file], { stdio: ["ignore", "inherit", "inherit"] });
+
+    return readFileSync(file, "utf8");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -87,4 +106,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withBotId(async () => ({ ...nextConfig, env: { HOW_FACTS: await howFacts() } }));
+export default withBotId(async () => ({ ...nextConfig, env: { HOW_FACTS: await howFacts(), HOME_PROOFS: homeProofs() } }));

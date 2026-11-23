@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { AskContext } from "./ask-link";
 import { type Example, exampleRows } from "./home-examples-data";
 import { useLocale, useUi } from "./i18n/locale-context";
 
@@ -13,31 +14,32 @@ function Chips({ examples, onAsk, copy }: AskProps & { examples: Example[]; copy
         type="button"
         tabIndex={copy ? -1 : undefined}
         onClick={() => onAsk(e.question)}
-        className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-[13px] whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
+        className="press inline-flex min-h-11 items-center gap-x-2 border border-line px-3 py-1.5 text-sm whitespace-nowrap hover:border-accent hover:text-accent sm:pointer-fine:min-h-10"
       >
-        <span aria-hidden className="text-accent">
-          &gt;
-        </span>
         {e.question}
       </button>
     </li>
   ));
 }
 
-export function HomeExamples({ onAsk }: AskProps) {
+export function HomeExamples() {
+  const ask = useContext(AskContext);
+  const onAsk = (question: string) => ask?.(question);
   const locale = useLocale();
   const ui = useUi();
   const [paused, setPaused] = useState(false);
 
   return (
-    <div>
+    <section aria-labelledby="examples" className="mt-10 sm:mt-12">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xs text-muted">── {ui.examples.heading}</h2>
+        <h2 id="examples" className="text-base font-semibold">
+          {ui.examples.heading}
+        </h2>
         <button type="button" onClick={() => setPaused((p) => !p)} className="marquee-toggle press tap text-xs text-muted hover:text-accent">
           {paused ? ui.examples.resume : ui.examples.pause}
         </button>
       </div>
-      <div className="marquees mt-2" data-paused={paused ? "" : undefined}>
+      <div className="marquees mt-4" data-paused={paused ? "" : undefined}>
         {exampleRows(locale).map((examples, row) => (
           <div key={row} className="marquee">
             <ul className="marquee-track">
@@ -47,6 +49,6 @@ export function HomeExamples({ onAsk }: AskProps) {
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
