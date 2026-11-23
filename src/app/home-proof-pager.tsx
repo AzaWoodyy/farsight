@@ -5,6 +5,7 @@ import { useUi } from "./i18n/locale-context";
 
 const ATTR = "data-proof";
 const PROGRESS = "proof-progress";
+const PARAM = "proof";
 
 export function HomeProofPager({ label, titles }: { label: string; titles: string[] }) {
   const ui = useUi();
@@ -19,7 +20,16 @@ export function HomeProofPager({ label, titles }: { label: string; titles: strin
 
       if (!stack) return () => {};
 
-      if (!stack.hasAttribute(ATTR)) stack.setAttribute(ATTR, String(Math.floor(Math.random() * count)));
+      if (!stack.hasAttribute(ATTR)) {
+        const asked = new URLSearchParams(window.location.search).get(PARAM);
+        const pinned = asked === null || asked === "" ? Number.NaN : Number(asked);
+        const fixed = Number.isInteger(pinned) && pinned >= 0 && pinned < count;
+
+        stack.setAttribute(ATTR, String(fixed ? pinned : Math.floor(Math.random() * count)));
+
+        if (fixed) stack.setAttribute("data-proof-fixed", "");
+      }
+
       const observer = new MutationObserver(onChange);
 
       observer.observe(stack, { attributes: true, attributeFilter: [ATTR] });

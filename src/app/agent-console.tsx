@@ -238,7 +238,7 @@ function Console({ proof, coverage, below }: HomeParts) {
           </form>
           {!askedText && coverage}
         </div>
-        {!askedText && proof}
+        {!askedText && <AskContext value={ask}>{proof}</AskContext>}
       </div>
 
       {!askedText && <AskContext value={ask}>{below}</AskContext>}

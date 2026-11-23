@@ -14,7 +14,7 @@ export default function GlobalNotFound() {
     <RootShell locale="fr">
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 sm:px-6">
         <SiteHeader locale="fr" page="home" trail="404" />
-        <main className="flex-1 space-y-10 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
+        <main id="main" tabIndex={-1} className="outline-none flex-1 space-y-10 pt-10 pb-16 text-sm leading-relaxed sm:pt-16">
           {LOCALES.map((locale) => (
             <section key={locale} lang={locale}>
               <h1 className="text-xl leading-snug font-semibold text-balance sm:text-3xl">{SHELL[locale].notFound.title}</h1>
