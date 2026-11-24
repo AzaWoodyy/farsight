@@ -139,6 +139,7 @@ One file per decision area, numbered in the order they were written down. The co
 - [Structured data of the home page](0102-site-structured-data.md)
 - [Metadata, hreflang, sitemap dates and robots](0103-search-metadata-and-sitemap.md)
 - [Display lab: stable variant ids and a made-up trace](0104-display-lab-fixtures.md)
+- [The fallback of Geist Mono is a monospaced font of the same width](0126-font-fallback-metrics.md)
 
 ## Build, CI and operations
 

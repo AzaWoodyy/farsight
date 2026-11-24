@@ -182,10 +182,36 @@
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Menlo"), local("Menlo Regular"), local("DejaVu Sans Mono");
+  size-adjust: 99.66%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback";
+  font-weight: 600 900;
+  src: local("Menlo Bold"), local("Menlo-Bold"), local("DejaVu Sans Mono Bold");
+  size-adjust: 99.66%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback Consolas";
+  src: local("Consolas");
+  size-adjust: 109.13%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback Consolas";
+  font-weight: 600 900;
+  src: local("Consolas Bold"), local("Consolas-Bold");
+  size-adjust: 109.13%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: var(--font-geist-mono), monospace;
 }
 
 /* One visible focus ring for every control, keyboard only. In the base layer, so a utility (the question
