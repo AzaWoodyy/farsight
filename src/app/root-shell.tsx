@@ -10,7 +10,12 @@ import { SHELL } from "./i18n/shell";
 import { QUESTION_LINK_SCRIPT } from "./question-link";
 import "./globals.css";
 
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "symbols2"] });
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin", "symbols2"],
+  adjustFontFallback: false,
+  fallback: ["Geist Mono Fallback", "Geist Mono Fallback Consolas", "Liberation Mono", "Courier New", "monospace"],
+});
 
 export const VIEWPORT: Viewport = {
   themeColor: [
