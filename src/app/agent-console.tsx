@@ -226,7 +226,7 @@ function Console({ proof, coverage, below }: HomeParts) {
               placeholder={ui.console.placeholder}
               autoComplete="off"
               enterKeyHint="search"
-              className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:pointer-fine:text-sm"
+              className="min-h-11 min-w-0 flex-1 bg-transparent text-base caret-accent outline-none placeholder:text-muted sm:pointer-fine:min-h-9 sm:pointer-fine:text-sm"
             />
             <button
               type="submit"
